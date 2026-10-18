@@ -101,16 +101,16 @@ With **turri** you work on the durable intent. You say what the software must do
 
 ## How it works
 
+<p align="center"><img src="docs/images/turri-screenshot.png" width="900" alt="turri in the terminal: on the left the conversation, where /regenerate plans a project's modules and a coding agent works through one of them; on the right the spec map of that module's ***plain, each functionality marked as regenerated or being worked on"></p>
+
 **turri** captures the durable intent in [\*\*\*plain](https://plainlang.org/), a language for saying what software should do. \*\*\*plain breaks the intent down into functionalities - small units, each a single thing the software does - and **turri** regenerates the code from them piece by piece.
 
-1. **Define.** Write \*\*\*plain with **turri**
+1. **Define.** You say what the software should do; **turri** writes it down as \*\*\*plain.
 2. **Review and refine.** You review \*\*\*plain and change it with **turri** until it says what you mean.
 3. **Regenerate.** Agents write the code; **turri** decides what they write and when, step by step, the same way every time.
 4. **Validate.** Agents write conformance tests from \*\*\*plain; **turri** runs them, and keeps the code only when it does what \*\*\*plain says.
 
 These are not phases, one after the other: you don't spend hours writing \*\*\*plain and then hours waiting for the code. You go round the loop in small steps, in conversation with **turri** - while you refine the next functionality, the one before it is already being regenerated and validated. A bug is fixed in \*\*\*plain; a new behaviour goes into \*\*\*plain; and the next regeneration carries it. Ask to try it at any time: **turri** puts what is built in `dist` and starts it on your machine - an app, and it tells you where to open your browser.
-
-<p align="center"><img src="docs/images/turri-screenshot.png" width="900" alt="turri in the terminal: on the left the conversation, where /regenerate plans a project's modules and a coding agent works through one of them; on the right the spec map of that module's ***plain, each functionality marked as regenerated or being worked on"></p>
 
 ## The name
 
