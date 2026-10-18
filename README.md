@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/images/turri-banner.png" alt="turri - coding agent with the power of regenerative software: regenerate, drift, lineage"></p>
+<p align="center"><img src="docs/images/turri-banner.png" alt="turri - the first coding agent with the power of regenerative software, beside a pixel jellyfish: npm install -g @turri-dev/cli"></p>
 
 <h1 align="center">turri<br>the first coding agent with the power of<br>regenerative software<br>&nbsp;</h1>
 
