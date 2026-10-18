@@ -4,6 +4,7 @@ import { configForSpec, modelSpec, projectModels, readProjectConfig } from "./co
 import { createDeployState } from "./release-tools.ts";
 import { runReleaseAgent } from "./release-agent.ts";
 import { listDeployed, runningDeployed, stopDeployed } from "./regenerate/release.ts";
+import { c } from "./module-report.ts";
 
 const USAGE = `usage: turri release [file.plain] [options]
 
@@ -22,12 +23,6 @@ harness-model (the agent's model).
   --guidance <text>        how this project releases it: the scripts to run, in order
   --model <provider/id>    the agent's model (default: harness-model)`;
 
-const c = {
-  dim: (s: string) => `\x1b[2m${s}\x1b[0m`,
-  bold: (s: string) => `\x1b[1m${s}\x1b[0m`,
-  green: (s: string) => `\x1b[32m${s}\x1b[0m`,
-  cyan: (s: string) => `\x1b[36m${s}\x1b[0m`,
-};
 
 const PROBLEMS = "If you are having problems, use chat mode to deploy: run turri and ask to try it.";
 
@@ -72,7 +67,7 @@ function followLogs(): Promise<void> {
         readSync(fd, buffer, 0, buffer.length, from);
         closeSync(fd);
         offsets.set(item.log, size);
-        for (const line of buffer.toString("utf8").split("\n").filter((l) => l !== "")) console.log(`${c.cyan(`[${item.name}]`)} ${line}`);
+        for (const line of buffer.toString("utf8").split("\n").filter((l) => l !== "")) console.log(`${c.accent(`[${item.name}]`)} ${line}`);
       }
       if (running.length === 0) {
         clearInterval(timer);
@@ -117,7 +112,7 @@ async function main() {
   console.log(`\n\n${c.dim(PROBLEMS)}`);
 
   if (runningDeployed().length === 0) process.exit(0);
-  console.log(c.green(c.bold("\nRunning - Ctrl-C stops it.")) + c.dim(" Its output follows.\n"));
+  console.log(c.success(c.bold("\nRunning - Ctrl-C stops it.")) + c.dim(" Its output follows.\n"));
   await followLogs();
   process.exit(0);
 }

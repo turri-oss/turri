@@ -113,21 +113,21 @@ async function runLoopReporting(
       const line = job.status === "running" ? `${job.stage ?? "started"}` : job.status;
       if (seen.get(job.id) === line) return;
       seen.set(job.id, line);
-      if (job.status === "running") console.log(`${c.cyan(`▶ ${job.id}`)} ${pulseName(job)}${job.stage !== undefined ? c.dim(` - ${job.stage}`) : ""}`);
+      if (job.status === "running") console.log(`${c.accent(`▶ ${job.id}`)} ${pulseName(job)}${job.stage !== undefined ? c.dim(` - ${job.stage}`) : ""}`);
     },
     onFinish: (job: Job) => {
-      const mark = job.status === "succeeded" ? c.green("✓") : job.status === "stopped" ? c.dim("■") : c.red("✗");
+      const mark = job.status === "succeeded" ? c.success("✓") : job.status === "stopped" ? c.dim("■") : c.error("✗");
       console.log(`${mark} ${job.id} ${pulseName(job)} - ${job.status}`);
       if (job.status !== "succeeded") console.log(c.dim((job.announce ?? job.report ?? job.error ?? "").trim()));
       // Its report is not printed when it succeeds, and nobody is asked here: the spec gaps its agents met are said.
-      else for (const gap of (job.details as { specGaps?: SpecGap[] } | undefined)?.specGaps ?? []) console.log(c.yellow(`  spec gap: ${gap.question}`), c.dim(`Meanwhile: ${gap.assumption}`));
+      else for (const gap of (job.details as { specGaps?: SpecGap[] } | undefined)?.specGaps ?? []) console.log(c.warning(`  spec gap: ${gap.question}`), c.dim(`Meanwhile: ${gap.assumption}`));
       report?.write();
     },
   });
   // A provider failing and waited out, a turn turri ended itself: said as they happen, not left in the job logs alone.
   onModelEvent((event) => {
     const line = describeTurnIncident(event);
-    if (line !== undefined) console.log(c.yellow(`  ${event.job !== undefined ? `${event.job}: ` : ""}${line}`));
+    if (line !== undefined) console.log(c.warning(`  ${event.job !== undefined ? `${event.job}: ` : ""}${line}`));
   });
   const planner = modelSpec(projectModels(project).harness);
   const loop = createWorkLoop({
@@ -161,7 +161,7 @@ async function runLoopReporting(
     // No terminal and no --start-over: no one to ask, so the run stops here rather than build nothing and say it is done.
     if (options.startOver !== true && process.stdin.isTTY !== true) {
       const message = `${why}\nThere is no terminal to ask whether to start over: run it again with --start-over to start over without asking.`;
-      console.error(c.red(message));
+      console.error(c.error(message));
       report?.end("incomplete", message);
       process.exit(1);
     }
@@ -199,10 +199,10 @@ async function runLoopReporting(
   const unfinished = moduleStates(loop.drift(plainFile)).filter((module) => module.state !== "complete");
   const verdict =
     failed.length > 0
-      ? c.red(c.bold(`${failed.length} job${failed.length === 1 ? "" : "s"} failed`))
+      ? c.error(c.bold(`${failed.length} job${failed.length === 1 ? "" : "s"} failed`))
       : unfinished.length > 0
-        ? c.red(c.bold(`not complete: ${unfinished.map((module) => `${module.module}${module.why !== undefined ? ` - ${module.why}` : ""}`).join("; ")}`))
-        : c.green(c.bold("all jobs done"));
+        ? c.error(c.bold(`not complete: ${unfinished.map((module) => `${module.module}${module.why !== undefined ? ` - ${module.why}` : ""}`).join("; ")}`))
+        : c.success(c.bold("all jobs done"));
   console.log(`\n${verdict}`);
   for (const job of [...ended].reverse()) console.log(`  ${job.id} ${pulseName(job)}: ${job.status}`);
   if (ended.some((job) => job.status === "succeeded")) console.log(`\n${tryItCommand(plainFile)}`);

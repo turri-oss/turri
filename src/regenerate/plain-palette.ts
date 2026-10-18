@@ -27,42 +27,50 @@ interface Palette {
   muted: string;
 }
 
-/** On a dark surface - turri-dark's #0f0f0f, pi's dark ones. Every colour at least 7:1 on it, and 4.5:1 on the fills. */
+/**
+ * On a dark surface - turri-dark's abyss, #0a0f1a, pi's dark ones - in the design system's colours alone: a section's
+ * header in pink, a concept in neon, text in quotes or backticks in siesta tan. Every colour at least 7:1 on abyss and 4.8:1 on the blue whale fill
+ * of an added line; on the eggplant of a removed one, the design system's only fill of that warmth, its pinks and
+ * grauzone drop to 3.7:1.
+ */
 const DARK: Palette = {
   roles: {
-    section: { colour: "#fcd34d", bold: true },
-    concept: { colour: "#7dd3fc" },
-    link: { colour: "#c4b5fd", underline: true },
-    literal: { colour: "#fdba74" },
-    keyword: { colour: "#f9a8d4", bold: true },
-    module: { colour: "#5eead4" },
-    comment: { colour: "#b4bfcf", italic: true },
-    bullet: { colour: "#b4bfcf" },
+    section: { colour: "#ff7fa6", bold: true },
+    concept: { colour: "#5ce1e6" },
+    link: { colour: "#f4f7f9", underline: true },
+    literal: { colour: "#e9d8c8" },
+    keyword: { colour: "#f4f7f9", bold: true },
+    module: { colour: "#f4f7f9" },
+    comment: { colour: "#85a3b2", italic: true },
+    bullet: { colour: "#85a3b2" },
   },
-  added: "#86efac",
-  removed: "#fca5a5",
-  addedFill: "#1f4d2e",
-  removedFill: "#5c2323",
-  muted: "#808080",
+  added: "#5ce1e6",
+  removed: "#ff7fa6",
+  addedFill: "#1e3442",
+  removedFill: "#732553",
+  muted: "#85a3b2",
 };
 
-/** On a light surface - turri-light's white, pi's light ones. Every colour at least 7:1 on it, and 5:1 on the fills. */
+/**
+ * On a light surface - turri-light's white, pi's light ones - in the design system's deep colours, the only ones it has
+ * that read on white. Every colour at least 7:1 on white, and 5:1 on the neon hover and siesta tan fills.
+ */
 const LIGHT: Palette = {
   roles: {
-    section: { colour: "#0a1fd4", bold: true },
-    concept: { colour: "#155e75" },
-    link: { colour: "#6d28d9", underline: true },
-    literal: { colour: "#92400e" },
-    keyword: { colour: "#9d174d", bold: true },
-    module: { colour: "#065f46" },
-    comment: { colour: "#475569", italic: true },
-    bullet: { colour: "#475569" },
+    section: { colour: "#3e5a6b", bold: true },
+    concept: { colour: "#732553" },
+    link: { colour: "#1e3442", underline: true },
+    literal: { colour: "#1e3442" },
+    keyword: { colour: "#0a0f1a", bold: true },
+    module: { colour: "#1e3442" },
+    comment: { colour: "#3e5a6b", italic: true },
+    bullet: { colour: "#3e5a6b" },
   },
-  added: "#166534",
-  removed: "#991b1b",
-  addedFill: "#d3f5dc",
-  removedFill: "#fcd9d9",
-  muted: "#6b7280",
+  added: "#1e3442",
+  removed: "#732553",
+  addedFill: "#8eebee",
+  removedFill: "#e9d8c8",
+  muted: "#3e5a6b",
 };
 
 const rgb = (hex: string): [number, number, number] => {
@@ -91,18 +99,30 @@ const fillWith = (hex: string, text: string, truecolor: boolean): string => {
 };
 
 /**
- * Brand blue, for what is shown to do what its spec says - regen's ◆. Brand blue itself on a light surface, 9.72:1
- * on white; on a dark one, where it is illegible (1.97:1 on brand black - see docs/theming.md), its tint 55% of the way
- * to white, 7.34:1 on brand black.
+ * Neon, for what is shown to do what its spec says - regen's ◆: the design system's colour for what can be followed,
+ * 12.2:1 on abyss. On a light surface, where neon is illegible (1.6:1 on white), blue whale, 12.9:1 on white.
  */
-export const BRAND_BLUE = { light: "#0a1fd4", dark: "#919aec" };
+export const BRAND_NEON = { light: "#1e3442", dark: "#5ce1e6" };
 
-/** Text in brand blue on a theme - its tint on a dark one - in as many colours as the terminal has. */
-export function brandBlue(theme: { appearance?: "dark" | "light"; getColorMode?(): string }): (text: string) => string {
-  const colour = theme.appearance === "light" ? BRAND_BLUE.light : BRAND_BLUE.dark;
-  const truecolor = (theme.getColorMode?.() ?? "truecolor") === "truecolor";
-  return (text) => paintWith({ colour, bold: true }, text, truecolor);
-}
+/**
+ * Pink, the one pink thing in a view - the banner's wordmark: 6.54:1 on abyss. On a light surface, where pink is
+ * too pale (2.9:1 on white), eggplant, 9.9:1 on white.
+ */
+export const BRAND_PINK = { light: "#732553", dark: "#ff5c8d" };
+
+const brandInk =
+  (colours: { light: string; dark: string }) =>
+  (theme: { appearance?: "dark" | "light"; getColorMode?(): string }): ((text: string) => string) => {
+    const colour = theme.appearance === "light" ? colours.light : colours.dark;
+    const truecolor = (theme.getColorMode?.() ?? "truecolor") === "truecolor";
+    return (text) => paintWith({ colour, bold: true }, text, truecolor);
+  };
+
+/** Text in neon on a theme - blue whale on a light one - in as many colours as the terminal has. */
+export const brandNeon = brandInk(BRAND_NEON);
+
+/** Text in pink on a theme - eggplant on a light one - in as many colours as the terminal has. */
+export const brandPink = brandInk(BRAND_PINK);
 
 /** How a spec diff is painted on a theme: its palette by whether the theme is dark or light, in as many colours as the terminal has. */
 export function plainPaint(theme: { appearance?: "dark" | "light"; getColorMode?(): string }): DiffPaint {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { diffFiles, diffView, locateDiffLines, NOT_FOUND, type DiffPaint } from "../../src/regenerate/diff-view.ts";
-import { brandBlue, plainPaint } from "../../src/regenerate/plain-palette.ts";
+import { brandNeon, plainPaint } from "../../src/regenerate/plain-palette.ts";
 
 /**
  * Colours and fills as a terminal gets them - escape codes, which take no width - each its own code, so
@@ -215,7 +215,7 @@ describe("the colours a spec diff is painted in", () => {
     const dark = plainPaint({ appearance: "dark", getColorMode: () => "truecolor" });
     const row = dark.addedBand(`${dark.syntax("concept", ":User:")} and \x1b[0mafter a reset`);
     // Set at the start, and again after the reset, so the text after it is on the fill too.
-    expect(fills(row)).toEqual(["31,77,46", "31,77,46"]);
+    expect(fills(row)).toEqual(["30,52,66", "30,52,66"]);
     expect(row.endsWith("\x1b[49m")).toBe(true);
   });
 
@@ -245,9 +245,9 @@ describe("placing a removed line", () => {
   });
 });
 
-describe("brand blue", () => {
-  it("paints in brand blue on a light theme, and in its legible tint on a dark one, where brand blue is not", () => {
-    expect(brandBlue({ appearance: "light" })("⊨")).toContain("38;2;10;31;212");
-    expect(brandBlue({ appearance: "dark" })("⊨")).toContain("38;2;145;154;236");
+describe("brand neon", () => {
+  it("paints in neon on a dark theme, and in blue whale on a light one, where neon is illegible", () => {
+    expect(brandNeon({ appearance: "light" })("⊨")).toContain("38;2;30;52;66");
+    expect(brandNeon({ appearance: "dark" })("⊨")).toContain("38;2;92;225;230");
   });
 });

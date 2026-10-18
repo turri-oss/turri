@@ -1,4 +1,5 @@
 import { checkPlainTargets, formatCheckResults } from "./plain/check.ts";
+import { c } from "./module-report.ts";
 
 const USAGE = `usage: turri validate <file.plain | directory> [options]
 
@@ -10,12 +11,6 @@ required modules, and reports every error without rendering anything.
 
   PLAIN_TEMPLATE_DIRS    colon-separated template directories`;
 
-const c = {
-  dim: (s: string) => `\x1b[2m${s}\x1b[0m`,
-  bold: (s: string) => `\x1b[1m${s}\x1b[0m`,
-  green: (s: string) => `\x1b[32m${s}\x1b[0m`,
-  red: (s: string) => `\x1b[31m${s}\x1b[0m`,
-};
 
 const argv = process.argv.slice(2);
 const templateDirs: string[] = [];
@@ -46,14 +41,14 @@ if (json) {
   const output = formatCheckResults(results)
     .split("\n")
     .map((line) =>
-      line.startsWith("PASS") ? c.green(line) : line.startsWith("FAIL") ? c.red(line) : c.dim(line),
+      line.startsWith("PASS") ? c.success(line) : line.startsWith("FAIL") ? c.error(line) : c.dim(line),
     )
     .join("\n");
   console.log(output);
 
   const failed = results.filter((r) => !r.ok).length;
   console.log(
-    `\n${failed === 0 ? c.green(c.bold("all specs valid")) : c.red(c.bold(`${failed} of ${results.length} failed`))}`,
+    `\n${failed === 0 ? c.success(c.bold("all specs valid")) : c.error(c.bold(`${failed} of ${results.length} failed`))}`,
   );
 }
 

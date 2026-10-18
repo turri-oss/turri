@@ -3,8 +3,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 /**
- * turri's colours for what its command line prints - the ones its themes use (.pi/themes): on a dark terminal its lime
- * accent and green, on a light one its blue. Nothing is coloured when the output is not a terminal, or NO_COLOR is set;
+ * turri's colours for what its command line prints - the design system's, as its themes use them (.pi/themes): on a
+ * dark terminal neon and pink, on a light one blue whale and eggplant. Nothing is coloured when the output is not a terminal, or NO_COLOR is set;
  * a terminal without 24-bit colour gets the nearest of its sixteen.
  */
 
@@ -33,15 +33,15 @@ function paint(stream: NodeJS.WriteStream = process.stdout) {
   };
   return {
     /** turri's accent: what to look at - a heading, a choice's number, the command to run. */
-    accent: light ? ink("#0a1fd4", 34) : ink("#e0ff6e", 93),
+    accent: light ? ink("#1e3442", 34) : ink("#5ce1e6", 96),
     /** Done, and what was written. */
-    success: light ? ink("#223936", 32) : ink("#79fc96", 92),
+    success: light ? ink("#732553", 35) : ink("#ff5c8d", 95),
     /** What is wrong: what stops turri. */
-    error: light ? ink("#d00505", 31) : ink("#dd5353", 91),
+    error: ink("#ff7a3d", 33),
     /** What works, with limits. */
-    warning: ink("#dc6803", 33),
+    warning: ink("#ff7a3d", 33),
     /** What goes with it, and can be skimmed. */
-    muted: ink("#808080", 90),
+    muted: light ? ink("#3e5a6b", 90) : ink("#85a3b2", 37),
     bold: (text: string) => (on ? `\x1b[1m${text}\x1b[22m` : text),
   };
 }

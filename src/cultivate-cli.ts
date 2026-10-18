@@ -8,18 +8,11 @@ import { skillRunDir } from "./regenerate/paths.ts";
 import { loadSkill } from "./skill.ts";
 import { discoverSkills } from "./skills.ts";
 import { PACKAGE_ROOT } from "./environment.ts";
+import { c } from "./module-report.ts";
 
-const c = {
-  dim: (s: string) => `\x1b[2m${s}\x1b[0m`,
-  bold: (s: string) => `\x1b[1m${s}\x1b[0m`,
-  green: (s: string) => `\x1b[32m${s}\x1b[0m`,
-  red: (s: string) => `\x1b[31m${s}\x1b[0m`,
-  yellow: (s: string) => `\x1b[33m${s}\x1b[0m`,
-  cyan: (s: string) => `\x1b[36m${s}\x1b[0m`,
-};
 
 const reporter: Reporter = {
-  step: (name, attempt) => console.log(`\n${c.bold(c.cyan(`> step ${name}`))} ${c.dim(`attempt ${attempt}`)}`),
+  step: (name, attempt) => console.log(`\n${c.bold(c.accent(`> step ${name}`))} ${c.dim(`attempt ${attempt}`)}`),
   artifact: (path, body) => {
     console.log(c.dim(`  ${path}:`));
     for (const line of body.split("\n")) console.log(c.dim(`  | ${line}`));
@@ -27,31 +20,31 @@ const reporter: Reporter = {
   gate: (name, judges) =>
     console.log(
       judges === 0
-        ? `${c.bold(c.yellow(`> gate ${name}`))} ${c.dim("no artifact - failing without spending judges")}`
-        : `${c.bold(c.yellow(`> gate ${name}`))} ${c.dim(`${judges} independent judges`)}`,
+        ? `${c.bold(c.warning(`> gate ${name}`))} ${c.dim("no artifact - failing without spending judges")}`
+        : `${c.bold(c.warning(`> gate ${name}`))} ${c.dim(`${judges} independent judges`)}`,
     ),
   livePass: (step, scope, findings) =>
     console.log(
       findings === 0
         ? c.dim(`  review ${step}: ${scope} - clean`)
-        : `  ${c.yellow(`review ${step}`)}: ${scope} ${c.dim(`- ${findings} to fix`)}`,
+        : `  ${c.warning(`review ${step}`)}: ${scope} ${c.dim(`- ${findings} to fix`)}`,
     ),
   liveReview: (name, passes, findings) =>
     console.log(
       findings === 0
-        ? `${c.bold(c.yellow(`> gate ${name}`))} ${c.dim(`reviewer read along in ${passes} passes, nothing outstanding`)}`
-        : `${c.bold(c.yellow(`> gate ${name}`))} ${c.dim(`${findings} unresolved from the reviewer - failing without spending judges`)}`,
+        ? `${c.bold(c.warning(`> gate ${name}`))} ${c.dim(`reviewer read along in ${passes} passes, nothing outstanding`)}`
+        : `${c.bold(c.warning(`> gate ${name}`))} ${c.dim(`${findings} unresolved from the reviewer - failing without spending judges`)}`,
     ),
   judge: (index, model, verdict, violations) => {
-    const mark = verdict === "pass" ? c.green("pass") : c.red(verdict);
+    const mark = verdict === "pass" ? c.success("pass") : c.error(verdict);
     console.log(`  judge ${index + 1} ${c.dim(`(${model})`)}: ${mark}${violations ? c.dim(` (${violations})`) : ""}`);
   },
   outcome: (name, decision, critique) => {
     const colour: Record<Decision, (s: string) => string> = {
-      advance: c.green,
-      retry: c.yellow,
-      escalate: c.yellow,
-      abort: c.red,
+      advance: c.success,
+      retry: c.warning,
+      escalate: c.warning,
+      abort: c.error,
     };
     console.log(`  ${c.bold(colour[decision](decision))} ${c.dim(`<- gate ${name}`)}`);
     if (critique) for (const line of critique.split("\n")) console.log(c.dim(`    ${line}`));
@@ -91,7 +84,7 @@ async function main() {
         select: async (title, options, context) => {
           const rl = createInterface({ input: process.stdin, output: process.stdout });
           const list = options.map((option, i) => `  ${c.bold(String(i + 1))}. ${option}`).join("\n");
-          const reply = (await rl.question(`\n${context !== undefined ? `${context}\n\n` : ""}${c.bold(c.cyan("? "))}${title}\n${list}\n> `)).trim();
+          const reply = (await rl.question(`\n${context !== undefined ? `${context}\n\n` : ""}${c.bold(c.accent("? "))}${title}\n${list}\n> `)).trim();
           rl.close();
           const index = Number.parseInt(reply, 10);
           if (Number.isInteger(index) && index >= 1 && index <= options.length) return options[index - 1];
@@ -99,13 +92,13 @@ async function main() {
         },
         input: async (title, context) => {
           const rl = createInterface({ input: process.stdin, output: process.stdout });
-          const reply = (await rl.question(`\n${context !== undefined ? `${context}\n\n` : ""}${c.bold(c.cyan("? "))}${title}\n> `)).trim();
+          const reply = (await rl.question(`\n${context !== undefined ? `${context}\n\n` : ""}${c.bold(c.accent("? "))}${title}\n> `)).trim();
           rl.close();
           return reply === "" ? undefined : reply;
         },
       }),
     escalate: async ({ question, critique }) => {
-      console.log(`\n${c.bold(c.yellow("! human review required"))}`);
+      console.log(`\n${c.bold(c.warning("! human review required"))}`);
       console.log(c.dim(critique));
       const rl = createInterface({ input: process.stdin, output: process.stdout });
       const answer = (await rl.question(`${question} [y/N] `)).trim().toLowerCase();
@@ -115,7 +108,7 @@ async function main() {
   });
 
   console.log(
-    `\n${result.ok ? c.green(c.bold("run complete")) : c.red(c.bold("run aborted at a gate"))} ${c.dim(
+    `\n${result.ok ? c.success(c.bold("run complete")) : c.error(c.bold("run aborted at a gate"))} ${c.dim(
       `artifacts in ${relative(cwd, skillRunDir(cwd, skill.name))}`,
     )}`,
   );

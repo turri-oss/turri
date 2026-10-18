@@ -97,7 +97,7 @@ export function tabBar(pages: MarkedPage[], shown: MarkedPage | undefined, width
     const mark = regenerating ? `${spinner(now)} ` : page.stuck ? "! " : "";
     const text = `${mark}${tabName(page)}`;
     if (page === shown) return style.heading(`[${text}]`);
-    return regenerating ? style.accent(text) : page.stuck ? style.error(text) : style.muted(text);
+    return regenerating ? style.accent(text) : page.stuck ? needs(style)(text) : style.muted(text);
   };
   const tabs = pages.map(label);
   const at = Math.max(0, shown === undefined ? 0 : pages.indexOf(shown));
@@ -113,6 +113,9 @@ export function tabBar(pages: MarkedPage[], shown: MarkedPage | undefined, width
   }
   return truncateToWidth(lineOf(from, to), width, "…");
 }
+/** What needs the person - a stuck page, its `!` - in the warning colour: it waits on them, nothing is broken. */
+const needs = (style: TranscriptStyle) => style.warning ?? style.error;
+
 /** Strike text through. */
 const strike = (text: string) => `\x1b[9m${text}\x1b[29m`;
 
@@ -164,7 +167,7 @@ function rungGlyph(rung: Rung, style: TranscriptStyle, now: number): string {
   if (rung === "validating") return green(spinner(now));
   if (rung === "regenerated") return green(LADDER.regenerated);
   if (rung === "conform") return green(LADDER.conform);
-  if (rung === "needsYou") return style.error(LADDER.needsYou);
+  if (rung === "needsYou") return needs(style)(LADDER.needsYou);
   if (rung === "takenOut") return style.error(LADDER.takenOut);
   if (rung === "toRegenerate") return style.muted(LADDER.toRegenerate);
   return " ";
@@ -518,7 +521,7 @@ export function specMapLines(
     // The first item that needs the person says what for, and how to go about it - opened or closed.
     if (page.stuck && !toldWhy && rungOf(item) === "needsYou") {
       toldWhy = true;
-      for (const line of wrapped(needsLine(page), width, style.error)) add(line, mark);
+      for (const line of wrapped(needsLine(page), width, needs(style))) add(line, mark);
     }
     if (state.open.has(row.key)) {
       for (const detail of detailLines(item, width, style)) add(detail, mark);
@@ -542,7 +545,8 @@ export function specMapLines(
 function paintOf(mark: LineMark, style: TranscriptStyle): (text: string) => string {
   if (mark === "built") return style.success ?? style.added;
   if (mark === "regenerating" || mark === "planning") return style.accent;
-  if (mark === "stuck" || mark === "removed") return style.error;
+  if (mark === "stuck") return needs(style);
+  if (mark === "removed") return style.error;
   return style.muted;
 }
 
@@ -574,7 +578,7 @@ export function specMapHeader(page: MarkedPage, width: number, style: Transcript
   const strip = progressStrip(page, style);
   const count = total > 0 ? `${built} of ${total} ${total === 1 ? "functionality" : "functionalities"} built · ` : "";
   // Short, never cut off: what for, and how, is under the first `!`.
-  const status = page.stuck ? style.error(`${LADDER.needsYou} needs you`) : page.status;
+  const status = page.stuck ? needs(style)(`${LADDER.needsYou} needs you`) : page.status;
   // The module's file heads its column, under this line.
   return truncateToWidth(`${style.heading("regen")}${strip !== "" ? `  ${strip}` : ""}  ${count}${status}${waiting}`, width);
 }

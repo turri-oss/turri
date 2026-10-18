@@ -32,7 +32,7 @@ import { describeChoices, describeResolution, type ModelChoices, modelFor, type 
 import { checkPlainFile, checkPlainTargets, formatCheckResults } from "./plain/check.ts";
 import { whyFailed } from "./regenerate/diagnose-job.ts";
 import { createWorkLoop, describeModules, isUpToDate, previewJobs, type WorkLoop } from "./regenerate/loop.ts";
-import { brandBlue, plainPaint } from "./regenerate/plain-palette.ts";
+import { brandNeon, brandPink, plainPaint } from "./regenerate/plain-palette.ts";
 import { createJobPanel, didNotPass, keyPressed, PANEL_KEY, spinner } from "./regenerate/job-panel.ts";
 import { clickToFocus, dockedWidth, narrowChat, shade, shadeChat } from "./regenerate/panel-dock.ts";
 import { overPictureRow, PICTURE_AT } from "./picture-row.ts";
@@ -1813,8 +1813,8 @@ function registerJobTools(pi: ExtensionAPI, jobs: JobRegistry, cwd: string) {
             removed: (text) => theme.fg("toolDiffRemoved", text),
             // A spec diff's ***plain highlighted as plyn highlights it, and its added and removed lines filled.
             diff: plainPaint(theme),
-            // What conformance tests show does what its spec says: brand blue.
-            conforms: brandBlue(theme),
+            // What conformance tests show does what its spec says: neon.
+            conforms: brandNeon(theme),
           },
           back,
           close,
@@ -2537,7 +2537,7 @@ function registerBranding(
     if (data === undefined) return undefined;
 
     const lines = [
-      `${theme.fg("accent", "turri")}  ${theme.fg("muted", `v${data.version}`)}` +
+      `${brandPink(theme)("turri")}  ${theme.fg("muted", `v${data.version}`)}` +
         (data.commit !== undefined ? theme.fg("dim", `  from a clone, ${data.commit}${data.changed ? " with changes" : ""}`) : ""),
       theme.fg("text", "regenerative software - the code is regenerated from the spec"),
       theme.fg(
