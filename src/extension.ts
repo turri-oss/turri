@@ -7,7 +7,7 @@ import { conversationCommand, conversationSettled, conversationWriting } from ".
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import type { OverlayHandle, TUI } from "@earendil-works/pi-tui";
-import { allocateImageId, Box, type Component, getCapabilities, getPngDimensions, type ImageDimensions, isKeyRelease, isKeyRepeat, matchesKey, renderImage, Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { allocateImageId, Box, type Component, getCapabilities, getPngDimensions, type ImageDimensions, isKeyRelease, isKeyRepeat, matchesKey, renderImage, Text, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { CODING_MODEL_ENV } from "./chat-models.ts";
@@ -33,6 +33,7 @@ import { checkPlainFile, checkPlainTargets, formatCheckResults } from "./plain/c
 import { whyFailed } from "./regenerate/diagnose-job.ts";
 import { createWorkLoop, describeModules, isUpToDate, previewJobs, type WorkLoop } from "./regenerate/loop.ts";
 import { brandNeon, brandPink, plainPaint } from "./regenerate/plain-palette.ts";
+import { halfBlocks, JELLYFISH_FRAME_MS, JELLYFISH_TEXT_FRAMES } from "./jellyfish.ts";
 import { createJobPanel, didNotPass, keyPressed, PANEL_KEY, spinner } from "./regenerate/job-panel.ts";
 import { clickToFocus, dockedWidth, narrowChat, shade, shadeChat } from "./regenerate/panel-dock.ts";
 import { overPictureRow, PICTURE_AT } from "./picture-row.ts";
@@ -50,7 +51,7 @@ import { inheritProviders, inheritThinkingLevel } from "./pi.ts";
 import { beginCapture, captureConsole, describeCaptured, dropNoise } from "./quiet.ts";
 import { loadRules, renderRulesBlock } from "./rules.ts";
 import { registerTurriConfig } from "./config-command.ts";
-import { describeStdlib, stdlibStackCount } from "./stdlib.ts";
+import { describeStdlib } from "./stdlib.ts";
 import { peekKeyListener, runAsk, type AskUser, type AskUserRequest } from "./ask.ts";
 import { QuestionDialog } from "./question-dialog.ts";
 import { registerStacks } from "./stacks.ts";
@@ -421,7 +422,7 @@ export default function (pi: ExtensionAPI) {
   });
   inheritProviders(() => conversationModels);
 
-  registerBranding(pi, rules.length, discoveredSkills);
+  registerBranding(pi, discoveredSkills);
   registerInterviewLog(pi);
   registerJobTools(pi, jobs, cwd);
   registerCheckPlain(pi, cwd);
@@ -2505,11 +2506,7 @@ export function chatRulesBlock(rules = loadRules(join(PACKAGE_ROOT, "genome", "r
   return renderRulesBlock(rules);
 }
 
-function registerBranding(
-  pi: ExtensionAPI,
-  ruleCount: number,
-  skills: SkillCatalogue,
-) {
+function registerBranding(pi: ExtensionAPI, skills: SkillCatalogue) {
   pi.registerCommand("stdlib", {
     description: "List the ***plain standard library: the stacks a spec can import instead of writing its implementation reqs.",
     handler: async (_args, ctx) => {
@@ -2524,13 +2521,8 @@ function registerBranding(
           /** The commit, when turri runs from a clone - and whether the clone has changes on it. */
           commit?: string;
           changed?: boolean;
-          rules: number;
-          skills: number;
-          /** Of them, the project's own. */
-          projectSkills?: number;
+          /** How many skills failed to load. */
           pending: number;
-          stdlib?: number;
-          cwd: string;
           sandbox?: ReturnType<typeof sandboxSummary>;
         }
       | undefined;
@@ -2539,25 +2531,16 @@ function registerBranding(
     const lines = [
       `${brandPink(theme)("turri")}  ${theme.fg("muted", `v${data.version}`)}` +
         (data.commit !== undefined ? theme.fg("dim", `  from a clone, ${data.commit}${data.changed ? " with changes" : ""}`) : ""),
-      theme.fg("text", "regenerative software - the code is regenerated from the spec"),
-      theme.fg(
-        "muted",
-        `${data.rules} rules · ${data.skills} skill${data.skills === 1 ? "" : "s"}` +
-          (data.projectSkills !== undefined && data.projectSkills > 0 ? ` (${data.projectSkills} the project's)` : "") +
-          (data.stdlib !== undefined && data.stdlib > 0 ? ` · ${data.stdlib} stdlib stacks (/stdlib)` : "") +
-          (data.pending > 0 ? theme.fg("warning", `  (${data.pending} failed to load)`) : ""),
-      ),
+      theme.fg("text", "the first coding agent with the power of regenerative software"),
       // Where the settings are changed, without leaving the chat.
       theme.fg("muted", "configure with /turri-config"),
-      theme.fg("dim", data.cwd),
-      // Where every command an agent runs will run - or that none can.
-      ...(data.sandbox
-        ? [theme.fg(data.sandbox.level === "ok" ? "dim" : data.sandbox.level === "limited" ? "warning" : "error", data.sandbox.text)]
-        : []),
+      // Only what is wrong: skills that did not load, and agents' commands less fenced than they should be.
+      ...(data.pending > 0 ? [theme.fg("warning", `${data.pending} skill${data.pending === 1 ? "" : "s"} failed to load`)] : []),
+      ...(data.sandbox !== undefined && data.sandbox.level !== "ok" ? [theme.fg(data.sandbox.level === "limited" ? "warning" : "error", data.sandbox.text)] : []),
     ];
     // The jellyfish turri is named after, in ink for the theme's background: a picture where the
     // terminal shows images, drawn in text where it does not.
-    return new Banner(lines, (rule) => theme.fg("borderMuted", rule), jellyfishArt(theme.appearance, (art) => theme.fg("text", art)));
+    return new Banner(lines, (rule) => theme.fg("borderMuted", rule), jellyfishArt(theme.appearance, (theme.getColorMode?.() ?? "truecolor") === "truecolor"));
   });
 
   pi.on("session_start", (_event, ctx) => {
@@ -2568,12 +2551,7 @@ function registerBranding(
         version: identity.version ?? "0.0.0",
         commit: identity.git_commit?.slice(0, 7),
         changed: identity.git_dirty === true,
-        rules: ruleCount,
-        skills: skills.skills.length,
-        projectSkills: skills.skills.filter((skill) => skill.origin !== "turri").length,
         pending: skills.pending.length,
-        stdlib: stdlibStackCount(),
-        cwd: ctx.cwd,
         sandbox: sandboxSummary(),
       });
     } catch {
@@ -2582,11 +2560,9 @@ function registerBranding(
   });
 }
 
-/** How many rows the banner's jellyfish takes: taller than the lines beside it. */
-const JELLYFISH_ROWS = 13;
+/** How many rows the banner's jellyfish takes at most: as tall as the one drawn in text. */
+const JELLYFISH_ROWS = 10;
 
-/** How long each frame of the jellyfish shows. */
-const JELLYFISH_FRAME_MS = 250;
 
 /** Which frame of the jellyfish every banner shows, moved on by `animateJellyfish`. */
 let jellyfishFrame = 0;
@@ -2722,8 +2698,8 @@ class Banner implements Component {
 }
 
 /**
- * The jellyfish as the banner draws it: frames of a picture, for a terminal that shows images, or one
- * drawn in text (`assets/jellyfish/fallback.txt`), for one that does not.
+ * The jellyfish as the banner draws it: frames of a picture, for a terminal that shows images, or the same
+ * pixels drawn in half blocks (`src/jellyfish.ts`), for one that does not.
  */
 type JellyfishArt =
   | { kind: "image"; frames: string[]; dimensions: ImageDimensions }
@@ -2732,23 +2708,16 @@ type JellyfishArt =
 const jellyfishFrameCache = new Map<string, string[]>();
 
 /**
- * The banner's jellyfish for this terminal: where it shows images, the picture's frames spread evenly
- * over the video, light ink for a dark background and dark ink for a light one; where it does not, the
- * jellyfish drawn in text, in `ink`. None when they cannot be read.
+ * The banner's jellyfish for this terminal: where it shows images, the picture's frames
+ * (scripts/jellyfish-frames.mjs writes them), in the colours for the theme's background; where it does not, the
+ * small one in half blocks. None when the pictures cannot be read.
  */
-function jellyfishArt(appearance: "dark" | "light", ink: (text: string) => string): JellyfishArt | undefined {
+function jellyfishArt(appearance: "dark" | "light", truecolor: boolean): JellyfishArt | undefined {
   const dir = join(PACKAGE_ROOT, "assets", "jellyfish");
   try {
     if (getCapabilities().images === null) {
-      // Its frames one after another, each ended by a line of "---" (scripts/jellyfish-frames.mjs writes them).
-      const drawn = readFileSync(join(dir, "fallback.txt"), "utf8")
-        .split(/^---$/m)
-        .map((frame) => frame.replace(/^\n+|\n+$/g, "").split("\n"))
-        .filter((frame) => frame.some((line) => line.trim() !== ""));
-      if (drawn.length === 0) return undefined;
-      const columns = Math.max(...drawn.flat().map((line) => visibleWidth(line)));
-      const rows = Math.max(...drawn.map((frame) => frame.length));
-      return { kind: "text", frames: drawn.map((frame) => frame.map((line) => ink(line.padEnd(columns)))), columns, rows };
+      const frames = JELLYFISH_TEXT_FRAMES.map((pixels) => halfBlocks(pixels, appearance, truecolor));
+      return { kind: "text", frames, columns: JELLYFISH_TEXT_FRAMES[0]![0]!.length, rows: frames[0]!.length };
     }
     let frames = jellyfishFrameCache.get(appearance);
     if (frames === undefined) {

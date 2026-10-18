@@ -25,14 +25,14 @@ Both themes, the command line's colours, the spec diff's, the banner's jellyfish
 | lines | `#22344a` | rules, dividers, frames: `borderMuted`, `mdHr` |
 | path | `#3e5a6b` | the editor's border, what is dim: `dim`, line numbers |
 | grauzone | `#85a3b2` | body text, and what can be skimmed: `text`, `muted` |
-| white | `#f4f7f9` | headings, tool titles, what you typed, the jellyfish |
+| white | `#f4f7f9` | headings, tool titles, what you typed, the jellyfish's shine |
 | siesta tan | `#e9d8c8` | inline code, \*\*\*plain's text in quotes or backticks |
 | eggplant | `#732553` | a removed line's fill in a spec diff |
 | neon | `#5ce1e6` | links, focus, the selection, section labels, \*\*\*plain's concepts in a spec diff: `accent`, `mdLink`, regen's `◆` |
 | neon hover | `#8eebee` | types in code, an added line's fill in a light theme's spec diff |
-| pink | `#ff5c8d` | the wordmark, and what is done - its `✓`, the spec map's `◇` and `◆`: `success` |
+| pink | `#ff5c8d` | the wordmark, the jellyfish's bell, and what is done - its `✓`, the spec map's `◇` and `◆`: `success` |
 | pink hover | `#ff7fa6` | \*\*\*plain's section headers, a removed line's `-`, keywords in code |
-| orange | `#ff7a3d` | the `$` of bash mode, and everything that asks for you - what failed (`✗`), what works with limits, what needs you (the spec map's `!`): `error`, `warning` |
+| orange | `#ff7a3d` | the jellyfish's gut, the `$` of bash mode, and everything that asks for you - what failed (`✗`), what works with limits, what needs you (the spec map's `!`): `error`, `warning` |
 
 The design system keeps pink for the one thing to press and orange for the `$` prompt alone. A terminal has no buttons, but it needs status colours, so pink carries what is done and orange everything that asks for you - what failed, what works with limits, what waits on you - the mark (`✗`, `!`, `■`) telling them apart. The palette has no red.
 

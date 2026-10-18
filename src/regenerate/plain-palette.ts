@@ -79,7 +79,7 @@ const rgb = (hex: string): [number, number, number] => {
 };
 
 /** A colour's SGR parameters: 24-bit, or the nearest of the 256 where the terminal has no more. */
-function sgr(hex: string, background: boolean, truecolor: boolean): string {
+export function sgr(hex: string, background: boolean, truecolor: boolean): string {
   const [r, g, b] = rgb(hex);
   if (truecolor) return `${background ? 48 : 38};2;${r};${g};${b}`;
   const step = (value: number) => (value < 48 ? 0 : value < 115 ? 1 : Math.min(5, Math.floor((value - 35) / 40)));
