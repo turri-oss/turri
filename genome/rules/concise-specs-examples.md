@@ -208,8 +208,7 @@ GOOD:
 - :ConformanceTests: mock every external HTTP call.
 ```
 
-Every hedge hands the renderer a decision the spec was supposed to make. A spec states one
-behavior.
+Every hedge hands the renderer a decision the spec was supposed to make. A spec states one behavior.
 
 ## Ornate vocabulary
 
@@ -427,5 +426,4 @@ GOOD:
   - :ProjectList: contains exactly one :Project:, named `Apollo`.
 ```
 
-One narrated paragraph becomes an ordered set of checkable steps, and "everything worked as
-expected" becomes an assertion.
+One narrated paragraph becomes an ordered set of checkable steps, and "everything worked as expected" becomes an assertion.

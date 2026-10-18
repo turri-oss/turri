@@ -1,20 +1,13 @@
 # turri documentation
 
-turri implements regenerative software: the \*\*\*plain specs are the durable definition of
-what a system does, and the code is generated from them, validated against them, and regenerated
-as they change. The [project README](../README.md) says why, and how to install and start; these
-pages go into each part.
+turri implements regenerative software: the \*\*\*plain specs are the durable definition of what a system does, and the code is generated from them, validated against them, and regenerated as they change. The [project README](../README.md) says why, and how to install and start; these pages go into each part.
 
 ## Start here
 
-1. [Installation](installation.md) - get a machine ready: `turri doctor`, and what turri needs of
-   this machine.
-2. [Using turri](using.md) - the conversation, the skills and tools, background jobs and
-   their logs, choosing the model that renders, the command line.
-3. [Authoring \*\*\*plain](authoring-plain.md) - writing the specs: what a spec is made of, the
-   authoring rules, the skills that write and fix specs.
-4. [Rendering](regenerating.md) - turning the specs into code: what each build does, in which order,
-   and what has to pass before it moves on.
+1. [Installation](installation.md) - get a machine ready: `turri doctor`, and what turri needs of this machine.
+2. [Using turri](using.md) - the conversation, the skills and tools, background jobs and their logs, choosing the model that renders, the command line.
+3. [Authoring \*\*\*plain](authoring-plain.md) - writing the specs: what a spec is made of, the authoring rules, the skills that write and fix specs.
+4. [Rendering](regenerating.md) - turning the specs into code: what each build does, in which order, and what has to pass before it moves on.
 
 ## By question
 

@@ -2,14 +2,7 @@
 
 Gather the technical stack **and** the project's structure/architecture. This phase affects only `***implementation reqs***`, and ends with the unit testing script every build needs — the rest of testing comes later. Run the core loop from `SKILL.md` for each topic below, in order: ask, then write the requirement into the `.plain` file with the ordinary file tools. Nothing is built in this phase. When the user has no preference, propose a sensible default that fits earlier answers and ask them to confirm.
 
-The questioning level caps this phase's questions (light 3, medium 5, thorough 10, or best
-judgement - `SKILL.md`, "How many questions"), and so sets how broad each is. Every level reaches
-all the topics, in order: light in a few broad questions - the stack, say, then storage and
-outside services together, then the remaining constraints, each with what fits the brief
-proposed; thorough a topic or two a question, with follow-ups. Every topic left unasked once the
-questions are over gets the default that fits the intent brief and the answers so far, written as a
-requirement like any other and named as your choice in the closing summary. The unit testing script
-is written whatever the level.
+The questioning level caps this phase's questions (light 3, medium 5, thorough 10, or best judgement - `SKILL.md`, "How many questions"), and so sets how broad each is. Every level reaches all the topics, in order: light in a few broad questions - the stack, say, then storage and outside services together, then the remaining constraints, each with what fits the brief proposed; thorough a topic or two a question, with follow-ups. Every topic left unasked once the questions are over gets the default that fits the intent brief and the answers so far, written as a requirement like any other and named as your choice in the closing summary. The unit testing script is written whatever the level.
 
 ## Author target for this phase
 
@@ -22,27 +15,12 @@ Do **not** add `***test reqs***` or `***acceptance tests***` in this phase — t
 
 ## First: a stack from the standard library
 
-Before the topics, settle what kind of software each module is - a backend, a frontend, a
-command-line tool, a library - and offer the standard library's stacks for that kind (the stdlib
-rule, in `<plain-rules>`, lists them) that this machine can build: `<toolchains on this machine>`, in
-your instructions, says which languages it can build now. The agents use its toolchains and install
-none, so a stack in a language it lacks stops at its first build. Ask with `ask_user`: those stacks
-as options, the one that fits earlier answers first, and "Something else…" for a stack of the user's
-own. A stack the user names in a language the machine lacks: say what to install first and that
-`turri doctor` checks it, and ask whether to wait for that or choose another.
+Before the topics, settle what kind of software each module is - a backend, a frontend, a command-line tool, a library - and offer the standard library's stacks for that kind (the stdlib rule, in `<plain-rules>`, lists them) that this machine can build: `<toolchains on this machine>`, in your instructions, says which languages it can build now. The agents use its toolchains and install none, so a stack in a language it lacks stops at its first build. Ask with `ask_user`: those stacks as options, the one that fits earlier answers first, and "Something else…" for a stack of the user's own. A stack the user names in a language the machine lacks: say what to install first and that `turri doctor` checks it, and ask whether to wait for that or choose another.
 
-- **A stack from the standard library.** Import it into the module's frontmatter as
-  `stdlib/<kind>/<stack>`, and read the templates it brings: the stack, its `stdlib/lang/<language>`
-  and its kind's `common` - the folder is in the stdlib rule. They settle topics 1, 2 and 5, error handling and
-  logging in topic 6, and the unit-test framework in topic 8: do not ask about those, and write no
-  requirement that restates them. Say in one line what the stack settles - its language, framework,
-  layout, how it reports errors and logs - so the user knows what they chose. Then walk only topics
-  3, 4, 6 (what the stack leaves open), 7, and the unit testing script in 8.
-- **Something else.** Walk every topic below. When the language is one the standard library has, its
-  `stdlib/lang/<language>` template can still be imported for the language-wide conventions.
+- **A stack from the standard library.** Import it into the module's frontmatter as `stdlib/<kind>/<stack>`, and read the templates it brings: the stack, its `stdlib/lang/<language>` and its kind's `common` - the folder is in the stdlib rule. They settle topics 1, 2 and 5, error handling and logging in topic 6, and the unit-test framework in topic 8: do not ask about those, and write no requirement that restates them. Say in one line what the stack settles - its language, framework, layout, how it reports errors and logs - so the user knows what they chose. Then walk only topics 3, 4, 6 (what the stack leaves open), 7, and the unit testing script in 8.
+- **Something else.** Walk every topic below. When the language is one the standard library has, its `stdlib/lang/<language>` template can still be imported for the language-wide conventions.
 
-A user who wants something the stack settles done differently - another framework, another layout -
-has chosen something else: an import cannot be taken back in part.
+A user who wants something the stack settles done differently - another framework, another layout - has chosen something else: an import cannot be taken back in part.
 
 ## Topics (in order)
 

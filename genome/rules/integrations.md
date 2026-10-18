@@ -63,8 +63,7 @@ Integrations exist to talk to a real third-party (or internal) API. Their `:Conf
 - The integration's `:ConformanceTests:` **must** make real network calls to the provider (typically a sandbox / staging environment, occasionally production for read-only paths). Recorded responses may back unit tests, but they are **not** a substitute for live conformance
 - The only exceptions are paths that **cannot** be exercised live safely:
   - **Rate-limit (429) tests** — must not exhaust the live quota; use a local mock for that specific endpoint
-  - **Deliberately destructive failure modes** (forced 5xx) the provider doesn't let you trigger — same; mock the specific endpoint
-  Document each exception explicitly in `***test reqs***`; everything else is live by default
+  - **Deliberately destructive failure modes** (forced 5xx) the provider doesn't let you trigger — same; mock the specific endpoint Document each exception explicitly in `***test reqs***`; everything else is live by default
 
 ### Secrets come from the environment
 

@@ -4,10 +4,7 @@ description: Rules for authoring the two test scripts that an embedded ***plain 
 
 # Rules for embedded-integration test scripts
 
-When an embedded integration ships its two `test_scripts/` (unit, conformance), these
-rules apply on top of the contracts in the corresponding
-`implement-*-testing-script` skills. `project-model.md` covers the rendering and
-testing workflow.
+When an embedded integration ships its two `test_scripts/` (unit, conformance), these rules apply on top of the contracts in the corresponding `implement-*-testing-script` skills. `project-model.md` covers the rendering and testing workflow.
 
 ## Staging model (read this first)
 

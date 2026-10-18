@@ -5,48 +5,26 @@ npm run typecheck   # types
 npm test            # the whole suite, about a minute
 ```
 
-The suite runs the projects' testing scripts on this machine, as turri does. The fixture scripts stage each run in a
-folder of their own, as test files running side by side would otherwise share one.
+The suite runs the projects' testing scripts on this machine, as turri does. The fixture scripts stage each run in a folder of their own, as test files running side by side would otherwise share one.
 
 ## Mutation testing
 
-`npm run mutation` runs [Stryker](https://stryker-mutator.io) over the core of regeneration - the parts in
-`stryker.config.mjs` - one part at a time, each part's report in `reports/mutation/<part>/`. A part with a report is
-skipped, so a run that is stopped goes on from the part it was in; `npm run mutation -- <part>` runs one again, and
-`npm run mutation -- --summary` sums up the reports there are. It takes hours: each part runs the suite once to find
-which tests reach which mutant (`vitest.stryker.config.ts`, the suite without the files that run real commands behind the sandbox), then each
-mutant against those tests. `scripts/mutation.mjs` sets two things in Stryker's vitest runner the suite needs - forked
-workers, and a test-name filter that matches vitest 5's names - again after every `npm install`.
+`npm run mutation` runs [Stryker](https://stryker-mutator.io) over the core of regeneration - the parts in `stryker.config.mjs` - one part at a time, each part's report in `reports/mutation/<part>/`. A part with a report is skipped, so a run that is stopped goes on from the part it was in; `npm run mutation -- <part>` runs one again, and `npm run mutation -- --summary` sums up the reports there are. It takes hours: each part runs the suite once to find which tests reach which mutant (`vitest.stryker.config.ts`, the suite without the files that run real commands behind the sandbox), then each mutant against those tests. `scripts/mutation.mjs` sets two things in Stryker's vitest runner the suite needs - forked workers, and a test-name filter that matches vitest 5's names - again after every `npm install`.
 
-The `mutation` workflow (`.github/workflows/mutation.yml`) runs it on GitHub, started by hand: Actions, mutation, Run
-workflow. It takes the parts to run, space-separated (empty for every part), each a job of its own side by side, on
-four cores (`TURRI_MUTATION_CONCURRENCY`; six here). Each part's `mutation.html` and `mutation.json` are uploaded as an
-artifact, `mutation-<part>`, and summed up on the run's page. Stryker's incremental file is cached from run to run, so
-a run tests again only the mutants whose code or tests changed; tick `fresh` to test every one again.
+The `mutation` workflow (`.github/workflows/mutation.yml`) runs it on GitHub, started by hand: Actions, mutation, Run workflow. It takes the parts to run, space-separated (empty for every part), each a job of its own side by side, on four cores (`TURRI_MUTATION_CONCURRENCY`; six here). Each part's `mutation.html` and `mutation.json` are uploaded as an artifact, `mutation-<part>`, and summed up on the run's page. Stryker's incremental file is cached from run to run, so a run tests again only the mutants whose code or tests changed; tick `fresh` to test every one again.
 
-Working on turri itself, `npm link` points the global `turri` at this clone, so edits
-take effect immediately. `npm run chat` starts pi with the extension loaded from `src/`.
+Working on turri itself, `npm link` points the global `turri` at this clone, so edits take effect immediately. `npm run chat` starts pi with the extension loaded from `src/`.
 
-The package on npm is built: Node runs no `.ts` file inside a `node_modules`, so `npm run build` (`scripts/build.mjs`,
-over `tsconfig.build.json`) compiles `src/` into `dist/`, file for file - each file as deep as its source, so it finds
-`genome/`, `stdlib/` and `.pi/` the same way - with its imports' `.ts` rewritten to `.js`, and copies the other files
-in `src/` beside them. `npm pack` and `npm publish` run it first (`prepack`), and the package holds `dist/`, not
-`src/`. `bin/turri.mjs` runs `src/cli.ts` where there is one and `dist/cli.js` otherwise; `cli.ts` starts pi with
-the launcher and extension beside itself, whichever they are. To try the package as users get it:
-`npm pack`, then `npm install -g ./turri-dev-cli-<version>.tgz`.
+The package on npm is built: Node runs no `.ts` file inside a `node_modules`, so `npm run build` (`scripts/build.mjs`, over `tsconfig.build.json`) compiles `src/` into `dist/`, file for file - each file as deep as its source, so it finds `genome/`, `stdlib/` and `.pi/` the same way - with its imports' `.ts` rewritten to `.js`, and copies the other files in `src/` beside them. `npm pack` and `npm publish` run it first (`prepack`), and the package holds `dist/`, not `src/`. `bin/turri.mjs` runs `src/cli.ts` where there is one and `dist/cli.js` otherwise; `cli.ts` starts pi with the launcher and extension beside itself, whichever they are. To try the package as users get it: `npm pack`, then `npm install -g ./turri-dev-cli-<version>.tgz`.
 
 ## Publishing
 
 `.github/workflows/publish.yml` publishes `@turri-dev/cli`, after the typecheck and the suite pass:
 
-- every push or merge into `main` publishes a prerelease under the `next` dist-tag - the patch after the `latest` on
-  npm, with the commit's sha: `0.1.2-next.<sha>`. `latest` is not touched; `npm install -g @turri-dev/cli@next` gets it.
-- a GitHub Release tagged `vX.Y.Z`, published by hand, publishes `X.Y.Z` as `latest` (or under `next`, if the release
-  is marked a pre-release). The tag is the version: it is set in the runner and never committed, so `package.json`'s
-  version on `main` is stale by design.
+- every push or merge into `main` publishes a prerelease under the `next` dist-tag - the patch after the `latest` on npm, with the commit's sha: `0.1.2-next.<sha>`. `latest` is not touched; `npm install -g @turri-dev/cli@next` gets it.
+- a GitHub Release tagged `vX.Y.Z`, published by hand, publishes `X.Y.Z` as `latest` (or under `next`, if the release is marked a pre-release). The tag is the version: it is set in the runner and never committed, so `package.json`'s version on `main` is stale by design.
 
-The workflow signs in to npm with npm's trusted publishing (OIDC), not a token: the package's settings on npmjs.com
-trust `turri-oss/turri`, the workflow `publish.yml` and the environment `npm`. Renaming the workflow file breaks it.
+The workflow signs in to npm with npm's trusted publishing (OIDC), not a token: the package's settings on npmjs.com trust `turri-oss/turri`, the workflow `publish.yml` and the environment `npm`. Renaming the workflow file breaks it.
 
 ## Layout
 
@@ -82,14 +60,8 @@ trust `turri-oss/turri`, the workflow `publish.yml` and the environment `npm`. R
 
 ## Known edges
 
-- Judges default to the executor's model. Real separation wants a different provider - set
-  `model:` on the gate. An unconfigured model falls back to the executor's with a note rather than
-  failing the run.
-- The executor keeps one session across steps and retries, so context builds up with attempts. Long
-  skills want compaction or a session per step.
-- A gate's escalation lives in memory (LangGraph's `MemorySaver`): it must be answered in the same
-  run.
-- The gate machinery has no automated coverage; see
-  [trying the gate semantics](skills-and-gates.md#trying-the-gate-semantics).
-- Jobs live in memory: there is no resuming a job after pi exits. The work itself is on disk, so a
-  killed job leaves a partial build rather than nothing.
+- Judges default to the executor's model. Real separation wants a different provider - set `model:` on the gate. An unconfigured model falls back to the executor's with a note rather than failing the run.
+- The executor keeps one session across steps and retries, so context builds up with attempts. Long skills want compaction or a session per step.
+- A gate's escalation lives in memory (LangGraph's `MemorySaver`): it must be answered in the same run.
+- The gate machinery has no automated coverage; see [trying the gate semantics](skills-and-gates.md#trying-the-gate-semantics).
+- Jobs live in memory: there is no resuming a job after pi exits. The work itself is on disk, so a killed job leaves a partial build rather than nothing.

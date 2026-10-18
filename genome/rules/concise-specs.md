@@ -27,8 +27,7 @@ Do not write:
 - Anything about work the spec is not about ("no changes to the existing UI")
 - Meta-commentary about the spec itself ("this spec is intentionally small", "as described above")
 
-Worked pairs for every item above — padding, rationale, defaults, technology behavior,
-meta-commentary, and duplication of an `import` — are in `concise-specs-examples.md`.
+Worked pairs for every item above — padding, rationale, defaults, technology behavior, meta-commentary, and duplication of an `import` — are in `concise-specs-examples.md`.
 
 ## Use plain words
 

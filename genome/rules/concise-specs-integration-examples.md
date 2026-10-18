@@ -221,9 +221,7 @@ GOOD:
 - :ProviderClient: uses :AuthTokenManager: to cache and refresh :AccessToken:.
 ```
 
-The grant type, endpoint, body encoding, and response fields are in the security scheme. What
-survives is the policy the scheme does not describe: the env-var names, the refresh margin, the
-retry-once-on-401 rule, and the concurrency behavior.
+The grant type, endpoint, body encoding, and response fields are in the security scheme. What survives is the policy the scheme does not describe: the env-var names, the refresh margin, the retry-once-on-401 rule, and the concurrency behavior.
 
 Almost all of it is implementation reqs — acquisition, caching, and refresh are machinery a caller never sees. Not all of it, though, and the rewrite has to name a component to say the rest. :ProviderAuth: performs the grant and has no observable surface; :AuthTokenManager: is what consumes it and hands tokens to :ProviderClient:, so it is the concept a functional spec can take as its subject. Without that consumer the section is left with a subject-less bullet, which `func-specs.md` rules out — and that one spec is the only line here a live conformance test can assert.
 
@@ -265,6 +263,4 @@ GOOD:
   - The `429` and forced-`5xx` paths mock that endpoint alone; every other path is live.
 ```
 
-A policy that holds for every endpoint is stated once. Enumerate an endpoint only where it departs
-from the policy — here, the two paths that cannot be exercised live safely, which
-`integrations.md` requires to be documented explicitly.
+A policy that holds for every endpoint is stated once. Enumerate an endpoint only where it departs from the policy — here, the two paths that cannot be exercised live safely, which `integrations.md` requires to be documented explicitly.

@@ -72,8 +72,7 @@ Shared across both shell flavors:
   - **Print the toolchain's own `--version` output** (and the path it resolved from) during step 1, even on success. This is the single most useful piece of forensic data when a test passes locally but fails in CI.
   - **Surface the install command's output verbatim** — do not pipe it to `/dev/null`, do not redirect to a log file inside the working folder. The operator must see every dependency-resolver line in the script's own output stream.
   - **On failure, print what was about to run before exiting** — the exact command, the working directory, the relevant environment variables (`PYTHONPATH`, `NODE_PATH`, `GOMODCACHE`, `CARGO_HOME`, `MAVEN_OPTS`, `PATH`).
-  - **Print a final summary line** that names the test command, the exit code, and the working folder so the operator knows exactly what to re-run by hand if needed.
-  Verbosity is not noise here — a chatty script that documents itself in its own output is the difference between a 30-second triage and a 30-minute one. Never trade verbosity for terseness.
+  - **Print a final summary line** that names the test command, the exit code, and the working folder so the operator knows exactly what to re-run by hand if needed. Verbosity is not noise here — a chatty script that documents itself in its own output is the difference between a 30-second triage and a 30-minute one. Never trade verbosity for terseness.
 
 ### Dependency isolation
 

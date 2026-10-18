@@ -49,8 +49,7 @@ Implementation reqs are free-form instructions that steer code generation. Commo
 
 ## Key Principle: HOW vs WHAT
 
-`***implementation reqs***` describe HOW the software should be built.
-`***functional specs***` describe WHAT the software should do.
+`***implementation reqs***` describe HOW the software should be built. `***functional specs***` describe WHAT the software should do.
 
 If the requirement describes observable behavior (endpoints, business rules, user-facing features), it belongs in functional specs. If it describes internal structure, technology, or coding guidance, it belongs here.
 
