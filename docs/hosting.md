@@ -11,6 +11,7 @@
 | `createTurriExtension(host)` | turri's conversation as an extension of pi's: every tool, slash command, rule and skill the terminal has. The host is told of its jobs and asks its questions - see below. |
 | `pi` | pi itself, as turri's extension is built against it. Make the session with this one - `pi.createAgentSession`, `pi.DefaultResourceLoader` - not another copy. |
 | `readProjectConfig`, `projectModels`, `modelSpec`, `configForSpec`, `hasProjectConfig`, `stacksOf` | the project's settings, as [config.turri.yaml](config.md) has them. |
+| `initConfig(dir, { vendor, bedrock, force })`, `VENDORS`, `BEDROCK_REGIONS`, `BEDROCK_DEFAULT`, `bedrockModels` | a project's first config.turri.yaml, as `turri init-config` writes it: the host asks which vendor's models - `VENDORS` has each one's label and its two models, `BEDROCK_REGIONS` where Bedrock serves each maker's - and `initConfig` writes it, saying what it did. One already there keeps everything but its two models. |
 | `checkPlainFile`, `plainFileParser`, `resolveTemplateDirs`, `iterateFunctionalSpecs`, `FUNCTIONAL_REQUIREMENTS` | a spec checked and parsed, its functional specs one by one - as `turri validate` reads it. |
 | `highlightLines`, `roleOf` | a spec's lines coloured by turri's own \*\*\*plain grammar. |
 | `functionalityCompletion`, `createWorkLoop`, `createJobRegistry`, `promptOf`, `describeModules` | how far each functional spec is built, and - on a loop of the host's own with `dryRun` - the work a spec change would plan, as `turri glimpse` does. |

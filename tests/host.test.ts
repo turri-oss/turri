@@ -1,4 +1,6 @@
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { askUserVia, chatAskUserTool, createTurriExtension } from "../src/extension.ts";
 import type { AskUserIO } from "../src/ask.ts";
@@ -59,6 +61,16 @@ describe("turri for a host that runs it itself", () => {
     const job = registry!.start({ kind: "test", summary: "a job the host sees", run: async () => ({ report: "done" }) });
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(changes.filter((change) => change.id === job.id).map((change) => change.status)).toContain("succeeded");
+  });
+
+  it("writes a project's first config.turri.yaml with the models of the vendor the host chose", async () => {
+    const { initConfig, VENDORS } = await import("../src/host.ts");
+    const dir = mkdtempSync(join(tmpdir(), "turri-host-"));
+    const result = initConfig(dir, { vendor: "anthropic" });
+    const written = readFileSync(join(dir, "config.turri.yaml"), "utf8");
+    expect(result.written).toBe(true);
+    expect(written).toContain(`harness-model: ${VENDORS.anthropic.harness}`);
+    expect(written).toContain(`coding-model: ${VENDORS.anthropic.coding}`);
   });
 
   it("publishes the host entry, compiled, as @turri-dev/cli/host", () => {
