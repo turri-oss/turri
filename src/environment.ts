@@ -75,6 +75,31 @@ export function turriOnPath(): string | undefined {
   return found === "" ? undefined : found;
 }
 
+/** The version of the pi turri runs on, as Node finds it - undefined when it is not installed. */
+export function piVersion(): string | undefined {
+  try {
+    // Its entry point, then up to the package.json that names it.
+    for (let dir = dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))); dirname(dir) !== dir; dir = dirname(dir)) {
+      const file = join(dir, "package.json");
+      if (!existsSync(file)) continue;
+      const pkg = JSON.parse(readFileSync(file, "utf8")) as { name?: string; version?: string };
+      if (pkg.name === "@earendil-works/pi-coding-agent") return pkg.version;
+    }
+  } catch {
+    /* not installed: left out */
+  }
+  return undefined;
+}
+
+/**
+ * What `turri --version` prints: turri's version - from a clone, its commit too, as the banner says it - and pi's
+ * beside it. pi's own `--version` says only pi's, which read as turri's.
+ */
+export function versionLine(identity: ReturnType<typeof turriIdentity> = turriIdentity(), pi: string | null = piVersion() ?? null): string {
+  const clone = identity.git_commit !== null ? `, from a clone, ${identity.git_commit.slice(0, 7)}${identity.git_dirty === true ? " with changes" : ""}` : "";
+  return `turri ${identity.version ?? "0.0.0"}${clone}${pi !== null ? ` (pi ${pi})` : ""}`;
+}
+
 /** turri's version, and the commit when it runs from a clone. */
 export function turriIdentity(): { version: string | null; git_commit: string | null; git_dirty: boolean | null } {
   let version: string | null = null;

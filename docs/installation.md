@@ -17,7 +17,7 @@ turri init-config   # a config.turri.yaml with the model you talk to and the one
 turri               # pi, with turri's tools, skills and themes loaded
 ```
 
-The package is `@turri-dev/cli` - npm keeps the name `turri` back, as too like another package's - and the command it puts on your PATH is `turri`. `npm install -g @turri-dev/cli@next` gets the latest prerelease instead, built from the last commit on `main`.
+The package is `@turri-dev/cli` - npm keeps the name `turri` back, as too like another package's - and the command it puts on your PATH is `turri`. `npm install -g @turri-dev/cli@next` gets the latest prerelease instead, built from the last commit on `main`. Installed again - `@latest` or `@next` - it replaces the one there. `turri --version` says which turri runs, and the pi under it: `turri 0.1.6 (pi 1.3.0)`, and from a clone its commit too.
 
 ## From a clone
 

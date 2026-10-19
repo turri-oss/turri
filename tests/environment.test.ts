@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { nodeVersionOk } from "../src/environment.ts";
+import { execFileSync } from "node:child_process";
+import { nodeVersionOk, piVersion, versionLine } from "../src/environment.ts";
 import { defaultParallelJobs } from "../src/regenerate/jobs.ts";
 import { sandboxSummary } from "../src/regenerate/os-sandbox.ts";
 
@@ -30,5 +31,20 @@ describe("how many pulses run at once when nothing says", () => {
     expect(defaultParallelJobs(2)).toBe(1);
     expect(defaultParallelJobs(6)).toBe(3);
     expect(defaultParallelJobs(16)).toBe(4);
+  });
+});
+
+describe("turri --version", () => {
+  it("says turri's version with pi's beside it - from a clone, its commit too, as the banner does", () => {
+    expect(versionLine({ version: "0.1.6", git_commit: null, git_dirty: null }, "1.3.0")).toBe("turri 0.1.6 (pi 1.3.0)");
+    expect(versionLine({ version: "0.1.1", git_commit: "336dd6e0f1a2b3c4", git_dirty: true }, "1.3.0")).toBe("turri 0.1.1, from a clone, 336dd6e with changes (pi 1.3.0)");
+    expect(versionLine({ version: "0.1.1", git_commit: "336dd6e0f1a2b3c4", git_dirty: false }, null)).toBe("turri 0.1.1, from a clone, 336dd6e");
+  });
+
+  it("is answered by turri, not passed to pi - with -v too", () => {
+    expect(piVersion()).toMatch(/^\d+\.\d+\.\d+/);
+    for (const flag of ["--version", "-v"]) {
+      expect(execFileSync(process.execPath, ["bin/turri.mjs", flag], { encoding: "utf8" }).trim()).toMatch(new RegExp(`^turri \\S+.*\\(pi ${piVersion()!.replace(/\./g, "\\.")}\\)$`));
+    }
   });
 });

@@ -12,7 +12,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CODING_MODEL_ENV, chatModels } from "./chat-models.ts";
 import { readProjectConfig } from "./config.ts";
-import { extensionInstalledGlobally, PACKAGE_ROOT, themesInstalledGlobally } from "./environment.ts";
+import { extensionInstalledGlobally, PACKAGE_ROOT, themesInstalledGlobally, versionLine } from "./environment.ts";
 import { dropNoise } from "./quiet.ts";
 
 /**
@@ -95,6 +95,7 @@ const SETUP_COMMANDS: Record<string, string> = {
 const USAGE = [
   "usage: turri [options]          open the conversation here: pi, with turri's tools and themes loaded",
   "       turri <command> [args]",
+  "       turri --version          turri's version, and pi's",
   "",
   `  ${"options".padEnd(12)} --harness-model <m>  the model you chat with   --coding-model <m>  the model renders run on`,
   `  ${"".padEnd(12)} --stack <name>  build with config.turri.<name>.yaml over config.turri.yaml - here and in every command`,
@@ -138,6 +139,12 @@ async function withoutStack(args: string[]): Promise<string[]> {
 
 if (command === "-h" || command === "--help") {
   console.log(USAGE);
+  process.exit(0);
+}
+
+// turri's version, not pi's alone: pi's --version would answer for it.
+if (command === "-v" || command === "--version") {
+  console.log(versionLine());
   process.exit(0);
 }
 
