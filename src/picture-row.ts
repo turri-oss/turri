@@ -1,7 +1,8 @@
 import { compositeTuiLine } from "@earendil-works/pi-tui";
+import { SCREEN_PADDING } from "./screen-padding.ts";
 
-/** What the banner puts between a row's text and the picture after it: back to the jellyfish's column. */
-export const PICTURE_AT = "\x1b[2G";
+/** What the banner puts between a row's text and the picture after it: back to the jellyfish's column, a column in from the screen's padding. */
+export const PICTURE_AT = `\x1b[${SCREEN_PADDING.left + 2}G`;
 
 /** The picture's escape sequence, as the banner writes it after PICTURE_AT: Kitty's, in chunks, or iTerm2's - climbing first on iTerm2. */
 const PICTURE = /^(?:\x1b\[\d+A)?(?:(?:\x1b_G[^\x1b]*\x1b\\)+|\x1b\]1337;File=[^\x07]*\x07)/;

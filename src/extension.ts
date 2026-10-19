@@ -37,6 +37,7 @@ import { halfBlocks, JELLYFISH_FRAME_MS, JELLYFISH_TEXT_FRAMES } from "./jellyfi
 import { createJobPanel, didNotPass, keyPressed, PANEL_KEY, spinner } from "./regenerate/job-panel.ts";
 import { clickToFocus, dockedWidth, narrowChat, shade, shadeChat } from "./regenerate/panel-dock.ts";
 import { overPictureRow, PICTURE_AT } from "./picture-row.ts";
+import { padScreen, paddedColumns, paddedRows, SCREEN_PADDING } from "./screen-padding.ts";
 import { skillAboutLine, skillProgressLine } from "./skill-progress.ts";
 import { createSidePanel } from "./regenerate/side-panel.ts";
 import { createSpecMapSource, defaultMapFiles } from "./regenerate/spec-map.ts";
@@ -118,7 +119,7 @@ export function askUserVia(
             ...(context !== undefined ? { context } : {}),
             ...(options !== undefined ? { options } : {}),
             ...(selected !== undefined ? { selected } : {}),
-            rows: () => tui.terminal.rows,
+            rows: () => paddedRows(tui.terminal.rows),
             style: { accent: (text) => theme.fg("accent", text), muted: (text) => theme.fg("muted", text), bold: (text) => theme.bold(text) },
             done: (answer) => {
               if (questionShown === shown) questionShown = undefined;
@@ -1695,7 +1696,7 @@ function registerJobTools(pi: ExtensionAPI, jobs: JobRegistry, cwd: string) {
   // The terminal the panel is drawn on, for its width: set as it opens.
   let panelTerminal: { columns: number } | undefined;
   /** The columns the panel takes beside the chat - 0 over the whole screen, or when the terminal is too narrow to share. */
-  const panelBeside = (): number => (panelDocked && panelTerminal !== undefined ? dockedWidth(panelTerminal.columns) : 0);
+  const panelBeside = (): number => (panelDocked && panelTerminal !== undefined ? dockedWidth(paddedColumns(panelTerminal.columns)) : 0);
   // What is open in the pulse list and the map, and where their cursors are: the conversation's, as left each time it opens.
   const jobsTree = createJobsTreeState();
   const mapState = createSpecMapState();
@@ -1754,7 +1755,7 @@ function registerJobTools(pi: ExtensionAPI, jobs: JobRegistry, cwd: string) {
             const widen = narrowChat(tui, panelBeside);
             const unwatch = clickToFocus(
               tui,
-              () => tui.terminal.columns - panelBeside(),
+              () => tui.terminal.columns - SCREEN_PADDING.right - panelBeside(),
               (side) => {
                 if (panelBeside() === 0) return;
                 if (side === "chat") toChat();
@@ -1793,7 +1794,7 @@ function registerJobTools(pi: ExtensionAPI, jobs: JobRegistry, cwd: string) {
           tree: jobsTree,
           map: () => specMap.read(),
           mapState,
-          rows: () => tui.terminal.rows,
+          rows: () => paddedRows(tui.terminal.rows),
           key: PANEL_KEY,
           dock: {
             docked: () => panelBeside() > 0,
@@ -1912,14 +1913,15 @@ function registerJobTools(pi: ExtensionAPI, jobs: JobRegistry, cwd: string) {
       },
       {
         overlay: true,
-        // The whole screen, or the columns on the right beside the chat - read at each frame, so it follows the terminal.
+        // The whole screen, or the columns on the right beside the chat - read at each frame, so it follows the terminal -
+        // inside the screen's padding.
         overlayOptions: {
           get width() {
             return panelBeside() > 0 ? panelBeside() : "100%";
           },
           maxHeight: "100%",
           anchor: "top-right",
-          margin: 0,
+          margin: { ...SCREEN_PADDING },
         },
         onHandle: (handle) => {
           if (panel !== undefined) panel.handle = handle;
@@ -2544,7 +2546,10 @@ function registerBranding(pi: ExtensionAPI, skills: SkillCatalogue) {
   });
 
   pi.on("session_start", (_event, ctx) => {
-    if (ctx.hasUI) animateJellyfish(ctx);
+    if (ctx.hasUI) {
+      padTheScreen(ctx);
+      animateJellyfish(ctx);
+    }
     try {
       const identity = turriIdentity();
       pi.appendEntry(BANNER_ENTRY, {
@@ -2603,6 +2608,30 @@ function animateJellyfish(ctx: ExtensionContext): void {
 }
 
 const JELLYFISH_CLOCK_KEY = "turri-jellyfish";
+
+/**
+ * The whole screen inside its padding (`screen-padding.ts`). An extension is given pi's screen only through what it
+ * draws, so an empty widget below the editor hands it over - at each frame, as pi starts a new screen when it changes
+ * how it draws.
+ */
+function padTheScreen(ctx: ExtensionContext): void {
+  ctx.ui.setWidget(
+    SCREEN_PADDING_KEY,
+    (tui) => {
+      padScreen(tui);
+      return {
+        render: () => {
+          padScreen(tui);
+          return [];
+        },
+        invalidate: () => {},
+      };
+    },
+    { placement: "belowEditor" },
+  );
+}
+
+const SCREEN_PADDING_KEY = "turri-padding";
 
 /** The columns the banner's picture takes from the left edge, while it shows one; 0 when it does not. */
 let pictureRight = 0;
@@ -2669,7 +2698,7 @@ class Banner implements Component {
       return line !== undefined ? `${before}${line}` : placed?.kind === "text" ? ` ${jellyfish}` : "";
     });
     // The side panel is drawn beside the picture (drawOverlaysBesidePicture), which goes on showing.
-    pictureRight = placed?.kind === "image" ? 1 + placed.columns : 0;
+    pictureRight = placed?.kind === "image" ? SCREEN_PADDING.left + 1 + placed.columns : 0;
     if (placed?.kind === "image") {
       const at = placed.onLastRow ? placed.rows - 1 : 0;
       rows[at] = `${rows[at]}${PICTURE_AT}${placed.sequence}`;

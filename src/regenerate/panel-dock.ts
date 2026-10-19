@@ -1,4 +1,5 @@
 import { type Component, HStack } from "@earendil-works/pi-tui";
+import { unpadded } from "../screen-padding.ts";
 
 /**
  * The side panel beside the chat rather than over it: the chat drawn on the left in what the panel leaves it, the panel
@@ -6,13 +7,13 @@ import { type Component, HStack } from "@earendil-works/pi-tui";
  *
  * pi draws its screen one of two ways, and the chat is narrowed in each as it is drawn: full screen (pi's default), a
  * layout - its root put in a row beside a filler as wide as the panel; the regular screen, the lines its render gives -
- * asked for in fewer columns.
+ * asked for in fewer columns. Either way inside the screen's padding (`screen-padding.ts`), when it has one.
  */
 
 /** Narrower than this, the chat and the panel have no room side by side: the panel takes the whole screen. */
 const SHARED_FROM = 100;
 
-/** The columns the panel takes beside the chat: half the screen, the rule between them in the middle - 0 when the terminal is too narrow to share. */
+/** The columns the panel takes beside the chat: half of what they share, the rule between them in the middle - 0 when that is too narrow to share. */
 export function dockedWidth(columns: number): number {
   return columns < SHARED_FROM ? 0 : Math.floor(columns / 2);
 }
@@ -31,14 +32,15 @@ interface Screen {
 export function narrowChat(tui: object, panelWidth: () => number): () => void {
   const screen = tui as Screen;
   if (typeof screen.setLayoutRoot === "function" && screen.layoutRoot !== undefined) {
-    const root = screen.layoutRoot;
+    // What the padding pads: the row goes inside it, and is padded as it is set.
+    const root = unpadded(screen.layoutRoot);
     // A line as wide as the panel: the row gives the filler what it measures, the chat the rest.
     const filler: Component = { render: () => [" ".repeat(panelWidth())], invalidate() {} };
     screen.setLayoutRoot(new HStack([{ component: root, basis: 0, grow: 1 }, { component: filler }]));
     return () => screen.setLayoutRoot!(root);
   }
-  // Read from the prototype: the screen's own render, not one laid over it.
-  const render = (Object.getPrototypeOf(tui) as Screen).render;
+  // The render the screen has now - padded, when it is.
+  const render = screen.render;
   screen.render = function (this: Screen, width: number) {
     return render.call(this, Math.max(1, width - panelWidth()));
   };

@@ -54,6 +54,7 @@ The workflow signs in to npm with npm's trusted publishing (OIDC), not a token: 
 | `src/regenerate/engine.ts` | choosing and resolving render models |
 | `src/regenerate/job-panel.ts`, `src/regenerate/transcript-view.ts`, `src/regenerate/diff-view.ts` | the job panel, the side panel's colours, and a spec diff as they show it - highlighted and banded |
 | `src/regenerate/side-panel.ts`, `src/regenerate/panel-dock.ts` | the side panel, and the chat narrowed beside it when it is docked |
+| `src/screen-padding.ts` | the blank row above and below the whole screen and the two columns either side, in both of pi's ways of drawing it |
 | `src/regenerate/spec-map.ts`, `src/regenerate/spec-map-view.ts` | regen: each item's mark, from the records, the `.plain` files and the work loop's plan (`mapPlan`), and the map drawn |
 | `src/regenerate/debug-log.ts` | each render agent's whole conversation, always streamed to `.turri/debug/` |
 | `genome/` | what turri knows and can do: `genome/skills/`, the skill library, and `genome/rules/`, the \*\*\*plain authoring rules |
