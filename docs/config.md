@@ -218,7 +218,8 @@ coding-model:
 
 A stack is chosen, never worked out from the spec:
 
-- **In the chat**, with `/stack` - a list of the project's stacks and none - or `/stack backend`, `/stack none`. The chat's model has a `stack` tool too, and switches the stack when you ask it to, or for work on a part another stack builds. `/stack` alone says which is chosen now.
+- **In the chat, for a module**, by the chat's model: `regenerate`, `conform` and `glimpse` take a `stack`, and it builds each module with the stack of its part - `backend.plain` with `backend` - leaving the session's choice as it is. A backend and a frontend can be regenerated side by side this way, each with its own.
+- **In the chat, for the session**, with `/stack` - a list of the project's stacks and none - or `/stack backend`, `/stack none`. The chat's model has a `stack` tool too, and switches the stack when you ask it to. `/stack` alone says which is chosen now; a module asked for without a stack of its own is built with it.
 - **On the command line**, with `--stack <name>` on any command - `turri regenerate`, `conform`, `spec-diff`, `glimpse`, `release`, `cultivate` - and on `turri --stack backend` for the chat; or with `TURRI_STACK` in the environment.
 
 The choice lasts for the session only: nothing remembers it, and turri started again has none chosen. A stack the project has no file for is refused, with the stacks it has. With none chosen, `config.turri.yaml` alone is used.
@@ -226,7 +227,8 @@ The choice lasts for the session only: nothing remembers it, and turri started a
 How a stack's config is made:
 
 - **Laid over `config.turri.yaml`, key by key.** What the stack's file gives wins; what it leaves out is the project's. A model it names takes what it leaves out from the project's same model - above, with the stack frontend chosen, everything renders on the project's coding model, thinking `high`.
-- **For everything built while it is chosen.** Every pulse that starts, every test run and every script found from then on is the chosen stack's; a pulse already running keeps the stack it started with. Choose the stack before building the part it is for: `/stack backend`, then `regenerate backend.plain`.
+- **Pinned to a module when it is asked for.** A module is built with the stack chosen - or named in the call - when it is asked for, from its first pulse to its last: the pulses planned after it, its test runs, the scripts found, its plans and its conformance tests, whatever stack is chosen meanwhile. A pulse waiting for a free slot keeps the stack it was queued with. A change to its spec keeps its stack; asked for again, it takes the one chosen then. What `regenerate` says back names each module's stack, and so does a pulse's report.
+- **Refused with none, when that cannot build.** In a project of stacks, a module asked for with no stack - none named, none chosen - is refused before anything is planned when `config.turri.yaml` alone names no unit testing script: every pulse would stop for want of one. The refusal names the stacks and the script each names. `stack: none` builds with `config.turri.yaml` alone all the same.
 - **The project's alone.** `module:`, `harness-model:`, `parallel-jobs:`, `rules-off:` and `compact-at:` are read only from `config.turri.yaml` - there is one conversation, one module built when none is named, one machine. `agent-env:` and `toolchains:` in a stack's file add to the project's.
 
 The chat is told each stack's config and the one chosen. The skills that write testing scripts put each stack's in its own file once a project has two stacks, and say which stack to choose before building each part.

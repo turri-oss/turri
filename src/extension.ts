@@ -18,7 +18,7 @@ import { readScript, scriptAgainstMachine, stackOnMachine, toolchainsBlock } fro
 import { sandboxAvailable, sandboxSummary } from "./regenerate/os-sandbox.ts";
 import { findTestScripts } from "./regenerate/test-scripts.ts";
 import { createAskUserTool } from "./tools.ts";
-import { asksFromScratch, asksWholeChain, driftTool, fromWorkingDir, haltTool, loopReply, MODEL_PARAM, regenerateTool, stopJob, WAIT_PARAM, WORKING_DIR_PARAM } from "./loop-tools.ts";
+import { asksFromScratch, asksWholeChain, driftTool, fromWorkingDir, haltTool, loopReply, MODEL_PARAM, regenerateTool, STACK_PARAM, stopJob, WAIT_PARAM, withCallStack, WORKING_DIR_PARAM } from "./loop-tools.ts";
 import { createWebTools } from "./regenerate/web.ts";
 import { describeGates, interruptedRun, runSkill } from "./genome.ts";
 import type { Reporter } from "./graph.ts";
@@ -774,11 +774,14 @@ function registerRegenerate(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
       );
       await nextFrame();
       try {
-        const statuses = scratch
-          ? await loop.fromScratch(plainFile, { ...request, chain })
-          : again.length > 0
-            ? await loop.regenerateAgain(plainFile, again, request)
-            : await loop.bringUp(plainFile, request);
+        // Built with the stack chosen now - pinned to its pulses - or refused, a project of stacks built with none.
+        const statuses = await withCallStack(plainFile, undefined, () =>
+          scratch
+            ? loop.fromScratch(plainFile, { ...request, chain })
+            : again.length > 0
+              ? loop.regenerateAgain(plainFile, again, request)
+              : loop.bringUp(plainFile, request),
+        );
         // Nothing to do: say how to build it again anyway.
         const hint = statuses.length > 0 && statuses.every(isUpToDate)
           ? `\nTo regenerate parts of it anyway, name their functionalities - /regenerate ${basename(plainFile)} 2.1 - or start over with /regenerate ${basename(plainFile)} from scratch.`
@@ -928,21 +931,24 @@ function conformTool(options: {
       one_by_one: Type.Optional(
         Type.Boolean({ description: "Only when the user asks for it: a pulse a functional spec. Omitted: every functional spec tested in one pulse, as far as the size guardrail lets" }),
       ),
+      stack: STACK_PARAM,
       model: MODEL_PARAM,
       wait: WAIT_PARAM,
     }),
     async execute(_id, given, _signal, _onUpdate, ctx) {
       const params = fromWorkingDir(cwd, given);
       const plainFile = resolve(params.base, params.plain_file);
-      const model = options.model(ctx, plainFile, params.model);
-      const loop = options.loop(ctx);
-      const statuses = await loop.conformance(plainFile, {
-        ...(params.frids !== undefined ? { frids: params.frids } : {}),
-        ...(params.groups !== undefined ? { groups: params.groups } : {}),
-        ...(model !== undefined ? { model } : {}),
-        ...(params.one_by_one === true ? { separately: true } : {}),
+      return withCallStack(plainFile, params.stack, async () => {
+        const model = options.model(ctx, plainFile, params.model);
+        const loop = options.loop(ctx);
+        const statuses = await loop.conformance(plainFile, {
+          ...(params.frids !== undefined ? { frids: params.frids } : {}),
+          ...(params.groups !== undefined ? { groups: params.groups } : {}),
+          ...(model !== undefined ? { model } : {}),
+          ...(params.one_by_one === true ? { separately: true } : {}),
+        });
+        return loopReply(loop, statuses, options.wait(ctx, params.wait));
       });
-      return loopReply(loop, statuses, options.wait(ctx, params.wait));
     },
   });
 }
@@ -962,36 +968,39 @@ function registerGlimpse(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
     parameters: Type.Object({
       plain_file: Type.String({ description: "Path to the .plain file" }),
       working_dir: WORKING_DIR_PARAM,
+      stack: STACK_PARAM,
     }),
     async execute(_id, given, _signal, _onUpdate, ctx) {
       const params = fromWorkingDir(cwd, given);
       const plainFile = resolve(params.base, params.plain_file);
-      const running = new Set(workLoopFor(jobs, cwd, ctx).status().filter((status) => status.running !== undefined).map((status) => status.module));
-      const planner = chatModelOf(ctx);
-      const model = modelFor(chosenModels, "spec_changes", projectModel(ctx, plainFile) ?? planner);
-      const { statuses, previews, busy } = await previewJobs({
-        plainFile,
-        cwd,
-        ...(model !== undefined ? { model } : {}),
-        ...(planner !== undefined ? { plannerModel: planner } : {}),
-        steering: (file) => steeringFor(file, cwd, steeringStore),
-        busy: (module) => running.has(module),
+      return withCallStack(plainFile, params.stack, async () => {
+        const running = new Set(workLoopFor(jobs, cwd, ctx).status().filter((status) => status.running !== undefined).map((status) => status.module));
+        const planner = chatModelOf(ctx);
+        const model = modelFor(chosenModels, "spec_changes", projectModel(ctx, plainFile) ?? planner);
+        const { statuses, previews, busy } = await previewJobs({
+          plainFile,
+          cwd,
+          ...(model !== undefined ? { model } : {}),
+          ...(planner !== undefined ? { plannerModel: planner } : {}),
+          steering: (file) => steeringFor(file, cwd, steeringStore),
+          busy: (module) => running.has(module),
+        });
+        const text = [
+          describeModules(statuses),
+          ...busy.map((module) => `\n${module} has a pulse running: its next pulse is planned from what that one lands - preview it once it has.`),
+          ...previews.map((preview) =>
+            [
+              "",
+              `<next pulse module="${preview.module}" track="${preview.track}" title="${preview.title}">`,
+              preview.task ?? "A conformance pulse's prompt is built from what the code it tests holds once it is built: it is not shown before.",
+              "</next pulse>",
+            ].join("\n"),
+          ),
+          "",
+          "Nothing was started. Tell the user what the next pulse is and what it will be told - the parts they are likely to care about, not the whole prompt unless they ask.",
+        ].join("\n");
+        return { content: [{ type: "text" as const, text }], details: {} };
       });
-      const text = [
-        describeModules(statuses),
-        ...busy.map((module) => `\n${module} has a pulse running: its next pulse is planned from what that one lands - preview it once it has.`),
-        ...previews.map((preview) =>
-          [
-            "",
-            `<next pulse module="${preview.module}" track="${preview.track}" title="${preview.title}">`,
-            preview.task ?? "A conformance pulse's prompt is built from what the code it tests holds once it is built: it is not shown before.",
-            "</next pulse>",
-          ].join("\n"),
-        ),
-        "",
-        "Nothing was started. Tell the user what the next pulse is and what it will be told - the parts they are likely to care about, not the whole prompt unless they ask.",
-      ].join("\n");
-      return { content: [{ type: "text" as const, text }], details: {} };
     },
   });
 }
@@ -1156,7 +1165,7 @@ export function projectConfigBlock(root: string): string {
         stacks.length > 0 ? "project of stacks" : "project",
       ),
       ...(stacks.length > 0
-        ? ["", `Stacks: ${stacks.join(", ")} - chosen now: ${chosen ?? "none, so the project's file alone"}. Everything is built with the chosen one; switch with the stack tool when the user asks.`]
+        ? ["", `Stacks: ${stacks.join(", ")} - chosen now: ${chosen ?? "none, so the project's file alone"}. Each module is built with the stack of its part - a backend's spec with the backend stack: pass it as stack to regenerate, conform and glimpse, and it is pinned to that module's pulses, whatever is chosen after. Choose one for the whole session with the stack tool when the user asks.`]
         : []),
       // A stack: its file over the project's, for everything built while it is chosen.
       ...stacks.flatMap((stack) => [

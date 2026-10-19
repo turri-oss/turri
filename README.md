@@ -160,7 +160,7 @@ It runs the interview skill, asks you about the problem, the stack and the produ
 - **`/halt`** halts a pulse, **`/lineage`** shows every generation of a module, and the **`drift`** tool says what is left to regenerate;
 - **`/btw <question>`** asks turri something on the side - answered at once, even in the middle of a skill's interview (typed as the answer, under "Something else…"), and left out of the conversation;
 - **`/turri-config`** changes any setting of the project's `config.turri.yaml` - the models, review, conformance tests, how many pulses at once - and says when it takes effect: now, at your next message, or at the next pulse. No restart: `/turri-config review false`, or `/turri-config` alone to pick from the list;
-- **`/stack`** chooses the stack to build with, in a project whose backend and frontend each have their own testing scripts in `config.turri.<stack>.yaml` - `/stack backend`, `/stack none` - for the session (`--stack <name>` on the command line).
+- **`/stack`** chooses the stack to build with, in a project whose backend and frontend each have their own testing scripts in `config.turri.<stack>.yaml` - `/stack backend`, `/stack none` - for the session (`--stack <name>` on the command line). The chat's model builds each part with its own stack by itself, pinned to that module's pulses.
 
 Other things to ask for:
 

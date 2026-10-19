@@ -2,7 +2,7 @@ import { fixMethod } from "./prompt.ts";
 import { randomUUID } from "node:crypto";
 import { accessSync, constants, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, delimiter, dirname, join, resolve, sep } from "node:path";
-import { CONFIG_FILE, CONFIG_KEYS, projectConfigFile, readProjectConfig, stackConfigFileIn, stackOf } from "../config.ts";
+import { CONFIG_FILE, CONFIG_KEYS, projectConfigFile, readProjectConfig, stackConfigFile, stackConfigFileIn, stackOf, stacksOf } from "../config.ts";
 import { reportActivity, reportLogNote, reportNote } from "./activity.ts";
 import { ensureInModulesScratch, modulesScratchDir } from "./paths.ts";
 import { defineTool } from "@earendil-works/pi-coding-agent";
@@ -136,8 +136,15 @@ export function findTestScripts(root: string, plainFile?: string, buildDir?: str
   const stack = stackOf(root);
   const config = readProjectConfig(root, stack);
   const file = stack !== undefined ? `${stackConfigFileIn(root, stack)} (over ${projectConfigFile(root)})` : projectConfigFile(root);
-  // Where a script is named: the stack's file, once one is chosen.
-  const nameIn = stack !== undefined ? stackConfigFileIn(root, stack) : `${CONFIG_FILE} - or, for a project of several stacks, the stack's config.turri.<stack>.yaml`;
+  // A project of stacks with none chosen: its scripts are named in the stacks' files.
+  const stacks = stack === undefined ? stacksOf(root) : [];
+  // Where a script is named: the stack's file, once one is chosen - in a project of stacks, the one of the stack that builds it.
+  const nameIn =
+    stack !== undefined
+      ? stackConfigFileIn(root, stack)
+      : stacks.length > 0
+        ? "the config.turri.<stack>.yaml of the stack that builds it"
+        : `${CONFIG_FILE} - or, for a project of several stacks, the stack's config.turri.<stack>.yaml`;
   if (config.testingScriptsRunOn !== undefined) found.runOn = config.testingScriptsRunOn;
   for (const kind of Object.keys(SCRIPT_KEYS) as ScriptKind[]) {
     const named = kind === "unit" ? config.unittestsScript : config.conformanceTestsScript;
@@ -182,6 +189,21 @@ export function findTestScripts(root: string, plainFile?: string, buildDir?: str
       if (several !== undefined && notes.prepare === undefined) {
         notes.prepare = `${dir === root ? "The project root" : `${SCRIPTS_DIR}/`} holds ${several.join(", ")} - name the one to use in ${nameIn}, as ${CONFIG_KEYS.prepareEnvironmentScript}:.`;
       }
+    }
+  }
+  // A project of stacks, none chosen: the scripts are likely in a stack's file - the note says which, and how to choose it.
+  if (stacks.length > 0) {
+    for (const kind of Object.keys(SCRIPT_KEYS) as ScriptKind[]) {
+      if (found[kind] !== undefined) continue;
+      const named = stacks.flatMap((each) => {
+        const script = kind === "unit" ? readProjectConfig(root, each).unittestsScript : readProjectConfig(root, each).conformanceTestsScript;
+        return script !== undefined ? [`${stackConfigFile(each)} names ${script.trim()}`] : [];
+      });
+      notes[kind] = [
+        ...(notes[kind] !== undefined ? [notes[kind]] : []),
+        `No stack is chosen, so ${CONFIG_FILE} alone is read - this project's stacks are ${stacks.join(", ")}${named.length > 0 ? `, and ${named.join("; ")}` : ""}. ` +
+          "Choose the stack that builds this module: stack on regenerate, or /stack, in the chat; --stack <name> on the command line.",
+      ].join(" ");
     }
   }
   if (Object.keys(notes).length > 0) found.notes = notes;

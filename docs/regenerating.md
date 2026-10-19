@@ -45,7 +45,7 @@ The harness's scratch - each ignores itself, and is never part of a module's his
 
 ### Parts on different stacks
 
-One project can hold modules that share nothing but a common module - a Python backend and a React frontend side by side, each importing `base`, neither requiring the other. Each stack gets its testing scripts, models and conformance in its own `config.turri.<stack>.yaml`, laid over `config.turri.yaml` while it is chosen - `/stack backend` in the chat, `--stack backend` on the command line: see [the project config](config.md#stacks).
+One project can hold modules that share nothing but a common module - a Python backend and a React frontend side by side, each importing `base`, neither requiring the other. Each stack gets its testing scripts, models and conformance in its own `config.turri.<stack>.yaml`, laid over `config.turri.yaml` for the modules built with it - in the chat, `regenerate` with `stack: backend`, pinned to that module's pulses, or `/stack backend` for the session; `--stack backend` on the command line: see [the project config](config.md#stacks).
 
 ## One job
 
@@ -218,7 +218,7 @@ The `implement-unit-testing-script` and `implement-conformance-testing-script` s
 2. the root itself: the one `run_unittests*.sh` and `run_conformance_tests*.sh` there;
 3. `test_scripts/`: the one of each there.
 
-The same `config.turri.yaml` holds the project's other defaults - `module`, `model`, `conformance-tests` - for [unattended runs](headless.md). A folder holding two of a kind is not guessed between: name the one to use in `config.turri.yaml`, or in each stack's own file. The scripts are not linked from the specs; a link to one is ignored.
+The same `config.turri.yaml` holds the project's other defaults - `module`, `model`, `conformance-tests` - for [unattended runs](headless.md). A folder holding two of a kind is not guessed between: name the one to use in `config.turri.yaml` - or, in a project of stacks, in each stack's own file, and build each module with its stack. A module of such a project built with none says so when it stops: which stacks there are, and which script each names. The scripts are not linked from the specs; a link to one is ignored.
 
 They are required: a build with no unit testing script, or with conformance on and no conformance testing script, stops before it starts and says which skill adds it.
 

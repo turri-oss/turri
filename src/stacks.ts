@@ -9,10 +9,7 @@ import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { chooseStack, chosenStack, hasProjectConfig, stackConfigFile, stacksOf } from "./config.ts";
-
-/** The words that choose no stack: the project's config alone. */
-const NONE = ["none", "off", "base", "-"];
+import { chooseStack, chosenStack, hasProjectConfig, NO_STACK, stackConfigFile, stacksOf } from "./config.ts";
 
 /** The stacks of the projects here: the folder's own, and those of the projects one folder down (specs kept in plain/). */
 export function knownStacks(root: string): string[] {
@@ -33,7 +30,7 @@ export function knownStacks(root: string): string[] {
 export function switchStack(root: string, name: string | undefined): string {
   const stacks = knownStacks(root);
   const wanted = name?.trim() ?? "";
-  if (wanted === "" || NONE.includes(wanted.toLowerCase())) {
+  if (wanted === "" || NO_STACK.includes(wanted.toLowerCase())) {
     chooseStack(undefined);
     return "No stack chosen: everything is built with the project's config.turri.yaml alone, from now on.";
   }
@@ -86,7 +83,7 @@ export function registerStacks(pi: ExtensionAPI, cwd: string): void {
         "For the session; a pulse already running keeps the stack it started with. Without a name, says the stacks and the one chosen.",
       promptSnippet: "choose the stack - its testing scripts and settings - that everything is built with",
       promptGuidelines: [
-        "Switch the stack only when the user asks for it, or for work on a part of the project another stack builds - a backend's, a frontend's - and say which you chose.",
+        "Switch the stack only when the user asks for it, and say which you chose. To build a part of the project another stack builds - a backend's, a frontend's - pass that stack as stack to regenerate, conform or glimpse instead: it is pinned to that module's pulses, and the session's choice stays as it is.",
       ],
       parameters: Type.Object({
         name: Type.Optional(Type.String({ description: "The stack to choose, or none. Omitted: the stacks there are, and the one chosen" })),

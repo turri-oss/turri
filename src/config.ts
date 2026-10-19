@@ -167,6 +167,25 @@ export function withStack<T>(stack: string | undefined, work: () => T): T {
   return pinnedStack.run({ stack }, work);
 }
 
+/** The words that choose no stack: the project's config alone. */
+export const NO_STACK = ["none", "off", "base", "-"];
+
+/**
+ * The stack `name` names for the project at `root` - undefined for none - refused when the project has no file for
+ * it, with the stacks it has.
+ */
+export function stackNamed(root: string, name: string): string | undefined {
+  const wanted = name.trim();
+  if (wanted === "" || NO_STACK.includes(wanted.toLowerCase())) return undefined;
+  const stacks = stacksOf(root);
+  if (stacks.includes(wanted)) return wanted;
+  throw new Error(
+    stacks.length > 0
+      ? `There is no stack ${wanted} in ${root}. Its stacks: ${stacks.join(", ")} - or none.`
+      : `${root} has no stacks: a stack is a ${stackConfigFile("<stack>")} beside config.turri.yaml.`,
+  );
+}
+
 /** The stack a project folder is built with now: the one chosen, when the folder has a file for it. */
 export function stackOf(root: string): string | undefined {
   const stack = chosenStack();

@@ -1,13 +1,15 @@
 import { existsSync } from "node:fs";
-import { relative, resolve } from "node:path";
+import { basename, relative, resolve } from "node:path";
 import { defineTool, type ExtensionContext, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { CONFIG_FILE, readProjectConfig } from "./config.ts";
+import { chosenStack, CONFIG_FILE, readProjectConfig, stackConfigFile, stackNamed, stackOf, stacksOf, withStack } from "./config.ts";
 import { checkPlainFile } from "./plain/check.ts";
 import { describeDrift, describeModules, type ModuleStatus, type WorkLoop } from "./regenerate/loop.ts";
 import type { RenderWork } from "./regenerate/engine.ts";
 import { pulseName, type JobRegistry } from "./regenerate/jobs.ts";
 import { stopDeployed } from "./regenerate/release.ts";
+import { projectDirOf } from "./regenerate/paths.ts";
+import { findTestScripts } from "./regenerate/test-scripts.ts";
 
 /**
  * The tools that act on the work loop - `regenerate`, `drift` and `halt` - defined once, for the conversation and for the
@@ -44,6 +46,40 @@ export const MODEL_PARAM = Type.Optional(
       "To change it for every later render, use engine instead.",
   }),
 );
+
+export const STACK_PARAM = Type.Optional(
+  Type.String({
+    description:
+      "In a project of stacks: the stack that builds this module - its config.turri.<stack>.yaml over config.turri.yaml, " +
+      "its testing scripts, toolchains and models - for every pulse of it, whatever stack is chosen later. \"none\": " +
+      "config.turri.yaml alone. Omitted: the stack chosen now.",
+  }),
+);
+
+/**
+ * `work` with the stack a call names - or, none named, the one chosen now - chosen for it: what it asks for is built with
+ * that stack. A project of stacks that would be built with none, when config.turri.yaml alone names no unit testing
+ * script, is refused before anything is planned: its pulses would all stop for want of one.
+ */
+export function withCallStack<T>(plainFile: string, named: string | undefined, work: () => T): T {
+  const root = projectDirOf(plainFile);
+  const stack = named !== undefined ? stackNamed(root, named) : chosenStack();
+  return withStack(stack, () => {
+    const stacks = stacksOf(root);
+    if (named === undefined && stackOf(root) === undefined && stacks.length > 0 && findTestScripts(root).unit === undefined) {
+      const scripts = stacks.map((each) => {
+        const unit = withStack(each, () => findTestScripts(root).unit);
+        return `${each}${unit !== undefined ? ` (${stackConfigFile(each)}: ${relative(root, unit)})` : ""}`;
+      });
+      throw new Error(
+        `Nothing was started: ${basename(plainFile)} would be built with no stack - ${CONFIG_FILE} alone - and that names no unit testing ` +
+          `script, so every pulse would stop. The project's stacks: ${scripts.join(", ")}. Pass the stack that builds ` +
+          `${basename(plainFile)} as stack - or ask the user which, when the spec does not make it plain.`,
+      );
+    }
+    return work();
+  });
+}
 
 export const WAIT_PARAM = Type.Optional(
   Type.Boolean({
@@ -181,6 +217,7 @@ export function regenerateTool(options: LoopToolsOptions & { loop: (ctx: Extensi
       "A change to a file the spec links - an API surface, a mapping document - is a change to the spec: regenerate sees it by itself, and regenerates every functional spec that uses what links it.",
       "Never stop pulses and start them again yourself to follow a spec change: regenerate does it.",
       "Set from_scratch only when the user asks for the module to be regenerated from scratch - started over, its code deleted - in this conversation, or agrees to it when a module's status says it has to start over: never to fix a pulse that did not land.",
+      "In a project of stacks - a backend and a frontend, each with its config.turri.<stack>.yaml - pass stack: the one that builds this module's part, the backend's spec with the backend stack. It is pinned to the module's pulses: regenerate a backend and a frontend side by side, each with its own, without switching the stack chosen. What it says back names the stack each module is built with.",
       'from_scratch "module" takes out the code where the module is built; the modules below keep theirs, and the module starts from a copy of the code below it. "chain" takes out every codebase of its requires chain, the base\'s too, and builds all of it again from the bottom: use it after modules were split, merged or moved (refactor-module), or when the user asks for the whole chain.',
     ],
     parameters: Type.Object({
@@ -199,27 +236,30 @@ export function regenerateTool(options: LoopToolsOptions & { loop: (ctx: Extensi
             '"chain": every module of its requires chain too, built again from the bottom',
         }),
       ),
+      stack: STACK_PARAM,
       model: MODEL_PARAM,
       wait: WAIT_PARAM,
     }),
     async execute(_id, given, _signal, _onUpdate, ctx) {
       const plainFile = plainFileOf(options.cwd, given, "regenerate");
-      const check = checkPlainFile(plainFile);
-      if (!check.ok) throw new Error(`${relative(options.cwd, plainFile) || plainFile} does not parse, so nothing can be regenerated from it yet: ${check.error}`);
-      const again = given.functionalities ?? [];
-      if (again.length > 0 && given.from_scratch !== undefined) throw new Error("Name functionalities or set from_scratch, not both: from scratch regenerates every one of them.");
-      // Named functionalities are work on functionalities, as engine chooses a model for it; the rest, spec changes.
-      const work: RenderWork = again.length > 0 ? "functionalities" : "spec_changes";
-      const model = options.model !== undefined ? options.model(ctx, plainFile, given.model, work) : given.model;
-      const loop = options.loop(ctx);
-      const request = { ...(model !== undefined ? { model } : {}), ...(given.guidance !== undefined ? { guidance: given.guidance } : {}) };
-      const statuses =
-        given.from_scratch !== undefined
-          ? await loop.fromScratch(plainFile, { ...request, chain: given.from_scratch === "chain" })
-          : again.length > 0
-            ? await loop.regenerateAgain(plainFile, again, request)
-            : await loop.bringUp(plainFile, request);
-      return loopReply(loop, statuses, options.wait !== undefined ? options.wait(ctx, given.wait) : given.wait === true);
+      return withCallStack(plainFile, given.stack, async () => {
+        const check = checkPlainFile(plainFile);
+        if (!check.ok) throw new Error(`${relative(options.cwd, plainFile) || plainFile} does not parse, so nothing can be regenerated from it yet: ${check.error}`);
+        const again = given.functionalities ?? [];
+        if (again.length > 0 && given.from_scratch !== undefined) throw new Error("Name functionalities or set from_scratch, not both: from scratch regenerates every one of them.");
+        // Named functionalities are work on functionalities, as engine chooses a model for it; the rest, spec changes.
+        const work: RenderWork = again.length > 0 ? "functionalities" : "spec_changes";
+        const model = options.model !== undefined ? options.model(ctx, plainFile, given.model, work) : given.model;
+        const loop = options.loop(ctx);
+        const request = { ...(model !== undefined ? { model } : {}), ...(given.guidance !== undefined ? { guidance: given.guidance } : {}) };
+        const statuses =
+          given.from_scratch !== undefined
+            ? await loop.fromScratch(plainFile, { ...request, chain: given.from_scratch === "chain" })
+            : again.length > 0
+              ? await loop.regenerateAgain(plainFile, again, request)
+              : await loop.bringUp(plainFile, request);
+        return loopReply(loop, statuses, options.wait !== undefined ? options.wait(ctx, given.wait) : given.wait === true);
+      });
     },
   });
 }

@@ -38,7 +38,7 @@ Read what is already there first: an existing `.plain` file, `config.turri.yaml`
 
 - Templates go in `template/`; import paths omit the `template/` prefix. Resources go in `resources/`.
 - Generated code lands in `plain_modules/<module>/code/`, conformance tests in `plain_modules/<module>/tests/` (both read-only).
-- One module, unless the intent needs two stacks - a web frontend and an API backend. Then two modules side by side, neither requiring the other, sharing what they both mean through one imported module in `template/`. Each is on a stack of its own, whose testing scripts are named in `config.turri.<stack>.yaml` beside `config.turri.yaml` (`unittests-script:`, `conformance-tests-script:`) - `config.turri.backend.yaml`, `config.turri.frontend.yaml`. A stack is chosen, never worked out: tell the user to choose one with `/stack <stack>` (`--stack <stack>` on the command line) before building its part.
+- One module, unless the intent needs two stacks - a web frontend and an API backend. Then two modules side by side, neither requiring the other, sharing what they both mean through one imported module in `template/`. Each is on a stack of its own, whose testing scripts are named in `config.turri.<stack>.yaml` beside `config.turri.yaml` (`unittests-script:`, `conformance-tests-script:`) - `config.turri.backend.yaml`, `config.turri.frontend.yaml`. A stack is chosen, never worked out: each part is built with its own - in the chat, `regenerate` with `stack: <stack>`, pinned to that part's pulses whatever stack is chosen after; `--stack <stack>` on the command line - so say which stack builds which part.
 
 ## Steps
 

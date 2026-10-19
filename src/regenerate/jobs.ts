@@ -38,6 +38,8 @@ export interface Job {
   note?: string;
   /** "provider/model-id" its agents run on, when known. */
   model?: string;
+  /** The stack it is built with - its config.turri.<stack>.yaml over config.turri.yaml - as chosen when it was queued. */
+  stack?: string;
   status: JobStatus;
   /** Monotonic start order. Two jobs can share a millisecond, so ordering uses this. */
   sequence: number;
@@ -213,6 +215,9 @@ export function createJobRegistry(options?: {
     },
     start(input) {
       const id = randomUUID().slice(0, 8);
+      // The stack chosen as it is queued - or pinned for the work that queues it - not as it starts: a job that waits
+      // for a slot is built with the stack it was asked for, whatever is chosen meanwhile.
+      const stack = chosenStack();
       const claimed = [...new Set(input.lanes ?? [])];
       const blockers = [
         ...new Set(
@@ -233,6 +238,7 @@ export function createJobRegistry(options?: {
         ...(input.title !== undefined ? { title: input.title } : {}),
         diff: input.diff,
         model: input.model,
+        ...(stack !== undefined ? { stack } : {}),
         ...(input.follows !== undefined ? { follows: input.follows } : {}),
         status: blockers.length > 0 || (limit !== undefined && active >= limit) ? "queued" : "running",
         sequence: (sequence += 1),
@@ -440,9 +446,9 @@ export function createJobRegistry(options?: {
           }
           log = startJobLog(job, claimed);
           if (log !== undefined) job.logFile = log.file;
-          // What the job's agents start runs until it ends, and no longer (withPulse) - with the stack chosen as it
-          // starts, whatever is chosen while it runs.
-          return withStack(chosenStack(), () => (guarded ? runGuarded() : runOnce()));
+          // What the job's agents start runs until it ends, and no longer (withPulse) - with the stack it was queued
+          // with, whatever is chosen while it waits or runs.
+          return withStack(stack, () => (guarded ? runGuarded() : runOnce()));
         })
         .then(
           (outcome) => {
@@ -553,10 +559,11 @@ export function pulseName(job: Job): string {
 
 /** What the agent is told when it checks on a job. */
 export function describeJob(job: Job): string {
+  const name = `${pulseName(job)}${job.stack !== undefined ? ` (stack ${job.stack})` : ""}`;
   if (job.status === "queued") {
-    return `${pulseName(job)}: queued behind ${job.waitingOn.map((id) => `pulse ${id}`).join(" and ")}. It starts when that finishes.`;
+    return `${name}: queued behind ${job.waitingOn.map((id) => `pulse ${id}`).join(" and ")}. It starts when that finishes.`;
   }
-  const header = `${pulseName(job)}: ${job.status}, ${formatDuration(job)}`;
+  const header = `${name}: ${job.status}, ${formatDuration(job)}`;
   if (job.status === "running") {
     return [
       header,
