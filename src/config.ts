@@ -167,6 +167,23 @@ export function withStack<T>(stack: string | undefined, work: () => T): T {
   return pinnedStack.run({ stack }, work);
 }
 
+/** Whether a stack is pinned here - named by the call that asked for the work, or kept by the pulse it runs in. */
+export function stackPinned(): boolean {
+  return pinnedStack.getStore() !== undefined;
+}
+
+/**
+ * The stack a module is built with: the one pinned - named by the call, or kept by the pulse - else the stack named
+ * after the module, config.turri.backend.yaml for backend.plain, else the one chosen for the session; none, when none
+ * of them is.
+ */
+export function stackForModule(plainFile: string): string | undefined {
+  const root = projectDirOf(resolve(plainFile));
+  if (stackPinned()) return stackOf(root);
+  const own = basename(plainFile).replace(/\.plain$/, "");
+  return stacksOf(root).includes(own) ? own : stackOf(root);
+}
+
 /** The words that choose no stack: the project's config alone. */
 export const NO_STACK = ["none", "off", "base", "-"];
 
@@ -625,10 +642,10 @@ function withoutUndefined(config: ProjectConfig): ProjectConfig {
   return Object.fromEntries(Object.entries(config).filter(([, value]) => value !== undefined)) as ProjectConfig;
 }
 
-/** The config a spec is built with: its project's, with the stack chosen over it. */
+/** The config a spec is built with: its project's, with its module's stack over it (`stackForModule`). */
 export function configForSpec(plainFile: string): ProjectConfig {
   const root = projectDirOf(resolve(plainFile));
-  return readProjectConfig(root, stackOf(root));
+  return readProjectConfig(root, stackForModule(plainFile));
 }
 
 /** One config file, read, or nothing of it when it is not there or does not parse. */

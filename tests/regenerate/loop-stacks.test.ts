@@ -1,14 +1,15 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { chooseStack, chosenStack } from "../../src/config.ts";
 import { regenerateTool, withCallStack } from "../../src/loop-tools.ts";
+import { createSpecDiffTools } from "../../src/spec-tools.ts";
 import { createJobRegistry, describeJob } from "../../src/regenerate/jobs.ts";
 import { createWorkLoop, describeModules, type JobRunner } from "../../src/regenerate/loop.ts";
 import { recordHistory } from "../../src/regenerate/lineage.ts";
-import { writeCodeRecord, writeTestsRecord } from "../../src/regenerate/records.ts";
+import { readRecord, writeCodeRecord, writeTestsRecord } from "../../src/regenerate/records.ts";
 import { findTestScripts } from "../../src/regenerate/test-scripts.ts";
 
 // A project of two stacks, as a person sets one up: a Python backend and a TypeScript frontend side by side, each
@@ -111,20 +112,21 @@ describe("a module of a project of stacks", () => {
   });
 
   it("keeps its stack when its spec changes while another is chosen - asked for again, it takes the one chosen then", async () => {
+    // A module named after no stack: it is built with the one chosen.
     const { ran, run } = runner();
     const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run });
-    writeFileSync(join(dir, "backend.plain"), app(["Serve the orders."], "is Python."));
+    writeFileSync(join(dir, "orders.plain"), app(["Serve the orders."], "is Python."));
     chooseStack("backend");
-    await loop.bringUp("backend.plain");
+    await loop.bringUp("orders.plain");
     await loop.drain();
     chooseStack("frontend");
-    writeFileSync(join(dir, "backend.plain"), app(["Serve the orders.", "Serve the invoices."], "is Python."));
-    await loop.bringUp("backend.plain", { specChange: true });
+    writeFileSync(join(dir, "orders.plain"), app(["Serve the orders.", "Serve the invoices."], "is Python."));
+    await loop.bringUp("orders.plain", { specChange: true });
     await loop.drain();
     expect(ran.map((pulse) => pulse.stack)).toEqual(["backend", "backend"]);
     // Asked for, not changed: the stack chosen now.
-    writeFileSync(join(dir, "backend.plain"), app(["Serve the orders.", "Serve the invoices.", "Serve the refunds."], "is Python."));
-    await loop.bringUp("backend.plain");
+    writeFileSync(join(dir, "orders.plain"), app(["Serve the orders.", "Serve the invoices.", "Serve the refunds."], "is Python."));
+    await loop.bringUp("orders.plain");
     await loop.drain();
     expect(ran.at(-1)!.stack).toBe("frontend");
   });
@@ -149,6 +151,36 @@ describe("a module of a project of stacks", () => {
     expect(status!.stack).toBe("backend");
   });
 
+  it("is built with the stack named after it, with nothing chosen - and over the stack chosen for the session", async () => {
+    const { ran, run } = runner();
+    const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run });
+    await loop.bringUp("backend.plain");
+    chooseStack("backend");
+    await loop.bringUp("frontend.plain");
+    await loop.drain();
+    expect(ran.map((pulse) => `${pulse.module} ${pulse.stack} ${pulse.unit}`).sort()).toEqual([
+      "backend backend test_scripts/run_unittests_python.sh",
+      "backend backend test_scripts/run_unittests_python.sh",
+      "frontend frontend test_scripts/run_unittests_typescript.sh",
+      "frontend frontend test_scripts/run_unittests_typescript.sh",
+    ]);
+  });
+
+  it("pinned to none - asked for before its stack's file was there - takes its own stack on its next spec change", async () => {
+    writeFileSync(join(dir, "config.turri.yaml"), "conformance-tests: false\nunittests-script: test_scripts/run_unittests_python.sh\n");
+    rmSync(join(dir, "config.turri.backend.yaml"));
+    writeFileSync(join(dir, "backend.plain"), app(["Serve the orders."], "is Python."));
+    const { ran, run } = runner();
+    const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run });
+    await loop.bringUp("backend.plain");
+    await loop.drain();
+    writeFileSync(join(dir, "config.turri.backend.yaml"), "unittests-script: test_scripts/run_unittests_python.sh\n");
+    writeFileSync(join(dir, "backend.plain"), app(["Serve the orders.", "Serve the invoices."], "is Python."));
+    await loop.bringUp("backend.plain", { specChange: true });
+    await loop.drain();
+    expect(ran.map((pulse) => pulse.stack)).toEqual([undefined, "backend"]);
+  });
+
   it("says the stack it is built with where it says what runs and what is planned", async () => {
     const { run } = runner();
     const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run, dryRun: true });
@@ -167,25 +199,38 @@ describe("the chat's tools in a project of stacks", () => {
     const { ran, run } = runner();
     const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run });
     const tool = regenerateTool({ cwd: dir, loop: () => loop, wait: () => false });
-    await tool.execute("call", { plain_file: "backend.plain", stack: "backend" }, undefined, undefined, ctx);
-    await tool.execute("call", { plain_file: "frontend.plain", stack: "frontend" }, undefined, undefined, ctx);
+    // Modules named after no stack: the call says which.
+    writeFileSync(join(dir, "api.plain"), app(["Serve the orders.", "Serve the invoices."], "is Python."));
+    writeFileSync(join(dir, "web.plain"), app(["Show the orders.", "Show the invoices."], "is TypeScript."));
+    await tool.execute("call", { plain_file: "api.plain", stack: "backend" }, undefined, undefined, ctx);
+    await tool.execute("call", { plain_file: "web.plain", stack: "frontend" }, undefined, undefined, ctx);
     await loop.drain();
     expect(ran.map((pulse) => `${pulse.module} ${pulse.stack} ${pulse.unit}`).sort()).toEqual([
-      "backend backend test_scripts/run_unittests_python.sh",
-      "backend backend test_scripts/run_unittests_python.sh",
-      "frontend frontend test_scripts/run_unittests_typescript.sh",
-      "frontend frontend test_scripts/run_unittests_typescript.sh",
+      "api backend test_scripts/run_unittests_python.sh",
+      "api backend test_scripts/run_unittests_python.sh",
+      "web frontend test_scripts/run_unittests_typescript.sh",
+      "web frontend test_scripts/run_unittests_typescript.sh",
     ]);
     expect(chosenStack()).toBeUndefined();
+  });
+
+  it("build with the stack the call names over the module's own", async () => {
+    const { ran, run } = runner();
+    const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run });
+    const tool = regenerateTool({ cwd: dir, loop: () => loop, wait: () => false });
+    await tool.execute("call", { plain_file: "backend.plain", stack: "frontend" }, undefined, undefined, ctx);
+    await loop.drain();
+    expect(ran.map((pulse) => pulse.stack)).toEqual(["frontend", "frontend"]);
   });
 
   it("refuse a module that would be built with no stack when config.turri.yaml alone names no unit testing script - naming the stacks and their scripts", async () => {
     const { ran, run } = runner();
     const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run });
     const tool = regenerateTool({ cwd: dir, loop: () => loop, wait: () => false });
-    await expect(tool.execute("call", { plain_file: "backend.plain" }, undefined, undefined, ctx)).rejects.toThrow(
-      "Nothing was started: backend.plain would be built with no stack - config.turri.yaml alone - and that names no unit testing script, so every pulse would stop. " +
-        "The project's stacks: backend (config.turri.backend.yaml: test_scripts/run_unittests_python.sh), frontend (config.turri.frontend.yaml: test_scripts/run_unittests_typescript.sh).",
+    writeFileSync(join(dir, "api.plain"), app(["Serve the orders."], "is Python."));
+    await expect(tool.execute("call", { plain_file: "api.plain" }, undefined, undefined, ctx)).rejects.toThrow(
+      "Nothing was started: api.plain would be built with no stack - config.turri.yaml alone - and that names no unit testing script, so every pulse would stop. " +
+        "No stack is named after it, and none is chosen. The project's stacks: backend (config.turri.backend.yaml: test_scripts/run_unittests_python.sh), frontend (config.turri.frontend.yaml: test_scripts/run_unittests_typescript.sh).",
     );
     expect(loop.status()).toEqual([]);
     expect(ran).toEqual([]);
@@ -195,8 +240,9 @@ describe("the chat's tools in a project of stacks", () => {
     const { ran, run } = runner();
     const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run });
     const tool = regenerateTool({ cwd: dir, loop: () => loop, wait: () => false });
+    writeFileSync(join(dir, "web.plain"), app(["Show the orders.", "Show the invoices."], "is TypeScript."));
     chooseStack("frontend");
-    await tool.execute("call", { plain_file: "frontend.plain" }, undefined, undefined, ctx);
+    await tool.execute("call", { plain_file: "web.plain" }, undefined, undefined, ctx);
     await loop.drain();
     expect(ran.map((pulse) => pulse.stack)).toEqual(["frontend", "frontend"]);
   });
@@ -221,5 +267,58 @@ describe("a missing unit testing script in a project of stacks", () => {
     expect(note).not.toContain("name the one to use in config.turri.yaml");
     chooseStack("backend");
     expect(findTestScripts(dir).notes?.unit).toBeUndefined();
+  });
+});
+
+describe("a spec change written in a project of stacks", () => {
+  const fileDiff = (file: string, before: string, after: string) =>
+    [
+      `diff --git a/${file} b/${file}`,
+      `--- a/${file}`,
+      `+++ b/${file}`,
+      `@@ -1,${before.split("\n").length - 1} +1,${after.split("\n").length - 1} @@`,
+      ...before.split("\n").slice(0, -1).map((line) => `-${line}`),
+      ...after.split("\n").slice(0, -1).map((line) => `+${line}`),
+      "",
+    ].join("\n");
+  const write = (loop: ReturnType<typeof createWorkLoop>) => {
+    const { tools } = createSpecDiffTools({ loop, cwd: dir, paced: false });
+    return (params: object) => tools[0]!.execute("id", params as never, undefined, undefined, {} as never) as Promise<{ content: Array<{ text: string }> }>;
+  };
+
+  it("is built with the stack named after its module, with nothing chosen - as a brood writes it", async () => {
+    const { ran, run } = runner();
+    const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run });
+    const before = app(["Serve the orders.", "Serve the invoices."], "is Python.");
+    const after = app(["Serve the orders.", "Serve the invoices.", "Serve the refunds."], "is Python.");
+    const result = await write(loop)({ plain_file: "backend.plain", diff: fileDiff("backend.plain", before, after) });
+    await loop.drain();
+    expect(result.content[0]!.text).toContain("Building in the background");
+    expect(result.content[0]!.text).toContain("stack backend");
+    expect(new Set(ran.map((pulse) => `${pulse.stack} ${pulse.unit}`))).toEqual(new Set(["backend test_scripts/run_unittests_python.sh"]));
+    expect(ran).toHaveLength(3);
+  });
+
+  it("is written, never refused, when its module cannot be built yet for want of a stack - and says what to pass", async () => {
+    const before = app(["Serve the orders."], "is Python.");
+    const after = app(["Serve the orders.", "Serve the refunds."], "is Python.");
+    writeFileSync(join(dir, "api.plain"), before);
+    const { ran, run } = runner();
+    const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run });
+    const result = await write(loop)({ plain_file: "api.plain", diff: fileDiff("api.plain", before, after) });
+    expect(readFileSync(join(dir, "api.plain"), "utf8")).toBe(after);
+    expect(result.content[0]!.text).toContain("Applied the change to api.plain.");
+    expect(result.content[0]!.text).toContain("Not built yet - api.plain would be built with no stack");
+    expect(loop.status()).toEqual([]);
+    // A stack the project has no file for: written all the same, and said.
+    const later = app(["Serve the orders.", "Serve the refunds.", "Serve the invoices."], "is Python.");
+    const wrong = await write(loop)({ plain_file: "api.plain", diff: fileDiff("api.plain", after, later), stack: "mobile", fixes_earlier: true });
+    expect(wrong.content[0]!.text).toContain("Not built yet - There is no stack mobile");
+    // Passed with the next change, everything written so far is built.
+    const last = app(["Serve the orders.", "Serve the refunds.", "Serve the invoices.", "Serve the receipts."], "is Python.");
+    await write(loop)({ plain_file: "api.plain", diff: fileDiff("api.plain", later, last), stack: "backend", fixes_earlier: true });
+    await loop.drain();
+    expect(ran.map((pulse) => pulse.stack)).toEqual(["backend", "backend", "backend", "backend"]);
+    expect(readRecord(join(dir, "plain_modules", "api", "code"))).not.toBeNull();
   });
 });

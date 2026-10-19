@@ -8,6 +8,9 @@ import { applySpecDiff, plainFilesOf, revertSpecDiff } from "./regenerate/regene
 import { MissingFunctionalitiesError } from "./plain/errors.ts";
 import { describeModules, type WorkLoop } from "./regenerate/loop.ts";
 import { reviewNote, type LiveReviewer } from "./tools.ts";
+import { STACK_PARAM, stacklessBuild, withCallStack } from "./loop-tools.ts";
+import { stackNamed } from "./config.ts";
+import { projectDirOf } from "./regenerate/paths.ts";
 
 /** Whether a question has been answered since the last new spec change was written. */
 export interface SpecPace {
@@ -61,6 +64,7 @@ export function createSpecDiffTools(options: {
       skillPaced
         ? "One change per answer, and a new one only after the user has answered a question about it. Set fixes_earlier to correct something already written."
         : "Write the changes one after another, on your own: no answer is needed between them, and none is asked for. Set fixes_earlier to correct something already written.",
+      "In a project of stacks, the change is built with the stack named after the module - backend.plain with config.turri.backend.yaml - by itself. For a module whose stack has another name, pass it as stack. A change that cannot be built yet for want of a stack is written all the same: carry on, and pass the stack with the next change.",
       "To take something out of what is already written and queued - the user drops a page or a feature - write the diff that removes it from every spec that names it, with fixes_earlier. What is left to build is worked out from the spec each time, and a build the change undoes is stopped by itself; never stop builds to drop a change - it stays in the files.",
     ],
     parameters: Type.Object({
@@ -69,6 +73,7 @@ export function createSpecDiffTools(options: {
       fixes_earlier: Type.Optional(
         Type.Boolean({ description: "This corrects something already written - a contradiction, a review finding" }),
       ),
+      stack: STACK_PARAM,
       guidance: Type.Optional(
         Type.String({
           description:
@@ -118,12 +123,25 @@ export function createSpecDiffTools(options: {
       owed = false;
       liveReview?.notice(`${params.plain_file}, after the change to ${touched.join(", ")}`);
 
-      // In the files, the change is work: the loop works out what is left to build and plans it.
-      // A spec change, not a request: a module the person halted stays halted.
-      const statuses = await loop.bringUp(params.plain_file, { specChange: true, ...(params.guidance !== undefined ? { guidance: params.guidance } : {}) });
+      // In the files, the change is work: the loop works out what is left to build and plans it - with the stack the call
+      // names, else the module's own. A spec change, not a request: a module the person halted stays halted. The change
+      // is written whatever the stack: one that cannot be built yet is said, and built once it can - nothing is lost.
+      const building = resolve(cwd, params.plain_file);
+      let stackless: string | undefined;
+      try {
+        stackless = params.stack === undefined ? stacklessBuild(building) : (stackNamed(projectDirOf(building), params.stack), undefined);
+      } catch (error) {
+        stackless = error instanceof Error ? error.message : String(error);
+      }
+      const statuses =
+        stackless === undefined
+          ? await withCallStack(building, params.stack, () => loop.bringUp(params.plain_file, { specChange: true, ...(params.guidance !== undefined ? { guidance: params.guidance } : {}) }))
+          : [];
       const lines = [
         result === "applied" ? `Applied the change to ${touched.join(", ")}.` : `The change to ${touched.join(", ")} was already applied.`,
-        `Building in the background:\n${describeModules(statuses)}\n`,
+        stackless === undefined
+          ? `Building in the background:\n${describeModules(statuses)}\n`
+          : `Not built yet - ${stackless} The change is in the spec: pass stack with the next change, or call regenerate with it, and everything written so far is built.\n`,
         // An interview goes back to its questions; a skill that writes on its own, straight to its next change - a stop to ask ends it.
         paced
           ? "Carry on with the interview."

@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { basename, relative, resolve } from "node:path";
 import { defineTool, type ExtensionContext, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { chosenStack, CONFIG_FILE, readProjectConfig, stackConfigFile, stackNamed, stackOf, stacksOf, withStack } from "./config.ts";
+import { CONFIG_FILE, readProjectConfig, stackConfigFile, stackForModule, stackNamed, stacksOf, withStack } from "./config.ts";
 import { checkPlainFile } from "./plain/check.ts";
 import { describeDrift, describeModules, type ModuleStatus, type WorkLoop } from "./regenerate/loop.ts";
 import type { RenderWork } from "./regenerate/engine.ts";
@@ -52,33 +52,40 @@ export const STACK_PARAM = Type.Optional(
     description:
       "In a project of stacks: the stack that builds this module - its config.turri.<stack>.yaml over config.turri.yaml, " +
       "its testing scripts, toolchains and models - for every pulse of it, whatever stack is chosen later. \"none\": " +
-      "config.turri.yaml alone. Omitted: the stack chosen now.",
+      "config.turri.yaml alone. Omitted: the stack named after the module - config.turri.backend.yaml for backend.plain - " +
+      "else the one chosen now.",
   }),
 );
 
 /**
- * `work` with the stack a call names - or, none named, the one chosen now - chosen for it: what it asks for is built with
- * that stack. A project of stacks that would be built with none, when config.turri.yaml alone names no unit testing
- * script, is refused before anything is planned: its pulses would all stop for want of one.
+ * Why a module asked for with no stack named cannot be built: a project of stacks where it has no stack of its own and
+ * none is chosen, and config.turri.yaml alone names no unit testing script - every pulse would stop for want of one.
+ * The stacks and the script each names, and what to do. Undefined when it can be built.
+ */
+export function stacklessBuild(plainFile: string): string | undefined {
+  const root = projectDirOf(plainFile);
+  const stacks = stacksOf(root);
+  if (stacks.length === 0 || stackForModule(plainFile) !== undefined || findTestScripts(root).unit !== undefined) return undefined;
+  const scripts = stacks.map((each) => {
+    const unit = withStack(each, () => findTestScripts(root).unit);
+    return `${each}${unit !== undefined ? ` (${stackConfigFile(each)}: ${relative(root, unit)})` : ""}`;
+  });
+  return (
+    `${basename(plainFile)} would be built with no stack - ${CONFIG_FILE} alone - and that names no unit testing script, so every ` +
+    `pulse would stop. No stack is named after it, and none is chosen. The project's stacks: ${scripts.join(", ")}. Pass the ` +
+    `stack that builds ${basename(plainFile)} as stack - or ask the user which, when the spec does not make it plain.`
+  );
+}
+
+/**
+ * `work` with the stack a call names chosen for it - or, none named, as it is: each module is then built with its own
+ * (`stackForModule`). A module that could not be built that way is refused before anything is planned (`stacklessBuild`).
  */
 export function withCallStack<T>(plainFile: string, named: string | undefined, work: () => T): T {
-  const root = projectDirOf(plainFile);
-  const stack = named !== undefined ? stackNamed(root, named) : chosenStack();
-  return withStack(stack, () => {
-    const stacks = stacksOf(root);
-    if (named === undefined && stackOf(root) === undefined && stacks.length > 0 && findTestScripts(root).unit === undefined) {
-      const scripts = stacks.map((each) => {
-        const unit = withStack(each, () => findTestScripts(root).unit);
-        return `${each}${unit !== undefined ? ` (${stackConfigFile(each)}: ${relative(root, unit)})` : ""}`;
-      });
-      throw new Error(
-        `Nothing was started: ${basename(plainFile)} would be built with no stack - ${CONFIG_FILE} alone - and that names no unit testing ` +
-          `script, so every pulse would stop. The project's stacks: ${scripts.join(", ")}. Pass the stack that builds ` +
-          `${basename(plainFile)} as stack - or ask the user which, when the spec does not make it plain.`,
-      );
-    }
-    return work();
-  });
+  if (named !== undefined) return withStack(stackNamed(projectDirOf(plainFile), named), work);
+  const stackless = stacklessBuild(plainFile);
+  if (stackless !== undefined) throw new Error(`Nothing was started: ${stackless}`);
+  return work();
 }
 
 export const WAIT_PARAM = Type.Optional(
@@ -217,7 +224,7 @@ export function regenerateTool(options: LoopToolsOptions & { loop: (ctx: Extensi
       "A change to a file the spec links - an API surface, a mapping document - is a change to the spec: regenerate sees it by itself, and regenerates every functional spec that uses what links it.",
       "Never stop pulses and start them again yourself to follow a spec change: regenerate does it.",
       "Set from_scratch only when the user asks for the module to be regenerated from scratch - started over, its code deleted - in this conversation, or agrees to it when a module's status says it has to start over: never to fix a pulse that did not land.",
-      "In a project of stacks - a backend and a frontend, each with its config.turri.<stack>.yaml - pass stack: the one that builds this module's part, the backend's spec with the backend stack. It is pinned to the module's pulses: regenerate a backend and a frontend side by side, each with its own, without switching the stack chosen. What it says back names the stack each module is built with.",
+      "In a project of stacks - a backend and a frontend, each with its config.turri.<stack>.yaml - a module is built with the stack named after it by itself: backend.plain with config.turri.backend.yaml. Pass stack only for a module whose stack has another name. It is pinned to the module's pulses: a backend and a frontend regenerate side by side, each with its own, without switching the stack chosen. What it says back names the stack each module is built with.",
       'from_scratch "module" takes out the code where the module is built; the modules below keep theirs, and the module starts from a copy of the code below it. "chain" takes out every codebase of its requires chain, the base\'s too, and builds all of it again from the bottom: use it after modules were split, merged or moved (refactor-module), or when the user asks for the whole chain.',
     ],
     parameters: Type.Object({

@@ -28,7 +28,7 @@ import {
 import { describeSpecDiffConformance, renderSpecDiffConformance } from "./conform.ts";
 import { conformanceDirFor } from "./conformance.ts";
 import { modulesRoot } from "./paths.ts";
-import { budgetFor, chosenStack, choosingWhen, configForSpec, conformanceSwitchedOn, withStack } from "../config.ts";
+import { budgetFor, choosingWhen, configForSpec, conformanceSwitchedOn, stackForModule, stackPinned, withStack } from "../config.ts";
 import { describeSpecChange } from "./prompt.ts";
 import { resolveTemplateDirs } from "./paths.ts";
 import { builtTips, copyRequiredCode, importingModules, isImportModule, newlyRequired, resolveRequiresChain, startFromScratch, type ChainEntry } from "./requires.ts";
@@ -132,8 +132,8 @@ interface ModuleState {
   askedFile: string;
   model?: string;
   /**
-   * The stack it is built with, pinned when it was asked for - none, the project's config alone: its plans, pulses and
-   * testing scripts read the config with it, whatever is chosen since. Not pinned yet: the one chosen now.
+   * The stack it is built with, pinned when it was asked for (`stackForModule`) - none, the project's config alone: its
+   * plans, pulses and testing scripts read the config with it, whatever is chosen since.
    */
   stack?: { name: string | undefined };
   guidance: string[];
@@ -1390,10 +1390,10 @@ export function createWorkLoop(options: {
   };
 
   /**
-   * Look after a codebase - its chain up to it - from now on; says its state. `pin`: the stack it is built with from now
-   * on - kept, when `keep` and it has one already.
+   * Look after a codebase - its chain up to it - from now on; says its state. `pin`: its stack is worked out again - its
+   * tip's (`stackForModule`) - unless `keep`, and it has one: a spec change keeps the stack it was asked for with.
    */
-  const track = (chain: ChainEntry[], askedFile: string, request: { model?: string; guidance?: string }, pin?: { name: string | undefined; keep?: boolean }): ModuleState => {
+  const track = (chain: ChainEntry[], askedFile: string, request: { model?: string; guidance?: string }, pin?: { keep?: boolean }): ModuleState => {
     const tip = tipOf(chain);
     let state = modules.get(tip.buildDir);
     if (state === undefined) {
@@ -1406,7 +1406,9 @@ export function createWorkLoop(options: {
     }
     state.chain = chain;
     state.askedFile = askedFile;
-    if (pin !== undefined && (pin.keep !== true || state.stack === undefined)) state.stack = { name: pin.name };
+    // Kept only when it is a stack: a module pinned to none - built before its stack's file was there - takes its own.
+    const keep = pin?.keep === true && !stackPinned() && state.stack?.name !== undefined;
+    if (pin !== undefined && !keep) state.stack = { name: stackForModule(tip.plainFile) };
     // Its model as its stack has it: a stack's file can name a coding model of its own.
     const model = request.model ?? inStack(state, () => options.modelFor?.(tip.plainFile));
     if (model !== undefined) state.model = model;
@@ -1419,9 +1421,9 @@ export function createWorkLoop(options: {
       const { specChange, ...request } = given;
       const files = codebasesOf(resolve(options.cwd, plainFile));
       for (const file of files) asked.set(file, { ...asked.get(file), ...request });
-      // Asked for, it is built with the stack chosen now - pinned, whatever is chosen later; a spec change keeps the one
-      // it was asked for with.
-      const pin = { name: chosenStack(), keep: specChange === true };
+      // Asked for, it is built with its stack - the one the call names, its own, or the one chosen now - pinned, whatever
+      // is chosen later; a spec change keeps the one it was asked for with.
+      const pin = { keep: specChange === true };
       const states = withParseCache(() =>
         files.flatMap((file) => chainsFor(file).flatMap((chain) => toBuild(chain).map((entry) => track(chain.slice(0, chain.indexOf(entry) + 1), file, request, pin)))),
       );
@@ -1541,7 +1543,7 @@ export function createWorkLoop(options: {
         }
       }
       const tracked = withParseCache(() =>
-        (wentBack ? [own] : chainsFor(file)).flatMap((chain) => toBuild(chain).map((entry) => track(chain.slice(0, chain.indexOf(entry) + 1), file, request, { name: chosenStack() }))),
+        (wentBack ? [own] : chainsFor(file)).flatMap((chain) => toBuild(chain).map((entry) => track(chain.slice(0, chain.indexOf(entry) + 1), file, request, {}))),
       );
       // The module asked for, in its own codebase - and those below it: never the codebases built on it.
       const asking = tracked.find((state) => tipEntry(state).buildDir === self.buildDir);

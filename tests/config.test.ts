@@ -314,22 +314,33 @@ describe("a stack's config file", () => {
   it("is laid over config.turri.yaml once its stack is chosen - a model it names taking what it leaves out from the project's - and with none chosen, the project's file alone", async () => {
     const { chooseStack, configForSpec, stacksOf } = await import("../src/config.ts");
     expect(stacksOf(root)).toEqual(["backend", "frontend"]);
+    // A module named after no stack: the stack chosen for the session builds it.
     const project = { harnessModel: { model: "anthropic/claude-opus-5-5" }, codingModel: { model: "google/gemini-3.1-flash", thinking: "low" }, conformanceTests: true };
-    expect(configForSpec(join(root, "backend.plain"))).toEqual(project);
+    expect(configForSpec(join(root, "app.plain"))).toEqual(project);
     chooseStack("backend");
-    expect(configForSpec(join(root, "backend.plain"))).toEqual({
+    expect(configForSpec(join(root, "app.plain"))).toEqual({
       ...project,
       unittestsScript: "test_scripts/run_unittests_python.sh",
       conformanceTestsScript: "test_scripts/run_conformance_tests_python.sh",
     });
     // The conversation's model, and the module built when none is named, are the project's alone.
     chooseStack("frontend");
-    expect(configForSpec(join(root, "backend.plain"))).toEqual({
+    expect(configForSpec(join(root, "app.plain"))).toEqual({
       harnessModel: { model: "anthropic/claude-opus-5-5" },
       codingModel: { model: "google/gemini-3.1-flash", thinking: "high" },
       conformanceTests: false,
       unittestsScript: "test_scripts/run_unittests_typescript.sh",
     });
+  });
+
+  it("named after a module builds it, with nothing chosen and over the stack chosen - a call's or a pulse's own winning", async () => {
+    const { chooseStack, configForSpec, withStack } = await import("../src/config.ts");
+    const backend = { unittestsScript: "test_scripts/run_unittests_python.sh", conformanceTestsScript: "test_scripts/run_conformance_tests_python.sh" };
+    expect(configForSpec(join(root, "backend.plain"))).toMatchObject(backend);
+    chooseStack("frontend");
+    expect(configForSpec(join(root, "backend.plain"))).toMatchObject(backend);
+    expect(withStack("frontend", () => configForSpec(join(root, "backend.plain")).unittestsScript)).toBe("test_scripts/run_unittests_typescript.sh");
+    expect(withStack(undefined, () => configForSpec(join(root, "backend.plain")).unittestsScript)).toBeUndefined();
   });
 
   it("is chosen for the session, and a pulse keeps the stack it started with whatever is chosen while it runs", async () => {

@@ -83,7 +83,7 @@ export function registerStacks(pi: ExtensionAPI, cwd: string): void {
         "For the session; a pulse already running keeps the stack it started with. Without a name, says the stacks and the one chosen.",
       promptSnippet: "choose the stack - its testing scripts and settings - that everything is built with",
       promptGuidelines: [
-        "Switch the stack only when the user asks for it, and say which you chose. To build a part of the project another stack builds - a backend's, a frontend's - pass that stack as stack to regenerate, conform or glimpse instead: it is pinned to that module's pulses, and the session's choice stays as it is.",
+        "Switch the stack only when the user asks for it, and say which you chose. A module is built with the stack named after it by itself; to build one whose stack has another name, pass that stack as stack to regenerate, conform, glimpse or write_spec_diff instead: it is pinned to that module's pulses, and the session's choice stays as it is.",
       ],
       parameters: Type.Object({
         name: Type.Optional(Type.String({ description: "The stack to choose, or none. Omitted: the stacks there are, and the one chosen" })),
