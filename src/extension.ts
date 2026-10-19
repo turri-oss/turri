@@ -53,7 +53,7 @@ import { beginCapture, captureConsole, describeCaptured, dropNoise } from "./qui
 import { loadRules, renderRulesBlock } from "./rules.ts";
 import { registerTurriConfig } from "./config-command.ts";
 import { describeStdlib } from "./stdlib.ts";
-import { peekKeyListener, runAsk, type AskUser, type AskUserRequest } from "./ask.ts";
+import { peekKeyListener, runAsk, type AskUser, type AskUserIO, type AskUserRequest } from "./ask.ts";
 import { QuestionDialog } from "./question-dialog.ts";
 import { registerStacks } from "./stacks.ts";
 import { catalogueLine, discoverSkills, leftOutNote, type SkillCatalogue } from "./skills.ts";
@@ -99,8 +99,17 @@ export function askUserVia(
   onExchange: (question: string, answer: string, said?: string) => void,
   /** Given, "/btw ..." typed as an answer is a side question: answered with this, and the question asked again. */
   aside?: (question: string) => Promise<string>,
+  /** A host's own dialogs (TurriHost.dialogs), the question put in them instead of the terminal's. */
+  dialogs?: AskUserIO,
 ): AskUser {
   return async (request) => {
+    if (dialogs !== undefined) {
+      const asking: AskUser = (asked) => runAsk(asked, dialogs);
+      const bare: AskUserRequest = { ...request, said: undefined };
+      const answer = aside !== undefined ? await askWithAsides(bare, asking, aside) : await asking(bare);
+      onExchange(request.question, answer, [request.context, request.said].map((part) => part?.trim() ?? "").filter((part) => part !== "").join("\n\n") || undefined);
+      return answer;
+    }
     if (!ctx.hasUI) {
       return "No user is available to answer. Decide yourself, and say in your report what you assumed.";
     }
@@ -190,10 +199,10 @@ function hookPeekKey(ctx: ExtensionContext): () => void {
  * pick from, several at once, "Something else…" to type instead, "Chat about this" to talk it over in
  * the chat first - so a question with a handful of answers is picked, not typed.
  */
-export function chatAskUserTool() {
+export function chatAskUserTool(dialogs?: AskUserIO): ReturnType<typeof createAskUserTool> {
   let conversation: ExtensionContext | undefined;
   const tool = createAskUserTool(
-    (request) => (conversation !== undefined ? askUserVia(conversation, () => {})(request) : Promise.resolve("No user is available to answer.")),
+    (request) => (conversation !== undefined ? askUserVia(conversation, () => {}, undefined, dialogs)(request) : Promise.resolve("No user is available to answer.")),
     undefined,
     undefined,
     undefined,
@@ -212,7 +221,35 @@ export function chatAskUserTool() {
   };
 }
 
-export default function (pi: ExtensionAPI) {
+/**
+ * What a host that runs turri's conversation itself - a desktop app, an editor - is told and asked, where the terminal
+ * would draw: the conversation's jobs and its work loop as they are made and as they change, and the dialogs its
+ * questions are put to the person in. A host gives the extension `createTurriExtension(host)`; `turri` gives it none.
+ */
+export interface TurriHost {
+  /** The conversation's job registry, as the extension makes it: every pulse the conversation starts is in it. */
+  onJobs?(jobs: JobRegistry): void;
+  /** The conversation's work loop, once work is first asked for: what each codebase has planned, and why. */
+  onWorkLoop?(loop: WorkLoop): void;
+  /** A job started, moved to another stage, did something, or ended. */
+  onJobChange?(job: Job): void;
+  /** What is planned changed with no job - a module being planned, or planned. */
+  onPlanChange?(): void;
+  /** The dialogs ask_user puts its questions in - the conversation's and a skill's interview - instead of the terminal's. */
+  dialogs?: AskUserIO;
+}
+
+/** The host each conversation's jobs report to, for the work loop made for them later. */
+const hosts = new WeakMap<JobRegistry, TurriHost>();
+
+/** turri's conversation as an extension of pi's, for a host that runs it itself: see TurriHost. */
+export function createTurriExtension(host: TurriHost = {}): (pi: ExtensionAPI) => void {
+  return (pi) => turriExtension(pi, host);
+}
+
+export default createTurriExtension();
+
+function turriExtension(pi: ExtensionAPI, host: TurriHost) {
   dropNoise();
   const cwd = process.cwd();
   // turri's own skills, and the project's - .turri/skills, .agents/skills (skills.ts).
@@ -232,7 +269,10 @@ export default function (pi: ExtensionAPI) {
   const deployState = createDeployState();
   const jobs: JobRegistry = createJobRegistry({
     // The loop's plan changed - a module being planned, or planned: the live panel shows it at once.
-    onNotify: () => panel.refresh(),
+    onNotify: () => {
+      panel.refresh();
+      host.onPlanChange?.();
+    },
     // A job that fails is run once more; failing again, it and every job behind it fail, and the
     // harness - which can read the skills, the rules, the code, the tests and turri itself -
     // works out why, and what has to be done.
@@ -251,9 +291,13 @@ export default function (pi: ExtensionAPI) {
       });
       return diagnosis !== undefined ? describeDiagnosis(diagnosis) : undefined;
     },
-    onChange: () => panel.refresh(),
+    onChange: (job) => {
+      panel.refresh();
+      host.onJobChange?.(job);
+    },
     onFinish: (job) => {
       panel.refresh();
+      host.onJobChange?.(job);
       // Queued again as another job: that one says how it went.
       if (job.replacedBy !== undefined) return;
       announceJob(pi, job);
@@ -284,6 +328,9 @@ export default function (pi: ExtensionAPI) {
       );
     },
   });
+
+  hosts.set(jobs, host);
+  host.onJobs?.(jobs);
 
   // The ***plain rules go into the system prompt in full, every turn. The block is
   // identical each time, so it sits inside the cached prefix rather than invalidating it.
@@ -426,7 +473,7 @@ export default function (pi: ExtensionAPI) {
   registerBranding(pi, discoveredSkills);
   registerInterviewLog(pi);
   registerJobTools(pi, jobs, cwd);
-  registerCheckPlain(pi, cwd);
+  registerCheckPlain(pi, cwd, host.dialogs);
   registerRegenerate(pi, cwd, jobs);
   registerDrift(pi, cwd, jobs);
   registerGlimpse(pi, cwd, jobs);
@@ -620,7 +667,7 @@ export default function (pi: ExtensionAPI) {
           push(`  Q: ${question}`);
           push(`  A: ${answer}`);
           recordExchange(pi, { skill: skill.name, question, answer, ...(said !== undefined && said.trim() !== "" ? { said: said.trim() } : {}) });
-        }, (question) => askOnTheSide(pi, ctx, cwd, jobs, question)),
+        }, (question) => askOnTheSide(pi, ctx, cwd, jobs, question), host.dialogs),
         model: conversationModel(ctx),
         // Renders queued by a step land in the same registry as everything else, so
         // pulses sees them without knowing a skill started them.
@@ -1470,6 +1517,7 @@ function workLoopFor(jobs: JobRegistry, cwd: string, ctx: ExtensionContext): Wor
     });
     shared = { loop, from };
     workLoops.set(jobs, shared);
+    hosts.get(jobs)?.onWorkLoop?.(loop);
   }
   shared.from.ctx = ctx;
   return shared.loop;
@@ -2096,9 +2144,9 @@ function jobLines(all: Job[]): string {
  * so it needs no external tool, no API key and no credits - and it is the only honest way
  * to answer "is this spec valid?" without generating anything.
  */
-function registerCheckPlain(pi: ExtensionAPI, cwd: string) {
+function registerCheckPlain(pi: ExtensionAPI, cwd: string, dialogs?: AskUserIO) {
   pi.registerTool(checkPlainTool(cwd));
-  pi.registerTool(chatAskUserTool());
+  pi.registerTool(chatAskUserTool(dialogs));
   // The web, for the conversation too - a library's documentation, an API, an error; curl is its
   // bash. Run here, like the rendering agents' (see render/web.ts).
   for (const tool of createWebTools()) pi.registerTool(tool);

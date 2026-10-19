@@ -31,6 +31,7 @@ turri implements regenerative software: the \*\*\*plain specs are the durable de
 | what the agents can and cannot reach | [the sandbox](sandbox.md) |
 | how skill review gates and judges work | [skills and gates](skills-and-gates.md) |
 | how the parser matches the reference implementation | [the \*\*\*plain parser](parser.md) |
+| how a desktop app or an editor runs turri's conversation itself | [running turri in a host](hosting.md) |
 | where the code for something lives | [development](development.md#layout) |
 
 ## All pages
@@ -48,4 +49,5 @@ turri implements regenerative software: the \*\*\*plain specs are the durable de
 | [Skills and gates](skills-and-gates.md) | the gate syntax, what the harness enforces, what a step can do, the rules, trying the gates |
 | [The \*\*\*plain parser](parser.md) | the TypeScript port, `turri validate`, inheritance, the iterator, fidelity |
 | [Theming](theming.md) | the turri themes, contrast, backgrounds, the font |
+| [Running turri in a host](hosting.md) | `@turri-dev/cli/host`: the conversation in a host's own window - its jobs, its questions - and what a host shows beside it |
 | [Development](development.md) | tests, the source layout, known edges |

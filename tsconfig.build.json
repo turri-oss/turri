@@ -6,7 +6,9 @@
     "noEmit": false,
     "rootDir": "src",
     "outDir": "dist",
-    "rewriteRelativeImportExtensions": true
+    "rewriteRelativeImportExtensions": true,
+    // Types for a host that imports @turri-dev/cli/host.
+    "declaration": true
   },
   "include": ["src"]
 }

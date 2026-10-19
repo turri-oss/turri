@@ -16,6 +16,13 @@
   "bin": {
     "turri": "bin/turri.mjs"
   },
+  "exports": {
+    "./host": {
+      "types": "./dist/host.d.ts",
+      "import": "./dist/host.js"
+    },
+    "./package.json": "./package.json"
+  },
   "scripts": {
     "cultivate": "tsx src/cultivate-cli.ts",
     "typecheck": "tsc --noEmit",
