@@ -412,9 +412,9 @@ export function createAskExplorerTool(options: { ask: (question: string) => Prom
     name: "ask_explorer",
     label: "Ask the explorer",
     description:
-      "Ask the explorer - who read and ran the code, and wrote the account of it you were given - something the account " +
+      "Ask the explorer - who read the code, and wrote the account of it you were given - something the account " +
       "does not say: how a functionality is reached, what a field is called, what the software needs around it. It reads " +
-      `and runs the code to answer. ${options.questions ?? EXPLORER_QUESTIONS} questions a run: ask what reading the code yourself would take long to find.`,
+      `the code to answer - it runs nothing, so what only running the software shows is yours to try. ${options.questions ?? EXPLORER_QUESTIONS} questions a run: ask what reading the code yourself would take long to find.`,
     promptSnippet: "ask_explorer: a question about how the software is reached, answered by the explorer from the code",
     parameters: Type.Object({ question: Type.String({ description: "What you need to know, exactly" }) }),
     async execute(_id, params) {
