@@ -33,7 +33,7 @@ import { checkPlainFile, checkPlainTargets, formatCheckResults } from "./plain/c
 import { whyFailed } from "./regenerate/diagnose-job.ts";
 import { createWorkLoop, describeModules, isUpToDate, previewJobs, type WorkLoop } from "./regenerate/loop.ts";
 import { brandNeon, brandPink, plainPaint } from "./regenerate/plain-palette.ts";
-import { halfBlocks, JELLYFISH_FRAME_MS, JELLYFISH_TEXT_FRAMES } from "./jellyfish.ts";
+import { halfBlocks, JELLYFISH_FRAME_MS, JELLYFISH_SEQUENCE, JELLYFISH_TEXT_FRAMES } from "./jellyfish.ts";
 import { createJobPanel, didNotPass, keyPressed, PANEL_KEY, spinner } from "./regenerate/job-panel.ts";
 import { clickToFocus, dockedWidth, narrowChat, shade, shadeChat } from "./regenerate/panel-dock.ts";
 import { overPictureRow, PICTURE_AT } from "./picture-row.ts";
@@ -2597,8 +2597,8 @@ function registerBranding(pi: ExtensionAPI, skills: SkillCatalogue) {
       ...(data.pending > 0 ? [theme.fg("warning", `${data.pending} skill${data.pending === 1 ? "" : "s"} failed to load`)] : []),
       ...(data.sandbox !== undefined && data.sandbox.level !== "ok" ? [theme.fg(data.sandbox.level === "limited" ? "warning" : "error", data.sandbox.text)] : []),
     ];
-    // The jellyfish turri is named after, in ink for the theme's background: a picture where the
-    // terminal shows images, drawn in text where it does not.
+    // The jellyfish turri is named after, regenerating, in ink for the theme's background: a picture
+    // where the terminal shows images, drawn in text where it does not.
     return new Banner(lines, (rule) => theme.fg("borderMuted", rule), jellyfishArt(theme.appearance, (theme.getColorMode?.() ?? "truecolor") === "truecolor"));
   });
 
@@ -2622,12 +2622,18 @@ function registerBranding(pi: ExtensionAPI, skills: SkillCatalogue) {
   });
 }
 
-/** How many rows the banner's jellyfish takes at most: as tall as the one drawn in text. */
-const JELLYFISH_ROWS = 10;
+/**
+ * How many rows the banner's picture takes at most: its frame reaches down to the sea floor the polyp stands on, so it
+ * is given more than the jellyfish drawn in text, ten.
+ */
+const JELLYFISH_ROWS = 14;
 
 
-/** Which frame of the jellyfish every banner shows, moved on by `animateJellyfish`. */
+/** How far along its sequence the jellyfish every banner shows is, moved on by `animateJellyfish`. */
 let jellyfishFrame = 0;
+
+/** The frame the jellyfish is on: the one its sequence has at this point. */
+const shownFrame = () => JELLYFISH_SEQUENCE[jellyfishFrame % JELLYFISH_SEQUENCE.length]!;
 let jellyfishTimer: ReturnType<typeof setInterval> | undefined;
 
 /**
@@ -2747,7 +2753,7 @@ class Banner implements Component {
     const text = this.lines.flatMap((line) => wrapTextWithAnsi(line, Math.max(1, width - 1 - left)));
     const height = Math.max(text.length, placed?.rows ?? 0);
     const above = Math.floor((height - text.length) / 2);
-    const drawn = placed?.kind === "text" ? placed.frames[jellyfishFrame % placed.frames.length]! : undefined;
+    const drawn = placed?.kind === "text" ? placed.frames[shownFrame()]! : undefined;
     const rows = Array.from({ length: height }, (_, row) => {
       const line = text[row - above];
       const jellyfish = drawn !== undefined ? (drawn[row] ?? " ".repeat(placed!.columns)) : " ".repeat(placed?.columns ?? 0);
@@ -2771,7 +2777,7 @@ class Banner implements Component {
     if (room < 4) return undefined;
     const kitty = getCapabilities().images === "kitty";
     if (kitty && this.kittyImageId === undefined) this.kittyImageId = allocateImageId();
-    const result = renderImage(art.frames[jellyfishFrame % art.frames.length]!, art.dimensions, {
+    const result = renderImage(art.frames[shownFrame()]!, art.dimensions, {
       maxWidthCells: room,
       maxHeightCells: rows,
       imageId: this.kittyImageId,

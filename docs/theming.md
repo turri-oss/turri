@@ -14,7 +14,7 @@ Bad input fails quietly - an unknown `--use-theme` name and a malformed theme fi
 
 ## The palette
 
-Both themes, the command line's colours, the spec diff's, the banner's jellyfish and the docs' diagram are drawn from turri's design system and nothing else: dark, quiet surfaces, one pink thing to press, neon for anything you can follow. These are all the colours turri has - none is mixed, tinted or added.
+Both themes, the command line's colours, the spec diff's, the banner's jellyfish and the docs' diagram are drawn from turri's design system and nothing else: dark, quiet surfaces, one pink thing to press, neon for anything you can follow. These are all the colours turri has - none is mixed, tinted or added, but for the jellyfish's tentacles, every other pixel of which the design draws half seen.
 
 | name | value | in `turri-dark` |
 |---|---|---|
@@ -25,13 +25,15 @@ Both themes, the command line's colours, the spec diff's, the banner's jellyfish
 | lines | `#22344a` | rules, dividers, frames: `borderMuted`, `mdHr` |
 | path | `#3e5a6b` | the editor's border, what is dim: `dim`, line numbers |
 | grauzone | `#85a3b2` | body text, and what can be skimmed: `text`, `muted` |
-| white | `#f4f7f9` | headings, tool titles, what you typed, the jellyfish's shine |
+| white | `#f4f7f9` | headings, tool titles, what you typed |
 | siesta tan | `#e9d8c8` | strings in code, \*\*\*plain's text in quotes or backticks |
-| eggplant | `#732553` | a removed line's fill in a spec diff |
+| eggplant | `#732553` | a removed line's fill in a spec diff, the jellyfish's rim |
 | neon | `#5ce1e6` | links, focus, the selection, section labels, \*\*\*plain's concepts in a spec diff: `accent`, `mdLink`, regen's `◆` |
 | neon hover | `#8eebee` | inline code - siesta tan beside white text was too close to tell apart, and tiring to read - types in code, an added line's fill in a light theme's spec diff: `mdCode` |
 | pink | `#ff5c8d` | the wordmark, the jellyfish's bell, and what is done - its `✓`, the spec map's `◇` and `◆`: `success` |
-| pink hover | `#ff7fa6` | \*\*\*plain's section headers, a removed line's `-`, keywords in code |
+| pink hover | `#ff7fa6` | the glint on the jellyfish's bell, \*\*\*plain's section headers, a removed line's `-`, keywords in code |
+| orchid | `#a9479a` | the jellyfish's bell, between its pink and its indigo - nowhere else |
+| indigo | `#5b57d9` | the jellyfish's bell, at its rim - nowhere else |
 | orange | `#ff7a3d` | the jellyfish's gut, the `$` of bash mode, and everything that asks for you - what failed (`✗`), what works with limits, what needs you (the spec map's `!`): `error`, `warning` |
 
 The design system keeps pink for the one thing to press and orange for the `$` prompt alone. A terminal has no buttons, but it needs status colours, so pink carries what is done and orange everything that asks for you - what failed, what works with limits, what waits on you - the mark (`✗`, `!`, `■`) telling them apart. The palette has no red.

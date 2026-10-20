@@ -1,20 +1,31 @@
 #!/usr/bin/env node
 // The banner's jellyfish as pictures, for terminals that show images: each frame of src/jellyfish.ts's pixel jellyfish
 // written to assets/jellyfish/ as <appearance>-NN.png, a pixel SCALE pixels square, in the design system's colours for
-// a dark background and for a light one. Terminals without images draw the same frames in half blocks themselves.
+// a dark background and for a light one - each frame once, the banner plays them in JELLYFISH_SEQUENCE's order.
+// Terminals without images draw the same frames in half blocks themselves.
 //
 //   node scripts/jellyfish-frames.mjs          write the frames
-//   node scripts/jellyfish-frames.mjs --play   play the small one here as the banner draws it in text, in half blocks
+//   node scripts/jellyfish-frames.mjs --play   play it here as the banner draws it in text, in half blocks
 //                                                (--light: in the light theme's colours)
 import { readdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { crc32, deflateSync } from "node:zlib";
-import { halfBlocks, JELLYFISH_COLOURS, JELLYFISH_FRAME_MS, JELLYFISH_FRAMES, JELLYFISH_HEIGHT, JELLYFISH_TEXT_FRAMES, JELLYFISH_WIDTH } from "../src/jellyfish.ts";
+import {
+  halfBlocks,
+  jellyfishAlpha,
+  JELLYFISH_COLOURS,
+  JELLYFISH_FRAME_MS,
+  JELLYFISH_FRAMES,
+  JELLYFISH_HEIGHT,
+  JELLYFISH_SEQUENCE,
+  JELLYFISH_TEXT_FRAMES,
+  JELLYFISH_WIDTH,
+} from "../src/jellyfish.ts";
 
-const SCALE = 6;
+const SCALE = 5;
 
-/** A frame as a PNG: RGBA, transparent where there is no pixel. */
+/** A frame as a PNG: RGBA, transparent where there is no pixel and see-through where a pixel is half seen. */
 function png(pixels, colours) {
   const width = JELLYFISH_WIDTH * SCALE;
   const height = JELLYFISH_HEIGHT * SCALE;
@@ -28,7 +39,7 @@ function png(pixels, colours) {
       const hex = colours[pixel];
       const o = at + 1 + x * 4;
       [1, 3, 5].forEach((from, k) => (raw[o + k] = Number.parseInt(hex.slice(from, from + 2), 16)));
-      raw[o + 3] = 255;
+      raw[o + 3] = Math.round(255 * jellyfishAlpha(pixel));
     }
   }
   const chunk = (type, data) => {
@@ -54,7 +65,7 @@ if (process.argv.includes("--play")) {
   let t = 0;
   process.stdout.write("\n".repeat(rows));
   setInterval(() => {
-    const drawn = halfBlocks(JELLYFISH_TEXT_FRAMES[t % JELLYFISH_TEXT_FRAMES.length], light ? "light" : "dark", true);
+    const drawn = halfBlocks(JELLYFISH_TEXT_FRAMES[JELLYFISH_SEQUENCE[t % JELLYFISH_SEQUENCE.length]], light ? "light" : "dark", true);
     process.stdout.write(`\x1b[${rows}A${drawn.map((line) => `\x1b[2K${line}`).join("\n")}\n`);
     t += 1;
   }, JELLYFISH_FRAME_MS);
