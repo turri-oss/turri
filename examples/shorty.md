@@ -2,7 +2,7 @@
 
 You will build **shorty**, a URL shortener: an HTTP API that turns a long URL into a short code, redirects anyone who opens the code, and counts the clicks - in the language you choose, with conformance tests from the start. These are black-box tests that start the service and call it over HTTP, so they show that it does what the spec says.
 
-It takes an hour or so. [cognio](cognio.md) explains each step in more detail. This example is about the conformance tests.
+It takes an hour or so. [guestbook](guestbook.md) is the quicker start. This example is about the conformance tests.
 
 ## 1. The project
 
@@ -84,5 +84,4 @@ That is a change to a definition, not a feature. In regen the definition gets th
 
 ## Where next
 
-- [hubsync](hubsync.md), an integration - conformance tests against a live third-party API.
 - [Regenerating](../docs/regenerating.md#conformance-tests) - what a conformance pulse does, step by step.

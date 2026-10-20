@@ -4,13 +4,11 @@ Each example is a project you regenerate with **turri** from an empty folder, th
 
 | example | what you build | what it shows |
 | --- | --- | --- |
-| [cognio](cognio.md) | a Strava for students: a backend API and a web app | the whole journey, step by step: the interview, the specs, the pulses, regen, releasing, changing your mind, a second module |
 | [guestbook](guestbook.md) | a backend API that keeps messages, and a web page to sign it | a backend and a frontend in minutes: two modules on two stacks from one interview, each with its own testing scripts, regenerated at the same time |
 | [tidy](tidy.md) | a command-line tool that sorts a folder of files into subfolders | light questioning - turri deciding what you leave open - a CLI on the standard library, conformance tests that run the real binary |
 | [shorty](shorty.md) | a backend service: a URL shortener with click counts | conformance tests from the start, `bind`, a rule changed and regenerated again |
-| [hubsync](hubsync.md) | an integration that keeps a CSV of contacts in step with HubSpot | a third-party REST API: its contract in `resources/`, credentials for the agents, conformance tests against the live sandbox |
 
-New to **turri**? Start with [cognio](cognio.md). It explains each step as it comes, and the other examples assume it.
+New to **turri**? Start with [guestbook](guestbook.md): it is the quickest, and done in minutes.
 
 Every example is built in the language you choose. The agents use the toolchains on your machine and install none, so turri offers only the stacks your machine can build - Python needs [uv](https://docs.astral.sh/uv/), TypeScript and every web app Node with npm, Go `go`, Rust `cargo`, Java a JDK. `turri doctor` lists what is there.
 

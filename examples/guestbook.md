@@ -1,6 +1,6 @@
 # A backend and a frontend, quickly: guestbook
 
-You will build **guestbook**, the smallest app with both halves: a backend API that keeps messages, and a web page that shows them and lets you sign. It is two modules on two stacks, each with its own testing scripts, written in one interview and regenerated at the same time - [cognio](cognio.md) without the hour.
+You will build **guestbook**, the smallest app with both halves: a backend API that keeps messages, and a web page that shows them and lets you sign. It is two modules on two stacks, each with its own testing scripts, written in one interview and regenerated at the same time.
 
 It takes twenty minutes or so, most of it the agents' time. You need the toolchain of the backend's language and Node with npm for the web app; `turri doctor` lists what is there.
 
@@ -46,5 +46,4 @@ The backend has to say when each was posted and the page has to show it, so the 
 
 ## Where next
 
-- [cognio](cognio.md) - the same shape, step by step: the interview, the specs, the pulses, regen, releasing.
 - [Stacks](../docs/config.md#stacks) - each part's testing scripts in its own `config.turri.<stack>.yaml`, and which stack builds which module.

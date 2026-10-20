@@ -188,7 +188,7 @@ Start at the [documentation index](docs/README.md), or go straight to a page:
 | | |
 | --- | --- |
 | [Installation](docs/installation.md) | doctor, what turri needs of this machine, **turri** and `pi`, environment variables |
-| [Examples](examples/README.md) | projects to build with turri step by step: cognio from an empty folder, guestbook - a backend and a frontend in minutes - a CLI, a backend service with conformance tests, a REST API integration |
+| [Examples](examples/README.md) | projects to build with turri step by step: guestbook - a backend and a frontend in minutes - a CLI, and a backend service with conformance tests |
 | [Using **turri**](docs/using.md) | the conversation, skills, tools, pulses and regen, choosing models, the command line |
 | [The project config](docs/config.md) | `config.turri.yaml` and each stack's `config.turri.<stack>.yaml`: every key, models and their inheritance, conformance, the testing scripts, stacks and choosing one, the old `config.yaml` |
 | [Deploy](docs/deploy.md) | trying what is built: the last commit in `dist/<module>`, started on your machine, nothing installed without asking |
