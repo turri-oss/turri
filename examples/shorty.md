@@ -19,13 +19,13 @@ turri init-config
 turri
 ```
 
-> Let's build shorty - a URL shortener API. You post a long URL and get back a short
+> /brood Let's build shorty - a URL shortener API. You post a long URL and get back a short
 > code; opening `/<code>` redirects to the URL and counts the click. Codes are 7 characters, letters and digits,
 > or a custom alias of my choice if it's free. A link can expire at a given time; after that, the code returns
 > 410. I can list my links with their click counts, and delete one. Keep the data in SQLite. Requests are
 > authenticated with an API key per user.
 
-The interview, `brood`, asks one question at a time:
+`/brood` starts the interview, which asks one question at a time:
 
 - **How many questions** the stack and product phases may ask: light, medium or thorough - at most 3, 5 or 10 a phase - or best judgement, fewer questions being broader ones. Choose **medium**: a question a feature, its main rules with it, and **turri** decides the edge cases.
 - **Intent**, read back for you to confirm.

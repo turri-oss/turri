@@ -13,6 +13,8 @@ description: >-
   to start fast) or for editing generated code (the .plain specs are the source of truth).
 allowed-tools: [read, write, edit, bash, ls, grep, find, write_spec_diff]
 metadata:
+  # Started only by the person, with its command - /bud - never by the model on its own.
+  command-only: true
   # What each phase does, in a line - shown under the skill's progress while it runs.
   phases:
     intent: "what the feature is for, who it serves, and what it leaves out"

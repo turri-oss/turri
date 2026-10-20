@@ -94,6 +94,11 @@ export interface Skill {
    * last answer is written with `write_spec_diff`, and changes the agent decides itself need no answer before them.
    */
   diffPerAnswer: string[];
+  /**
+   * Started only by the person, with its slash command - `/brood` - never by the model on its own
+   * (`metadata.command-only: true`): cultivate runs it only when the person has just typed its command.
+   */
+  commandOnly: boolean;
 }
 
 interface RawContinuous {
@@ -249,6 +254,7 @@ export function loadSkill(skillDir: string): Skill {
     paced: (data.metadata as { paced?: unknown } | undefined)?.paced !== false,
     questioning: capped,
     diffPerAnswer,
+    commandOnly: (data.metadata as Record<string, unknown> | undefined)?.["command-only"] === true,
   };
 }
 

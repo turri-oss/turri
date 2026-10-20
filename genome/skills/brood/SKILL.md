@@ -15,6 +15,8 @@ description: >-
   specs are the source of truth).
 allowed-tools: [read, write, edit, bash, ls, grep, find, write_spec_diff]
 metadata:
+  # Started only by the person, with its command - /brood - never by the model on its own.
+  command-only: true
   # What each phase does, in a line - shown under the skill's progress while it runs.
   phases:
     intent: "what problem this solves, for whom, and how you will know it works"

@@ -14,12 +14,12 @@ turri
 
 ## 2. Say what you want
 
-> Let's build guestbook: a backend API and a web app, both at once. The backend keeps messages in memory:
+> /brood Let's build guestbook: a backend API and a web app, both at once. The backend keeps messages in memory:
 > `POST /messages` with `{"name", "text"}` adds one - both required, `text` at most 280 characters - and
 > `GET /messages` lists them, newest first. The web app is one page that lists the messages, newest first, with
 > a form to sign the guestbook.
 
-**turri** starts `brood`, the interview. Keep it short:
+`/brood` starts the interview, with your words as its brief. Keep it short:
 
 - **How many questions.** Choose **light**. Your message says most of it, and what it leaves open **turri** decides itself and names in each phase's summary.
 - **Stack.** A backend stack and a frontend stack from the standard library your machine can build - FastAPI and React are quick. It writes `backend.plain` and `frontend.plain`, and each module's unit testing script, named in a stack file after the module - `config.turri.backend.yaml`, `config.turri.frontend.yaml` - so each module is built with its own, with nothing to choose.

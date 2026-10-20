@@ -122,7 +122,7 @@ The ones that shape a spec most:
 
 ## Writing specs with turri
 
-In a conversation (`turri`), say what you want and the matching skill runs. Two build a project from scratch, and write each spec change as a git diff that is built in the background the moment it is written. `brood` interviews you one question at a time and writes the specs as you answer; `spawn`, its quick twin, asks only what you want to build and which stack - or leaves the stack to it - and writes the rest on its own:
+In a conversation (`turri`), say what you want and the matching skill runs - but the three that start a project or a feature you start yourself, by their commands: `/brood`, `/spawn` or `/bud`, with what you want after it. Two build a project from scratch, and write each spec change as a git diff that is built in the background the moment it is written. `brood` interviews you one question at a time and writes the specs as you answer; `spawn`, its quick twin, gets something running as soon as it can - the smallest thing that runs first, then the product a slice at a time - asking only what your message leaves open:
 
 | skill | phases | how a spec change is written |
 | --- | --- | --- |

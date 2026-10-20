@@ -16,12 +16,12 @@ turri
 
 ## 2. Say what you want
 
-> Let's build tidy - a command-line tool that sorts the files of a folder into subfolders by kind: images, documents, archives, audio, video, code and other. `tidy plan <folder>` prints what it would
+> /brood Let's build tidy - a command-line tool that sorts the files of a folder into subfolders by kind: images, documents, archives, audio, video, code and other. `tidy plan <folder>` prints what it would
 > move, one line a file, and moves nothing. `tidy apply <folder>` moves them, never overwriting a file: a name
 > that is taken gets ` (2)`, ` (3)` and so on. Hidden files and subfolders are left alone. `--by-date` sorts into
 > `YYYY/MM` folders by modified time instead.
 
-**turri** starts `brood`, the interview. Its first question is how many questions you want to answer:
+`/brood` starts the interview, with your words as its brief. Its first question is how many questions you want to answer:
 
 - **How many questions.** Light, medium or thorough - at most 3, 5 or 10 questions in each of the stack and product phases - or best judgement, where **turri** asks as much as it judges a phase needs. Fewer questions are broader ones, so every level covers the same ground. Choose **light**: your first message already says most of it. Whatever the questions leave open, **turri** decides itself, says in one line what it chose, and names it in the phase's summary, so you can change it when you confirm.
 

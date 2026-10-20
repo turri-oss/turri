@@ -155,3 +155,39 @@ describe("what a host says of its own surface", () => {
     expect(hosted).not.toContain("ctrl+h");
   });
 });
+
+describe("the skills the person starts with a command", () => {
+  /** pi keeping the commands and tools the extension registers, and the messages it sends as the person. */
+  function registeringPi() {
+    const commands = new Map<string, { handler: (args: string, ctx: unknown) => Promise<void> }>();
+    const tools = new Map<string, { execute: (...args: unknown[]) => Promise<{ content: Array<{ text: string }> }> }>();
+    const sent: string[] = [];
+    const pi = new Proxy({}, {
+      get: (_target, key) =>
+        key === "registerCommand"
+          ? (name: string, command: { handler: (args: string, ctx: unknown) => Promise<void> }) => commands.set(name, command)
+          : key === "registerTool"
+            ? (tool: { name: string; execute: (...args: unknown[]) => Promise<{ content: Array<{ text: string }> }> }) => tools.set(tool.name, tool)
+            : key === "sendUserMessage"
+              ? (text: string) => sent.push(text)
+              : () => undefined,
+    }) as never;
+    return { pi, commands, tools, sent };
+  }
+
+  it("have a command each, which puts what was typed in the chat as the person's message", async () => {
+    const { pi, commands, sent } = registeringPi();
+    createTurriExtension()(pi);
+    for (const name of ["brood", "spawn", "bud"]) expect(commands.has(name), name).toBe(true);
+    expect(commands.has("add-concept")).toBe(false);
+    await commands.get("spawn")!.handler("  a small server ", {});
+    expect(sent).toEqual(["/spawn a small server"]);
+  });
+
+  it("are refused when the model starts one without the person's command", async () => {
+    const { pi, tools } = registeringPi();
+    createTurriExtension()(pi);
+    const result = await tools.get("cultivate")!.execute("id", { skill: "spawn" }, undefined, undefined, { hasUI: false });
+    expect(result.content[0]!.text).toContain("Not started: spawn is started only by the person, with /spawn");
+  });
+});

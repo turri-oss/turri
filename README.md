@@ -49,7 +49,7 @@ turri init-config --vendor anthropic
 
 It then tells you which API key to set - or to type `/login` once **turri** is running instead. **turri** loads the `config.turri.yaml` in the folder you start it from. Below the two models, the file sets every other setting to its default - change any of them in the file, or from the chat with `/turri-config`. Any other model works too: [models](#models).
 
-Once `turri` is running, say: *Let's start a new project: a small API where people can register and sign in.*
+Once `turri` is running, type: `/spawn a small API where people can register and sign in` - or `/brood` for an interview that settles each feature with you first.
 
 No project of your own yet? Build one of [**the examples**](examples/README.md) with turri, step by step.
 
@@ -146,11 +146,11 @@ cd ~/my-project
 turri
 ```
 
-Then talk to it:
+Then start the interview:
 
-> Let's start a new project: a small API where people can register and sign in.
+> /brood a small API where people can register and sign in
 
-It runs the interview skill, asks you about the problem, the stack and the product, writes \*\*\*plain, and builds each functionality as it is written. While it works:
+It asks you about the problem, the stack and the product, writes \*\*\*plain, and builds each functionality as it is written. While it works:
 
 - the **panel** above the input shows every build - its stage, what its agents are doing, its model and cost - and the queue behind it;
 - ask to try it at any time - "let me try it" - and **`release`** puts what is built so far in `dist/<module>` and **`activate`** starts it, installing what it needs - nothing to approve;

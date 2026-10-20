@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ensureInScratch } from "../src/regenerate/paths.ts";
-import { catalogueLine, discoverSkills, leftOutNote } from "../src/skills.ts";
+import { catalogueLine, createCommandGate, discoverSkills, leftOutNote, startedByCommandOnly } from "../src/skills.ts";
 
 let root: string;
 let harness: string;
@@ -115,5 +115,32 @@ describe("the scratch folder", () => {
     writeFileSync(join(scratch, ".gitignore"), "*\n!notes.md\n");
     ensureInScratch(scratch, join(scratch, "runs"));
     expect(readFileSync(join(scratch, ".gitignore"), "utf8")).toBe("*\n!notes.md\n");
+  });
+});
+
+describe("the skills the person starts themselves", () => {
+  it("are brood, spawn and bud - marked in cultivate's list with their command", () => {
+    const { skills } = discoverSkills(process.cwd(), process.cwd());
+    expect(skills.filter((skill) => skill.commandOnly).map((skill) => skill.name).sort()).toEqual(["brood", "bud", "spawn"]);
+    expect(catalogueLine(skills.find((skill) => skill.name === "spawn")!)).toContain("Started only by the person, with /spawn");
+    expect(catalogueLine(skills.find((skill) => skill.name === "add-concept")!)).not.toContain("Started only by the person");
+  });
+
+  it("start once their command is typed, and not again until it is typed again", () => {
+    const gate = createCommandGate();
+    const spawn = { name: "spawn", commandOnly: true };
+    expect(gate.mayStart(spawn)).toBe(false);
+    gate.typed("spawn");
+    expect(gate.mayStart(spawn)).toBe(true);
+    gate.started("spawn");
+    expect(gate.mayStart(spawn)).toBe(false);
+  });
+
+  it("leave every other skill free for the model to start", () => {
+    expect(createCommandGate().mayStart({ name: "add-concept", commandOnly: false })).toBe(true);
+  });
+
+  it("are refused with the command the person types", () => {
+    expect(startedByCommandOnly("brood")).toContain("tell them to type /brood");
   });
 });

@@ -56,7 +56,7 @@ import { describeStdlib } from "./stdlib.ts";
 import { peekKeyListener, runAsk, type AskUser, type AskUserIO, type AskUserRequest } from "./ask.ts";
 import { QuestionDialog } from "./question-dialog.ts";
 import { registerStacks } from "./stacks.ts";
-import { catalogueLine, discoverSkills, leftOutNote, type SkillCatalogue } from "./skills.ts";
+import { catalogueLine, createCommandGate, discoverSkills, leftOutNote, startedByCommandOnly, type SkillCatalogue } from "./skills.ts";
 import { supersededByTurri } from "./chat-skills.ts";
 import { conversationIdentity } from "./identity.ts";
 import { setSurface, surfaceOf } from "./surface.ts";
@@ -516,6 +516,20 @@ function turriExtension(pi: ExtensionAPI, host: TurriHost) {
   const catalogue = skills.map(catalogueLine).join("\n");
   const pendingNote = leftOutNote(discoveredSkills);
 
+  // The skills the person starts themselves - brood, spawn, bud: each has its command, and cultivate starts it only
+  // once its command is typed. The command puts what was typed in the chat, as the person's message, for the model to
+  // run it with what follows as its context.
+  const gate = createCommandGate();
+  for (const skill of skills.filter((s) => s.commandOnly)) {
+    pi.registerCommand(skill.name, {
+      description: `Start ${skill.name}${skill.steps.length > 1 ? ` - ${skill.steps.map((step) => step.name).join(" → ")}` : ""}: /${skill.name} [what you want]`,
+      handler: async (args) => {
+        gate.typed(skill.name);
+        pi.sendUserMessage(`/${skill.name}${args.trim() !== "" ? ` ${args.trim()}` : ""}`, { deliverAs: "followUp" });
+      },
+    });
+  }
+
   pi.registerTool({
     name: "cultivate",
     label: "Cultivate",
@@ -527,6 +541,7 @@ function turriExtension(pi: ExtensionAPI, host: TurriHost) {
     promptSnippet: "cultivate: run a gated skill - its steps and review gates enforced by turri",
     promptGuidelines: [
       "When a request matches a skill listed in cultivate's description, call cultivate instead of doing the work yourself. Doing it by hand skips the review gates.",
+      "A skill marked as started only by the person runs only from its command: a message that is its command - /spawn a small server - is the person starting it, so call cultivate for it at once, with what follows the command as context. Never call cultivate for one otherwise; tell them to type its command.",
       // pi lists .agents/skills among its own skills too: read and followed by hand, a skill's gates would be skipped.
       "A skill cultivate lists may also be among your own skills, from the project's .agents/skills: run it with cultivate all the same, never by reading its SKILL.md and following it.",
       "cultivate returns the reviewed artifact and a trace of every gate decision. Report the artifact to the user; do not rewrite it.",
@@ -567,6 +582,7 @@ function turriExtension(pi: ExtensionAPI, host: TurriHost) {
           details: {},
         };
       }
+      if (!gate.mayStart(skill)) return { content: [{ type: "text" as const, text: startedByCommandOnly(skill.name) }], details: { notStarted: true } };
 
       // A new run clears the run folder. An interrupted one is not thrown away by accident:
       // whether to pick it up or start over is the user's call.
@@ -587,6 +603,8 @@ function turriExtension(pi: ExtensionAPI, host: TurriHost) {
         };
       }
 
+      // Its command is used up: started again later, it is typed again.
+      gate.started(skill.name);
       const trace: string[] = [`skill: ${skill.name}`, ...describeGates(skill).map((l) => `  ${l}`)];
       // While it runs, what its agent is doing leads: pi shows a running tool's first lines, and the trace's first
       // lines are the gates, which say nothing about now. The result keeps the trace alone.

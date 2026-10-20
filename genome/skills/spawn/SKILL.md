@@ -13,6 +13,8 @@ description: >-
   feature to an existing project (use `bud`).
 allowed-tools: [read, write, edit, bash, ls, grep, find, write_spec_diff]
 metadata:
+  # Started only by the person, with its command - /spawn - never by the model on its own.
+  command-only: true
   # What each phase does, in a line - shown under the skill's progress while it runs.
   phases:
     start: "what you want to build, and the stack - asked only when it is not clear"

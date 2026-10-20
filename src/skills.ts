@@ -76,7 +76,9 @@ export function discoverSkills(packageRoot: string, projectDir: string | undefin
 /** A skill's line in cultivate's list: a project's says so, and where it is. */
 export function catalogueLine(skill: FoundSkill): string {
   const whose = skill.origin === "turri" ? "" : ` (this project's, ${skill.origin.project})`;
-  return `- ${skill.name}${whose}: ${skill.description}`;
+  // One the person starts themselves: the model points them to its command rather than running it.
+  const byCommand = skill.commandOnly ? ` Started only by the person, with /${skill.name}: never run it unasked - when it fits, tell them to type /${skill.name}.` : "";
+  return `- ${skill.name}${whose}: ${skill.description}${byCommand}`;
 }
 
 /** What is said under the list about the skills it leaves out. */
@@ -87,4 +89,29 @@ export function leftOutNote(catalogue: SkillCatalogue): string {
   ]
     .map((line) => `\n\n${line}`)
     .join("");
+}
+
+/**
+ * Which skills cultivate may start now. A skill marked command-only (`/brood`) waits for the person to type its command:
+ * the command lets it start once, and the run starting uses that up - the model cannot start it again later on its own.
+ */
+export function createCommandGate(): {
+  /** The person typed the skill's command. */
+  typed(name: string): void;
+  /** Whether cultivate may start it now. */
+  mayStart(skill: Pick<FoundSkill, "name" | "commandOnly">): boolean;
+  /** Its run started: the command is used up. */
+  started(name: string): void;
+} {
+  const typed = new Set<string>();
+  return {
+    typed: (name) => void typed.add(name),
+    mayStart: (skill) => !skill.commandOnly || typed.has(skill.name),
+    started: (name) => void typed.delete(name),
+  };
+}
+
+/** What cultivate says of a command-only skill the person did not start. */
+export function startedByCommandOnly(name: string): string {
+  return `Not started: ${name} is started only by the person, with /${name}. If it fits what they want, tell them to type /${name} - with what they want after it, if they like.`;
 }
