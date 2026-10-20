@@ -9,7 +9,9 @@ import { headlessOptions, moduleStates } from "../src/loop-cli.ts";
 import { reportModelEvent, reportUsage } from "../src/regenerate/activity.ts";
 import { createJobRegistry } from "../src/regenerate/jobs.ts";
 import { recordHistory } from "../src/regenerate/lineage.ts";
+import { conformanceDirFor } from "../src/regenerate/conformance.ts";
 import { chainSpec, functionalityCompletion } from "../src/regenerate/loop.ts";
+import { modulesRoot } from "../src/regenerate/paths.ts";
 import { writeCodeRecord, writeTestsRecord } from "../src/regenerate/records.ts";
 import { resolveRequiresChain } from "../src/regenerate/requires.ts";
 import { startRunReport, writeAtomically, type UsageTotals } from "../src/run-report.ts";
@@ -206,8 +208,8 @@ describe("the functional specs completed", () => {
     const [counted] = functionalityCompletion(app);
     expect(counted!.codebase).toBe(chain[1]!.buildDir);
     expect(counted!.modules).toEqual([
-      { module: "base", specified: 2, completed: 2, conformanceTested: 0, incomplete: [] },
-      { module: "app", specified: 3, completed: 2, conformanceTested: 1, incomplete: ["3"] },
+      { module: "base", specified: 2, completed: 2, conformanceTested: 0, tested: [], incomplete: [] },
+      { module: "app", specified: 3, completed: 2, conformanceTested: 1, tested: ["1"], incomplete: ["3"] },
     ]);
 
     // base's second spec says something else now: what app's code has of it is not what the spec says.
@@ -217,7 +219,95 @@ describe("the functional specs completed", () => {
 
   it("counts nothing completed where nothing is built", () => {
     const app = spec("app", ["App one."]);
-    expect(functionalityCompletion(app)[0]!.modules).toEqual([{ module: "app", specified: 1, completed: 0, conformanceTested: 0, incomplete: ["1"] }]);
+    expect(functionalityCompletion(app)[0]!.modules).toEqual([{ module: "app", specified: 1, completed: 0, conformanceTested: 0, tested: [], incomplete: ["1"] }]);
+  });
+});
+
+/** The conformance tests recorded as written for these of a module's functional specs, where the loop keeps them. */
+function testsFor(module: string, specs: Array<{ markdown: string; frid: string }>, required: Array<{ markdown: string; module: string; frid: string }> = []): void {
+  writeTestsRecord(conformanceDirFor(module, modulesRoot(dir)), { "functional specs": specs, ...(required.length > 0 ? { "required functional specs": required } : {}) });
+}
+
+/** Each module's conformance-tested functional specs, by number - checked against its count on the way. */
+function testedOf(app: string): Record<string, string[]> {
+  const [counted] = functionalityCompletion(app);
+  for (const module of counted!.modules) expect(module.conformanceTested).toBe(module.tested.length);
+  return Object.fromEntries(counted!.modules.map((module) => [module.module, module.tested]));
+}
+
+describe("the functional specs conformance tested", () => {
+  it("lists exactly the completed ones its conformance tests are written for, in the spec's order", () => {
+    const app = spec("app", ["App one.", "App two.", "App three.", "App four."]);
+    const [entry] = resolveRequiresChain(app, [], undefined, { allowNoFunctionalities: true });
+    writeCodeRecord(entry!.buildDir, chainSpec([entry!]).tree);
+    // Recorded out of order: the spec's order is what is listed.
+    testsFor("app", [
+      { markdown: "- App three.", frid: "3" },
+      { markdown: "- App one.", frid: "1" },
+    ]);
+    expect(testedOf(app)).toEqual({ app: ["1", "3"] });
+  });
+
+  it("leaves out a functional spec that is not completed - not built yet, changed since, or marked to regenerate again", () => {
+    const app = spec("app", ["App one.", "App two.", "App three."]);
+    const [entry] = resolveRequiresChain(app, [], undefined, { allowNoFunctionalities: true });
+    const tree = chainSpec([entry!]).tree;
+    const own = tree["functional specs"] as Array<{ markdown: string }>;
+    // The first built, the second marked to regenerate again, the third not built.
+    writeCodeRecord(entry!.buildDir, { ...tree, "functional specs": [own[0]!, { ...own[1]!, regenerate_again: true }] });
+    testsFor("app", [
+      { markdown: "- App one.", frid: "1" },
+      { markdown: "- App two.", frid: "2" },
+      { markdown: "- App three.", frid: "3" },
+    ]);
+    expect(testedOf(app)).toEqual({ app: ["1"] });
+
+    // The first changed since it was built, its conformance tests already written for the new text.
+    spec("app", ["App one, changed.", "App two.", "App three."]);
+    testsFor("app", [
+      { markdown: "- App one, changed.", frid: "1" },
+      { markdown: "- App two.", frid: "2" },
+      { markdown: "- App three.", frid: "3" },
+    ]);
+    expect(testedOf(app)).toEqual({ app: [] });
+  });
+
+  it("leaves out a completed functional spec whose conformance tests were written for other text", () => {
+    const app = spec("app", ["App one.", "App two."]);
+    const [entry] = resolveRequiresChain(app, [], undefined, { allowNoFunctionalities: true });
+    writeCodeRecord(entry!.buildDir, chainSpec([entry!]).tree);
+    testsFor("app", [
+      { markdown: "- App one.", frid: "1" },
+      { markdown: "- App two, as it was.", frid: "2" },
+    ]);
+    expect(testedOf(app)).toEqual({ app: ["1"] });
+  });
+
+  it("is empty for a module with no conformance record", () => {
+    const app = spec("app", ["App one.", "App two."]);
+    const [entry] = resolveRequiresChain(app, [], undefined, { allowNoFunctionalities: true });
+    writeCodeRecord(entry!.buildDir, chainSpec([entry!]).tree);
+    expect(existsSync(conformanceDirFor("app", modulesRoot(dir)))).toBe(false);
+    expect(testedOf(app)).toEqual({ app: [] });
+  });
+
+  it("holds only each module's own functional specs in a chain", () => {
+    spec("base", ["Base one.", "Base two."]);
+    const app = spec("app", ["App one.", "App two."], "base");
+    const chain = resolveRequiresChain(app, [], undefined, { allowNoFunctionalities: true });
+    writeCodeRecord(chain[1]!.buildDir, chainSpec(chain).tree);
+    testsFor("base", [{ markdown: "- Base one.", frid: "1" }]);
+    // app's tests hold base's second too, copied up with its code: it is base's, not app's.
+    testsFor("app", [{ markdown: "- App two.", frid: "2" }], [{ markdown: "- Base two.", module: "base", frid: "2" }]);
+    expect(testedOf(app)).toEqual({ base: ["1"], app: ["2"] });
+  });
+
+  it("is empty for every module where nothing is built", () => {
+    spec("base", ["Base one."]);
+    const app = spec("app", ["App one."], "base");
+    testsFor("base", [{ markdown: "- Base one.", frid: "1" }]);
+    testsFor("app", [{ markdown: "- App one.", frid: "1" }]);
+    expect(testedOf(app)).toEqual({ base: [], app: [] });
   });
 });
 

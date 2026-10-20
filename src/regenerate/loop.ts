@@ -417,6 +417,8 @@ export interface ModuleCompletion {
   completed: number;
   /** Of the completed ones, those its conformance tests are recorded as written for, as the spec has them now. */
   conformanceTested: number;
+  /** Those conformance-tested ones, by number: for a host that shows each functional spec's state. */
+  tested: string[];
   /** Its functional specs not completed, by number. */
   incomplete: string[];
 }
@@ -436,7 +438,7 @@ export function functionalityCompletion(plainFile: string): Array<{ codebase: st
       chain.forEach((entry, index) => {
         if (readRecord(entry.buildDir) !== null) delivered = index;
       });
-      const counts: ModuleCompletion[] = chain.map((entry) => ({ module: entry.moduleName, specified: entry.frids.length, completed: 0, conformanceTested: 0, incomplete: [...entry.frids] }));
+      const counts: ModuleCompletion[] = chain.map((entry) => ({ module: entry.moduleName, specified: entry.frids.length, completed: 0, conformanceTested: 0, tested: [], incomplete: [...entry.frids] }));
       if (delivered === -1) return { codebase: tipOf(chain).buildDir, modules: counts };
       const codebase = chain.slice(0, delivered + 1);
       const tip = tipOf(codebase);
@@ -468,7 +470,8 @@ export function functionalityCompletion(plainFile: string): Array<{ codebase: st
           (item) => item.frid !== undefined && item.markdown.trim() === specText(entry.moduleName, item.frid),
         );
         count.completed = completed.length;
-        count.conformanceTested = completed.filter((frid) => tested.some((item) => item.frid === frid)).length;
+        count.tested = completed.filter((frid) => tested.some((item) => item.frid === frid));
+        count.conformanceTested = count.tested.length;
         count.incomplete = entry.frids.filter((frid) => !completed.includes(frid));
       });
       return { codebase: tip.buildDir, modules: counts };
