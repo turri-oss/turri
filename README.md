@@ -1,7 +1,5 @@
 <p align="center"><img src="docs/images/turri-banner.gif" alt="turri, beside its mark - the first coding agent with the power of regenerative software: npm install -g @turri-dev/cli - and a pixel jellyfish regenerating, from a polyp on the sea floor"></p>
 
-<h1 align="center">turri<br>the first coding agent with the power of<br>regenerative software<br>&nbsp;</h1>
-
 <p align="center">
   <a href="https://www.npmjs.com/package/@turri-dev/cli"><img src="https://img.shields.io/npm/v/@turri-dev/cli?label=npm" alt="npm version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/npm/l/@turri-dev/cli" alt="MIT licence"></a>
