@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/images/turri-banner.png" alt="turri - the first coding agent with the power of regenerative software, beside a pixel jellyfish: npm install -g @turri-dev/cli"></p>
+<p align="center"><img src="docs/images/turri-banner.gif" alt="turri, beside its mark - the first coding agent with the power of regenerative software: npm install -g @turri-dev/cli - and a pixel jellyfish regenerating, from a polyp on the sea floor"></p>
 
 <h1 align="center">turri<br>the first coding agent with the power of<br>regenerative software<br>&nbsp;</h1>
 
@@ -100,8 +100,6 @@ With **turri** you work on the durable intent. You say what the software must do
 | **When it gets stuck** | it keeps going, or quietly works around the problem | it stops and tells you which intent to clarify |
 
 ## How it works
-
-<p align="center"><img src="docs/images/turri-screenshot.png" width="900" alt="turri in the terminal: on the left the conversation, where /regenerate plans a project's modules and a coding agent works through one of them; on the right the spec map of that module's ***plain, each functionality marked as regenerated or being worked on"></p>
 
 **turri** captures the durable intent in [\*\*\*plain](https://plainlang.org/), a language for saying what software should do. \*\*\*plain breaks the intent down into functionalities - small units, each a single thing the software does - and **turri** regenerates the code from them piece by piece.
 
