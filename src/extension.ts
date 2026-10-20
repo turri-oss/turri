@@ -58,7 +58,8 @@ import { QuestionDialog } from "./question-dialog.ts";
 import { registerStacks } from "./stacks.ts";
 import { catalogueLine, discoverSkills, leftOutNote, type SkillCatalogue } from "./skills.ts";
 import { supersededByTurri } from "./chat-skills.ts";
-import { TURRI_IDENTITY } from "./identity.ts";
+import { conversationIdentity } from "./identity.ts";
+import { setSurface, surfaceOf } from "./surface.ts";
 import { turriIdentity } from "./environment.ts";
 import { conformanceChooser } from "./regenerate/choose-conformance.ts";
 import { answerSideQuestion, askWithAsides, BTW_HOW, runningSkill, skillRunStarted, skillSessionText, transcriptOf } from "./btw.ts";
@@ -239,6 +240,26 @@ export interface TurriHost {
   onPlanChange?(): void;
   /** The dialogs ask_user puts its questions in - the conversation's and a skill's interview - instead of the terminal's. */
   dialogs?: AskUserIO;
+  /**
+   * The host's own UI, in its own words: the views it has in place of the terminal's, what its marks and buttons mean,
+   * where questions appear. Given, turri tells the model none of the terminal's - its keys, the side panel, regen,
+   * /pulses - and gives it this instead, as a `<surface>` block in turri's identity. Absent, the terminal is the surface.
+   */
+  surface?: string;
+  /**
+   * The last word on the whole system prompt, as turri has built it for this turn - after its own before_agent_start
+   * work: what it returns is what is sent. For a host that needs to change anything else.
+   */
+  systemPrompt?(prompt: string): string;
+}
+
+/**
+ * The conversation's system prompt for a turn: pi's, turri's identity - with the host's surface in place of the
+ * terminal's, when it has one - and turri's blocks; then the host's last word on it.
+ */
+function conversationSystemPrompt(base: string, host: TurriHost, blocks: string[]): string {
+  const prompt = [base, conversationIdentity(host.surface), ...blocks].filter((part) => part !== "").join("\n\n");
+  return host.systemPrompt !== undefined ? host.systemPrompt(prompt) : prompt;
 }
 
 /** The host each conversation's jobs report to, for the work loop made for them later. */
@@ -332,6 +353,8 @@ function turriExtension(pi: ExtensionAPI, host: TurriHost) {
   });
 
   hosts.set(jobs, host);
+  // What the model is told of where the person watches the work, deep in the tools too: the host's surface, or the terminal.
+  setSurface(jobs, host.surface);
   host.onJobs?.(jobs);
 
   // The ***plain rules go into the system prompt in full, every turn. The block is
@@ -373,7 +396,7 @@ function turriExtension(pi: ExtensionAPI, host: TurriHost) {
       }
     }
     return {
-      systemPrompt: [event.systemPrompt, TURRI_IDENTITY, TOOLS_NOT_CLI, projectConfigBlock(cwd), machineBlock(cwd, machine.now()), rulesBlock()].filter((part) => part !== "").join("\n\n"),
+      systemPrompt: conversationSystemPrompt(event.systemPrompt, host, [TOOLS_NOT_CLI, projectConfigBlock(cwd), machineBlock(cwd, machine.now()), rulesBlock()]),
     };
   });
 
@@ -388,7 +411,7 @@ function turriExtension(pi: ExtensionAPI, host: TurriHost) {
     const command = (event.input as { command?: unknown }).command;
     if (event.toolName === "bash" && typeof command === "string") {
       const what = selfInvocation(command);
-      if (what !== undefined && !askedForCommandLine(lastUserMessage)) return { block: true, reason: refusal(what) };
+      if (what !== undefined && !askedForCommandLine(lastUserMessage)) return { block: true, reason: refusal(what, surfaceOf(jobs)) };
     }
     markConversationWrite(event.toolCallId, event.toolName, event.input as Record<string, unknown>);
     return undefined;
@@ -2281,6 +2304,7 @@ async function askOnTheSide(pi: ExtensionAPI, ctx: ExtensionContext, cwd: string
       pulses: jobs.list().map((job) => `${job.id} ${job.status}: ${pulseName(job)}`),
       projectDir: cwd,
       harnessDir: PACKAGE_ROOT,
+      ...(surfaceOf(jobs) !== undefined ? { surface: surfaceOf(jobs) } : {}),
     },
     chatModelOf(ctx),
   );

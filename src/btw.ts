@@ -14,7 +14,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AskUser, AskUserRequest } from "./ask.ts";
 import { confinedTools } from "./regenerate/confine.ts";
-import { TURRI_IDENTITY } from "./identity.ts";
+import { conversationIdentity } from "./identity.ts";
 import { ask, BEGIN, createExecutor } from "./pi.ts";
 
 /** How many tool calls the side agent may make before it is told to answer. */
@@ -110,11 +110,13 @@ export interface SideQuestion {
   projectDir: string;
   /** turri's own folder: its source, skills, rules and docs. */
   harnessDir: string;
+  /** A host's surface, in its own words (TurriHost.surface): where the person watches the work instead of the terminal. */
+  surface?: string;
 }
 
 export function sideQuestionPrompt(side: SideQuestion): string {
   return [
-    TURRI_IDENTITY,
+    conversationIdentity(side.surface),
     "",
     "The person is in the middle of something with you - a skill, a pulse - and has asked you a question on the side",
     "with /btw. Answer it as turri: in the first person, to them, in whole sentences - briefly and plainly, from what is",

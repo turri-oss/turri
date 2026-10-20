@@ -92,14 +92,15 @@ export function askedForCommandLine(message: string): boolean {
 }
 
 /** What the agent is told when the call is refused. */
-export function refusal(what: string): string {
+export function refusal(what: string, surface?: string): string {
   const instead =
     what === "pi"
       ? "Do not start another agent: do the work here, with this conversation's tools."
       : `Use ${TOOL_FOR[what] ?? "the matching turri tool"} instead.`;
   return (
     `Not run: that starts turri${what === "pi" ? "'s agent" : ` ${what}`} again from the shell - a separate, headless ` +
-    "run outside this conversation, its jobs, the panel and /halt. " +
+    // In a host there is no panel: the person watches the pulses where its surface says.
+    (surface !== undefined ? "run outside this conversation and its pulses, where the person can neither watch it nor halt it. " : "run outside this conversation, its jobs, the panel and /halt. ") +
     `${instead} Run turri from the command line only when the user asks for that.`
   );
 }

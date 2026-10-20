@@ -10,6 +10,7 @@ import { pulseName, type JobRegistry } from "./regenerate/jobs.ts";
 import { stopDeployed } from "./regenerate/release.ts";
 import { projectDirOf } from "./regenerate/paths.ts";
 import { findTestScripts } from "./regenerate/test-scripts.ts";
+import { surfaceOf } from "./surface.ts";
 
 /**
  * The tools that act on the work loop - `regenerate`, `drift` and `halt` - defined once, for the conversation and for the
@@ -149,7 +150,8 @@ export function stopJob(jobs: JobRegistry, named: string, reason?: string, loop?
   const module = /^planned-/.test(named.trim()) || !jobs.list().some((job) => job.id.startsWith(named.trim())) ? loop?.halt(named, reason) : undefined;
   if (module !== undefined) return module;
   const matches = jobs.list().filter((job) => job.id.startsWith(named.trim()));
-  if (matches.length === 0) return `No pulse ${named}. /pulses shows them.`;
+  // /pulses is the terminal's: in a host, the pulses tool lists them.
+  if (matches.length === 0) return `No pulse ${named}. ${surfaceOf(jobs) !== undefined ? "The pulses tool lists them." : "/pulses shows them."}`;
   if (matches.length > 1) return `'${named}' matches ${matches.map((job) => job.id).join(", ")}. Give more of the id.`;
   const target = matches[0]!;
   const behind = jobs.list().filter((job) => job.status === "queued" && job.waitingOn.includes(target.id));
