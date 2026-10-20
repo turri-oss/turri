@@ -26,7 +26,7 @@ export function ledgerTool(options: { cwd: string }): AnyTool {
       "how each ended, how long, what it cost. Starts nothing and calls no model.",
     promptSnippet: "ledger: what turri did - a pulse as facts, the last runs, or events counted by kind - this session and earlier ones",
     promptGuidelines: [
-      "Use ledger for what turri recorded of the work - a pulse's rounds, test runs, verdicts, healers and commits, this session's or an earlier one's; how often something happened; what earlier runs did and cost - rather than reading .turri/ledger with the shell. pulses is what is running and planned now; a pulse's whole transcript is its log, which ledger names.",
+      "Use ledger for what turri recorded of the work - a pulse's rounds, test runs, verdicts, healers and commits, this session's or an earlier one's; how often something happened; what earlier runs did and cost - rather than reading .turri/ledger with the shell. pulses is what is running and planned now; a pulse's whole transcript is its log, which ledger names when it is kept (debug mode).",
     ],
     parameters: Type.Object({
       pulse: Type.Optional(Type.String({ description: "A pulse's id, or the start of it: that pulse, as the ledger has it" })),

@@ -109,6 +109,8 @@ export function settings(rules: string[] = []): Setting[] {
     { key: "agent-env.files", about: "dotenv files whose variables the agents' commands get", kind: "list", unset: "none", effect: "next-pulse", projectOnly: true },
     { key: "agent-env.vars", about: "variables from turri's environment the agents' commands get, by name", kind: "list", unset: "none", effect: "next-pulse", projectOnly: true },
     { key: "toolchains", about: "folders of this machine an agent's commands may read beside the usual ones", kind: "list", unset: "none", effect: "next-pulse", projectOnly: true },
+    { key: "debug", about: "whether turri keeps what it writes for debugging it - agents' logs and sessions, pulse logs, outputs", kind: "boolean", unset: "false", effect: "next-pulse", projectOnly: true },
+    { key: "cache-keep", about: "megabytes of package caches the project keeps; 0 keeps none", kind: "number", options: ["0", "1024", "4096", "16384"], min: 0, unset: "4096", effect: "next-start", projectOnly: true },
     { key: "ledger-keep", about: "megabytes of the ledger - what turri did, as facts - the project keeps; 0 keeps none", kind: "number", options: ["0", "50", "100", "500"], min: 0, unset: "100", effect: "next-start", projectOnly: true },
     ...roles,
   ];

@@ -201,6 +201,8 @@ export async function runSkill(opts: {
     rules: true,
     system: toolchainsBlock(),
     resumeFrom: resumed?.sessionFile,
+    // Its run picks it back up (resume) and the side questions read it (btw): saved whatever the mode.
+    saveSession: true,
   });
 
   const manifest: RunManifest = resumed ?? {

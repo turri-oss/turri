@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { agentEnvironment } from "../../src/regenerate/agent-env.ts";
 import { forgetSecretsForTests, maskSecrets, maskingStream, maskToolResults, registerSecrets } from "../../src/regenerate/masking.ts";
 import { runCommand } from "../../src/regenerate/shell.ts";
@@ -81,6 +81,9 @@ describe("where it is masked", () => {
   });
 
   it("masks the job log and the debug log", async () => {
+    // Kept, as in debug mode: outside it an agent outside a pulse writes no log.
+    process.env.TURRI_DEBUG = "1";
+    onTestFinished(() => void delete process.env.TURRI_DEBUG);
     const { startJobLog } = await import("../../src/regenerate/job-log.ts");
     const log = startJobLog({ id: "j1", kind: "code", summary: `uses ${SECRET}` }, [join(project, "plain_modules", "app")])!;
     log.note(`a line with tenant-4711`);

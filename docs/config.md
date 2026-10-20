@@ -42,12 +42,12 @@ Each change says when it takes effect. None needs turri started again - what tur
 | --- | --- |
 | now | `harness-model` and `models.chat` - the conversation switches to it; `parallel-jobs` - a pulse waiting for a slot starts if there is one now; `allow-to-stop-jobs` |
 | your next message | `rules-off` - for the conversation; a skill's agents from the next skill run |
-| the next pulse - one running keeps what it started with | `coding-model`, `judge-model`, every other `models.<role>`, `review`, `mutation-testing`, `turn-limit`, `compact-at`, `agent-env`, `toolchains` |
+| the next pulse - one running keeps what it started with | `coding-model`, `judge-model`, every other `models.<role>`, `review`, `mutation-testing`, `turn-limit`, `compact-at`, `agent-env`, `toolchains`, `debug` |
 | the next time the work is planned | `conformance-tests`, `conformance-budget`, `max-specs-per-pulse`, `max-lines-per-pulse` |
 | the next test run - the running pulse's too | the testing scripts, `testing-scripts-run-on` |
 | the next pulse that lands - the running one too | `release-after-pulse` |
 | the next regeneration that names no `.plain` file | `module` |
-| the next time turri starts here | `ledger-keep` |
+| the next time turri starts here | `ledger-keep`, `cache-keep` |
 
 A coding model chosen this session - `--coding-model`, or `engine` - gives way to one set here: the last word wins. It says, too, what wins over the change: `models.chat` over `harness-model` (and so on), and a stack's `config.turri.<stack>.yaml`, which is not changed here, while that stack is chosen. In a project still read from `config.yaml`, the first change copies it to `config.turri.yaml` first - see [the old config.yaml](#the-old-configyaml).
 
@@ -93,6 +93,8 @@ models:                              # each agent role's model, thinking and tur
 | `prepare-environment-script` | optional: run as `<script> <build>` before every run of the conformance testing script, which runs only once it passes - see [the testing scripts](regenerating.md#the-testing-scripts). turri never writes one | the one `prepare_environment*.sh` at the root or in `test_scripts/`, else none |
 | `compact-at` | how many tokens of work - past its instructions - an agent kept through a job holds before the harness compacts it between turns; at least 1000; the project's alone | 100,000 - see [agent sessions](regenerating.md#agent-sessions) |
 | `ledger-keep` | how many megabytes of the ledger - what turri did, as facts, in `.turri/ledger` - the project keeps: past it, the oldest runs' are pruned when a run first writes; `0` keeps none, and writes none; the project's alone. See [the ledger](using.md#the-ledger) | 100 |
+| `debug` | `true` or `false`: whether turri keeps what it writes only for a person debugging it - every agent's whole log and saved session, each pulse's log, the whole outputs of its test runs and services, its agents' temporary files, and the dependencies installed in the modules a chain has left behind. `false`: only what turri reads to work is kept. `TURRI_DEBUG=1` - or `turri --debug` - turns it on for one run, and `TURRI_DEBUG=0` off; the project's alone. See [debug mode](#debug-mode) | `false` |
+| `cache-keep` | how many megabytes of package caches the project keeps - `plain_modules/.turri/cache`, and the caches in the agents' home folders: past it, the least recently written - by the newest file in each - are removed when a run starts its first agent command, each downloaded again when it is wanted; `0` keeps none; the project's alone | 4096 |
 | `max-specs-per-pulse` | the most functional specs the planner groups into one pulse - what builds one feature goes together, up to this many; a stack's file wins | 3 |
 | `max-lines-per-pulse` | the most lines of spec in one pulse - its functional specs with the definitions they bring; a group past it is split again, a functional spec a pulse; a stack's file wins | 120 |
 | `parallel-jobs` | how many jobs the chat runs at once - modules that share nothing build side by side up to it; read when the chat starts, from the folder it starts in | half this machine's cores, between one and four - see [how many jobs at once](#how-many-jobs-at-once) |
@@ -180,6 +182,23 @@ The optional prepare script - `prepare-environment-script:`, else the one `prepa
 
 A folder holding two of a kind is not guessed between: name the one to use. A script named inside `plain_modules/` is refused - agents write there, so it could be changed by the work it judges. The scripts are never linked from the specs. What they are and how they run is in [regenerating the code](regenerating.md#the-testing-scripts).
 
+## Debug mode
+
+turri writes much more than it needs to work, for a person working out why it did what it did - each agent's whole conversation, each pulse's whole transcript, every test run's whole output. Most of it nothing of turri ever reads again. So by default it is not kept:
+
+| | outside debug mode | in debug mode |
+| --- | --- | --- |
+| each pulse's log (`.turri/jobs/`) and its agents' (`.turri/debug/`) | written while the pulse runs - the diagnosis of a failure reads them - and removed as it ends | kept |
+| the logs of agents outside a pulse - the release agent, a side question | not written | kept |
+| the agents' saved sessions (`.turri/sessions/`) | not written - each is kept in memory while it works; a gated skill's alone is saved, as its run resumes from it | kept |
+| whole outputs of test runs and services (`plain_modules/.turri/logs/`, `services/`) | read by the pulse's agents while it runs, removed as it ends | kept, the last 100 outputs |
+| a module's `TMPDIR` (`plain_modules/.turri/tmp/<module>`) | emptied as each of its pulses ends | kept |
+| dependencies installed in the modules below a pulse's own in its chain (`node_modules`, `.venv`) | removed as the pulse ends: the chain is built in its tip, and a module built on again installs them again, from the cache | kept |
+
+Kept either way: the ledger - what each pulse did, how it ended, what it cost (see [the ledger](using.md#the-ledger)) - the code, its tests and their history, a gated skill's run, what a conformance explorer found, what `deploy` started, and the package caches, held to `cache-keep:`. The testing scripts install what they run with themselves, so nothing removed is ever missed by a test run.
+
+Turn it on in `config.turri.yaml` (`debug: true`, or `/turri-config debug true`), or for one run with `TURRI_DEBUG=1` or `turri --debug`.
+
 ## Credentials for the agents
 
 An agent's commands do not get the environment turri was started in: it holds your providers' API keys, cloud credentials and tokens. They get only the path, the locale, the terminal and the user, the variables that locate your toolchains (`JAVA_HOME`, `NVM_DIR`, `RUSTUP_HOME`, ... - the ones in your home found even when your shell sets none), and turri's own: a home folder of the module's own (`plain_modules/.turri/home/<module>`, kept between pulses, with a git identity of its own), a `TMPDIR`, the package caches in `plain_modules/.turri/cache`, and git stopped at the module folder, so a project that is itself a repository is never found from the code.
@@ -231,7 +250,7 @@ How a stack's config is made:
 - **Laid over `config.turri.yaml`, key by key.** What the stack's file gives wins; what it leaves out is the project's. A model it names takes what it leaves out from the project's same model - above, with the stack frontend chosen, everything renders on the project's coding model, thinking `high`.
 - **Pinned to a module when it is asked for.** A module is built with the stack it was asked for with, from its first pulse to its last: the pulses planned after it, its test runs, the scripts found, its plans and its conformance tests, whatever stack is chosen meanwhile. A pulse waiting for a free slot keeps the stack it was queued with. A change to its spec keeps its stack - unless it was built with none and has a stack of its own now; asked for again, its stack is worked out again. What `regenerate` says back names each module's stack, and so does a pulse's report.
 - **Refused with none, when that cannot build.** In a project of stacks, a module asked for with no stack - none named, none named after it, none chosen - is refused before anything is planned when `config.turri.yaml` alone names no unit testing script: every pulse would stop for want of one. The refusal names the stacks and the script each names. A spec change `write_spec_diff` writes is never refused: it is written, and said not to be built yet - passed the stack, everything written is built. `stack: none` builds with `config.turri.yaml` alone all the same.
-- **The project's alone.** `module:`, `harness-model:`, `parallel-jobs:`, `rules-off:`, `compact-at:` and `ledger-keep:` are read only from `config.turri.yaml` - there is one conversation, one module built when none is named, one machine. `agent-env:` and `toolchains:` in a stack's file add to the project's.
+- **The project's alone.** `module:`, `harness-model:`, `parallel-jobs:`, `rules-off:`, `compact-at:`, `ledger-keep:`, `debug:` and `cache-keep:` are read only from `config.turri.yaml` - there is one conversation, one module built when none is named, one machine. `agent-env:` and `toolchains:` in a stack's file add to the project's.
 
 The chat is told each stack's config and the one chosen. The skills that write testing scripts put each stack's in its own file once a project has two stacks, each stack named after the module it builds.
 

@@ -5,7 +5,8 @@ import { describeEnvironmentError, EnvironmentError, missingCredentials } from "
 import { addAgentReport, describeAgents, JobStoppedError, withActivity, type AgentReport, type AgentTally, type BuildingSpec, type SpecConflict, type TranscriptEntry, type UsageReport } from "./activity.ts";
 import { projectOfLanes, startJobLog, type JobLog } from "./job-log.ts";
 import { firstLine, healing, record, type LedgerPlace } from "./ledger.ts";
-import { chosenStack, withStack } from "../config.ts";
+import { chosenStack, debugMode, withStack } from "../config.ts";
+import { pulseEnded, pulseWrote } from "./pulse-files.ts";
 
 /**
  * Background jobs for conversation mode.
@@ -439,6 +440,8 @@ export function createJobRegistry(options?: {
 
       /** It holds one of the run slots, to give back when it ends. */
       let holding = false;
+      /** It started, holding its lanes: what it wrote, and what its chain installed, are its to clear as it ends. */
+      let ran = false;
       const promise = turn
         .then(async () => {
           // Stopped while it waited: it never starts.
@@ -473,8 +476,14 @@ export function createJobRegistry(options?: {
             changed();
           }
           log = startJobLog(job, claimed);
-          if (log !== undefined) job.logFile = log.file;
-          record({ kind: "job.started", waitedMs: job.startedAt - job.queuedAt, ...(log !== undefined ? { logFile: log.file } : {}) }, place);
+          ran = true;
+          if (log !== undefined) {
+            job.logFile = log.file;
+            pulseWrote(log.file, id);
+          }
+          // Its log is named only where it is kept: otherwise it goes as the pulse ends.
+          const named = log !== undefined && project !== undefined && debugMode(project);
+          record({ kind: "job.started", waitedMs: job.startedAt - job.queuedAt, ...(named ? { logFile: log!.file } : {}) }, place);
           // What the job's agents start runs until it ends, and no longer (withPulse) - with the stack it was queued
           // with, whatever is chosen while it waits or runs.
           return withStack(stack, () => (guarded ? runGuarded() : runOnce()));
@@ -502,6 +511,9 @@ export function createJobRegistry(options?: {
             giveSlot();
           }
           finished.finishedAt = Date.now();
+          log?.end(finished.status === "succeeded" ? "finished" : finished.status === "stopped" ? "stopped" : "finished - failed", finished.announce ?? finished.report ?? finished.error, describeAgents(finished.agents));
+          // What it wrote for a person goes now, outside debug mode - its log too, which nothing names from then on.
+          if (ran && project !== undefined && !pulseEnded({ job: id, project, ...(input.module !== undefined ? { module: input.module } : {}), lanes: claimed })) delete finished.logFile;
           const outcome = finished.details as { landed?: boolean; passed?: boolean } | undefined;
           const stopReason = stopReasons.get(id);
           record(
@@ -519,7 +531,6 @@ export function createJobRegistry(options?: {
             },
             place,
           );
-          log?.end(finished.status === "succeeded" ? "finished" : finished.status === "stopped" ? "stopped" : "finished - failed", finished.announce ?? finished.report ?? finished.error, describeAgents(finished.agents));
           // A failing listener must not take the job down with it; the result is
           // already recorded and can still be collected by asking.
           try {

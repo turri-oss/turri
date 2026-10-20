@@ -11,7 +11,7 @@ import {
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { loadRules, renderRulesBlock } from "./rules.ts";
-import { inheritModel, stackOf, readProjectConfig, ROLE_THINKING, roleModel, roleTurnLimitMs, splitModelSpec, type AgentRole, type ProjectConfig } from "./config.ts";
+import { debugMode, inheritModel, stackOf, readProjectConfig, ROLE_THINKING, roleModel, roleTurnLimitMs, splitModelSpec, type AgentRole, type ProjectConfig } from "./config.ts";
 import { maskToolResults } from "./regenerate/masking.ts";
 import { withListArguments } from "./regenerate/list-arguments.ts";
 import { checkAgainstScript, ENVIRONMENT_ERROR_TOOL, EnvironmentError, environmentErrorTool, sandboxGapOf } from "./regenerate/environment-error.ts";
@@ -838,6 +838,8 @@ export async function createExecutor(opts: {
   rules?: boolean;
   /** Continue the session saved in this file, instead of starting a new one. */
   resumeFrom?: string;
+  /** Save its session to disk, debug mode or not: it is picked back up later (a skill's run, resumed). */
+  saveSession?: boolean;
   /** Added to its system prompt: its sandbox, above all - what it can reach (see confine.ts sandboxNote). */
   system?: string;
   /**
@@ -871,12 +873,15 @@ export async function createExecutor(opts: {
    */
   role?: AgentRole;
 }): Promise<AgentSession> {
-  // Saved to disk, in the project: an agent's session is the record of what it did, and the
-  // only way to pick a long run back up after the process that ran it is gone.
+  // Saved to disk, in the project, for an agent picked back up after the process that ran it is gone - a skill's run -
+  // and in debug mode, as the record of what each did. Nothing else reads one back: the rest are kept in memory.
+  const project = projectRootOf(opts.cwd);
   const sessionManager =
     opts.resumeFrom !== undefined
       ? SessionManager.open(opts.resumeFrom)
-      : SessionManager.create(opts.cwd, sessionsDir(projectRootOf(opts.cwd)));
+      : opts.saveSession === true || debugMode(project)
+        ? SessionManager.create(opts.cwd, sessionsDir(project))
+        : SessionManager.inMemory(opts.cwd);
   // An agent that writes and runs code - given the harness's run its reports are checked against - can say the machine
   // lacks what the work needs: its turn ends, and the pulse stops with it. Observers, explorers and judges cannot.
   const hasShell = opts.customTools.some((tool) => tool.name === "bash") && opts.checkEnvironment !== undefined;

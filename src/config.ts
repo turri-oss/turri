@@ -483,6 +483,18 @@ export interface ProjectConfig {
    * are pruned when a run first writes. 0 keeps none, and writes none. The project's alone. Unset: 100.
    */
   ledgerKeep?: number;
+  /**
+   * Whether turri keeps what it writes for a person debugging it: every agent's whole log and saved session, each
+   * pulse's log, the testing scripts' and services' outputs, the agents' temporary files, and the dependencies installed
+   * in the modules a chain has left behind. Off, only what turri reads to work is kept. The project's alone. Unset: false.
+   */
+  debug?: boolean;
+  /**
+   * Megabytes of package caches - plain_modules/.turri/cache, and the caches in the agents' home folders - the project
+   * keeps: past it, the least recently written are removed when a run first starts an agent's command. 0 keeps none.
+   * The project's alone. Unset: 4096.
+   */
+  cacheKeep?: number;
   /** Each agent role's own model, thinking and turn limit; `default` for every role not named. */
   models?: Partial<Record<AgentRole | "default", RoleChoice>>;
   /** Seconds each turn of an agent a render starts has, for every role without its own. Unset: 120. 0: none. */
@@ -513,6 +525,8 @@ export const CONFIG_KEYS = {
   agentEnv: "agent-env",
   toolchains: "toolchains",
   ledgerKeep: "ledger-keep",
+  debug: "debug",
+  cacheKeep: "cache-keep",
   models: "models",
   turnLimit: "turn-limit",
 } as const satisfies Record<keyof ProjectConfig, string>;
@@ -570,7 +584,7 @@ function readStackedConfig(root: string, stack?: string): ProjectConfig {
   // The project's alone: one conversation, one module built when none is named.
   const merged: ProjectConfig = { ...project };
   for (const key of Object.keys(CONFIG_KEYS) as Array<keyof ProjectConfig>) {
-    if (key === "module" || key === "harnessModel" || key === "parallelJobs" || key === "rulesOff" || key === "compactAt" || key === "ledgerKeep" || key === "toolchains" || key === "agentEnv" || own[key] === undefined) continue;
+    if (key === "module" || key === "harnessModel" || key === "parallelJobs" || key === "rulesOff" || key === "compactAt" || key === "ledgerKeep" || key === "debug" || key === "cacheKeep" || key === "toolchains" || key === "agentEnv" || own[key] === undefined) continue;
     (merged as Record<string, unknown>)[key] = own[key];
   }
   merged.agentEnv = joinAgentEnv(project.agentEnv, own.agentEnv);
@@ -591,6 +605,23 @@ function readStackedConfig(root: string, stack?: string): ProjectConfig {
 type RunOverrides = Partial<Pick<ProjectConfig, "harnessModel" | "codingModel" | "judgeModel" | "conformanceTests" | "review" | "mutationTesting">>;
 
 let runOverrides: RunOverrides = {};
+
+/** Megabytes of package caches a project keeps when `cache-keep:` does not say. */
+export const DEFAULT_CACHE_KEEP_MB = 4096;
+
+/**
+ * Whether turri keeps what it writes for a person debugging it, in this project: TURRI_DEBUG - `--debug` sets it, and
+ * `0` or `false` turns it off - else the project's `debug:`. Off by default.
+ */
+export function debugMode(project: string): boolean {
+  const said = process.env.TURRI_DEBUG?.trim().toLowerCase();
+  if (said !== undefined && said !== "") return said !== "0" && said !== "false";
+  try {
+    return readProjectConfig(project).debug === true;
+  } catch {
+    return false;
+  }
+}
 
 /** Read a command's options as the config's keys for the rest of this process. */
 export function overrideConfig(overrides: RunOverrides): void {
@@ -699,6 +730,11 @@ function readConfigFile(path: string): ProjectConfig {
     ledgerKeep:
       typeof raw[CONFIG_KEYS.ledgerKeep] === "number" && Number.isInteger(raw[CONFIG_KEYS.ledgerKeep]) && (raw[CONFIG_KEYS.ledgerKeep] as number) >= 0
         ? (raw[CONFIG_KEYS.ledgerKeep] as number)
+        : undefined,
+    debug: typeof raw[CONFIG_KEYS.debug] === "boolean" ? (raw[CONFIG_KEYS.debug] as boolean) : undefined,
+    cacheKeep:
+      typeof raw[CONFIG_KEYS.cacheKeep] === "number" && Number.isInteger(raw[CONFIG_KEYS.cacheKeep]) && (raw[CONFIG_KEYS.cacheKeep] as number) >= 0
+        ? (raw[CONFIG_KEYS.cacheKeep] as number)
         : undefined,
     models: modelsSetting(raw[CONFIG_KEYS.models]),
     turnLimit: turnLimitSetting(raw[CONFIG_KEYS.turnLimit]),

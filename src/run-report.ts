@@ -1,5 +1,6 @@
 import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
+import { debugMode } from "./config.ts";
 import { turriIdentity } from "./environment.ts";
 import { onModelEvent, type ModelEvent, type UsageReport } from "./regenerate/activity.ts";
 import { firstRegeneration, type Job } from "./regenerate/jobs.ts";
@@ -368,11 +369,14 @@ export function startRunReport(options: RunReportOptions): RunReporter {
       spec_gaps: specGapsOf(jobs),
       turn_incidents: turnIncidentsOf(),
       ...(exitParts ?? {}),
-      logs: {
-        jobs_dir: fromProject(join(projectRoot, ".turri", "jobs")),
-        debug_dir: fromProject(join(projectRoot, ".turri", "debug")),
-        sessions_dir: fromProject(join(projectRoot, ".turri", "sessions")),
-      },
+      // Kept only in debug mode: otherwise each pulse's go as it ends, and the sessions are never written.
+      logs: debugMode(projectRoot)
+        ? {
+            jobs_dir: fromProject(join(projectRoot, ".turri", "jobs")),
+            debug_dir: fromProject(join(projectRoot, ".turri", "debug")),
+            sessions_dir: fromProject(join(projectRoot, ".turri", "sessions")),
+          }
+        : null,
     };
   };
 

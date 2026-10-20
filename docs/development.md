@@ -56,7 +56,8 @@ The workflow signs in to npm with npm's trusted publishing (OIDC), not a token: 
 | `src/regenerate/side-panel.ts`, `src/regenerate/panel-dock.ts` | the side panel, and the chat narrowed beside it when it is docked |
 | `src/screen-padding.ts` | the blank row above and below the whole screen and the two columns either side, in both of pi's ways of drawing it |
 | `src/regenerate/spec-map.ts`, `src/regenerate/spec-map-view.ts` | regen: each item's mark, from the records, the `.plain` files and the work loop's plan (`mapPlan`), and the map drawn |
-| `src/regenerate/debug-log.ts` | each render agent's whole conversation, always streamed to `.turri/debug/` |
+| `src/regenerate/debug-log.ts` | each render agent's whole conversation, streamed to `.turri/debug/` - while its pulse runs, and kept in debug mode |
+| `src/regenerate/pulse-files.ts` | what a pulse writes only for a person - its logs, outputs, temporary files, its chain's installed dependencies - removed as it ends outside debug mode |
 | `src/regenerate/ledger.ts`, `src/regenerate/ledger-view.ts`, `src/ledger-tools.ts`, `src/ledger-cli.ts` | the ledger: what turri did, as typed facts, in `.turri/ledger/` - `record()`, read back for the `ledger` tool, `pulses`, `diagnose` and `turri ledger` - see [the ledger](using.md#the-ledger) |
 | `genome/` | what turri knows and can do: `genome/skills/`, the skill library, and `genome/rules/`, the \*\*\*plain authoring rules |
 

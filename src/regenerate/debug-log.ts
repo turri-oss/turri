@@ -3,10 +3,14 @@ import { maskSecrets } from "./masking.ts";
 import { dirname, join, resolve, sep } from "node:path";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import { currentJob, reportActivity, reportTranscript } from "./activity.ts";
+import { debugMode } from "../config.ts";
+import { pulseWrote } from "./pulse-files.ts";
 import { ensureInScratch, MODULES_DIR, projectRootOf, scratchDir } from "./paths.ts";
 
 /**
- * Every render agent's whole conversation, streamed to a file of its own as it happens - always.
+ * Every render agent's whole conversation, streamed to a file of its own as it happens: an agent of a pulse's for as
+ * long as the pulse runs - what the diagnosis of a failure reads - and kept after it in debug mode alone (`debug:`,
+ * pulse-files.ts); an agent outside a pulse only in debug mode.
  *
  * A job's transcript keeps a tool call's arguments to 600 characters and its result to 2000, and only while pi is
  * running. When an agent goes wrong, what it was actually
@@ -72,14 +76,17 @@ export function startDebugLog(
   options: { cwd: string; label: string; tools?: string[] },
 ): DebugLog | undefined {
   let file: string;
+  const dir = debugDirFor(options.cwd);
+  // Outside a pulse nothing reads it - no diagnosis, no person but one debugging turri.
+  if (currentJob() === undefined && !debugMode(dirname(dirname(dir)))) return undefined;
   try {
-    const dir = debugDirFor(options.cwd);
     ensureInScratch(dirname(dir), dir);
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     const name = options.label.replace(/[^\w.-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "agent";
     file = join(dir, `${stamp}-${name}.log`);
     for (let n = 2; existsSync(file); n += 1) file = join(dir, `${stamp}-${name}-${n}.log`);
     appendFileSync(file, maskSecrets(header(session, options)), { flag: "wx" });
+    pulseWrote(file);
   } catch (error) {
     reportActivity(`debug log not started: ${error instanceof Error ? error.message : String(error)}`);
     return undefined;

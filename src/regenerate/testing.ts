@@ -9,6 +9,7 @@ import { modulesScratchDir } from "./paths.ts";
 import { RECORD_FILE } from "./records.ts";
 import { missingToolchain, runUnitScript, scriptFailure, type ScriptRun } from "./test-scripts.ts";
 import { COMMAND_TIMEOUT_MS } from "./shell.ts";
+import { pulseWrote } from "./pulse-files.ts";
 
 /** Shared test-running and test-preservation machinery for both render tools. */
 
@@ -97,6 +98,8 @@ export function keepOutput(dir: string, label: string, output: string | Buffer):
     const name = label.replace(/[^\w.-]+/g, "_").slice(0, 60);
     const file = join(logs, `${stamp}-${name}.log`);
     writeFileSync(file, typeof output === "string" ? maskSecrets(output) : maskSecrets(output.toString("utf8")));
+    // Read through read_output while the pulse runs, and by no one after it (pulse-files.ts).
+    pulseWrote(file);
     const all = readdirSync(logs).sort();
     for (const old of all.slice(0, Math.max(0, all.length - MAX_LOGS))) rmSync(join(logs, old), { force: true });
     return file;

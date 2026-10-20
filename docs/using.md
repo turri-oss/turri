@@ -162,14 +162,16 @@ git --git-dir=plain_modules/<module>/.plaingit --work-tree=plain_modules/<module
 
 ## Agent logs
 
-When an agent does something you cannot explain, its logs are where to look: the chat shows what its pulse is doing, not what its agents said. Every agent a render starts - the coding agent, the conformance agent, the repair agent, the spec-steps planner - also streams its whole conversation to a file of its own, always.
+When an agent does something you cannot explain, its logs are where to look: the chat shows what its pulse is doing, not what its agents said. Every agent a render starts - the coding agent, the conformance agent, the repair agent, the spec-steps planner - also streams its whole conversation to a file of its own.
 
 The logs are in `.turri/debug/` in the project, beside `plain_modules`, one per agent, named by when it started and what it is: `2026-09-26T13-45-02-123Z-app-3-coding-agent.log`. Each starts with the pulse it runs for, its model and thinking level, its folder, its saved pi session, its tools and its system prompt, and then has, in order and stamped with the time: every prompt it is sent, whole; its thinking and replies as they stream; every tool call with its arguments, numbered
 - `→ #3 bash` - and its whole result under the same number, `← #3 bash done`, since calls made together run at once and finish in any order; a tool call a response was cut off in, marked as never run; each response's stop reason, tokens and cost; the provider's retries and errors; and how each turn ended. Every line is on disk as it happens, so `tail -f` follows an agent live and a run that crashed leaves its log up to that moment. The pulse's own log names each agent's log as it starts.
 
 Beside them, each pulse has a log of its own in `.turri/jobs/` - `<time>-<pulse id>-<kind>.log`: its whole transcript, written as it happens. The harness's stages, the functional spec or the diff it builds, and every one of its agents in turn - each prompt, its thinking and replies, every tool call and its result, whole where the screen clips them - and how the pulse ended. A finished pulse, opened in the side panel, names it. It is the one to read for a pulse as a whole; an agent's own log has its system prompt, tokens and retries besides.
 
-No agent can read the logs: they are outside `plain_modules` - or, for a `--build-dir` outside it, beside that folder rather than in it. Nothing prunes them either - delete the folder when you are done with it. A log that cannot be written is given up on without failing the render.
+They are kept only in [debug mode](config.md#debug-mode) - `debug: true` in `config.turri.yaml`, or `TURRI_DEBUG=1`, or `turri --debug` for one run. Otherwise a pulse's logs are written while it runs - the diagnosis of a pulse that fails twice reads them, and quotes what it needs, never sending you to a file that is about to go - and removed as it ends, and an agent outside a pulse writes none; the [ledger](#the-ledger) still says what each pulse did, how it ended and what it cost. To read why an agent did something, turn debug mode on and run it again.
+
+The coding and conformance agents cannot read the logs: they are outside `plain_modules` - or, for a `--build-dir` outside it, beside that folder rather than in it. The diagnosis of a failed pulse reads them. In debug mode nothing prunes them - delete the folder when you are done with it. A log that cannot be written is given up on without failing the render.
 
 ## The ledger
 

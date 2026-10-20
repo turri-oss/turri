@@ -10,13 +10,16 @@ import { ask, ProviderError } from "../../src/pi.ts";
 let root: string;
 let codeDir: string;
 
+// What a log holds, kept: outside debug mode an agent outside a pulse has none (pulse-files.test.ts).
 beforeEach(() => {
+  process.env.TURRI_DEBUG = "1";
   root = mkdtempSync(join(tmpdir(), "turri-debug-"));
   codeDir = join(root, "plain_modules", "app", "code");
   mkdirSync(codeDir, { recursive: true });
 });
 
 afterEach(() => {
+  delete process.env.TURRI_DEBUG;
   rmSync(root, { recursive: true, force: true });
 });
 

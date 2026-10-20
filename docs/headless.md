@@ -84,8 +84,9 @@ The command exits `0` only when every module is complete: its code regenerated f
 | `plain_modules/<module>/code/` | the code and unit tests |
 | `plain_modules/<module>/tests/` | the conformance tests |
 | `plain_modules/<module>/code/.turri.json` | the marshalled plain tree the code is built from |
-| `.turri/jobs/` | each pulse's log: its agents, its test runs, how it ended |
-| `.turri/debug/` | each agent's whole conversation |
+| `.turri/ledger/` | what each pulse did, how it ended and what it cost - `turri ledger` |
+| `.turri/jobs/` | each pulse's log: its agents, its test runs, how it ended - with `--debug` (or `debug: true`) only |
+| `.turri/debug/` | each agent's whole conversation - with `--debug` only |
 
 And what happened, step by step, in the module's history:
 
@@ -142,7 +143,7 @@ A module that `requires` others is built in its own codebase on top of theirs: t
       "status": "succeeded", "landed": true, "failed_for_good": false,
       "started_at": "…", "duration_seconds": 512.3, "usage": { },
       "agents": [{ "label": "app 1 coding agent", "model": "…", "turns": 14, "compactions": 0, "input_tokens": 0, "…": 0 }],
-      "log_file": ".turri/jobs/….log", "error": null
+      "log_file": ".turri/jobs/….log", "error": null    // log_file null outside debug mode
     }]
   },
   "functionalities": {
@@ -164,7 +165,7 @@ A module that `requires` others is built in its own codebase on top of theirs: t
     { "kind": "stopped", "pulse_id": "5c1e0b2f", "role": "conformance explorer", "model": "…", "reason": "10 submit_exploration calls failed in a row" }
   ],
   "build_dir_export": { "exported": true, "dir": "/work/out", "module": "app", "commit": "8036b3b", "files": 23 },
-  "logs": { "jobs_dir": ".turri/jobs", "debug_dir": ".turri/debug", "sessions_dir": ".turri/sessions" }
+  "logs": { "jobs_dir": ".turri/jobs", "debug_dir": ".turri/debug", "sessions_dir": ".turri/sessions" }  // null outside debug mode
 }
 ```
 

@@ -169,6 +169,8 @@ export const DEFAULTS = {
   maxSpecsPerPulse: 3,
   maxLinesPerPulse: 120,
   ledgerKeep: 100,
+  debug: false,
+  cacheKeep: 4096,
 } as const;
 
 /** How many pulses run at once without a setting: half this machine's cores, one to four - as regenerate/jobs.ts has it. */
@@ -239,6 +241,14 @@ export function quickStartConfig(vendor: Vendor = "other", bedrock?: BedrockChoi
     "# Megabytes of the ledger - what turri did, as facts, in .turri/ledger, never committed - the project keeps; past it,",
     "# the oldest runs' are pruned. 0 keeps none.",
     `ledger-keep: ${DEFAULTS.ledgerKeep}`,
+    "",
+    "# Megabytes of package caches - npm's, pip's, Maven's... in plain_modules/.turri/cache - the project keeps; past it,",
+    "# the least recently written are removed. 0 keeps none.",
+    `cache-keep: ${DEFAULTS.cacheKeep}`,
+    "",
+    "# Whether turri keeps what it writes for debugging it: every agent's whole log and session, each pulse's log, the",
+    "# test runs' outputs, the agents' temporary files. Off, only what turri reads to work is kept. TURRI_DEBUG=1 for one run.",
+    `debug: ${DEFAULTS.debug}`,
     "",
     "# The testing scripts, by path from the project root - written here by the skill that writes them. One not named is",
     "# looked for at the root, then in test_scripts/. Each runs the static checks of what it tests - the formatter, the",

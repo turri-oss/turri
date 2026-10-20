@@ -7,12 +7,17 @@ import { createJobRegistry, describeJob } from "../../src/regenerate/jobs.ts";
 
 let root: string;
 let lane: string;
+// What a log holds, kept: outside debug mode a pulse's log goes as it ends (pulse-files.test.ts).
 beforeEach(() => {
+  process.env.TURRI_DEBUG = "1";
   root = mkdtempSync(join(tmpdir(), "turri-job-log-"));
   lane = join(root, "plain_modules", "app");
   mkdirSync(lane, { recursive: true });
 });
-afterEach(() => rmSync(root, { recursive: true, force: true }));
+afterEach(() => {
+  delete process.env.TURRI_DEBUG;
+  rmSync(root, { recursive: true, force: true });
+});
 
 describe("a job's log", () => {
   it("keeps the harness's notes - which walls are up, what was put back - and not every activity line", async () => {

@@ -12,7 +12,7 @@ export type { AskUserIO } from "./ask.ts";
 export * as pi from "@earendil-works/pi-coding-agent";
 
 // The project and its settings.
-export { configForSpec, hasProjectConfig, modelSpec, projectModels, readProjectConfig, stacksOf, type ProjectConfig } from "./config.ts";
+export { configForSpec, debugMode, hasProjectConfig, modelSpec, projectModels, readProjectConfig, stacksOf, type ProjectConfig } from "./config.ts";
 export { MODULES_DIR, projectDirOf, resolveTemplateDirs } from "./regenerate/paths.ts";
 // A project's first config.turri.yaml, as `turri init-config` writes it - the vendor whose models it takes chosen by the host.
 export { BEDROCK_DEFAULT, BEDROCK_REGIONS, bedrockModels, initConfig, VENDORS, type BedrockChoice, type Vendor } from "./init-config.ts";

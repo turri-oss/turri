@@ -107,12 +107,12 @@ It lives in `plain_modules/.turri`, which ignores itself in git:
 
 | | |
 | --- | --- |
-| `cache/` | package caches - pip, npm, cargo, Maven, Gradle, Go - so a dependency downloads once per project |
-| `home/<module>` | each module's home folder for its agents' commands, kept between pulses |
-| `tmp/<module>` | each module's `TMPDIR` |
+| `cache/` | package caches - pip, npm, cargo, Maven, Gradle, Go, node-gyp's headers, the browsers Playwright, Puppeteer and Cypress download - so a dependency downloads once per project; held to `cache-keep:` megabytes, the least recently written going first |
+| `home/<module>` | each module's home folder for its agents' commands, kept between pulses; the caches its tools keep there count towards `cache-keep:` |
+| `tmp/<module>` | each module's `TMPDIR`, emptied as each of its pulses ends outside [debug mode](config.md#debug-mode) |
 | `scripts/` | the throwaway copies test runs happen in, emptied after each run |
-| `logs/` | whole outputs cut short for an agent, read through `read_output` |
-| `services/` | what the services agents started printed |
+| `logs/` | whole outputs cut short for an agent, read through `read_output` - removed as the pulse ends, outside debug mode |
+| `services/` | what the services agents started printed - removed as the pulse ends, outside debug mode |
 
 ## What the machine lacks
 

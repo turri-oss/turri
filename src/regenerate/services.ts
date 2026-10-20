@@ -8,6 +8,7 @@ import { agentShell, type AgentShell } from "./agent-shell.ts";
 import { maskSecrets } from "./masking.ts";
 import { modulesScratchDir } from "./paths.ts";
 import { isRunning, startInBackground, stopGroup } from "./shell.ts";
+import { pulseWrote } from "./pulse-files.ts";
 
 /**
  * What an agent starts and keeps running while it works - a server, a worker - to try the software as someone would,
@@ -101,6 +102,8 @@ export function createServiceTools(options: { dir: string; read?: string[]; writ
       if (!checked.ok) return say(`Not started: ${checked.reason}`);
       mkdirSync(logsDir, { recursive: true });
       const log = join(logsDir, `${name.replace(/[^\w.-]+/g, "_")}-${randomUUID().slice(0, 8)}.log`);
+      // Read through service_logs while the pulse runs, and by no one after it (pulse-files.ts).
+      pulseWrote(log);
       const limit = Math.min(Math.max(seconds ?? DEFAULT_READY_SECONDS, 1), MAX_READY_SECONDS);
 
       // Started and waited on under the audit: what it writes while it comes up, outside its role, is put back.

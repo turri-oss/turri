@@ -33,12 +33,12 @@ The harness's scratch - each ignores itself, and is never part of a module's his
 | | |
 | --- | --- |
 | `plain_modules/.turri/` | what turri keeps beside the code - see [sandbox](sandbox.md#what-turri-keeps-beside-the-code) |
-| `plain_modules/.turri/cache/` | the package caches, so a dependency is fetched once |
+| `plain_modules/.turri/cache/` | the package caches, so a dependency is fetched once - held to `cache-keep:` |
 | `plain_modules/.turri/scripts/` | the copies each testing script run happens in, one folder a run |
-| `plain_modules/.turri/logs/` | the whole output of each run or command an agent was shown cut short, by time and what ran - read by agents only through `read_output` |
-| `.turri/jobs/` | each job's log: its diff, its stages, its agents and what they cost, and which walls were up under its agents' commands |
-| `.turri/debug/` | each agent's log: its prompt, every tool call and every answer |
-| `.turri/sessions/` | the agents' saved sessions |
+| `plain_modules/.turri/logs/` | the whole output of each run or command an agent was shown cut short, by time and what ran - read by agents only through `read_output`; removed as the pulse ends, outside [debug mode](config.md#debug-mode) |
+| `.turri/jobs/` | each job's log: its diff, its stages, its agents and what they cost, and which walls were up under its agents' commands - kept in debug mode only |
+| `.turri/debug/` | each agent's log: its prompt, every tool call and every answer - kept in debug mode only |
+| `.turri/sessions/` | the agents' saved sessions - in debug mode, and a gated skill's run's |
 | `.turri/runs/<skill>/` | a gated skill's run: what an interrupted one resumes from, and its gates' evidence |
 | `.turri/deploy/` | the output of what `deploy` started |
 | `dist/<module>/` | what `deploy` puts out: the module's code as its last commit has it, replaced whole each time - see [deploy](deploy.md) |
@@ -411,7 +411,7 @@ The agents that work through a job keep **one session for it**: the coding agent
 
 An agent kept through a job re-reads everything it has done on every call. So between turns, once its conversation - what it has done, past its instructions - passes `compact-at` tokens (100,000 unless [the project config](config.md) says otherwise), the harness compacts it, with instructions for its role: the coding agent and the fixer keep what is done, what still fails and why, the decisions and every review problem's fate; a reviewer keeps every problem it raised and where each stands, and what it has already checked. pi's own compaction, when the context window is nearly full, stays on beneath it.
 
-What each agent of a job did - its turns, its compactions, its tokens and cost - is at the end of the job's log in `.turri/jobs/`, and in `pulses`.
+What each agent of a job did - its turns, its compactions, its tokens and cost - is at the end of the job's log in `.turri/jobs/` (kept in [debug mode](config.md#debug-mode)), and in `pulses`.
 
 ## Working notes
 

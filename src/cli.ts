@@ -100,6 +100,7 @@ const USAGE = [
   "",
   `  ${"options".padEnd(12)} --harness-model <m>  the model you chat with   --coding-model <m>  the model renders run on`,
   `  ${"".padEnd(12)} --stack <name>  build with config.turri.<name>.yaml over config.turri.yaml - here and in every command`,
+  `  ${"".padEnd(12)} --debug  keep what turri writes for debugging it - agents' logs and sessions - as debug: true does`,
   `  ${"".padEnd(12)} --use-theme <t>  another theme than turri-dark - and every option of pi's own`,
   "",
   ...Object.entries(COMMANDS).map(([name, { blurb }]) => `  ${name.padEnd(12)} ${blurb}`),
@@ -114,7 +115,7 @@ const USAGE = [
 
 dropNoise();
 // --stack <name>, for any command and for the conversation: the stack everything is built with (stacks.ts), taken out
-// before the rest is read - a command never sees it.
+// before the rest is read - a command never sees it. --debug too: TURRI_DEBUG for this run, and the pi it starts.
 const argv = await withoutStack(process.argv.slice(2));
 const [command, ...rest] = argv;
 
@@ -125,6 +126,7 @@ async function withoutStack(args: string[]): Promise<string[]> {
     const arg = args[at]!;
     if (arg === "--stack") stack = args[++at] ?? "";
     else if (arg.startsWith("--stack=")) stack = arg.slice("--stack=".length);
+    else if (arg === "--debug") process.env.TURRI_DEBUG = "1";
     else kept.push(arg);
   }
   if (stack === undefined) return kept;

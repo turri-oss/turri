@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
-import { readProjectConfig, stackOf } from "../config.ts";
+import { DEFAULT_CACHE_KEEP_MB, readProjectConfig, stackOf } from "../config.ts";
 import { registerSecrets } from "./masking.ts";
 import { projectRootOf, modulesScratchDir } from "./paths.ts";
 
@@ -13,9 +13,9 @@ import { projectRootOf, modulesScratchDir } from "./paths.ts";
  * agent, and an agent's command - or the code it runs - could read any of them. So only an allow-list passes: the path,
  * the locale, the terminal, the user, and the variables that locate the host's toolchains. Then turri's own: a HOME of
  * the module's own, kept between pulses, so a tool's settings and an agent's dotfiles never land in the person's; a
- * TMPDIR; the package caches in the project, so a dependency downloads once; and git stopped at the module, so a
- * project that is itself a repository is not found from the code. Last, what the project passes on purpose -
- * `agent-env:` in its config - which never replaces turri's own.
+ * TMPDIR; the package caches in the project, so a dependency downloads once - held to `cache-keep:`; and git stopped
+ * at the module, so a project that is itself a repository is not found from the code. Last, what the project passes on
+ * purpose - `agent-env:` in its config - which never replaces turri's own.
  */
 
 /** Passed from the host as they are. */
@@ -68,11 +68,18 @@ export function cacheEnv(cache: string): Record<string, string> {
     GRADLE_USER_HOME: join(cache, "gradle"),
     CARGO_HOME: join(cache, "cargo"),
     npm_config_cache: join(cache, "npm"),
+    // node-gyp's headers, which it keeps in the home folder - a copy each module's - once for the project.
+    npm_config_devdir: join(cache, "node-gyp"),
     YARN_CACHE_FOLDER: join(cache, "yarn"),
     PIP_CACHE_DIR: join(cache, "pip"),
     UV_CACHE_DIR: join(cache, "uv"),
     GOCACHE: join(cache, "go-build"),
     GOMODCACHE: join(cache, "go-mod"),
+    // The browsers the end-to-end test tools download - hundreds of megabytes each, kept in the home folder: once for
+    // the project, not once a module.
+    PLAYWRIGHT_BROWSERS_PATH: join(cache, "ms-playwright"),
+    PUPPETEER_CACHE_DIR: join(cache, "puppeteer"),
+    CYPRESS_CACHE_FOLDER: join(cache, "Cypress"),
   };
 }
 
@@ -126,9 +133,115 @@ export function agentEnvironment(moduleDir: string, options: { hostEnv?: NodeJS.
   return { env, passed: Object.keys(values).sort(), values, missing };
 }
 
+/** The scratch areas whose caches this process has held to `cache-keep:`: once a run, before its first command. */
+const tidied = new Set<string>();
+
+/** Where in an agent's home folder its tools keep caches of their own. */
+const HOME_CACHES = [join("Library", "Caches"), ".cache"];
+
+/**
+ * Hold the package caches of a scratch area to `keepMb` megabytes: past it, the caches least recently written go whole -
+ * a package manager's folder in `cache`, or a tool's in an agent's home - until it is under. A cache is as recent as the
+ * newest thing written anywhere in it: a package manager writes deep inside its folder, never beside it. What goes is
+ * downloaded again when it is wanted. Never a reason for the work to fail.
+ */
+export function tidyCaches(scratch: string, keepMb: number): void {
+  const caches: Array<{ path: string; bytes: number; written: number }> = [];
+  const folders = [join(scratch, "cache")];
+  for (const home of entries(join(scratch, "home"))) for (const inHome of HOME_CACHES) folders.push(join(scratch, "home", home, inHome));
+  for (const folder of folders) {
+    for (const name of entries(folder)) {
+      const path = join(folder, name);
+      try {
+        caches.push({ path, ...measure(path) });
+      } catch {
+        /* gone meanwhile */
+      }
+    }
+  }
+  let total = caches.reduce((sum, cache) => sum + cache.bytes, 0);
+  for (const cache of caches.sort((a, b) => a.written - b.written)) {
+    if (total <= keepMb * 1024 * 1024) break;
+    total -= cache.bytes;
+    // What could not be removed still counts: a cache half gone is not the room it took.
+    if (existsSync(cache.path)) total += remove(cache.path);
+  }
+}
+
+function entries(dir: string): string[] {
+  try {
+    return readdirSync(dir);
+  } catch {
+    return [];
+  }
+}
+
+/** A file's or folder's bytes and when anything in it was last written, its links not followed. */
+function measure(path: string): { bytes: number; written: number } {
+  const stat = lstatSync(path);
+  if (!stat.isDirectory()) return { bytes: stat.size, written: stat.mtimeMs };
+  let bytes = 0;
+  let written = stat.mtimeMs;
+  for (const name of entries(path)) {
+    try {
+      const inside = measure(join(path, name));
+      bytes += inside.bytes;
+      written = Math.max(written, inside.written);
+    } catch {
+      /* gone meanwhile */
+    }
+  }
+  return { bytes, written };
+}
+
+/**
+ * Remove a cache whole, and say how many of its bytes are left. Some tools make what they cache read-only - Go's module
+ * cache, so it is never edited in place - and a folder that cannot be written cannot be emptied: each is made writable
+ * first, as `go clean -modcache` does.
+ */
+function remove(path: string): number {
+  try {
+    rmSync(path, { recursive: true, force: true });
+  } catch {
+    writable(path);
+    try {
+      rmSync(path, { recursive: true, force: true });
+    } catch {
+      /* what cannot be removed stays */
+    }
+  }
+  try {
+    return existsSync(path) ? measure(path).bytes : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** Every folder under `path` made writable by its owner, links not followed. */
+function writable(path: string): void {
+  try {
+    const stat = lstatSync(path);
+    if (!stat.isDirectory()) return;
+    chmodSync(path, stat.mode | 0o700);
+  } catch {
+    return;
+  }
+  for (const name of entries(path)) writable(join(path, name));
+}
+
 /** HOME, TMPDIR, the caches and git's ceiling: what no setting of the project's replaces. */
 function turrisOwn(module: string, name: string): Record<string, string> {
   const scratch = modulesScratchDir(module);
+  if (!tidied.has(scratch)) {
+    tidied.add(scratch);
+    let keep: number = DEFAULT_CACHE_KEEP_MB;
+    try {
+      keep = readProjectConfig(projectRootOf(module)).cacheKeep ?? DEFAULT_CACHE_KEEP_MB;
+    } catch {
+      /* a config that does not parse is said elsewhere: the default holds */
+    }
+    tidyCaches(scratch, keep);
+  }
   const fakeHome = join(scratch, "home", name);
   mkdirSync(fakeHome, { recursive: true });
   const gitconfig = join(fakeHome, ".gitconfig");

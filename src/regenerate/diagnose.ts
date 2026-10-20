@@ -1,6 +1,7 @@
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { ask, BEGIN, createExecutor } from "../pi.ts";
+import { debugMode } from "../config.ts";
 import { confinedTools } from "./confine.ts";
 
 /**
@@ -112,6 +113,13 @@ export function diagnosisPrompt(options: {
     "Find the root cause, not the last symptom: read the failing run's output and the agents' logs around where it",
     "failed, and follow it to the spec line, the code, the test, the environment or the harness it comes from. Then",
     "call submit_diagnosis: what happened, why, whose it is to fix, and exactly what to do.",
+    ...(debugMode(options.projectDir)
+      ? []
+      : [
+          "",
+          "The logs and the full outputs are removed as the job ends - the project is not in debug mode - so never send",
+          "the person to one of them: quote what in them shows the cause.",
+        ]),
     "",
     ...options.failures.flatMap((failure, index) => [`<attempt ${index + 1}>`, failure.trim().slice(-12_000), `</attempt ${index + 1}>`, ""]),
   ].join("\n");
