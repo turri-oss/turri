@@ -170,17 +170,24 @@ export function describePulseView(view: PulseView): string {
   if (view.environment !== undefined) lines.push(`  the environment lacks ${view.environment.missing} (found by ${view.environment.source === "harness" ? "turri" : "an agent"})`);
   for (const retry of view.retried) lines.push(`  tried again (${retry.attempt} of ${retry.of}) after: ${retry.failure}`);
   if (view.rounds.size > 0) lines.push(`  rounds: ${[...view.rounds].map(([gate, { round, of }]) => `${gate} ${round} of ${of}`).join("; ")}`);
-  if (view.scripts.length > 0) {
-    const failing = view.scripts.filter((run) => run.exit !== 0);
+  // can_it_fail's runs, on code changed to break it, apart: one failing is a test that caught the bug.
+  const mutations = view.scripts.filter((run) => run.mutated === true);
+  const tests = view.scripts.filter((run) => run.mutated !== true);
+  if (tests.length > 0) {
+    const failing = tests.filter((run) => run.exit !== 0);
     const signatures = new Map<string, number>();
     for (const run of failing) if (run.signature !== undefined) signatures.set(run.signature, (signatures.get(run.signature) ?? 0) + 1);
     const most = Math.max(0, ...signatures.values());
-    const timedOut = view.scripts.filter((run) => run.timedOut).length;
+    const timedOut = tests.filter((run) => run.timedOut).length;
     lines.push(
-      `  test runs: ${view.scripts.length}, ${failing.length} failing` +
+      `  test runs: ${tests.length}, ${failing.length} failing` +
         (most > 1 ? ` - ${most} of them the same way` : "") +
         (timedOut > 0 ? `, ${timedOut} stopped at the time limit` : ""),
     );
+  }
+  if (mutations.length > 0) {
+    const caught = mutations.filter((run) => run.exit !== 0 && !run.timedOut).length;
+    lines.push(`  can_it_fail: ${mutations.length} run${mutations.length === 1 ? "" : "s"} on code broken on purpose, ${caught} caught by the tests`);
   }
   if (view.judge.size > 0) lines.push(`  the judge blamed: ${[...view.judge].map(([culprit, times]) => `${culprit} ${times}x`).join(", ")}`);
   if (view.reviews.length > 0) lines.push(`  reviews: ${view.reviews.map((review) => (review.pass ? "passed" : `${review.problems} problem${review.problems === 1 ? "" : "s"}`)).join(", ")}`);
@@ -304,4 +311,70 @@ export function asJob(view: PulseView): Job {
     details: { ...(finished?.landed !== undefined ? { landed: finished.landed } : {}), ...(finished?.passed !== undefined ? { passed: finished.passed } : {}) },
     earlier: { run: view.run, ...(view.runMode !== undefined ? { runMode: view.runMode } : {}), lines: describePulseView(view).split("\n").slice(1).map((line) => line.replace(/^  /, "")) },
   };
+}
+
+/** What to count in the ledger: kinds - whole, or a group by what comes before the dot - a module, since when. */
+export interface EventQuery {
+  /** `healer.failed`, or `healer` for every healer event. */
+  kinds?: string[];
+  module?: string;
+  /** Only events at or after this time. */
+  since?: Date;
+  /** How many of the most recent to list, a line each. */
+  limit?: number;
+}
+
+/** The envelope's fields, said apart from an event's own. */
+const ENVELOPE = new Set(["v", "ts", "seq", "run", "job", "module", "agent", "kind"]);
+
+/** One event in a line: when, its pulse and module, its kind, its own fields - the agent's role when it has one. */
+export function eventLine(entry: LedgerEntry): string {
+  const fields = Object.entries(entry)
+    .filter(([key]) => !ENVELOPE.has(key))
+    .map(([key, value]) => {
+      const text = typeof value === "string" ? JSON.stringify(value.length > 160 ? `${value.slice(0, 159)}…` : value) : JSON.stringify(value);
+      return `${key}=${text}`;
+    });
+  const where = [entry.job, entry.module, entry.agent?.role ?? entry.agent?.label].filter((part): part is string => part !== undefined);
+  return [entry.ts.slice(0, 19).replace("T", " "), ...where, entry.kind, ...fields].join(" · ");
+}
+
+/**
+ * The events of these projects' ledgers that `query` asks for: how many of each kind, and the most recent, a line each -
+ * or, when no kind asked for is in the ledger, the kinds it has.
+ */
+export function describeEvents(projects: string[], query: EventQuery = {}): string {
+  const all = projects.flatMap((project) => readLedger(project, query.since !== undefined ? { since: query.since } : {}));
+  const inModule = query.module !== undefined ? all.filter((entry) => entry.module === query.module) : all;
+  const wanted = query.kinds?.map((kind) => kind.trim()).filter((kind) => kind !== "");
+  const matches = (kind: string) => wanted === undefined || wanted.length === 0 || wanted.some((asked) => kind === asked || kind.startsWith(`${asked}.`));
+  const found = inModule.filter((entry) => matches(entry.kind));
+  const scope = [query.module !== undefined ? `in ${query.module}` : "", query.since !== undefined ? `since ${query.since.toISOString().slice(0, 16).replace("T", " ")}` : ""].filter(Boolean).join(", ");
+  if (found.length === 0) {
+    const kinds = [...new Set(inModule.map((entry) => entry.kind))].sort();
+    return `No ${wanted !== undefined && wanted.length > 0 ? wanted.join(", ") : ""} events${scope !== "" ? ` ${scope}` : ""} in the ledger.${kinds.length > 0 ? ` It has: ${kinds.join(", ")}.` : ""}`;
+  }
+  const counts = new Map<string, number>();
+  for (const entry of found) counts.set(entry.kind, (counts.get(entry.kind) ?? 0) + 1);
+  const pulses = new Set(found.map((entry) => entry.job).filter((job) => job !== undefined)).size;
+  const runs = new Set(found.map((entry) => entry.run)).size;
+  const limit = Math.max(1, query.limit ?? 20);
+  const recent = found.slice(-limit);
+  return [
+    `${found.length} event${found.length === 1 ? "" : "s"}${scope !== "" ? ` ${scope}` : ""}, in ${runs} run${runs === 1 ? "" : "s"} and ${pulses} pulse${pulses === 1 ? "" : "s"}: ${[...counts].sort((a, b) => b[1] - a[1]).map(([kind, times]) => `${kind} ${times}`).join(", ")}`,
+    "",
+    recent.length === found.length ? "Each, oldest first:" : `The last ${recent.length}, oldest first:`,
+    ...recent.map(eventLine),
+  ].join("\n");
+}
+
+/** `24h`, `7d`, `30m`, or a date and time: the moment it means, or undefined when it means none. */
+export function sinceOf(text: string, now = Date.now()): Date | undefined {
+  const relative = /^(\d+)\s*([mhd])$/i.exec(text.trim());
+  if (relative !== null) {
+    const unit = { m: 60_000, h: 3_600_000, d: 86_400_000 }[relative[2]!.toLowerCase() as "m" | "h" | "d"];
+    return new Date(now - Number(relative[1]) * unit);
+  }
+  const date = new Date(text.trim());
+  return Number.isNaN(date.getTime()) ? undefined : date;
 }

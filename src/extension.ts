@@ -49,6 +49,7 @@ import { defaultBuildDir } from "./regenerate/paths.ts";
 import { describeTurnIncident, describeUsage, onModelEvent, type SpecConflict } from "./regenerate/activity.ts";
 import { ledgerWanted, startLedger } from "./regenerate/ledger.ts";
 import { describePastPulse, describeRuns, earlierPulses, ledgerProjects } from "./regenerate/ledger-view.ts";
+import { ledgerTool } from "./ledger-tools.ts";
 import { describeSpecConflict } from "./regenerate/stop-report.ts";
 import { inheritProviders, inheritThinkingLevel } from "./pi.ts";
 import { beginCapture, captureConsole, describeCaptured, dropNoise } from "./quiet.ts";
@@ -1695,9 +1696,14 @@ function registerJobTools(pi: ExtensionAPI, jobs: JobRegistry, cwd: string) {
         if (past !== undefined) return { content: [{ type: "text" as const, text: `${pastPulseNote}\n\n${past}` }], details: { status: "earlier" } };
         return { content: [{ type: "text" as const, text: `No pulse ${params.job_id} has run in this session, and the ledger has none by that id.` }], details: { status: "unknown" } };
       }
-      return { content: [{ type: "text" as const, text: whyFailed(job) }], details: { status: job.status as string } };
+      // What the ledger recorded of it besides: its rounds, test runs, healers and commits, as facts.
+      const facts = describePastPulse(ledgerProjects(cwd), job.id);
+      const text = facts !== undefined ? `${whyFailed(job)}\n\nWhat the ledger recorded of it:\n${facts}` : whyFailed(job);
+      return { content: [{ type: "text" as const, text }], details: { status: job.status as string } };
     },
   });
+
+  pi.registerTool(ledgerTool({ cwd }));
 
   pi.registerTool({
     name: "pulses",

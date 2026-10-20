@@ -36,7 +36,8 @@ While a skill runs, a line above the input shows its phases, every one by name -
 | `engine` | show or choose the model the code is regenerated on - see [below](#choosing-a-model) |
 | `pulses` | the pulses - running, planned and finished - or one of them |
 | `halt` | halt a pulse, a module's planned pulses, or what `activate` started |
-| `diagnose` | why a pulse did not land, from its transcript: how it ended, the stages that went wrong, the last failing test run, the last review, the tool calls that failed |
+| `diagnose` | why a pulse did not land, from its transcript: how it ended, the stages that went wrong, the last failing test run, the last review, the tool calls that failed - and what the [ledger](#the-ledger) recorded of it |
+| `ledger` | what turri did, from the [ledger](#the-ledger), this session's and every earlier one's: a pulse as facts, by its id - its rounds, test runs, verdicts, healers, refusals and commits; events of some kinds counted and listed, for a module or since a time - `healer.failed`, or `healer` for the group; or the last runs, a line a pulse |
 | `lineage` | a module's lineage: what each regeneration and conformance run changed in it, and what it was regenerated from |
 | `cultivate` | run a gated skill, its steps and review gates enforced |
 | `release`, `activate` | try what is regenerated: release it to `dist/<module>` and activate it on this machine, installing what it needs - see [deploy](deploy.md) |
@@ -182,7 +183,7 @@ It is in `.turri/ledger/` in the project, a JSON line an event, one file a run -
 | pulses | `job.queued`, `job.started`, every `job.stage`, `job.retried`, `job.finished` - its status, whether it landed, how long it ran, what it cost, how it ended |
 | the work loop | `loop.halted`, `loop.stopped` (a pulse the spec moved on from), `planner.failed`, `planner.fellBack` |
 | the model | `model.call` (time and tokens), `model.turn`, `model.compaction`, `provider.retry`, `provider.stall`, `provider.error`, `turn.stopped` (a turn turri ended itself, and why) |
-| tools and tests | `tool.call` (the tool, how long, whether it failed - never its arguments or result), `script.run` (the testing script, its exit, how long, whether the time limit stopped it, the failure's fingerprint) |
+| tools and tests | `tool.call` (the tool, how long, whether it failed - never its arguments or result), `script.run` (the testing script, its exit, how long, whether the time limit stopped it, the failure's fingerprint, and `mutated` for a `can_it_fail` run on code broken on purpose) |
 | the gates | `gate.round`, `review.verdict`, `arbiter.ruling`, `judge.verdict` |
 | what turri refused | `guard.refused` (a repeated call, a call past its budget, a tool the turn does not have), `command.refused`, `audit.putBack` |
 | the healers | `healer.started`, `healer.ended` with what it found, `healer.failed` and why - the debugger, the diagnosis of a failed pulse |
@@ -191,7 +192,7 @@ It is in `.turri/ledger/` in the project, a JSON line an event, one file a run -
 
 Never in it: prompts, replies, thinking, tool arguments and results, file contents. What an event does carry - a stage, an error's first line - is masked as the logs are.
 
-`turri ledger` prints the last runs, a line a pulse; `turri ledger <pulse>` one pulse - its rounds, its test runs and how many failed the same way, the verdicts, the healers, what turri refused, what its history recorded, its log; `--json` the events themselves, for `jq`. In the chat, `pulses` lists the last three earlier runs under this session's pulses, and `pulses` and `diagnose` tell one of them by its id; the side panel's pulses list has them as **earlier sessions** (see [the side panel](#in-a-conversation)).
+`turri ledger` prints the last runs, a line a pulse; `turri ledger <pulse>` one pulse - its rounds, its test runs and how many failed the same way, the verdicts, the healers, what turri refused, what its history recorded, its log; `--json` the events themselves, for `jq`. In the chat, `ledger` is the way in - a pulse of this session or an earlier one, the events of some kinds counted (how often the debugger failed this week: `kinds: [healer.failed], since: 7d`), the last runs - and `pulses` lists the last three earlier runs under this session's pulses, `pulses` and `diagnose` tell one of them by its id, and `diagnose` adds the ledger's facts to a pulse of this session; the side panel's pulses list has them as **earlier sessions** (see [the side panel](#in-a-conversation)).
 
 It is for looking up, never for deciding: what to build comes from the records alone (see [what the code is built from](regenerating.md#what-the-code-is-built-from)), so deleting `.turri/ledger/` loses nothing but what can be looked up. When a run first writes to the project, the files of runs that have ended are gzipped and the oldest pruned past `ledger-keep:` megabytes - 100 unset, `0` for none at all; a run still going is never touched. `.turri` ignores itself, so the ledger is never committed, and nothing of it is sent anywhere. A ledger that cannot be written is said once and given up on, never failing the work.
 

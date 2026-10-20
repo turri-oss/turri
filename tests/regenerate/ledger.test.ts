@@ -190,6 +190,7 @@ describe("a pulse read back from the ledger", () => {
       at(2, { kind: "job.started", waitedMs: 0, logFile: "/p/.turri/jobs/x.log" }),
       at(3, { kind: "script.run", script: "run_unittests.sh", exit: 1, ms: 1000, timedOut: false, inPlace: true, signature: "s1" }),
       at(4, { kind: "script.run", script: "run_unittests.sh", exit: 1, ms: 1000, timedOut: false, inPlace: true, signature: "s1" }),
+      at(4.5, { kind: "script.run", script: "run_unittests.sh", exit: 1, ms: 1000, timedOut: false, inPlace: true, mutated: true, signature: "m1" }),
       at(5, { kind: "gate.round", gate: "unit tests", round: 2, of: 20 }),
       at(6, { kind: "healer.failed", healer: "debugger", ms: 10, error: "No API key" }),
       at(7, { kind: "guard.refused", rule: "repeat", tool: "read", times: 4 }),
@@ -202,6 +203,7 @@ describe("a pulse read back from the ledger", () => {
     expect(text).toContain("failed, after 1m 5s");
     expect(text).toContain("rounds: unit tests 2 of 20");
     expect(text).toContain("test runs: 2, 2 failing - 2 of them the same way");
+    expect(text).toContain("can_it_fail: 1 run on code broken on purpose, 1 caught by the tests");
     expect(text).toContain("the debugger FAILED: No API key");
     expect(text).toContain("turri refused calls: repeat 1x");
     expect(text).toContain("ExpiredTokenException");

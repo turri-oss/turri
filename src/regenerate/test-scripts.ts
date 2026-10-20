@@ -426,7 +426,7 @@ function scriptEnv(): NodeJS.ProcessEnv {
  * its own, so the time limit and a stopped job end it and all it started. `named`: the path the script names itself by
  * in its output, shown as the project's script.
  */
-async function runScript(cwd: string, script: string, args: string[], logDir: string, options: { limitMs?: number; named?: string } = {}): Promise<ScriptRun> {
+async function runScript(cwd: string, script: string, args: string[], logDir: string, options: { limitMs?: number; named?: string; mutated?: boolean } = {}): Promise<ScriptRun> {
   const timeoutMs = options.limitMs ?? scriptTimeoutMs;
   const started = Date.now();
   // Where and how it runs, for the log: how it ended is what the activity says.
@@ -464,6 +464,8 @@ async function runScript(cwd: string, script: string, args: string[], logDir: st
     ms: run.elapsedMs!,
     timedOut: run.timedOut === true,
     inPlace: options.named === undefined,
+    // On code changed for the run - can_it_fail's bug: failing is what it is for.
+    ...(options.mutated === true ? { mutated: true } : {}),
     ...(run.exitCode !== 0 ? { signature: signatureHash(failureSignature(run)) } : {}),
   });
   return run;
@@ -509,10 +511,10 @@ function quote(path: string): string {
 }
 
 /** A testing script run on a fresh copy of the code: the project's script copied fresh into the staging folder, beside it. */
-async function runOnCopy(stagingRoot: string, script: string, args: string[], logDir: string, limitMs?: number): Promise<ScriptRun> {
+async function runOnCopy(stagingRoot: string, script: string, args: string[], logDir: string, limitMs?: number, mutated?: boolean): Promise<ScriptRun> {
   const copy = join(stagingRoot, basename(script));
   writeFileSync(copy, readFileSync(script));
-  return runScript(stagingRoot, script, args, logDir, { named: copy, ...(limitMs !== undefined ? { limitMs } : {}) });
+  return runScript(stagingRoot, script, args, logDir, { named: copy, ...(limitMs !== undefined ? { limitMs } : {}), ...(mutated === true ? { mutated } : {}) });
 }
 
 /**
@@ -591,7 +593,7 @@ export async function runOnCode(
     return run;
   };
   if (project.inPlace) {
-    const inPlace = () => runScript(project.root, script, [resolve(buildDir)], buildDir, limitMs !== undefined ? { limitMs } : {});
+    const inPlace = () => runScript(project.root, script, [resolve(buildDir)], buildDir, { ...(limitMs !== undefined ? { limitMs } : {}), ...(change !== undefined ? { mutated: true } : {}) });
     const started = Date.now();
     if (change === undefined) return passed(await inPlace(), started);
     reportActivity(`  changing ${change.file} in place for the ${what} - put back once it has run`);
@@ -604,7 +606,7 @@ export async function runOnCode(
     reportActivity(`  copying ${stageBuild(buildDir, staging.build)} files of the code for the ${what}`);
     if (change !== undefined) writeFileSync(join(staging.build, change.file), change.text);
     const started = Date.now();
-    return passed(await runOnCopy(staging.root, script, [staging.build], buildDir, limitMs), started);
+    return passed(await runOnCopy(staging.root, script, [staging.build], buildDir, limitMs, change !== undefined), started);
   } finally {
     rmSync(staging.root, { recursive: true, force: true });
   }

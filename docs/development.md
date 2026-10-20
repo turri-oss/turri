@@ -57,7 +57,7 @@ The workflow signs in to npm with npm's trusted publishing (OIDC), not a token: 
 | `src/screen-padding.ts` | the blank row above and below the whole screen and the two columns either side, in both of pi's ways of drawing it |
 | `src/regenerate/spec-map.ts`, `src/regenerate/spec-map-view.ts` | regen: each item's mark, from the records, the `.plain` files and the work loop's plan (`mapPlan`), and the map drawn |
 | `src/regenerate/debug-log.ts` | each render agent's whole conversation, always streamed to `.turri/debug/` |
-| `src/regenerate/ledger.ts`, `src/regenerate/ledger-view.ts`, `src/ledger-cli.ts` | the ledger: what turri did, as typed facts, in `.turri/ledger/` - `record()`, read back for `pulses`, `diagnose` and `turri ledger` - see [the ledger](using.md#the-ledger) |
+| `src/regenerate/ledger.ts`, `src/regenerate/ledger-view.ts`, `src/ledger-tools.ts`, `src/ledger-cli.ts` | the ledger: what turri did, as typed facts, in `.turri/ledger/` - `record()`, read back for the `ledger` tool, `pulses`, `diagnose` and `turri ledger` - see [the ledger](using.md#the-ledger) |
 | `genome/` | what turri knows and can do: `genome/skills/`, the skill library, and `genome/rules/`, the \*\*\*plain authoring rules |
 
 ## Known edges

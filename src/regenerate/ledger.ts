@@ -83,7 +83,7 @@ export type LedgerEvent =
   | { kind: "turn.stopped"; reason: string }
   // Tools and test runs.
   | { kind: "tool.call"; tool: string; ms: number; ok: boolean; resultChars: number }
-  | { kind: "script.run"; script: string; exit: number; ms: number; timedOut: boolean; inPlace: boolean; signature?: string }
+  | { kind: "script.run"; script: string; exit: number; ms: number; timedOut: boolean; inPlace: boolean; mutated?: boolean; signature?: string }
   // The gates: their rounds and verdicts.
   | { kind: "gate.round"; gate: "unit tests" | "conformance" | "regression"; round: number; of: number; signature?: string }
   | { kind: "review.verdict"; reviewer: "unit"; review: number; pass: boolean; problems: number }

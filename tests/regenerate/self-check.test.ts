@@ -151,6 +151,19 @@ describe("can_it_fail, the testing scripts run in place", () => {
     expect(readFileSync(join(code, "calc.sh"), "utf8")).toBe(source);
   }, 120_000);
 
+  it("is recorded in the ledger as a run on code broken on purpose - apart from the test runs that count", async () => {
+    const { runOnCode, runUnitScript } = await import("../../src/regenerate/test-scripts.ts");
+    const { readLedger, startLedger, stopLedger } = await import("../../src/regenerate/ledger.ts");
+    startLedger({ mode: "test", project: root });
+    try {
+      await runUnitScript(code, script);
+      await runOnCode(code, script, "unit testing script, with the change", { file: "calc.sh", text: "broken" });
+    } finally {
+      stopLedger();
+    }
+    expect(readLedger(root, { kinds: ["script.run"] }).map((entry) => (entry as { mutated?: boolean }).mutated === true)).toEqual([false, true]);
+  }, 60_000);
+
   it("puts the file back when the run itself fails to start", async () => {
     const { runOnCode } = await import("../../src/regenerate/test-scripts.ts");
     const missing = join(root, "test_scripts", "gone.sh");
