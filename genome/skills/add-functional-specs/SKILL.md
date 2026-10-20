@@ -36,7 +36,7 @@ This skill is `add-functional-spec` applied **one spec at a time, in order**, wi
       - every spec from this batch that has already been inserted.
 
       The batched analyzer returns every conflicting pair in one call — do **not** loop over pairs invoking a per-pair analyzer. For each conflicting pair it reports, run `resolve-spec-conflict`. Apply the resolution — which may revise the new spec, an existing spec, or both — then re-run `analyze-func-specs` once over the touched set until the verdict is `COMPATIBLE`.
-   3. **Append the spec** to the `***functional specs***` section. Specs are chronological; the new entry goes at the end (unless an earlier existing spec must come *after* it — in that rare case, insert at the correct position).
+   3. **Insert the spec where it best fits** in the `***functional specs***` section - see Placement below.
 5. **Read the file again** to confirm correct placement, ordering, and syntax for the full batch.
 
 Order matters: each new spec is inserted only after its complexity and conflict checks pass, so subsequent specs in the batch are always checked against an already-validated file.
@@ -55,6 +55,16 @@ Specs are rendered incrementally, top to bottom. The renderer has **no knowledge
 - A new spec can reference behavior defined by earlier specs.
 - A new spec **cannot** assume anything about specs that come after it.
 - Order the batch so that each spec only depends on specs that precede it. If two new specs would otherwise reference each other, the dependent one comes second.
+
+### Placement
+
+Put each new spec where it best fits the spec as it reads, not at the end by default:
+- **Below every spec it builds on** - each spec whose behaviour it references or extends, the batch's own included, and the first spec using each concept it relies on.
+- **Above every existing spec that builds on it** - one that already assumes what the new spec adds.
+- **Within those bounds, beside the specs of the same feature** - usually straight after the last spec it extends, so a feature's specs read as one group.
+- **At the end** only when it starts something new or fits nowhere better.
+
+The batch need not stay together: each spec goes where it fits. An insertion in the middle costs no more than one at the end: turri regenerates it as one addition, and the specs after it are not rebuilt (`turri-regeneration.md`). Never append just to avoid moving the numbering.
 
 ### Language Agnosticism
 
@@ -115,4 +125,4 @@ If any of the newly added functional specs need verification, use the `add-accep
 - [ ] Sentences are short, clear, and unambiguous
 - [ ] Every spec trimmed per `concise-specs.md`: nothing obvious, no rationale, no uncheckable adjectives or hedges, plain words throughout
 - [ ] No redundancy with existing specs or within the batch
-- [ ] Specs placed in correct chronological positions
+- [ ] Each spec placed where it best fits: below what it builds on, above what builds on it, beside its feature's specs

@@ -21,7 +21,7 @@ allowed-tools: [read, write, edit, bash, ls, grep, find]
 3. **Draft the functional spec** following the rules below, then run the review pass in `concise-specs.md` over the draft — trim it to the shortest wording that keeps every fact before any other check.
 4. **Analyze complexity** — use the `analyze-if-func-spec-too-complex` skill to verify the drafted spec implies ≤ 200 LOC. If too complex, use the `break-down-func-spec` skill to split it, then repeat from step 3 for each resulting spec.
 5. **Check for conflicts** with every existing functional spec — this is critical. Run `analyze-func-specs` **once** with the new spec plus all existing specs (in the file and in any `requires` chain) as a single batch. The batched analyzer returns every conflicting pair in one call — do **not** invoke a pair-by-pair analyzer. For each conflicting pair it reports, run `resolve-spec-conflict` on that pair; re-run `analyze-func-specs` over the touched set after each resolution until the verdict is `COMPATIBLE`.
-6. **Append the spec** to the end of the `***functional specs***` section (specs are chronological; new ones go last).
+6. **Insert the spec where it best fits** in the `***functional specs***` section - see Placement below.
 7. **Read the file again** to confirm correct placement and syntax.
 
 ## Rules
@@ -35,7 +35,16 @@ Each functional spec must imply a **maximum of 200 changed lines of code**. If t
 Specs are rendered incrementally, top to bottom. The renderer has **no knowledge of future specs** — only previously rendered specs are in context. This means:
 - A new spec can reference behavior defined by earlier specs.
 - A new spec **cannot** assume anything about specs that come after it.
-- Place the new spec at the correct position if it must come before a future spec; otherwise append at the end.
+
+### Placement
+
+Put the new spec where it best fits the spec as it reads, not at the end by default:
+- **Below every spec it builds on** - each spec whose behaviour it references or extends, and the first spec using each concept it relies on.
+- **Above every existing spec that builds on it** - one that already assumes what the new spec adds.
+- **Within those bounds, beside the specs of the same feature** - usually straight after the last spec it extends, so a feature's specs read as one group.
+- **At the end** only when it starts something new or fits nowhere better.
+
+An insertion in the middle costs no more than one at the end: turri regenerates it as one addition, and the specs after it are not rebuilt (`turri-regeneration.md`). Never append just to avoid moving the numbering.
 
 ### Language Agnosticism
 
@@ -81,4 +90,4 @@ If the functional spec needs verification, use the `add-acceptance-test` skill t
 - [ ] Sentences are short, clear, and unambiguous
 - [ ] Trimmed per `concise-specs.md`: nothing obvious, no rationale, no uncheckable adjectives or hedges, plain words throughout
 - [ ] No redundancy with existing specs
-- [ ] Placed in correct chronological position (usually at the end)
+- [ ] Placed where it best fits: below what it builds on, above what builds on it, beside its feature's specs
