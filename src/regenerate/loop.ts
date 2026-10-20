@@ -1972,6 +1972,15 @@ const defaultConformanceRunner: JobRunner = async (job, onDelta) => {
   return { landed: result.passed, report: describeSpecDiffConformance(result), ...(result.specGaps !== undefined ? { specGaps: result.specGaps } : {}) };
 };
 
+/**
+ * A module's first pulse when it builds one functional spec - the project set up and the smallest thing that runs: it lands on its
+ * unit tests alone, with no review. A reviewer, and an arbiter after it, on a scaffold is time spent before anything can
+ * be tried.
+ */
+export function skipsReview(cases: JobCases): boolean {
+  return cases.fresh && cases.add.length <= 1 && cases.patch.length === 0 && cases.again.length === 0 && cases.delete.length === 0;
+}
+
 /** A job as a spec diff render, landed on its unit tests: conformance is a track of its own. */
 const defaultRunner: JobRunner = async (job, onDelta) => {
   const result = await renderSpecDiff({
@@ -1981,6 +1990,7 @@ const defaultRunner: JobRunner = async (job, onDelta) => {
     applied: "already applied",
     spec: job.spec,
     cases: job.planned.cases,
+    ...(skipsReview(job.planned.cases) ? { unitReview: false } : {}),
     ...(job.model !== undefined ? { model: job.model } : {}),
     ...(job.steering !== undefined ? { steering: job.steering } : {}),
     onDelta,

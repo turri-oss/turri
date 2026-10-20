@@ -4,8 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createJobRegistry } from "../../src/regenerate/jobs.ts";
+import type { JobCases } from "../../src/regenerate/drift.ts";
 import { moduleLanes } from "../../src/regenerate/lanes.ts";
-import { createWorkLoop, describeDrift, describeModules, type JobRunner } from "../../src/regenerate/loop.ts";
+import { createWorkLoop, describeDrift, describeModules, skipsReview, type JobRunner } from "../../src/regenerate/loop.ts";
 import { codeTree, readRecord, writeCodeRecord, writeTestsRecord } from "../../src/regenerate/records.ts";
 import { recordHistory } from "../../src/regenerate/lineage.ts";
 import { copyRequiredCode } from "../../src/regenerate/requires.ts";
@@ -1523,5 +1524,20 @@ describe("halting a module's planned work", () => {
     expect(loop.planned()).toEqual([]);
     gate.release!();
     await loop.drain();
+  });
+});
+
+describe("the review of a pulse", () => {
+  const spec = (frid: string) => ({ frid, text: `- Spec ${frid}.` });
+  const cases = (over: Partial<JobCases>): JobCases => ({ fresh: false, add: [], patch: [], again: [], delete: [], mechanical: false, ...over });
+
+  it("is skipped for a module's first pulse that builds one functional spec - the project set up and the smallest thing that runs", () => {
+    expect(skipsReview(cases({ fresh: true, add: [spec("1")] }))).toBe(true);
+  });
+
+  it("is kept for a first pulse that builds more than one, and for every pulse after the first", () => {
+    expect(skipsReview(cases({ fresh: true, add: [spec("1"), spec("2")] }))).toBe(false);
+    expect(skipsReview(cases({ add: [spec("2")] }))).toBe(false);
+    expect(skipsReview(cases({ patch: [spec("1")] }))).toBe(false);
   });
 });

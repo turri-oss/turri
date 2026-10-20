@@ -2,7 +2,7 @@ import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { turriIdentity } from "./environment.ts";
 import { onModelEvent, type ModelEvent, type UsageReport } from "./regenerate/activity.ts";
-import type { Job } from "./regenerate/jobs.ts";
+import { firstRegeneration, type Job } from "./regenerate/jobs.ts";
 import type { SpecGap } from "./regenerate/notes.ts";
 
 /**
@@ -248,7 +248,12 @@ export function startRunReport(options: RunReportOptions): RunReporter {
       };
     });
     const ran = list.filter((pulse) => pulse.status !== "queued");
+    const first = firstRegeneration(jobs, startedAt);
+    const seconds = (ms: number | undefined) => (ms !== undefined ? Math.round(ms / 100) / 10 : null);
     return {
+      // The time to first regeneration - the first code pulse started - and to the first one landed, from the run's start.
+      first_started_seconds: seconds(first.started),
+      first_landed_seconds: seconds(first.landed),
       counts: {
         total: ran.length,
         landed: ran.filter((pulse) => pulse.landed).length,

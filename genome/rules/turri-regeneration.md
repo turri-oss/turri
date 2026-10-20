@@ -27,6 +27,8 @@ The other rules say what a spec means. This one says what turri does with a chan
 - Implementation reqs alone, or definitions no functional spec uses, are a mechanical change: the code adapts, and no test is written or changes what it asserts
 - Test reqs and acceptance tests reach the conformance tests only, never the code
 - Definitions moved to a common module and reqs reordered are recorded, not rendered
+- A functional spec written on its happy path and hardened later - its validation, edge cases and errors added to it - is patched in place each time: growing a spec a step at a time costs no more than writing it whole up front
+- A module's first pulse, when it builds one functional spec - the project set up and the smallest thing that runs - lands on its unit tests with no review
 
 ## What a coding agent sees
 

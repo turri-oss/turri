@@ -91,6 +91,23 @@ describe("the run report's usage", () => {
   });
 });
 
+describe("the run report's time to first regeneration", () => {
+  it("is how long after the run's start its first code pulse started, and its first landed - nothing before", async () => {
+    const reporter = report();
+    const registry = createJobRegistry();
+    reporter.attach({ jobs: () => registry.list() });
+    const before = reporter.build() as { pulses: Record<string, unknown> };
+    expect(before.pulses).toMatchObject({ first_started_seconds: null, first_landed_seconds: null });
+
+    const code = registry.start({ kind: "regenerate", summary: "the first spec", module: "app", run: async () => ({ report: "done", details: { landed: true } }) });
+    await registry.wait(code.id);
+    const after = reporter.build() as { duration_seconds: number; pulses: { first_started_seconds: number; first_landed_seconds: number } };
+    expect(after.pulses.first_started_seconds).toBeGreaterThanOrEqual(0);
+    expect(after.pulses.first_landed_seconds).toBeGreaterThanOrEqual(after.pulses.first_started_seconds);
+    expect(after.pulses.first_landed_seconds).toBeLessThanOrEqual(after.duration_seconds);
+  });
+});
+
 describe("the run report's spec gaps", () => {
   it("lists each gap a pulse's agents met, with its pulse and whether that pulse landed", async () => {
     const reporter = report();

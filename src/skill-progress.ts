@@ -8,7 +8,7 @@ import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
  *   brood       ✓ intent ━━━━ ⠋ stack ──── ○ testing ──── ○ product       phase 2 of 4
  *                 stack - the language, frameworks, storage and architecture
  *
- * The second line says what the phase it is in does: a phase's name alone - `groundwork` - says little to someone
+ * The second line says what the phase it is in does: a phase's name alone - `skeleton` - says little to someone
  * who has not read the skill.
  *
  * A skill of one phase, or none, has nothing to be partway through: its line is the spinner and its name alone.

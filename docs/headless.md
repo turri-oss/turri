@@ -134,6 +134,8 @@ A module that `requires` others is built in its own codebase on top of theirs: t
     "by_pulse_kind": { "code": { }, "conformance": { } }
   },
   "pulses": {
+    "first_started_seconds": 41.2,   // the time to first regeneration: the first code pulse started - null before
+    "first_landed_seconds": 233.9,   // the first code pulse landed: something to try - null before
     "counts": { "total": 7, "landed": 5, "failed": 1, "stopped": 0, "rolled_back": 2, "running": 0, "not_started": 0 },
     "list": [{
       "id": "2a058729", "module": "app", "number": 1, "kind": "code", "title": "…",
@@ -169,6 +171,8 @@ A module that `requires` others is built in its own codebase on top of theirs: t
 **Usage.** Every model response an agent gets counts, in a pulse or not. `total` is `in_pulses` plus `outside_pulses`, and `in_pulses` is the pulses' own usage added up - the figures their lines in the notes and the pulse logs print - so the totals can be checked by hand against them. `llm_calls` counts model responses, a compaction's included; `agent_turns` the harness's requests to an agent, each as many responses as it takes; `model_seconds` the time from each request to its response's end, added up - several agents working at once each count theirs, so it can exceed the run's duration. Tokens and cost are as the provider reports them to pi. `by_model`, `by_role` and `by_pulse_kind` split the same calls; a role or model turri could not tell is `unknown`.
 
 **Pulses.** `landed`: its work is committed. `rolled_back`: it ended without landing - failed, stopped, or did not pass - and everything it wrote was undone. A pulse that failed is tried once more before it counts as failed; both tries are the one pulse.
+
+**Time to first regeneration.** `pulses.first_started_seconds` is how long after the run started its first code pulse started - planning the work, and any wait for a free slot, before it - and `first_landed_seconds` how long until the first one landed, when there is first something to try. Both are `null` until it happens. In the chat, `spawn` and the other skills that write spec diffs say the same in their result, counted from when the skill began.
 
 **Spec gaps.** A behaviour the spec leaves open that an agent met and decided on its own - reported with `report_spec_gap` (see [regenerating](regenerating.md)). In the chat they are put to you as the pulse ends; a headless run has no one to ask, so they are listed here, in the order the pulses started, and printed under the pulse that met them. `assumption` is what the agent decided meanwhile, also in the codebase's notes' assumptions while its pulse is `landed`; a pulse rolled back takes it out of the notes, but the question still stands. Settle the ones you care about in the spec and run again.
 

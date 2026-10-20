@@ -548,6 +548,20 @@ export function formatElapsed(ms: number): string {
 }
 
 /**
+ * How soon after `since` the first code pulse queued since then started - the time to first regeneration - and how soon
+ * the first of them landed, when one has: from then on there is something to try. In milliseconds; either is undefined
+ * until it has happened.
+ */
+export function firstRegeneration(jobs: Job[], since: number): { started?: number; landed?: number } {
+  const pulses = jobs.filter((job) => job.kind === "regenerate" && job.queuedAt >= since && job.status !== "queued");
+  const started = Math.min(...pulses.map((job) => job.startedAt));
+  const landed = Math.min(
+    ...pulses.filter((job) => job.status === "succeeded" && (job.details as { landed?: boolean } | undefined)?.landed === true && job.finishedAt !== undefined).map((job) => job.finishedAt!),
+  );
+  return { ...(Number.isFinite(started) ? { started: started - since } : {}), ...(Number.isFinite(landed) ? { landed: landed - since } : {}) };
+}
+
+/**
  * What a pulse is called wherever it is shown in a line: its module, kind and number - `shorty · regenerate pulse 3`,
  * `shorty · conformance pulse 6` - never what it regenerates, which is the agents' words and long. A job of no module,
  * what was asked for.

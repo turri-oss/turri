@@ -66,7 +66,9 @@ import {
   createJobRegistry,
   defaultParallelJobs,
   describeJob,
+  firstRegeneration,
   formatDuration,
+  formatElapsed,
   pulseName,
   shouldWait,
   STOPPED_ON_REQUEST,
@@ -653,6 +655,8 @@ function turriExtension(pi: ExtensionAPI, host: TurriHost) {
       const filesBefore = projectFiles(cwd);
       // A side question asked while it runs is told what it has done so far.
       const ended = skillRunStarted({ skill: skill.name, dir: skill.dir, step: () => live.step, trace: () => [...trace], runDir });
+      // From here the time to first regeneration is counted, for a skill that writes spec diffs: its first pulse started.
+      const began = Date.now();
       const { result, output: captured } = await captureConsole(() =>
         runSkill({
         skillDir: skill.dir,
@@ -715,11 +719,18 @@ function turriExtension(pi: ExtensionAPI, host: TurriHost) {
           ? `${specsChanged.join(", ")} changed, and nothing is regenerated from that yet: call regenerate for it, and the code is brought up to the spec.`
           : "";
       const gated = skill.steps.some((step) => step.gate !== undefined);
+      const first = skill.allowedTools.includes("write_spec_diff") ? firstRegeneration(jobs.list(), began) : {};
+      const ttfr =
+        first.started === undefined
+          ? ""
+          : `Time to first regeneration: ${formatElapsed(first.started)} - its first pulse started that long after ${skill.name} began` +
+            (first.landed !== undefined ? `, and landed after ${formatElapsed(first.landed)}.` : ".");
       const text = result.ok
         ? [
             gated ? `${skill.name}: passed all gates.` : `${skill.name}: finished. It has no review gates, so nothing checked its work: read what it changed before you report it.`,
             changed,
             ...(unrendered !== "" ? [unrendered] : []),
+            ...(ttfr !== "" ? [ttfr] : []),
             "",
             "<artifact>",
             result.output,

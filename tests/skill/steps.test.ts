@@ -157,9 +157,9 @@ describe("brood's questioning level", () => {
 });
 
 describe("spawn, brood's quick twin", () => {
-  it("asks only about intent, then sets up and writes the product on its own - unpaced, and ungated", () => {
+  it("asks as little as it can, then writes the first spec and the first slices on its own - unpaced, and ungated", () => {
     const skill = loadSkill("genome/skills/spawn");
-    expect(skill.steps.map((step) => step.name)).toEqual(["intent", "groundwork", "product"]);
+    expect(skill.steps.map((step) => step.name)).toEqual(["start", "skeleton", "regenerate"]);
     expect(skill.steps.every((step) => step.gate === undefined)).toBe(true);
     expect(skill.paced).toBe(false);
     expect(skill.allowedTools).toContain("write_spec_diff");

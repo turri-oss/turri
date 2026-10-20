@@ -64,6 +64,6 @@ describe("a skill's progress, above the input", () => {
   it("reads its phases from the skill itself - brood's four, spawn's three", () => {
     const phases = (name: string) => loadSkill(join(process.cwd(), "genome", "skills", name)).steps.map((step) => step.name);
     expect(phases("brood")).toEqual(["intent", "stack", "testing", "product"]);
-    expect(phases("spawn")).toEqual(["intent", "groundwork", "product"]);
+    expect(phases("spawn")).toEqual(["start", "skeleton", "regenerate"]);
   });
 });

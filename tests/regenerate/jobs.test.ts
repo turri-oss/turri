@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createJobRegistry, describeJob, shouldWait } from "../../src/regenerate/jobs.ts";
+import { createJobRegistry, describeJob, firstRegeneration, shouldWait, type Job } from "../../src/regenerate/jobs.ts";
 
 const outcome = (report: string) => ({ report });
 
@@ -232,5 +232,31 @@ describe("a job that fails", () => {
     expect((await plain.wait(failing.id)).status).toBe("succeeded");
     expect((await plain.wait(next.id)).status).toBe("succeeded");
     expect(ran).toBe(true);
+  });
+});
+
+describe("the time to first regeneration", () => {
+  const job = (over: Partial<Job>): Job => ({ kind: "regenerate", status: "running", queuedAt: 1000, startedAt: 1000, ...over }) as Job;
+
+  it("is how soon the first code pulse queued since then started, and how soon the first landed", () => {
+    const jobs = [
+      job({ queuedAt: 100, startedAt: 100, status: "succeeded", finishedAt: 400, details: { landed: true } }),
+      job({ queuedAt: 1500, startedAt: 2000, status: "succeeded", finishedAt: 9000, details: { landed: true } }),
+      job({ queuedAt: 1600, startedAt: 9000, status: "succeeded", finishedAt: 12000, details: { landed: true } }),
+    ];
+    expect(firstRegeneration(jobs, 1000)).toEqual({ started: 1000, landed: 8000 });
+  });
+
+  it("counts no conformance pulse, none still queued, and none that did not land", () => {
+    const jobs = [
+      job({ kind: "conformance", queuedAt: 1100, startedAt: 1100 }),
+      job({ status: "queued", queuedAt: 1200, startedAt: 1200 }),
+      job({ queuedAt: 1300, startedAt: 1500, status: "succeeded", finishedAt: 3000, details: { landed: false } }),
+    ];
+    expect(firstRegeneration(jobs, 1000)).toEqual({ started: 500 });
+  });
+
+  it("is nothing before a pulse has started", () => {
+    expect(firstRegeneration([], 1000)).toEqual({});
   });
 });

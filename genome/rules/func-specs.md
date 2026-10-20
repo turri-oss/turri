@@ -58,6 +58,7 @@ GOOD — statements of fact with concrete subjects:
 - The first spec must still imply a testable outcome; setup alone is not a functional spec
 - Prefer one minimal entry point or public operation with a deterministic result that can be invoked and verified
 - Defer persistence, integrations, multiple interfaces, branching workflows, and cross-cutting behavior until later specs can build on the generated baseline
+- A spec may start on its happy path and be hardened later - validation, edge cases and errors added to it by changing it - once the software has been tried; it must still say exactly what it does for the input it covers
 - This extra bootstrap cost applies when no previous implementation baseline exists; a module that continues from a `requires` module may already inherit the necessary scaffold
 
 ## Chronological ordering

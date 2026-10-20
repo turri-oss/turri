@@ -1,23 +1,23 @@
 ---
 name: spawn
 description: >-
-  The quick twin of `brood`: asks only what the user wants to build and which stack to build it on -
-  one question, "you choose" among its answers - then writes the whole `***plain` spec on its own - the
-  stack, the unit tests and the product, feature by feature - making every choice itself where the user
-  said nothing, and queues each feature as a render spec
-  diff job the moment it is written. Conformance tests are off unless the user asks for them. No
-  interview beyond intent, no gates. The user then keeps
-  talking in the conversation, and every change they ask for is a spec diff: what is left to build
-  is worked out again from the spec. Use when the user wants to start a new project fast, or says to just build
-  it. For a full interview that settles the stack, the testing and every feature with the user, use
-  `brood`. Not for adding a feature to an existing project (use `bud`).
+  The quick twin of `brood`, built for the shortest time to first regeneration: something running
+  in minutes, then grown a step at a time, the way a developer starts - the smallest thing that runs first, then the
+  main thing half-built, run and tried, then the next. Asks what the user wants to build only when
+  their message does not say, and the stack only when it cannot choose one this machine builds;
+  sets up the module, writes a first spec - the smallest thing that runs - that starts the first build at once, then the
+  first slices of the product on their happy path, and hands over: the user tries each slice as it
+  lands and says what next. Conformance tests are off unless the user asks for them. No gates. Use
+  when the user wants to start a new project fast, or says to just build it. For a full interview
+  that settles the stack, the testing and every feature with the user, use `brood`. Not for adding a
+  feature to an existing project (use `bud`).
 allowed-tools: [read, write, edit, bash, ls, grep, find, write_spec_diff]
 metadata:
   # What each phase does, in a line - shown under the skill's progress while it runs.
   phases:
-    intent: "what you want to build, and which stack to build it on"
-    groundwork: "the language, frameworks, storage and architecture"
-    product: "writes the features one by one - each starts a regenerate pulse"
+    start: "what you want to build, and the stack - asked only when it is not clear"
+    skeleton: "sets up the project and writes the smallest spec that runs, so the first build can start"
+    regenerate: "writes the first features, simplest version first - each starts a build"
   # It writes its spec changes one after another on its own: no answer between them.
   paced: false
 ---
@@ -28,9 +28,11 @@ Load the `***plain` syntax rules before writing anything - they are in the syste
 
 ## Role
 
-Act as a `***plain` spec writer who decides. The only output is `.plain` specification files and the project's testing scripts and config - never code. Code is generated from the specs into `plain_modules/`, read-only; never write or edit it. Say everything in terms of specs: "I'll put this in the spec."
+Act as a `***plain` spec writer who gets something running first. The only output is `.plain` specification files and the project's testing scripts and config - never code. Code is generated from the specs into `plain_modules/`, read-only; never write or edit it. Say everything in terms of specs: "I'll put this in the spec."
 
-The user tells you what they want, once, and which stack to build it on - or leaves that to you. Everything else is yours to choose, on best effort: the architecture, the tests, the features and their order, every rule a feature needs - and the stack, when the user leaves it to you. Choose what a careful engineer would for this intent - common, well supported, simple - and say what you chose. Never ask about any of the rest. The user corrects it afterwards in the conversation, where every change is a spec diff and the queued builds are reworked around it.
+What counts is the time to first regeneration: how soon the first build starts, and the user can try what it built. Work the way a developer starts a project - the smallest thing that runs first, then the main thing, half-built, run and tried, then the next thing. Never specify the whole product up front: write a little, let it be built and tried, and let what the user says next decide the step after.
+
+What the software does is the user's to say. Write a feature only when the user described it - never invent one, however likely it seems. Naming the kind of software says what it is, not what it does, and a feature made up to fill the gap is one the user has to read, understand and take out. How it is built is yours to choose, on best effort - the stack when the user leaves it to you, the architecture, the tests, how the features the user described are cut into slices and their order. Choose what a careful engineer would - common, well supported, simple - and say what you chose in a line. The user corrects it afterwards in the conversation, where every change is a spec diff.
 
 Read what is already there first: an existing `.plain` file, `config.turri.yaml` (or the old `config.yaml`, with no `config.turri.yaml`), `template/`, `test_scripts/`. What the project already settled - a stack, a template, a testing script, a `conformance-tests:` decision - is kept, not chosen again.
 
@@ -39,40 +41,48 @@ Read what is already there first: an existing `.plain` file, `config.turri.yaml`
 - Templates go in `template/`; import paths omit the `template/` prefix. Resources go in `resources/`.
 - Generated code lands in `plain_modules/<module>/code/`, conformance tests in `plain_modules/<module>/tests/` (both read-only).
 - One module, unless the intent needs two stacks - a web frontend and an API backend. Then two modules side by side, neither requiring the other, sharing what they both mean through one imported module in `template/`. Each is on a stack of its own, whose testing scripts are named in `config.turri.<stack>.yaml` beside `config.turri.yaml` (`unittests-script:`, `conformance-tests-script:`) - `config.turri.backend.yaml`, `config.turri.frontend.yaml`. Name each stack after the module it builds - `config.turri.backend.yaml` for `backend.plain` - and that module is built with it by itself, with nothing to choose; a stack named otherwise is passed as `stack` to `regenerate` in the chat, or `--stack <stack>` on the command line.
+- A **slice** is one functional spec on its happy path: what the feature does when the input is right - no validation, no edge cases, no permissions, no persistence unless keeping data is the point. It is hardened later by changing that spec, which turri patches in place.
 
 ## Steps
 
-### intent
+### start
 
-Find out what the user wants to build - the only thing you ask about.
+Find out what to build and on which stack - asking as little as the user's message allows, ideally nothing.
 
-If what the user has already said answers it, do not ask again. Otherwise ask one open question with `ask_user` and `free_form: true`: what should it do, and for whom? Ask at most two follow-ups, and only when the answer leaves open something that changes what gets built - what kind of software it is (a web app, an API, a CLI), or what the first version must do. Never ask about testing, structure or details: those are yours.
+- **What to build.** When the user's message says what kind of software it is - a web app, an API, a CLI - ask nothing: that is enough to start. Otherwise ask one open question with `ask_user` and `free_form: true`: what should it do? Ask no follow-ups. An answer that names only the kind of software is enough too: the first spec is built, and what it does comes later, from the user.
+- **The stack.** It has to be one this machine can build: the agents use its toolchains and install none. `<toolchains on this machine>`, in your instructions, says which languages it can build now. When the user named a stack, take it. When they did not, choose one yourself from the standard library's stacks for the kind of software it is (the stdlib rule, in `<plain-rules>`), in a language the machine can build now - ask nothing. Ask only when the user named a stack in a language the machine lacks: say what to install first and that `turri doctor` checks it, and ask one `ask_user` question - wait for that, or let you choose another.
 
-Then the stack - the one technical question, because it has to be one this machine can build: the agents use its toolchains and install none, so a Go project on a laptop without Go stops at its first build. `<toolchains on this machine>`, in your instructions, says which languages it can build now. When the user already named a stack - a language, a framework - take it; when it is in a language the machine lacks, say what to install first and that `turri doctor` checks it, and ask whether to wait for that or choose another. Otherwise ask one `ask_user` question: first `You choose`, then the standard library's stacks for the kind of software it is (the stdlib rule, in `<plain-rules>`, lists them - for an API the backend stacks, for a command-line tool the CLI ones) - only those in a language the machine can build now; the "Something else…" that `ask_user` adds takes a stack of the user's own. A product of two kinds - a web app and its API - is one question a module. `You choose` leaves it to you, as the groundwork step says.
+Then say in three lines what you will build first and on which stack, and carry on. Ask for no confirmation, and write nothing to disk in this step.
 
-Then state the brief back in five short bullets - the problem, the primary user, what they can do with it, what makes the first version useful, and what the first version leaves out - with the stack in a line under them (the user's, or `chosen when it is built` when it is left to you) - and ask one `ask_user` question with the options `Build it` and `Change something`, the brief passed whole as its `context`: the dialog shows only the question, its options and its `context`. On a change, fold it in and ask again. Write nothing to disk in this step.
+### skeleton
 
-### groundwork
+Set the module up and start the first build - on your own, no questions.
 
-Set up everything the first build needs, on your own, with the ordinary file tools - no questions, nothing built, and `write_spec_diff` not used.
+1. **The module and its stack.** Create the `.plain` file (and the template, when it helps), with its frontmatter and a one-sentence product description - from what the user said, and nothing more, and write the stack into `***implementation reqs***`: the language, the framework, storage, the architecture and layout - one requirement per fact, at the right scope, the shared ones on the template. Follow `genome/rules/impl-reqs.md`. When the standard library has a template for the stack, import it and write only what the module needs beyond it.
+2. **Unit tests.** A `:UnitTests:` requirement - the framework, and how they are run - unless the imported stack already sets it, and the unit testing script. Keep one turri already finds (named in `config.turri.yaml`, or the one `run_unittests*.sh` in the root or `test_scripts/`); otherwise write `test_scripts/run_unittests_<language>.sh` by following the `implement-unit-testing-script` skill. Never link it from the specs. The script runs the stack's static checks with the unit tests - the formatter in check mode, the linter, the type checker - and they count as the tests do.
+3. **Conformance tests: off.** Keep a `conformance-tests:` decision the project's config already holds - `config.turri.yaml`, or the old `config.yaml`. Otherwise write `conformance-tests: false` into `config.turri.yaml`, changing nothing else in it - a project with only a `config.yaml` has it copied to `config.turri.yaml` first, and `config.yaml` is never written - and write no `***test reqs***`, import no standard library conformance template, and write no conformance testing script. Only when the user asked for conformance tests, turn them on instead: `conformance-tests: true`, the `***test reqs***` - `:ConformanceTests:` requirements following `genome/rules/test-reqs.md`, or the stack's standard library conformance template imported when the stack is from it - and `test_scripts/run_conformance_tests_<language>.sh`, by following the `implement-conformance-testing-script` skill, unless turri already finds one.
+4. Run `validate` on every module you wrote, and fix what it finds.
+5. **The first spec.** Write the module's first functional spec with `write_spec_diff`: the smallest thing that runs and shows something - the server answers one request (`GET /` with the app's name), the command-line tool prints its usage, the page shows the app's name, the library exposes one call with a fixed result. It holds no product logic, so its build only sets the project up and lands fast - and its pulse is not reviewed. Follow `add-functional-spec` for its wording, and keep it to that one observable result.
 
-1. **The module and its stack.** Create the `.plain` file (and the template, when it helps), with its frontmatter, and write the stack into `***implementation reqs***`: the language, the framework, storage, the architecture and layout - one requirement per fact, at the right scope, the shared ones on the template. The stack is the user's, when they named or chose one; left to you, choose what fits the intent - a mainstream stack, with the fewest moving parts - in a language this machine can build now (`<toolchains on this machine>`). Follow `genome/rules/impl-reqs.md`. When the standard library has a template for it - a backend, a frontend, a command-line tool or a library (the stdlib rule, in `<plain-rules>`) - import that template and write only what the module needs beyond it.
-2. **Unit tests.** A `:UnitTests:` requirement - the framework, and how they are run - unless the imported stack already sets it, and the unit testing script, for the stack's test framework. Keep one turri already finds (named in `config.turri.yaml`, or the one `run_unittests*.sh` in the root or `test_scripts/`); otherwise write `test_scripts/run_unittests_<language>.sh` by following the `implement-unit-testing-script` skill. Never link it from the specs. The script runs the stack's static checks with the unit tests - the formatter in check mode, the linter, the type checker - and they count as the tests do.
-3. **Conformance tests: off**, so each feature is built fast. Keep a `conformance-tests:` decision the project's config already holds - `config.turri.yaml`, or the old `config.yaml`. Otherwise write `conformance-tests: false` into `config.turri.yaml`, changing nothing else in it - a project with only a `config.yaml` has it copied to `config.turri.yaml` first, and `config.yaml` is never written - and write no `***test reqs***`, import no standard library conformance template, and write no conformance testing script. Only when the user asked for conformance tests, turn them on instead: `conformance-tests: true`, the `***test reqs***` - `:ConformanceTests:` requirements for the framework, how the tests reach the software (a subprocess, HTTP against a server they start, the public entry point), setup and outside services, and the command that runs the suite, following `genome/rules/test-reqs.md`, or the stack's standard library conformance template imported when the stack is from it - and `test_scripts/run_conformance_tests_<language>.sh`, by following the `implement-conformance-testing-script` skill, unless turri already finds one.
+`write_spec_diff` takes a git diff of the `.plain` file(s): `diff --git a/<file> b/<file>`, `--- a/<file>`, `+++ b/<file>`, then the hunks with a few lines of context, paths from the project root. It applies the change and queues its build. Go straight on to the next step - never wait for a build.
 
-Run `validate` on every module you wrote, and fix what it finds. Then say in a few lines what you chose - the stack, the architecture, the tests - and carry on. Do not ask for confirmation.
+### regenerate
 
-### product
+Write the first slices of what the user described, each a spec diff, while the first spec builds - on your own, without asking.
 
-Write the product, feature by feature, as spec diffs - on your own, without asking.
+**Only what the user described.** Every slice comes from something the user said the software does. When they said only what kind of software it is, write no slice: the step writes nothing, and the handover invites them to say what it should do first.
 
-1. **Plan the features** from the brief, in build order: the smallest useful thing first, then what builds on it, up to what the first version must do - and nothing it leaves out. Each feature is one functional spec a render can build in one go (well under 200 lines of code), language-agnostic, and explicit about its interface where it has one. A feature too big for that is two.
-2. **The description first.** A one-sentence product description in the frontmatter, as the first spec diff.
-3. **Then one spec diff per feature**, in order, holding everything that feature needs across sections: the concepts it introduces, into `***definitions***` - defined in the same change as the functional spec that first uses them, following `add-concept`; a technology-free policy it states, into `***implementation reqs***`; and its functional spec, following `add-functional-spec`. Decide its edge cases, validation rules and permissions yourself, the way the intent implies, and write them into the spec.
-4. **Write each with `write_spec_diff`** - a git diff of the `.plain` file(s): `diff --git a/<file> b/<file>`, `--- a/<file>`, `+++ b/<file>`, then the hunks with a few lines of context, paths from the project root. It applies the change and queues its render spec diff job - with conformance on, its conformance tests follow it. Go straight on to the next feature - never wait for a build. Never change a `.plain` file in this step by any other means.
+1. **The main slice.** The one thing the user said the software is for, on its happy path - the half-built main function a developer writes first and runs. Its concepts go into `***definitions***` in the same change, following `add-concept`; its functional spec follows `add-functional-spec`, placed where it fits.
+2. **One more slice at most** - the next thing the user described, also on its happy path. Stop there: two slices beyond the first spec. What the user says once they have tried the first ones decides the rest, and slices written far ahead are slices to rework.
+3. **Write each with `write_spec_diff`**, one after another - never wait for a build. Never change a `.plain` file in this step by any other means. Correct a change you find wrong once written with a diff and `fixes_earlier`, never by editing the file.
 
-The step is done only once every feature you planned is written, one spec diff each. Never stop part-way to ask whether to go on, or which feature comes next: nobody answers in this step, and the skill ends when your turn does - so a question here leaves the product unwritten.
+Write no validation, no edge cases and no hardening in this step: they come later, as changes to these specs, once the user has tried the slices.
 
-Correct a change you find wrong once written with a diff and `fixes_earlier`, never by editing the file.
+The step is done once the slices are written - or at once, when the user described no feature. Never stop part-way to ask whether to go on: nobody answers in this step, and the skill ends when your turn does.
 
-End with the handover, in a few lines: the features in build order, the jobs they were queued as, that conformance tests are off unless they were asked for (turning them on later is one line in `config.turri.yaml`, `conformance-tests: true`, with the test reqs and the script added in the conversation), and what the user can do now - try each feature as its build lands (ask to try it, and the chat deploys it), and ask for any change in the conversation. A feature added, changed or dropped is one spec diff, and what is left to build is worked out again from the spec.
+End with the handover, in a few short lines, ending on no question:
+
+- what is being built now - the first spec, then each slice - and that each can be tried as it lands: when a pulse lands, the conversation releases it and says where to try it (open this URL, run this command);
+- with no feature described: that the user says what it should do first - in their own words, one thing at a time - and each becomes a spec diff. Suggest no feature of your own;
+- otherwise, the next slices you would write, in order - the rest of what the user described, on its happy path, then hardening what is there (validation, edge cases, errors) - and that the user says `go on` for the next one, or asks for anything else instead;
+- that conformance tests are off unless they were asked for - one line in `config.turri.yaml`, `conformance-tests: true`, with the test reqs and the script added in the conversation.
