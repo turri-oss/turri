@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupProblems, planChunks, placeProblems, shortTitle, MAX_LINES_PER_JOB, type ChunkAgents, type GroupAnswer, type PlaceAnswer } from "../../src/regenerate/chunk-plan.ts";
+import { groupProblems, planChunks, placeProblems, shortTitle, titleProblems, MAX_LINES_PER_JOB, type ChunkAgents, type GroupAnswer, type PlaceAnswer, type TitleAnswer, type TitleGroup } from "../../src/regenerate/chunk-plan.ts";
 import { checkDraft, netChanges, stepsOf, type PlanInput } from "../../src/regenerate/chunk-plan.ts";
 
 const item = (markdown: string) => ({ markdown });
@@ -403,6 +403,71 @@ describe("a plan and the work", () => {
   });
 });
 
+describe("titling the pulses no agent titled", () => {
+  /** Stand-in agents with a title step: each group titled by `name`, or the answer given; what it was asked is kept. */
+  function titling(name: (group: TitleGroup) => string, answer?: (groups: TitleGroup[]) => TitleAnswer | undefined) {
+    const asked: Array<{ groups: TitleGroup[]; track: string }> = [];
+    const given: ChunkAgents = {
+      group: async () => undefined,
+      place: async () => undefined,
+      title: async (groups, _check, track) => {
+        asked.push({ groups, track });
+        return answer !== undefined ? answer(groups) : { titles: groups.map((group) => ({ group: group.number, title: name(group) })) };
+      },
+    };
+    return { asked, given };
+  }
+
+  it("gives a conformance plan's pulses the agent's titles - told what each tests", async () => {
+    const current = { definitions: DEFS.map(item), "functional specs": SPECS.map((markdown, index) => ({ markdown, frid: String(index + 1) })) } as never;
+    const from = { ...input({}, current), track: "conformance" as const, groups: [["1", "2"], ["3", "4", "5"]] };
+    const { asked, given } = titling((group) => `Tests ${group.number}`);
+    const plan = await planChunks(from, given);
+    expect(checkDraft(from, plan)).toEqual([]);
+    expect(plan.map((job) => job.title)).toEqual(["Tests 1", "Tests 2"]);
+    expect(asked).toEqual([{ groups: [{ number: 1, specs: SPECS.slice(0, 2) }, { number: 2, specs: SPECS.slice(2) }], track: "conformance" }]);
+    const { titlePrompt } = await import("../../src/regenerate/chunk-plan.ts");
+    expect(titlePrompt(asked[0]!.groups, "conformance")).toContain("writes and runs the conformance tests");
+    expect(titlePrompt(asked[0]!.groups, "conformance")).toContain("At most 10 words and 70 characters");
+  });
+
+  it("gives a code plan whose grouping fell back the agent's titles, and leaves a grouping's own titles alone", async () => {
+    const from = input({}, tree({ definitions: DEFS, specs: SPECS }));
+    const { asked, given } = titling((group) => `Builds ${group.number}`);
+    const plan = await planChunks(from, given);
+    expect(plan.map((job) => job.title)).toEqual(["Builds 1", "Builds 2", "Builds 3", "Builds 4", "Builds 5"]);
+    expect(asked[0]!.track).toBe("code");
+    const grouping = titling(() => "never");
+    grouping.given.group = async () => ({ groups: [{ specs: [1, 2], title: "Accounts" }, { specs: [3, 4], title: "Comments" }, { specs: [5], title: "Kudos" }] });
+    expect((await planChunks(from, grouping.given)).map((job) => job.title)).toEqual(["Accounts", "Comments", "Kudos"]);
+    expect(grouping.asked).toEqual([]);
+  });
+
+  it("keeps the first lines as titles with no title step, or when its answer fails or does not hold - and says so", async () => {
+    const from = { ...input({}, tree({ definitions: DEFS, specs: SPECS })), track: "conformance" as const, separately: true };
+    const firstLines = SPECS.map((spec) => spec.replace(/^- /, ""));
+    expect((await planChunks(from, agents())).map((job) => job.title)).toEqual(firstLines);
+    const failing: ChunkAgents = { ...agents(), title: async () => Promise.reject(new Error("no model")) };
+    const notes: string[] = [];
+    expect((await planChunks(from, failing, notes)).map((job) => job.title)).toEqual(firstLines);
+    expect(notes).toEqual(["the titles were not given - each pulse titled by its functional specs' first lines"]);
+    const tooLong = titling(() => "x".repeat(71));
+    expect((await planChunks(from, tooLong.given)).map((job) => job.title)).toEqual(firstLines);
+  });
+
+  it("holds a titling to every group titled once, by its number, none empty or too long", () => {
+    const groups = [1, 2].map((number) => ({ number, specs: [`- spec ${number}`] }));
+    const titles = (...given: Array<[number, string]>) => titleProblems(groups, { titles: given.map(([group, title]) => ({ group, title })) });
+    expect(titles([1, "Ping endpoint"], [2, "Name endpoint"])).toEqual([]);
+    expect(titles([1, "Ping endpoint"]).join("\n")).toContain("Group 2 has no title");
+    expect(titles([1, "a"], [2, "b"], [3, "c"]).join("\n")).toContain("There is no group 3.");
+    expect(titles([1, "a"], [1, "b"], [2, "c"]).join("\n")).toContain("Group 1 is titled 2 times: once.");
+    expect(titles([1, " "], [2, "b"]).join("\n")).toContain("Group 1 needs a title.");
+    expect(titles([1, "one two three four five six seven eight nine ten eleven"], [2, "b"]).join("\n")).toContain("at most 10 words and 70 characters");
+    expect(titles([1, "x".repeat(71)], [2, "b"]).join("\n")).toContain("too long for a title");
+  });
+});
+
 describe("a pulse's title", () => {
   it("is held to ten words and 70 characters, cut at a word", () => {
     expect(shortTitle("Ping endpoint")).toBe("Ping endpoint");
@@ -412,5 +477,14 @@ describe("a pulse's title", () => {
     expect(long.split(/\s+/).length).toBeLessThanOrEqual(10);
     expect(long.endsWith("…")).toBe(true);
     expect(shortTitle("a".repeat(100))).toHaveLength(70);
+  });
+
+  it("never stacks an ellipsis on text cut already - several first lines joined, each cut", () => {
+    const one = shortTitle(":Server: answers `GET /name` with `200` and the JSON body of the name");
+    expect(one).toBe(":Server: answers `GET /name` with `200` and the JSON body…");
+    const joined = shortTitle(`${one}; ${shortTitle(":Server: answers `GET /ping` with `200` and the plain text pong")}`);
+    expect(joined).toBe(one);
+    expect(shortTitle(`${"word ".repeat(12).trim()}…`, 30)).not.toContain("……");
+    expect(shortTitle(one)).toBe(one);
   });
 });

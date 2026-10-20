@@ -147,13 +147,22 @@ export const MAX_SPECS_PER_JOB = 3;
 export const TITLE_WORDS = 10;
 export const TITLE_CHARS = 70;
 
-/** A title held to `TITLE_WORDS` and `TITLE_CHARS` - or less, for room beside it - cut at a word, with an ellipsis. */
+/** Whether a title is within `TITLE_WORDS` and `TITLE_CHARS`. */
+function fitsTitle(title: string): boolean {
+  return title.trim().split(/\s+/).length <= TITLE_WORDS && title.trim().length <= TITLE_CHARS;
+}
+
+/**
+ * A title held to `TITLE_WORDS` and `TITLE_CHARS` - or less, for room beside it - cut at a word, with an ellipsis. Text
+ * cut already is cut again without stacking a second: several first lines joined, each cut, end on one ellipsis.
+ */
 export function shortTitle(text: string, chars = TITLE_CHARS, words = TITLE_WORDS): string {
   const all = text.trim().split(/\s+/).filter((word) => word !== "");
   let cut = all.slice(0, words).join(" ");
   if (all.length <= words && cut.length <= chars) return cut;
+  cut = cut.replace(/[\s,.;:…-]+$/, "");
   if (cut.length > chars - 1) cut = cut.slice(0, chars - 1).replace(/\s+\S*$/, "") || cut.slice(0, chars - 1);
-  return `${cut.replace(/[\s,.;:-]+$/, "")}…`;
+  return `${cut.replace(/[\s,.;:…-]+$/, "")}…`;
 }
 export const MAX_LINES_PER_JOB = 120;
 /** How often an answer that does not hold goes back to its agent before the plan falls back. */
@@ -199,13 +208,26 @@ export interface PlaceAnswer {
   notes?: string;
 }
 
+/** A group to title: the number the agent answers with, and its functional specs' text. */
+export interface TitleGroup {
+  number: number;
+  specs: string[];
+}
+
+export interface TitleAnswer {
+  titles: Array<{ group: number; title: string }>;
+}
+
 /**
- * The two judgements, each asked again with what was wrong with its answer - the last answer given, whether it holds
- * or not: the plan checks it again. Injectable, so the plan is testable without a model.
+ * The judgements, each asked again with what was wrong with its answer - the last answer given, whether it holds
+ * or not: the plan checks it again. Injectable, so the plan is testable without a model. `title` titles the groups no
+ * agent titled - the conformance tests', and a grouping that fell back - for what each pulse does, rather than its
+ * first functional spec's first line; without it, they keep that.
  */
 export interface ChunkAgents {
   group(specs: NewSpec[], check: (answer: GroupAnswer) => string[], steering?: Steering[], maxSpecs?: number): Promise<GroupAnswer | undefined>;
   place(input: PlaceInput, check: (answer: PlaceAnswer) => string[]): Promise<PlaceAnswer | undefined>;
+  title?(groups: TitleGroup[], check: (answer: TitleAnswer) => string[], track: "code" | "conformance"): Promise<TitleAnswer | undefined>;
 }
 
 /** An item's text, from its serialized line: its markdown, and its acceptance tests. */
@@ -255,9 +277,26 @@ export function groupProblems(specs: NewSpec[], answer: GroupAnswer, maxSpecs = 
       if (!nextTo(group.specs[i - 1]!, group.specs[i]!)) problems.push(`"${group.title}" groups ${group.specs.join(", ")}: only functional specs next to each other in the same module go together.`);
     }
     if (group.title.trim() === "") problems.push("Every group needs a title.");
-    else if (group.title.trim().split(/\s+/).length > TITLE_WORDS || group.title.trim().length > TITLE_CHARS) {
-      problems.push(`"${group.title}" is too long for a title: at most ${TITLE_WORDS} words and ${TITLE_CHARS} characters.`);
-    }
+    else if (!fitsTitle(group.title)) problems.push(`"${group.title}" is too long for a title: at most ${TITLE_WORDS} words and ${TITLE_CHARS} characters.`);
+  }
+  return problems;
+}
+
+/** What is wrong with a titling: every group titled once, by its number, none empty, none too long. */
+export function titleProblems(groups: TitleGroup[], answer: TitleAnswer): string[] {
+  const problems: string[] = [];
+  const numbers = groups.map((group) => group.number);
+  const seen = new Map<number, number>();
+  for (const entry of answer.titles) {
+    if (!numbers.includes(entry.group)) problems.push(`There is no group ${entry.group}.`);
+    seen.set(entry.group, (seen.get(entry.group) ?? 0) + 1);
+    if (entry.title.trim() === "") problems.push(`Group ${entry.group} needs a title.`);
+    else if (!fitsTitle(entry.title)) problems.push(`"${entry.title}" is too long for a title: at most ${TITLE_WORDS} words and ${TITLE_CHARS} characters.`);
+  }
+  for (const number of numbers) {
+    const times = seen.get(number) ?? 0;
+    if (times === 0) problems.push(`Group ${number} has no title: every group is titled.`);
+    if (times > 1) problems.push(`Group ${number} is titled ${times} times: once.`);
   }
   return problems;
 }
@@ -390,15 +429,15 @@ function titleOf(change: SpecChange): string {
  * group split for its size - for the conversation to say, rather than guess.
  */
 /** A planner agent that failed: the plan falls back, and the ledger says why. */
-function plannerFailed(step: "group" | "place", error: unknown): undefined {
+function plannerFailed(step: "group" | "place" | "title", error: unknown): undefined {
   record({ kind: "planner.failed", step, error: firstLine(error instanceof Error ? error.message : String(error), 300) });
   return undefined;
 }
 
 export async function planChunks(input: PlanInput, agents?: ChunkAgents, notes?: string[]): Promise<DraftJob[]> {
   if (input.track !== "conformance") return cut(input, agents, notes);
-  // The conformance tests are grouped by the harness, as one job as far as the guardrail lets: no agent is asked.
-  return anchored(await cut(input), netChanges(input.base, input.current));
+  // The conformance tests are grouped by the harness, as one job as far as the guardrail lets: an agent only titles them.
+  return anchored(await cut(input, agents, notes), netChanges(input.base, input.current));
 }
 
 /**
@@ -524,8 +563,27 @@ async function cut(input: PlanInput, agents?: ChunkAgents, notes?: string[]): Pr
     ...list.map((group) => ({ title: group.title, specs: group.specs.map((number) => bySpec.get(number)!), definitions: [], reqs: [] })),
   ];
   const conformance = input.track === "conformance";
+  // The conformance tests are grouped and their reqs placed by the harness: their agents are only asked for titles.
+  const planners = conformance ? undefined : agents;
+  /**
+   * Groups titled for what their pulses do, by the title agent: those no agent titled - the conformance tests', a
+   * grouping that fell back. When it fails, or its answer does not hold, they keep their first lines.
+   */
+  const titled = async (list: Array<{ specs: number[]; title: string }>): Promise<Array<{ specs: number[]; title: string }>> => {
+    if (agents?.title === undefined || list.length === 0) return list;
+    const track = conformance ? "conformance" : "code";
+    reportStage(`planning the queue: a title for each of the ${list.length} pulse${list.length === 1 ? "" : "s"}`);
+    const toTitle: TitleGroup[] = list.map((group, index) => ({ number: index + 1, specs: group.specs.map((number) => textOf(bySpec.get(number)!)) }));
+    const answer = (await agents.title(toTitle, (given) => titleProblems(toTitle, given), track).catch((error: unknown) => plannerFailed("title", error))) ?? undefined;
+    const problems = answer === undefined ? [] : titleProblems(toTitle, answer);
+    if (answer !== undefined && problems.length === 0) return list.map((group, index) => ({ ...group, title: answer.titles.find((entry) => entry.group === index + 1)!.title.trim() }));
+    record({ kind: "planner.fellBack", step: "title", why: answer === undefined ? "no titles were given" : firstLine(problems.join(" "), 300) });
+    say(answer === undefined ? "the titles were not given - each pulse titled by its functional specs' first lines" : `the titles did not hold (${problems.join(" ")}) - each pulse titled by its functional specs' first lines`);
+    return list;
+  };
   const grouped = conformance ? undefined : ((await agents?.group(numbered, (answer) => groupProblems(numbered, answer, maxSpecs), input.steering, maxSpecs).catch((error: unknown) => plannerFailed("group", error))) ?? undefined);
-  const groups = conformance
+  const holds = grouped !== undefined && groupProblems(numbered, grouped, maxSpecs).length === 0;
+  const made = conformance
     ? conformanceGroups(
         numbered,
         input.separately === true,
@@ -541,7 +599,7 @@ async function cut(input: PlanInput, agents?: ChunkAgents, notes?: string[]): Pr
           return frid === undefined ? -1 : (input.groups ?? []).findIndex((group) => group.includes(frid));
         },
       )
-    : grouped !== undefined && groupProblems(numbered, grouped, maxSpecs).length === 0
+    : grouped !== undefined && holds
       ? grouped.groups
       : numbered.map((spec, index) => ({ specs: [spec.number], title: titleOf(specs[index]!) }));
   if (grouped?.notes !== undefined && grouped.notes.trim() !== "") say(`the grouping: ${grouped.notes.trim()}`);
@@ -554,6 +612,8 @@ async function cut(input: PlanInput, agents?: ChunkAgents, notes?: string[]): Pr
       say(`the grouping did not hold (${groupProblems(numbered, grouped, maxSpecs).join(" ")}) - a functional spec a pulse`);
     }
   }
+  // Titled before the chunks are made of them: a group split for its size keeps its title, numbered.
+  const groups = holds ? made : await titled(made);
   let chunks = chunksFor(groups);
 
   // 2. The definitions each group uses.
@@ -572,11 +632,11 @@ async function cut(input: PlanInput, agents?: ChunkAgents, notes?: string[]): Pr
       implementationReqs: implementationReqs.map((change, index) => ({ number: index + 1, text: textOf(change) })),
       testReqs: testReqs.map((change, index) => ({ number: index + 1, text: textOf(change) })),
     };
-    const answer = (await agents?.place(placeInput, (given) => placeProblems(placeInput, given)).catch((error: unknown) => plannerFailed("place", error))) ?? undefined;
+    const answer = (await planners?.place(placeInput, (given) => placeProblems(placeInput, given)).catch((error: unknown) => plannerFailed("place", error))) ?? undefined;
     if (answer?.notes !== undefined && answer.notes.trim() !== "") say(`the placement: ${answer.notes.trim()}`);
     placement = answer !== undefined && placeProblems(placeInput, answer).length === 0 ? answer : undefined;
-    if (placement === undefined && agents !== undefined) record({ kind: "planner.fellBack", step: "place", why: answer === undefined ? "no placement was given" : firstLine(placeProblems(placeInput, answer).join(" "), 300) });
-    if (placement === undefined && agents !== undefined) say("the placement did not hold - every implementation req with the first pulse, every test req with the first conformance pulse");
+    if (placement === undefined && planners !== undefined) record({ kind: "planner.fellBack", step: "place", why: answer === undefined ? "no placement was given" : firstLine(placeProblems(placeInput, answer).join(" "), 300) });
+    if (placement === undefined && planners !== undefined) say("the placement did not hold - every implementation req with the first pulse, every test req with the first conformance pulse");
   }
   /** A req's chunk: its group, the built job, or the first job of the new work for "all". */
   const chunkOf = (to: Target): Chunk => (to === "built" ? builtChunk()! : to === "all" ? newChunks()[0]! : newChunks()[to - 1]!);
@@ -624,7 +684,7 @@ async function cut(input: PlanInput, agents?: ChunkAgents, notes?: string[]): Pr
       runs.forEach((specs, index) =>
         split.push({
           specs,
-          title: specs.length === 1 ? titleOf(bySpec.get(specs[0]!)!) : `${shortTitle(group.title, TITLE_CHARS - 9, TITLE_WORDS - 3)} (${index + 1} of ${runs.length})`,
+          title: `${shortTitle(group.title, TITLE_CHARS - 9, TITLE_WORDS - 3)} (${index + 1} of ${runs.length})`,
         }),
       );
     });
@@ -653,7 +713,7 @@ async function cut(input: PlanInput, agents?: ChunkAgents, notes?: string[]): Pr
   // It does not hold together: a functional spec a job, every req with the first.
   say(`the plan did not hold together (${checkDraft(input, draft)[0]?.slice(0, 120)}) - a functional spec a pulse`);
   placement = undefined;
-  groups.splice(0, groups.length, ...numbered.map((spec, index) => ({ specs: [spec.number], title: titleOf(specs[index]!) })));
+  groups.splice(0, groups.length, ...(await titled(numbered.map((spec, index) => ({ specs: [spec.number], title: titleOf(specs[index]!) })))));
   chunks = chunksFor(groups);
   place();
   const simple = draftOf(chunks, net);
@@ -730,6 +790,23 @@ export function placePrompt(input: PlaceInput): string {
   ].join("\n");
 }
 
+export function titlePrompt(groups: TitleGroup[], track: "code" | "conformance"): string {
+  return [
+    track === "conformance"
+      ? "You title the pulses that test a codebase. Each group below is a pulse: it writes and runs the conformance tests for its functional specs - black-box tests of the code as built."
+      : "You title the pulses that build a codebase. Each group below is a pulse: a coding agent builds its functional specs into the code.",
+    "",
+    track === "conformance"
+      ? "Give each group a title that says what its pulse tests - the behaviour, not the spec's wording."
+      : "Give each group a title that says what its pulse builds - the feature, not the spec's wording.",
+    `At most ${TITLE_WORDS} words and ${TITLE_CHARS} characters: it heads the pulse where the person watches the work, and a longer one is cut short there.`,
+    "",
+    ...groups.map((group) => [`<group number="${group.number}">`, ...group.specs.map((spec) => `<functional spec>\n${spec.trim()}\n</functional spec>`), "</group>"].join("\n")),
+    "",
+    "Call submit_titles once, with a title for every group, by its number.",
+  ].join("\n");
+}
+
 const TargetSchema = Type.Union([Type.Number(), Type.Literal("all"), Type.Literal("built")]);
 const NOTES = "Each of the person's wishes for how the queue is planned that you did not follow, and why - a limit it would break, say. Leave it out when you followed them all, or there are none.";
 
@@ -752,7 +829,7 @@ async function askStep<A>(options: { cwd: string; model?: string; label: string;
   }
 }
 
-/** The chunking's two agents, on a model - fresh for every plan. */
+/** The chunking's agents, on a model - fresh for every plan. */
 export function llmChunkAgents(options: { cwd: string; model?: string; label?: string }): ChunkAgents {
   const label = options.label ?? "queue planner";
   return {
@@ -798,6 +875,32 @@ export function llmChunkAgents(options: { cwd: string; model?: string; label?: s
             async execute(_id, params) {
               const given = params as { implementation_reqs: PlaceAnswer["implementationReqs"]; test_reqs: PlaceAnswer["testReqs"]; notes?: string };
               take({ implementationReqs: given.implementation_reqs, testReqs: given.test_reqs, ...(given.notes !== undefined ? { notes: given.notes } : {}) });
+              return { content: [{ type: "text" as const, text: "Recorded." }], details: {}, terminate: true };
+            },
+          }) as ToolDefinition,
+      }),
+    title: (groups, check, track) =>
+      askStep<TitleAnswer>({
+        cwd: options.cwd,
+        model: options.model,
+        label: `${label} titles`,
+        task: titlePrompt(groups, track),
+        check,
+        tool: (take) =>
+          defineTool({
+            name: "submit_titles",
+            label: "Submit the titles",
+            description: `A title for every group, by its number: at most ${TITLE_WORDS} words and ${TITLE_CHARS} characters each.`,
+            parameters: Type.Object({
+              titles: Type.Array(
+                Type.Object({
+                  group: Type.Number(),
+                  title: Type.String({ description: `What the group's pulse ${track === "conformance" ? "tests" : "builds"}: at most ${TITLE_WORDS} words and ${TITLE_CHARS} characters.` }),
+                }),
+              ),
+            }),
+            async execute(_id, params) {
+              take(params as TitleAnswer);
               return { content: [{ type: "text" as const, text: "Recorded." }], details: {}, terminate: true };
             },
           }) as ToolDefinition,

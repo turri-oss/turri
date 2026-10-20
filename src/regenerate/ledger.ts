@@ -71,8 +71,8 @@ export type LedgerEvent =
   // The work loop: what it planned, halted and stopped.
   | { kind: "loop.halted"; why: string; track: "code" | "conformance" }
   | { kind: "loop.stopped"; why: string }
-  | { kind: "planner.failed"; step: "group" | "place"; error: string }
-  | { kind: "planner.fellBack"; step: "group" | "place"; why: string }
+  | { kind: "planner.failed"; step: "group" | "place" | "title"; error: string }
+  | { kind: "planner.fellBack"; step: "group" | "place" | "title"; why: string }
   // The model: today's ModelEvent, and the error that ends a turn.
   | { kind: "model.call"; ms?: number; usage?: UsageReport }
   | { kind: "model.turn" }
