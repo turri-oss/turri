@@ -308,6 +308,17 @@ describe("the functional specs conformance tested", () => {
     expect(testedOf(app)).toEqual({ app: [] });
   });
 
+  it("leaves out a functional spec regenerated again until its conformance tests are written again for the new code", () => {
+    const app = spec("app", ["App one.", "App two."]);
+    const [entry] = resolveRequiresChain(app, [], undefined, { allowNoFunctionalities: true });
+    writeCodeRecord(entry!.buildDir, chainSpec([entry!]).tree);
+    testsFor("app", [
+      { markdown: "- App one.", frid: "1" },
+      { markdown: "- App two.", frid: "2", regenerate_again: true } as { markdown: string; frid: string },
+    ]);
+    expect(testedOf(app)).toEqual({ app: ["1"] });
+  });
+
   it("holds only each module's own functional specs in a chain", () => {
     spec("base", ["Base one.", "Base two."]);
     const app = spec("app", ["App one.", "App two."], "base");

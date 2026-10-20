@@ -175,6 +175,18 @@ describe("the conformance work", () => {
     expect(work[0]).toMatchObject({ section: "functional specs", kind: "change" });
   });
 
+  it("keeps the tests of a functional spec regenerated again while its code regenerates, then writes them again for the new code", () => {
+    const tested = conformanceTarget(codeTree(shop()), null, shop());
+    const marked = (tree: MarshalledPlainSource) => ({ ...tree, "functional specs": fs(tree).map((entry, index) => (index === 1 ? { ...entry, [REGENERATE_AGAIN]: true } : entry)) });
+    const testsMarked = marked(tested);
+    // While the code is marked, the tests are what they are: conformance follows the code.
+    expect(conformanceWork(testsMarked, marked(codeTree(shop())), shop())).toEqual([]);
+    // The new code landed - its text the same: the tests were written against the code it replaced, and are work again.
+    const work = conformanceWork(testsMarked, codeTree(shop()), shop());
+    expect(work).toHaveLength(1);
+    expect(casesOf(testsMarked, work).again.map((entry) => entry.frid)).toEqual(["2"]);
+  });
+
   it("is an acceptance test changed alone, with no code work for it", () => {
     const tested = conformanceTarget(codeTree(shop()), null, shop());
     const now = shop();

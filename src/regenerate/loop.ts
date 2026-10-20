@@ -15,6 +15,7 @@ import {
   chainTree,
   codeTree,
   conformanceTarget,
+  marksRegenerateAgain,
   REGENERATE_AGAIN,
   inheritedRecord,
   notBuilt,
@@ -466,8 +467,9 @@ export function functionalityCompletion(plainFile: string): Array<{ codebase: st
       codebase.forEach((entry, index) => {
         const count = counts[index]!;
         const completed = entry.frids.filter((frid) => !touched.has(`${entry.moduleName}:${frid}`));
+        // Tests marked to regenerate again were written against code since replaced: not conformance tested until rewritten.
         const tested = ((readRecord(conformanceDirFor(entry.moduleName, modulesRoot(projectDirOf(entry.plainFile))))?.[FUNCTIONAL_REQUIREMENTS] as Array<{ markdown: string; frid?: string }> | undefined) ?? []).filter(
-          (item) => item.frid !== undefined && item.markdown.trim() === specText(entry.moduleName, item.frid),
+          (item) => item.frid !== undefined && !marksRegenerateAgain(item) && item.markdown.trim() === specText(entry.moduleName, item.frid),
         );
         count.completed = completed.length;
         count.tested = completed.filter((frid) => tested.some((item) => item.frid === frid));
@@ -882,7 +884,7 @@ export function createWorkLoop(options: {
       run: async (onDelta) => {
         // The guardrail: a conformance job tests only code that is built - the code record, read as the job starts, has every functional spec it tests as it tests it.
         if (conformance) {
-          const testing = [...planned.cases.add, ...planned.cases.patch].map((touched) => touched.frid);
+          const testing = [...planned.cases.add, ...planned.cases.patch, ...planned.cases.again].map((touched) => touched.frid);
           const missing = notBuilt(readRecord(tip.buildDir), planned.step.tree, testing);
           if (missing.length > 0) {
             const record = relative(options.cwd, join(tip.buildDir, RECORD_FILE));
@@ -1462,6 +1464,17 @@ export function createWorkLoop(options: {
         for (const frid of taken) found.add(frid);
         const marked = items.map((item, index) => (frids.includes(named(item, index)) ? { ...item, [REGENERATE_AGAIN]: true } : item));
         writeCodeRecord(tip.buildDir, { ...record, [section]: marked } as MarshalledPlainSource);
+        // Its conformance tests were written against the code being replaced: marked with it, they are written again -
+        // checked against the new code, and rewritten where they relied on what the old code chose - once it lands.
+        if (section === FUNCTIONAL_REQUIREMENTS) {
+          const testsDir = conformanceDirFor(tip.moduleName, modulesRoot(projectDirOf(tip.plainFile)));
+          const tests = readRecord(testsDir);
+          const tested = (tests?.[FUNCTIONAL_REQUIREMENTS] as Array<{ frid?: string }> | undefined) ?? [];
+          if (tested.some((item) => item.frid !== undefined && taken.includes(item.frid))) {
+            const again = tested.map((item) => (item.frid !== undefined && taken.includes(item.frid) ? { ...item, [REGENERATE_AGAIN]: true } : item));
+            writeTestsRecord(testsDir, { ...tests, [FUNCTIONAL_REQUIREMENTS]: again } as MarshalledPlainSource);
+          }
+        }
         recordHistory(tip.buildDir, `${module} functional spec${taken.length === 1 ? "" : "s"} ${taken.join(", ")} to regenerate again`);
       }
       const missing = frids.filter((frid) => !found.has(frid));

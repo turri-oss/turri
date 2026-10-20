@@ -90,6 +90,16 @@ describe("the regeneration from the files", () => {
     ]);
   });
 
+  it("marks the conformance tests of a functional spec regenerated again as written for an earlier build until they are written again", () => {
+    const spec = tree({ [FUNCTIONAL_REQUIREMENTS]: ["- Say hello.", "- Say goodbye."] });
+    const tested: MarshalledPlainSource = { [FUNCTIONAL_REQUIREMENTS]: [{ markdown: "- Say hello.", frid: "1", regenerate_again: true }, { markdown: "- Say goodbye.", frid: "2" }] };
+    const items = page(spec, spec, tested).items.filter((entry) => entry.section === FUNCTIONAL_REQUIREMENTS);
+    expect(items.map((entry) => [entry.text, entry.tests])).toEqual([
+      ["- Say hello.", "older"],
+      ["- Say goodbye.", "now"],
+    ]);
+  });
+
   it("lays the items out as the file has them: its sections in its order, its definitions in its order, then each imported file", () => {
     const items: MapItem[] = [
       { key: "1", section: DEFINITIONS, state: "built", text: "- :Zebra: is an animal.", acceptance: [] },

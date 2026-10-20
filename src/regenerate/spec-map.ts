@@ -16,7 +16,7 @@ import { conformanceDirFor } from "./conformance.ts";
 import { chainSpec, type MapCodebase, type MapPlan, type MapPulse } from "./loop.ts";
 import { modulesRoot, projectDirOf } from "./paths.ts";
 import { HISTORY_DIR } from "./lineage.ts";
-import { codeTree, readRecord, RECORD_FILE } from "./records.ts";
+import { codeTree, marksRegenerateAgain, readRecord, RECORD_FILE } from "./records.ts";
 import { specFilesOf } from "./regenerate.ts";
 import { builtTips, resolveRequiresChain, type ChainEntry } from "./requires.ts";
 import { changesBetween, layoutOf, serializeTree, type SpecChange } from "./spec-steps.ts";
@@ -202,13 +202,16 @@ export function pageItems(input: { module: string; own: boolean; spec: Marshalle
   }
 
   // Conformance tests: of the functional specs, those the tests record has as they read now, as they read before, or taken out.
-  const tested = new Set(itemsOf(input.tested ?? null, FUNCTIONAL_REQUIREMENTS).map((item) => item.markdown.trim()));
+  // Tests marked to regenerate again were written against code since replaced: written for an earlier build, not now.
+  const testedItems = itemsOf(input.tested ?? null, FUNCTIONAL_REQUIREMENTS);
+  const tested = new Set(testedItems.filter((item) => !marksRegenerateAgain(item)).map((item) => item.markdown.trim()));
+  const replaced = new Set(testedItems.filter((item) => marksRegenerateAgain(item)).map((item) => item.markdown.trim()));
   for (const item of items) {
-    if (item.section !== FUNCTIONAL_REQUIREMENTS || tested.size === 0) continue;
+    if (item.section !== FUNCTIONAL_REQUIREMENTS || testedItems.length === 0) continue;
     if (item.state === "removed") {
-      if (tested.has(item.text.trim())) item.tests = "removed";
+      if (tested.has(item.text.trim()) || replaced.has(item.text.trim())) item.tests = "removed";
     } else if (tested.has(item.text.trim())) item.tests = "now";
-    else if (item.was !== undefined && tested.has(item.was.trim())) item.tests = "older";
+    else if (replaced.has(item.text.trim()) || (item.was !== undefined && (tested.has(item.was.trim()) || replaced.has(item.was.trim())))) item.tests = "older";
   }
   return keyed(items);
 }

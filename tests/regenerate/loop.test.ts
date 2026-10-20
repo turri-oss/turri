@@ -965,7 +965,7 @@ describe("the work loop", () => {
       expect(loop.status()[0]!.planned).toEqual([]);
     });
 
-    it("of a functional spec regenerated again by name are kept while it regenerates - never taken out as if it were gone", async () => {
+    it("of a functional spec regenerated again by name are kept while it regenerates, then written again for the new code", async () => {
       writeFileSync(join(dir, "app.plain"), app(["Say hello.", "Say goodbye."]));
       const code = runner();
       const tests = conformanceRunner();
@@ -976,18 +976,24 @@ describe("the work loop", () => {
         planner: false,
         conformanceOn: () => true,
         run: async (job, onDelta) => (order.push(`code ${job.planned.cases.again.map((spec) => spec.frid).join(",")}`), code.run(job, onDelta)),
-        runConformance: async (job, onDelta) => (order.push(`tests -${job.planned.cases.delete.map((spec) => spec.frid).join(",")}`), tests.runConformance(job, onDelta)),
+        runConformance: async (job, onDelta) => (
+          order.push(`tests -${job.planned.cases.delete.map((spec) => spec.frid).join(",")} again ${job.planned.cases.again.map((spec) => spec.frid).join(",")}`),
+          tests.runConformance(job, onDelta)
+        ),
       });
       await loop.bringUp("app.plain");
       await loop.drain();
       order.length = 0;
       // Its spec did not change: named, it is regenerated again - its tests untouched while it does, and none taken out.
+      // They were written against the code it replaced: marked with it, and written again once the new code lands.
       await loop.regenerateAgain("app.plain", ["1"]);
+      expect(JSON.stringify(readRecord(testsDir()))).toContain("regenerate_again");
       await loop.drain();
-      expect(order).toEqual(["code 1"]);
+      expect(order).toEqual(["code 1", "tests - again 1"]);
       expect(JSON.stringify(readRecord(testsDir()))).toContain("Say hello.");
-      // Regenerated again, it is built as the spec says it: the mark is gone from the record.
+      // Regenerated again, it is built and tested as the spec says it: the mark is gone from both records.
       expect(JSON.stringify(readRecord(codeDir()))).not.toContain("regenerate_again");
+      expect(JSON.stringify(readRecord(testsDir()))).not.toContain("regenerate_again");
     });
 
     it("refuse functional specs the spec does not have - no code job builds them - and schedule nothing", async () => {

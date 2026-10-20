@@ -15,7 +15,7 @@ describe("what a job's agents are told, case by case, and nothing more", () => {
     { name: "fresh", cases: { ...none, fresh: true }, code: "Nothing is built yet", conformance: "There are no conformance tests yet" },
     { name: "new", cases: { ...none, add: [one] }, code: "- New - build each", review: "- New:", conformance: "- New - write its conformance tests" },
     { name: "changed", cases: { ...none, patch: [one] }, code: "- Changed - its text, or a concept it uses", review: "- Changed:", conformance: "- Changed - its text, its acceptance tests" },
-    { name: "regenerated again", cases: { ...none, again: [one] }, code: "- Regenerated again -", review: "- Regenerated again:" },
+    { name: "regenerated again", cases: { ...none, again: [one] }, code: "- Regenerated again - its code and unit tests are built", review: "- Regenerated again:", conformance: "- Regenerated again - its code was built anew" },
     { name: "taken out", cases: { ...none, delete: [one] }, code: "- Taken out - remove its code", review: "- Taken out:", conformance: "- Taken out - remove its conformance tests" },
     { name: "mechanical", cases: { ...none, mechanical: true }, code: "- No functional spec is touched", conformance: "- No functional spec is touched" },
   ];
@@ -103,6 +103,14 @@ describe("what a job's agents are told, by its cases", () => {
     expect(mechanical).toContain("the change is to the test reqs, or to definitions or implementation reqs alone");
     expect(mechanical).toContain("Write no new tests.");
     expect(conformanceReviewCasesBlock({ ...none, add: [{ frid: "1", text: "One." }] })).toEqual([]);
+  });
+
+  it("tells the conformance agent to hold the new code of a functional spec regenerated again to the spec, not to what the old code chose", () => {
+    const again = text(conformanceCasesBlock({ ...none, again: [{ frid: "1", text: "The server answers a health check." }] }));
+    expect(again).toContain("its conformance tests were written against the code it replaced: fs 1 (The server answers a health check.)");
+    expect(again).toContain("What they check that the");
+    expect(again).toContain("is the new code's choice now: rewrite those checks to what the new code does,");
+    expect(again).toContain("No test may hold the new code to what only the old code did.");
   });
 
   it("puts the conformance cases in the conformance agent's prompt and a mechanical job's in its reviewer's", () => {

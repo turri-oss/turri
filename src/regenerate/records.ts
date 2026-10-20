@@ -185,9 +185,11 @@ export type Chosen = (frid: string) => boolean;
  * definitions and implementation reqs, with the test reqs as the spec has them now.
  *
  * Conformance follows the code, never goes ahead of it: a functional spec whose code is not caught up
- * with the spec - its text in the code record is not the spec's, or the code record does not have it at
- * all, as while it is regenerated again - stays as the tests record has it, until the code lands. Its tests are
- * taken out only once the spec and the code have both dropped it.
+ * with the spec - its text in the code record is not the spec's, the code record does not have it at
+ * all, or has it marked to regenerate again - stays as the tests record has it, until the code lands. Its tests are
+ * taken out only once the spec and the code have both dropped it. Tests marked to regenerate again with their code
+ * (`regenerateAgain`) differ from the target once the code lands: written against the code it replaced, they are
+ * conformance work again, though the spec's text never changed.
  */
 export function conformanceTarget(code: MarshalledPlainSource | null, tests: MarshalledPlainSource | null, spec: MarshalledPlainSource, chosen: Chosen = () => true): MarshalledPlainSource {
   const built = itemsOf(code, FUNCTIONAL_REQUIREMENTS);
@@ -198,7 +200,7 @@ export function conformanceTarget(code: MarshalledPlainSource | null, tests: Mar
   for (let index = 0; index < Math.max(built.length, now.length); index += 1) {
     const frid = String(index + 1);
     const current = now[index];
-    if (current !== undefined && built[index]?.markdown.trim() === current.markdown.trim()) {
+    if (current !== undefined && built[index]?.markdown.trim() === current.markdown.trim() && !marksRegenerateAgain(built[index])) {
       if (chosen(frid)) specs.push({ ...current, frid });
       continue;
     }
