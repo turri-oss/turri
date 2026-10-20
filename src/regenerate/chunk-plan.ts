@@ -142,6 +142,19 @@ export function stepsOf(input: PlanInput, draft: DraftJob[]): Array<DraftJob & {
 
 
 export const MAX_SPECS_PER_JOB = 3;
+
+/** The most a pulse's title is - in words, and in characters - however it was made: a host shows it as its heading. */
+export const TITLE_WORDS = 10;
+export const TITLE_CHARS = 70;
+
+/** A title held to `TITLE_WORDS` and `TITLE_CHARS` - or less, for room beside it - cut at a word, with an ellipsis. */
+export function shortTitle(text: string, chars = TITLE_CHARS, words = TITLE_WORDS): string {
+  const all = text.trim().split(/\s+/).filter((word) => word !== "");
+  let cut = all.slice(0, words).join(" ");
+  if (all.length <= words && cut.length <= chars) return cut;
+  if (cut.length > chars - 1) cut = cut.slice(0, chars - 1).replace(/\s+\S*$/, "") || cut.slice(0, chars - 1);
+  return `${cut.replace(/[\s,.;:-]+$/, "")}…`;
+}
 export const MAX_LINES_PER_JOB = 120;
 /** How often an answer that does not hold goes back to its agent before the plan falls back. */
 const RETRIES = 2;
@@ -242,6 +255,9 @@ export function groupProblems(specs: NewSpec[], answer: GroupAnswer, maxSpecs = 
       if (!nextTo(group.specs[i - 1]!, group.specs[i]!)) problems.push(`"${group.title}" groups ${group.specs.join(", ")}: only functional specs next to each other in the same module go together.`);
     }
     if (group.title.trim() === "") problems.push("Every group needs a title.");
+    else if (group.title.trim().split(/\s+/).length > TITLE_WORDS || group.title.trim().length > TITLE_CHARS) {
+      problems.push(`"${group.title}" is too long for a title: at most ${TITLE_WORDS} words and ${TITLE_CHARS} characters.`);
+    }
   }
   return problems;
 }
@@ -350,7 +366,8 @@ function draftOf(chunks: Chunk[], net: SpecChange[]): DraftJob[] {
     })
     .filter((entry) => entry.changes.length > 0)
     .map((entry) => ({
-      title: entry.chunk.title,
+      // However the title was made - an agent's, a spec's first line, several joined - it is held to the limit.
+      title: shortTitle(entry.chunk.title),
       reason:
         entry.chunk.built !== undefined
           ? "what is built already, changed"
@@ -363,7 +380,7 @@ function draftOf(chunks: Chunk[], net: SpecChange[]): DraftJob[] {
 
 /** A spec's first line, as a group's title when no agent gave one. */
 function titleOf(change: SpecChange): string {
-  return textOf(change).split("\n")[0]!.replace(/^-\s*/, "").slice(0, 80);
+  return shortTitle(textOf(change).split("\n")[0]!.replace(/^-\s*/, ""));
 }
 
 /**
@@ -605,7 +622,10 @@ async function cut(input: PlanInput, agents?: ChunkAgents, notes?: string[]): Pr
       runs.push(run);
       say(`"${group.title}" is past ${maxLines} lines with its definitions and reqs - split into ${runs.length} pulses`);
       runs.forEach((specs, index) =>
-        split.push({ specs, title: specs.length === 1 ? titleOf(bySpec.get(specs[0]!)!) : `${group.title} (${index + 1} of ${runs.length})` }),
+        split.push({
+          specs,
+          title: specs.length === 1 ? titleOf(bySpec.get(specs[0]!)!) : `${shortTitle(group.title, TITLE_CHARS - 9, TITLE_WORDS - 3)} (${index + 1} of ${runs.length})`,
+        }),
       );
     });
     const before = placement;
@@ -657,7 +677,8 @@ export function groupPrompt(specs: NewSpec[], steering?: Steering[], maxSpecs = 
     "Never group specs only because they are of the same kind.",
     "",
     "Only functional specs next to each other in the same module go together, and they stay in the order given: the",
-    "order is what each is built on. Give each group a short title that says what it builds.",
+    `order is what each is built on. Give each group a title that says what it builds - at most ${TITLE_WORDS} words and ${TITLE_CHARS}`,
+    "characters: it heads the group's pulse where the person watches the work, and a longer one is cut short there.",
     "",
     "The specification is split into modules - a ***plain matter, not how the code is laid out. Each numbers its",
     "functional specs from 1: each below is given with its module and its id there, and a number of its own to answer with.",
@@ -746,9 +767,9 @@ export function llmChunkAgents(options: { cwd: string; model?: string; label?: s
           defineTool({
             name: "submit_groups",
             label: "Submit the groups",
-            description: "The new functional specs in groups, in order: each group's spec numbers and a short title.",
+            description: `The new functional specs in groups, in order: each group's spec numbers and a title of at most ${TITLE_WORDS} words and ${TITLE_CHARS} characters.`,
             parameters: Type.Object({
-              groups: Type.Array(Type.Object({ specs: Type.Array(Type.Number()), title: Type.String() })),
+              groups: Type.Array(Type.Object({ specs: Type.Array(Type.Number()), title: Type.String({ description: `What the group builds: at most ${TITLE_WORDS} words and ${TITLE_CHARS} characters.` }) })),
               notes: Type.Optional(Type.String({ description: NOTES })),
             }),
             async execute(_id, params) {

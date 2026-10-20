@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupProblems, planChunks, placeProblems, MAX_LINES_PER_JOB, type ChunkAgents, type GroupAnswer, type PlaceAnswer } from "../../src/regenerate/chunk-plan.ts";
+import { groupProblems, planChunks, placeProblems, shortTitle, MAX_LINES_PER_JOB, type ChunkAgents, type GroupAnswer, type PlaceAnswer } from "../../src/regenerate/chunk-plan.ts";
 import { checkDraft, netChanges, stepsOf, type PlanInput } from "../../src/regenerate/chunk-plan.ts";
 
 const item = (markdown: string) => ({ markdown });
@@ -322,6 +322,13 @@ describe("the checks a plan is held to", () => {
     expect(groupProblems(specs, { groups: [] }).join("\n")).toContain("They hold none.");
   });
 
+  it("hold a group's title to ten words and 70 characters", () => {
+    const groups = (title: string) => ({ groups: [{ specs: [1, 2], title }, { specs: [3, 4], title: "b" }] });
+    expect(groupProblems(specs, groups("The ping and name endpoints"))).toEqual([]);
+    expect(groupProblems(specs, groups("one two three four five six seven eight nine ten eleven")).join("\n")).toContain("at most 10 words and 70 characters");
+    expect(groupProblems(specs, groups("x".repeat(71))).join("\n")).toContain("too long for a title");
+  });
+
   it("take three functional specs in a job, and want every group to have one and a title", () => {
     expect(groupProblems(specs, { groups: [{ specs: [1, 2, 3], title: "a" }, { specs: [4], title: "b" }] })).toEqual([]);
     expect(groupProblems(specs, { groups: [{ specs: [1, 2, 3, 4], title: "a" }, { specs: [], title: "empty" }] }).join("\n")).toContain('"empty" has no functional spec.');
@@ -393,5 +400,17 @@ describe("a plan and the work", () => {
     const from = input({}, tree({ definitions: DEFS, impl: ["- :Implementation: is Python."], specs: SPECS }));
     const plan = await planChunks(from);
     expect(plan.flatMap((job) => job.changes).sort()).toEqual(netChanges(from.base, from.current).map((change) => change.id).sort());
+  });
+});
+
+describe("a pulse's title", () => {
+  it("is held to ten words and 70 characters, cut at a word", () => {
+    expect(shortTitle("Ping endpoint")).toBe("Ping endpoint");
+    expect(shortTitle("one two three four five six seven eight nine ten eleven twelve")).toBe("one two three four five six seven eight nine ten…");
+    const long = shortTitle("Server answers GET /links with every short link the user created, newest first, paged by cursor");
+    expect(long.length).toBeLessThanOrEqual(70);
+    expect(long.split(/\s+/).length).toBeLessThanOrEqual(10);
+    expect(long.endsWith("…")).toBe(true);
+    expect(shortTitle("a".repeat(100))).toHaveLength(70);
   });
 });
