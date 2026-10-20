@@ -5,7 +5,7 @@ import { STDLIB_ROOT } from "../plain/stdlib.ts";
 import { ACCEPTANCE_TESTS, FUNCTIONAL_REQUIREMENTS, REQUIRED_FUNCTIONAL_SPECS, TEST_REQUIREMENTS, type MarshalledPlainSource } from "../plain/spec.ts";
 import { reportActivity, reportStage } from "./activity.ts";
 import { llmChunkAgents, MAX_LINES_PER_JOB, MAX_SPECS_PER_JOB, planChunks, stepsOf, type ChunkAgents, type PlanInput } from "./chunk-plan.ts";
-import { commitNotes, recordHistory, resetToLastCommit } from "./lineage.ts";
+import { commitNotes, landWork, recordHistory, resetToLastCommit } from "./lineage.ts";
 import { NOTES_FILE, recordPulse, type SpecGap } from "./notes.ts";
 import { createJobRegistry, formatDuration, type Job, type JobRegistry } from "./jobs.ts";
 import { moduleLanes } from "./lanes.ts";
@@ -1980,7 +1980,7 @@ const defaultConformanceRunner: JobRunner = async (job, onDelta) => {
   });
   if (result.passed) {
     writeTestsRecord(result.conformanceDir, job.planned.step.tree);
-    recordHistory(job.buildDir, `conformance tests: ${job.planned.title}`);
+    landWork(job.buildDir, `conformance tests: ${job.planned.title}`);
   }
   return { landed: result.passed, report: describeSpecDiffConformance(result), ...(result.specGaps !== undefined ? { specGaps: result.specGaps } : {}) };
 };

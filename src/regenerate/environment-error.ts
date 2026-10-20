@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, sep } from "node:path";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { passedCredentials } from "./agent-env.ts";
@@ -293,6 +293,25 @@ export function missingToolchainError(
 ): EnvironmentError | undefined {
   const missing = missingToolchain(run);
   return missing !== undefined ? toolchainError(missing, details) : undefined;
+}
+
+/**
+ * Work that passed could not be committed into the module's history: the next pulse, putting the module back to its last
+ * commit, would undo it while turri took it as built - so the pulse does not land, and is rolled back like any other that
+ * did not, and the person is told why. `said` is what git said.
+ */
+export function historyError(moduleDir: string, said: string): EnvironmentError {
+  const lock = /index\.lock/.test(said);
+  return new EnvironmentError({
+    moduleName: moduleNameOf(moduleDir),
+    missing: `a commit into the module's history, \`${join(moduleDir, ".plaingit")}\``,
+    neededBy: "the work that passed - without the commit, the next pulse would undo it",
+    shownBy: `git said: ${said.replace(/\s+/g, " ").trim().slice(0, 600)}`,
+    fix: lock
+      ? `if no git is still running on it, remove \`${join(moduleDir, ".plaingit", "index.lock")}\`, which a git stopped mid-commit left behind.`
+      : "fix what git said - a full disk, files it cannot read - so a commit can be made there.",
+    source: "harness",
+  });
 }
 
 /** The module a folder is part of, by name: `plain_modules/<module>/...`. */

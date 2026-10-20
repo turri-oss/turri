@@ -6,7 +6,7 @@ import { reportActivity, reportStage, unitOf } from "./activity.ts";
 import { confinedTools } from "./confine.ts";
 import { projectRootOf } from "./paths.ts";
 import { buildRegressionFixPrompt, sectionModules } from "./prompt.ts";
-import { abandonWork, markWork, recordHistory, type WorkStart } from "./lineage.ts";
+import { abandonWork, landWork, markWork, type WorkStart } from "./lineage.ts";
 import { missingToolchainError } from "./environment-error.ts";
 import { workspaceBlock } from "./workspace.ts";
 import { CODER_COMPACTION } from "./compaction.ts";
@@ -229,7 +229,7 @@ export async function ensureRegressionPasses(input: {
     if (passing) {
       reportStage(`${unitOf(input.moduleName)}: the whole conformance suite passes, and the unit tests with it${repairs.length > 0 ? ` after ${repairs.length} repair${repairs.length === 1 ? "" : "s"}` : ""}`);
       if (repairs.length > 0) {
-        recordHistory(input.buildDir, `regression ${input.moduleName} (pass after ${repairs.length} repair(s))`);
+        landWork(input.buildDir, `regression ${input.moduleName} (pass after ${repairs.length} repair(s))`);
       }
       return { passed: true, runs, repairs, command };
     }

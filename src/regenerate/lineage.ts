@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { reportActivity } from "./activity.ts";
+import { historyError } from "./environment-error.ts";
 import { projectRootOf } from "./paths.ts";
 
 /**
@@ -16,7 +17,8 @@ import { projectRootOf } from "./paths.ts";
  * A commit is made after every step that changes the module - a render, a regeneration, a
  * conformance run, a regression repair, a spec change, a start from the module below - with
  * a message saying what it was. History is a record of the work, never a gate on it: a git
- * failure is swallowed, not raised.
+ * failure is swallowed, not raised - except landing work (`landWork`), whose commit the next
+ * start would otherwise undo.
  */
 
 export const HISTORY_DIR = ".plaingit";
@@ -44,7 +46,10 @@ const EXCLUDED = [
 ];
 
 function git(moduleDir: string, args: string[], input?: string) {
-  return spawnSync("git", [...AUTHOR, "--git-dir", join(moduleDir, HISTORY_DIR), "--work-tree", moduleDir, ...args], {
+  const gitDir = join(moduleDir, HISTORY_DIR);
+  // The history is turri's, not the person's: hooks their git config names - gitleaks, husky - would refuse some of its
+  // commits, and the next start would put back what landed. Its own hooks folder holds only git's samples.
+  return spawnSync("git", [...AUTHOR, "-c", `core.hooksPath=${join(gitDir, "hooks")}`, "--git-dir", gitDir, "--work-tree", moduleDir, ...args], {
     cwd: moduleDir,
     encoding: "utf8",
     input,
@@ -84,16 +89,44 @@ function ensureHistory(moduleDir: string): boolean {
  */
 export function recordHistory(dir: string, subject: string, body?: string): string | undefined {
   try {
-    const moduleDir = moduleDirOf(dir);
-    if (!existsSync(moduleDir) || !ensureHistory(moduleDir)) return undefined;
-    git(moduleDir, ["add", "-A"]);
-    if (git(moduleDir, ["diff", "--cached", "--quiet"]).status === 0) return undefined;
-    const message = body ? `${subject}\n\n${body.trim()}\n` : subject;
-    if (git(moduleDir, ["commit", "-q", "-F", "-"], message).status !== 0) return undefined;
-    return head(dir);
+    return commitAll(dir, subject, body).commit;
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Commit work that landed - the code or tests a pulse passed, with the record of what they are built from. Unlike any
+ * other step's, this commit is not only a record: the next unit of work puts the module back to its last commit, and
+ * would undo what landed with it. So a commit that cannot be made is raised, as the environment's, with what git said -
+ * the work left in place, uncommitted. Nothing changed, nothing is committed. Returns the commit, if any.
+ */
+export function landWork(dir: string, subject: string, body?: string): string | undefined {
+  const moduleDir = moduleDirOf(dir);
+  let made: { commit?: string; failed?: string };
+  try {
+    made = commitAll(dir, subject, body);
+  } catch (error) {
+    made = { failed: error instanceof Error ? error.message : String(error) };
+  }
+  if (made.failed !== undefined) throw historyError(moduleDir, made.failed);
+  return made.commit;
+}
+
+/** Commit everything the step changed in the module `dir` belongs to: the commit, nothing when nothing changed, or why git failed. */
+function commitAll(dir: string, subject: string, body?: string): { commit?: string; failed?: string } {
+  const moduleDir = moduleDirOf(dir);
+  if (!existsSync(moduleDir)) return {};
+  if (!ensureHistory(moduleDir)) return { failed: `git could not make the module's history in ${join(moduleDir, HISTORY_DIR)}` };
+  const failed = (result: ReturnType<typeof git>) => (result.error?.message ?? `${result.stderr}${result.stdout}`.trim()) || `git exited ${result.status}`;
+  const added = git(moduleDir, ["add", "-A"]);
+  if (added.status !== 0) return { failed: failed(added) };
+  if (git(moduleDir, ["diff", "--cached", "--quiet"]).status === 0) return {};
+  const message = body ? `${subject}\n\n${body.trim()}\n` : subject;
+  const committed = git(moduleDir, ["commit", "-q", "-F", "-"], message);
+  if (committed.status !== 0) return { failed: failed(committed) };
+  const commit = head(dir);
+  return commit !== undefined ? { commit } : {};
 }
 
 /**

@@ -151,7 +151,9 @@ A provider failure - no credits, bad key, rate limit - is raised with the provid
 
 Each `plain_modules/<module>` is a git repository whose git directory is `.plaingit` rather than `.git`, so it stays plain files to your own repository. A commit is made after every step that changes the module - a render, a functionality regenerated, a conformance run, a regression repair, a spec change. `/lineage [module]` and `lineage` show it.
 
-The last commit is also the last known good state. Every render, functionality regenerated, spec change and conformance run starts by putting the codebase it works in back to it, so if turri was stopped or restarted mid-pulse, whatever that pulse left half-written is undone first - and one that does not pass is undone the same way when it ends, commits and all. Only work that passed is committed. Installed dependencies and caches are not in the history and stay. With git directly:
+The last commit is also the last known good state. Every render, functionality regenerated, spec change and conformance run starts by putting the codebase it works in back to it, so if turri was stopped or restarted mid-pulse, whatever that pulse left half-written is undone first - and one that does not pass is undone the same way when it ends, commits and all. Only work that passed is committed. Installed dependencies and caches are not in the history and stay.
+
+The history is turri's own: the hooks your git config names (`core.hooksPath` - gitleaks, husky) do not run on its commits. When work that passed cannot be committed all the same - a `.plaingit/index.lock` a git stopped mid-commit left, a full disk - the pulse does not land: the next start would undo it while turri took it as built. It is rolled back, and the stop says what git said and how to fix it. Any other step's commit failing leaves only a gap in the history. With git directly:
 
 ```bash
 git --git-dir=plain_modules/<module>/.plaingit --work-tree=plain_modules/<module> log

@@ -16,7 +16,7 @@ import {
 } from "../plain/spec.ts";
 import { reportActivity, reportLogNote, reportSpec, reportStage, type BuildingSpec, unitOf } from "./activity.ts";
 import { confinedTools } from "./confine.ts";
-import { abandonWork, diffSinceSnapshot, moduleDirOf, recordHistory, startWork, workDiff, workSnapshot, type WorkStart } from "./lineage.ts";
+import { abandonWork, diffSinceSnapshot, landWork, moduleDirOf, startWork, workDiff, workSnapshot, type WorkStart } from "./lineage.ts";
 import { createWorkLedger, describeAccounts, SUBMIT_WORK_NOTE, unanswered, unansweredPrompt } from "./submit-work.ts";
 import type { JobCases } from "./drift.ts";
 import { CONFORMANCE_COMPACTION } from "./compaction.ts";
@@ -990,8 +990,8 @@ export async function renderConformanceTests(
       // The tests, and the code when it changed: one commit if they share a module folder.
       const subject = `conformance ${moduleName} ${options.diff !== undefined ? "for a spec change" : `fs ${frid}`}${changed ? " (code changed)" : ""}`;
       stage(`committing the conformance tests${changed ? " and the code changes" : ""}`);
-      recordHistory(conformanceDir, subject);
-      if (moduleDirOf(buildDir) !== moduleDirOf(conformanceDir)) recordHistory(buildDir, subject);
+      landWork(conformanceDir, subject);
+      if (moduleDirOf(buildDir) !== moduleDirOf(conformanceDir)) landWork(buildDir, subject);
     } else if (start !== undefined) {
       const why = notLandedWhy(options.diff !== undefined ? "for the spec change" : `of functionality ${frid}`, unlabelled);
       stage(`${why} - undoing them`);

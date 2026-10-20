@@ -19,7 +19,7 @@ import { debugFailure, diagnosisText } from "./debugger.ts";
 import { codebaseMap, diffFiles, digestFiles, wroteNothing } from "./codebase.ts";
 import { confinedTools } from "./confine.ts";
 import { buildSpecDiffPrompt, describeSpecChange, reviewedSpec, sectionModules } from "./prompt.ts";
-import { abandonWork, recordHistory, startWork } from "./lineage.ts";
+import { abandonWork, landWork, startWork } from "./lineage.ts";
 import { createWorkLedger, SUBMIT_WORK_NOTE } from "./submit-work.ts";
 import type { JobCases } from "./drift.ts";
 import { CODER_COMPACTION } from "./compaction.ts";
@@ -306,7 +306,7 @@ export async function renderSpecDiff(options: RenderSpecDiffOptions): Promise<Re
   if (builtBefore !== null && sameSpec(builtBefore, tree) && !dryRun) {
     stage("the specs were only restructured - nothing to render; recording the spec as it is now laid out");
     writeCodeRecord(tip.buildDir, tree);
-    recordHistory(tip.buildDir, `spec restructured: ${summarizeDiff(options.diff)}`, options.diff);
+    landWork(tip.buildDir, `spec restructured: ${summarizeDiff(options.diff)}`, options.diff);
     return {
       moduleName,
       buildDir: tip.buildDir,
@@ -666,7 +666,7 @@ export async function renderSpecDiff(options: RenderSpecDiffOptions): Promise<Re
     stage("recording what the code is built from, and committing it");
     // Steered, it is built from the spec as it was steered to - the record the loop moved with it.
     writeCodeRecord(buildDir, steering?.target ?? tree);
-    recordHistory(buildDir, `spec diff: ${summarizeDiff(options.diff)}`, options.diff);
+    landWork(buildDir, `spec diff: ${summarizeDiff(options.diff)}`, options.diff);
   };
 
   if (!unitPassed) {

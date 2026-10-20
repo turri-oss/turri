@@ -3,7 +3,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { abandonWork, diffSinceSnapshot, head, historyLog, historyShow, markWork, recordHistory, resetToLastCommit, startWork, workDiff, workSnapshot } from "../../src/regenerate/lineage.ts";
+import { EnvironmentError } from "../../src/regenerate/environment-error.ts";
+import { abandonWork, diffSinceSnapshot, head, historyLog, historyShow, landWork, markWork, recordHistory, resetToLastCommit, startWork, workDiff, workSnapshot } from "../../src/regenerate/lineage.ts";
 import { copyRequiredCode } from "../../src/regenerate/requires.ts";
 
 let root: string;
@@ -213,6 +214,56 @@ describe("a unit of work", () => {
     expect(diff).not.toContain("code/");
     recordHistory(code, "render app fs 2");
     expect(workDiff(code)).toBe("");
+  });
+});
+
+describe("work that lands", () => {
+  const savedGlobal = process.env.GIT_CONFIG_GLOBAL;
+  afterEach(() => {
+    if (savedGlobal === undefined) delete process.env.GIT_CONFIG_GLOBAL;
+    else process.env.GIT_CONFIG_GLOBAL = savedGlobal;
+  });
+
+  it("is committed past the person's own git hooks, so the next start does not undo it", () => {
+    // A global pre-commit hook, as gitleaks is, that refuses a commit holding what looks like a key - not every one.
+    const hooks = join(root, "hooks");
+    mkdirSync(hooks);
+    writeFileSync(join(hooks, "pre-commit"), "#!/bin/sh\ngit diff --cached | grep -q SECRET_KEY && exit 1\nexit 0\n", { mode: 0o755 });
+    writeFileSync(join(root, "gitconfig"), `[core]\n\thooksPath = ${hooks}\n`);
+    process.env.GIT_CONFIG_GLOBAL = join(root, "gitconfig");
+
+    writeFileSync(join(code, "app.py"), "print('before')\n");
+    startWork([code], "app");
+    writeFileSync(join(code, "app.py"), "SECRET_KEY = 'test-fixture'\n");
+    landWork(code, "spec diff: landed");
+
+    startWork([code], "app");
+    expect(readFileSync(join(code, "app.py"), "utf8")).toBe("SECRET_KEY = 'test-fixture'\n");
+  });
+
+  it("that cannot be committed is raised as the environment's, not swallowed, and left in place", () => {
+    writeFileSync(join(code, "app.py"), "print('before')\n");
+    startWork([code], "app");
+    writeFileSync(join(code, "app.py"), "print('landed')\n");
+    // What a git killed mid-commit leaves behind.
+    writeFileSync(join(root, "plain_modules", "app", ".plaingit", "index.lock"), "");
+
+    let raised: unknown;
+    try {
+      landWork(code, "spec diff: landed");
+    } catch (error) {
+      raised = error;
+    }
+    expect(raised).toBeInstanceOf(EnvironmentError);
+    expect((raised as EnvironmentError).source).toBe("harness");
+    expect((raised as EnvironmentError).shownBy).toContain("index.lock");
+    expect(readFileSync(join(code, "app.py"), "utf8")).toBe("print('landed')\n");
+  });
+
+  it("with nothing to commit commits nothing, and raises nothing", () => {
+    writeFileSync(join(code, "app.py"), "print('before')\n");
+    startWork([code], "app");
+    expect(landWork(code, "spec diff: nothing")).toBeUndefined();
   });
 });
 
