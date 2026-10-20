@@ -20,6 +20,7 @@ import { codebaseMap, diffFiles, digestFiles, wroteNothing } from "./codebase.ts
 import { confinedTools } from "./confine.ts";
 import { buildSpecDiffPrompt, describeSpecChange, reviewedSpec, sectionModules } from "./prompt.ts";
 import { abandonWork, landWork, startWork } from "./lineage.ts";
+import { healing, record, signatureHash } from "./ledger.ts";
 import { createWorkLedger, SUBMIT_WORK_NOTE } from "./submit-work.ts";
 import type { JobCases } from "./drift.ts";
 import { CODER_COMPACTION } from "./compaction.ts";
@@ -553,7 +554,7 @@ export async function renderSpecDiff(options: RenderSpecDiffOptions): Promise<Re
                   ? `the unit testing script did not finish in ${Math.round(verdict.run.timeoutMs / 1000)}s - a debugger works out whether something hangs`
                   : `the same failure ${seen} times - a debugger looks at it with fresh eyes`,
             );
-            const found = await debugFailure({
+            const found = await healing("debugger", () => debugFailure({
               buildDir,
               failure: verdict.run.output,
               times,
@@ -563,7 +564,7 @@ export async function renderSpecDiff(options: RenderSpecDiffOptions): Promise<Re
               label: `${moduleName} spec change`,
               ...(debuggerModel !== undefined ? { model: debuggerModel } : {}),
               onDelta: options.onDelta,
-            }).catch(() => undefined);
+            }), (finding) => finding?.rootCause);
             // Nothing hangs: the suite needs more time than a test run may take, and no agent can give it that.
             if (found?.tooSlow === true) {
               stage(`the unit testing script needs more than the ${Math.round(verdict.run.timeoutMs / 1000)}s a test run may take - stopping`);
@@ -590,6 +591,7 @@ export async function renderSpecDiff(options: RenderSpecDiffOptions): Promise<Re
               ].join("\n");
             }
           }
+          record({ kind: "gate.round", gate: "unit tests", round: followUp + 1, of: MAX_FOLLOW_UPS, ...(key !== undefined ? { signature: signatureHash(key) } : {}) });
           stage(`${verdict.staticOnly ? "static checks" : "unit tests"} not passing - fixing (round ${followUp + 1} of ${MAX_FOLLOW_UPS})`);
           response = await ask(executor, prompt, options.onDelta);
           continue;

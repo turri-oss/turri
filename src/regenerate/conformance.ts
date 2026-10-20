@@ -17,6 +17,7 @@ import {
 import { reportActivity, reportLogNote, reportSpec, reportStage, type BuildingSpec, unitOf } from "./activity.ts";
 import { confinedTools } from "./confine.ts";
 import { abandonWork, diffSinceSnapshot, landWork, moduleDirOf, startWork, workDiff, workSnapshot, type WorkStart } from "./lineage.ts";
+import { firstLine, record } from "./ledger.ts";
 import { createWorkLedger, describeAccounts, SUBMIT_WORK_NOTE, unanswered, unansweredPrompt } from "./submit-work.ts";
 import type { JobCases } from "./drift.ts";
 import { CONFORMANCE_COMPACTION } from "./compaction.ts";
@@ -605,6 +606,7 @@ export async function renderConformanceTests(
       // every functionality's tests - and the code's unit testing script.
       stage(`running the conformance testing script on the whole suite (attempt ${rounds + 1} of ${maxRounds})`);
       rounds += 1;
+      record({ kind: "gate.round", gate: "conformance", round: rounds, of: maxRounds });
       let recheck = await runConformanceScript(buildDir, [conformanceDir], scripts);
       runs.push({ command: recheck.command, exitCode: recheck.exitCode });
       options.onRun?.(recheck.command, recheck.exitCode);
@@ -722,6 +724,7 @@ export async function renderConformanceTests(
           onDelta: options.onDelta,
         });
         const reason = verdict.reason.split("\n")[0]!.slice(0, 160);
+        record({ kind: "judge.verdict", culprit: verdict.culprit, round: rounds, reason: firstLine(verdict.reason, 300) });
         // Stopped by the time limit while it was still getting on: no agent can give it more time. The pulse stops now -
         // rolled back, no retry - and the person is told how to raise the limit.
         if (verdict.culprit === "environment" && recheck.timedOut === true) {

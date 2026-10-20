@@ -101,6 +101,13 @@ describe("turri for a host that runs it itself", () => {
     expect(written).toContain(`coding-model: ${VENDORS.anthropic.coding}`);
   });
 
+  it("gives a host the ledger, to hear live and to read back earlier sessions' pulses", async () => {
+    const host = await import("../src/host.ts");
+    for (const name of ["onLedgerEvent", "readLedger", "ledgerDir", "runViews", "pulseView", "describePulseView", "describeRuns", "ledgerProjects", "earlierPulses", "asJob"] as const) {
+      expect(typeof host[name], name).toBe("function");
+    }
+  });
+
   it("publishes the host entry, compiled, as @turri-dev/cli/host", () => {
     const manifest = JSON.parse(readFileSync("package.json", "utf8")) as { exports: Record<string, { import?: string; types?: string }> };
     expect(manifest.exports["./host"]).toEqual({ types: "./dist/host.d.ts", import: "./dist/host.js" });

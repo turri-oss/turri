@@ -24,11 +24,16 @@ export interface JobLog {
   end(status: string, report: string | undefined, agents?: string[]): void;
 }
 
-/** The folder a job's log goes in: the project of the first module it writes, from its lanes. */
-export function jobLogDir(lanes: string[]): string | undefined {
+/** The project a job works in: the one of the first module it writes, from its lanes. */
+export function projectOfLanes(lanes: string[]): string | undefined {
   const lane = lanes.find((candidate) => isAbsolute(candidate) && candidate.split(sep).includes(MODULES_DIR));
-  if (lane === undefined) return undefined;
-  return join(scratchDir(join(projectRootOf(lane), MODULES_DIR)), "jobs");
+  return lane !== undefined ? projectRootOf(lane) : undefined;
+}
+
+/** The folder a job's log goes in: `.turri/jobs` in its project. */
+export function jobLogDir(lanes: string[]): string | undefined {
+  const project = projectOfLanes(lanes);
+  return project !== undefined ? join(scratchDir(join(project, MODULES_DIR)), "jobs") : undefined;
 }
 
 export function startJobLog(job: { id: string; kind: string; summary: string; model?: string; diff?: string }, lanes: string[]): JobLog | undefined {

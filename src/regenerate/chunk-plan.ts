@@ -4,6 +4,7 @@ import { DEFAULT_CONCEPTS, extractConceptsFromDefinition, extractConceptsFromSpe
 import { ACCEPTANCE_TESTS, DEFINITIONS, FUNCTIONAL_REQUIREMENTS, NON_FUNCTIONAL_REQUIREMENTS, REQUIRED_FUNCTIONAL_SPECS, TEST_REQUIREMENTS, type MarshalledPlainSource } from "../plain/spec.ts";
 import { ask, BEGIN, createExecutor } from "../pi.ts";
 import { reportActivity, reportStage } from "./activity.ts";
+import { firstLine, record } from "./ledger.ts";
 import { steeringBlock, type Steering } from "./steer.ts";
 import { marksRegenerateAgain } from "./records.ts";
 import { validateConcepts } from "../plain/concepts.ts";
@@ -371,6 +372,12 @@ function titleOf(change: SpecChange): string {
  * the plan did not do as asked - the person's wishes an agent did not follow and why, an answer that did not hold, a
  * group split for its size - for the conversation to say, rather than guess.
  */
+/** A planner agent that failed: the plan falls back, and the ledger says why. */
+function plannerFailed(step: "group" | "place", error: unknown): undefined {
+  record({ kind: "planner.failed", step, error: firstLine(error instanceof Error ? error.message : String(error), 300) });
+  return undefined;
+}
+
 export async function planChunks(input: PlanInput, agents?: ChunkAgents, notes?: string[]): Promise<DraftJob[]> {
   if (input.track !== "conformance") return cut(input, agents, notes);
   // The conformance tests are grouped by the harness, as one job as far as the guardrail lets: no agent is asked.
@@ -500,7 +507,7 @@ async function cut(input: PlanInput, agents?: ChunkAgents, notes?: string[]): Pr
     ...list.map((group) => ({ title: group.title, specs: group.specs.map((number) => bySpec.get(number)!), definitions: [], reqs: [] })),
   ];
   const conformance = input.track === "conformance";
-  const grouped = conformance ? undefined : ((await agents?.group(numbered, (answer) => groupProblems(numbered, answer, maxSpecs), input.steering, maxSpecs).catch(() => undefined)) ?? undefined);
+  const grouped = conformance ? undefined : ((await agents?.group(numbered, (answer) => groupProblems(numbered, answer, maxSpecs), input.steering, maxSpecs).catch((error: unknown) => plannerFailed("group", error))) ?? undefined);
   const groups = conformance
     ? conformanceGroups(
         numbered,
@@ -522,8 +529,13 @@ async function cut(input: PlanInput, agents?: ChunkAgents, notes?: string[]): Pr
       : numbered.map((spec, index) => ({ specs: [spec.number], title: titleOf(specs[index]!) }));
   if (grouped?.notes !== undefined && grouped.notes.trim() !== "") say(`the grouping: ${grouped.notes.trim()}`);
   if (!conformance && agents !== undefined) {
-    if (grouped === undefined) say("the grouping was not given - a functional spec a pulse");
-    else if (groupProblems(numbered, grouped, maxSpecs).length > 0) say(`the grouping did not hold (${groupProblems(numbered, grouped, maxSpecs).join(" ")}) - a functional spec a pulse`);
+    if (grouped === undefined) {
+      record({ kind: "planner.fellBack", step: "group", why: "no grouping was given" });
+      say("the grouping was not given - a functional spec a pulse");
+    } else if (groupProblems(numbered, grouped, maxSpecs).length > 0) {
+      record({ kind: "planner.fellBack", step: "group", why: firstLine(groupProblems(numbered, grouped, maxSpecs).join(" "), 300) });
+      say(`the grouping did not hold (${groupProblems(numbered, grouped, maxSpecs).join(" ")}) - a functional spec a pulse`);
+    }
   }
   let chunks = chunksFor(groups);
 
@@ -543,9 +555,10 @@ async function cut(input: PlanInput, agents?: ChunkAgents, notes?: string[]): Pr
       implementationReqs: implementationReqs.map((change, index) => ({ number: index + 1, text: textOf(change) })),
       testReqs: testReqs.map((change, index) => ({ number: index + 1, text: textOf(change) })),
     };
-    const answer = (await agents?.place(placeInput, (given) => placeProblems(placeInput, given)).catch(() => undefined)) ?? undefined;
+    const answer = (await agents?.place(placeInput, (given) => placeProblems(placeInput, given)).catch((error: unknown) => plannerFailed("place", error))) ?? undefined;
     if (answer?.notes !== undefined && answer.notes.trim() !== "") say(`the placement: ${answer.notes.trim()}`);
     placement = answer !== undefined && placeProblems(placeInput, answer).length === 0 ? answer : undefined;
+    if (placement === undefined && agents !== undefined) record({ kind: "planner.fellBack", step: "place", why: answer === undefined ? "no placement was given" : firstLine(placeProblems(placeInput, answer).join(" "), 300) });
     if (placement === undefined && agents !== undefined) say("the placement did not hold - every implementation req with the first pulse, every test req with the first conformance pulse");
   }
   /** A req's chunk: its group, the built job, or the first job of the new work for "all". */

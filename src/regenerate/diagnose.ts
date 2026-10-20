@@ -79,8 +79,9 @@ export async function diagnoseFailure(options: {
   try {
     await ask(session, BEGIN);
     if (diagnosis === undefined) await ask(session, "You have not called submit_diagnosis. Call it now, with what you know.");
-  } catch {
-    // Without a diagnosis the person still gets both failures, as they were.
+  } catch (error) {
+    // Without a diagnosis the person still gets both failures, as they were - and the ledger why there is none.
+    if (diagnosis === undefined) throw error;
   } finally {
     session.dispose();
   }

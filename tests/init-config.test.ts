@@ -6,6 +6,7 @@ import { AGENT_ROLES, CONFIG_KEYS, projectModels, readProjectConfig, ROLE_THINKI
 import { BEDROCK_REGIONS, bedrockMakerOf, bedrockModels, bedrockRegionOf, DEFAULTS, defaultParallel, initConfig, main, QUICK_START_CONFIG, quickStartConfig, VENDORS, vendorOf, withModels, type Vendor } from "../src/init-config.ts";
 import { defaultParallelJobs } from "../src/regenerate/jobs.ts";
 import { DEFAULT_COMPACT_AT, DEFAULT_TURN_LIMIT_MS } from "../src/pi.ts";
+import { DEFAULT_LEDGER_KEEP_MB } from "../src/regenerate/ledger.ts";
 import { MAX_LINES_PER_JOB, MAX_SPECS_PER_JOB } from "../src/regenerate/chunk-plan.ts";
 
 let dir: string;
@@ -40,6 +41,7 @@ describe("turri init-config", () => {
       compactAt: DEFAULTS.compactAt,
       maxSpecsPerPulse: DEFAULTS.maxSpecsPerPulse,
       maxLinesPerPulse: DEFAULTS.maxLinesPerPulse,
+      ledgerKeep: DEFAULTS.ledgerKeep,
       rulesOff: [],
       toolchains: [],
     });
@@ -121,6 +123,7 @@ describe("turri init-config", () => {
     expect(DEFAULTS.compactAt).toBe(DEFAULT_COMPACT_AT);
     expect(DEFAULTS.maxSpecsPerPulse).toBe(MAX_SPECS_PER_JOB);
     expect(DEFAULTS.maxLinesPerPulse).toBe(MAX_LINES_PER_JOB);
+    expect(DEFAULTS.ledgerKeep).toBe(DEFAULT_LEDGER_KEEP_MB);
     for (const cores of [1, 2, 7, 8, 32]) expect(defaultParallel(cores)).toBe(defaultParallelJobs(cores));
   });
 

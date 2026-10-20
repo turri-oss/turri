@@ -16,6 +16,7 @@ import {
 import { PACKAGE_ROOT } from "./environment.ts";
 import { c } from "./module-report.ts";
 import { describeTurnIncident, onModelEvent } from "./regenerate/activity.ts";
+import { ledgerWanted, startLedger } from "./regenerate/ledger.ts";
 import { tryItCommand } from "./regenerate/delivery.ts";
 import { describeDiagnosis, diagnoseFailure } from "./regenerate/diagnose.ts";
 import { createJobRegistry, pulseName, type Job } from "./regenerate/jobs.ts";
@@ -57,6 +58,8 @@ export async function runLoop(options: {
   // The models as the config has them - with a command's own options read as its keys (headlessOptions), as the chat reads them.
   const model = modelSpec(projectModels(project).coding);
   const projectDir = projectDirOf(plainFile);
+  // What the run does, as facts, in the project's .turri/ledger.
+  if (ledgerWanted() && options.dryRun !== true) startLedger({ mode: options.command?.[0] ?? "headless", project: projectDir, warn: (message) => console.error(message) });
   const buildDir = options.buildDir !== undefined && options.dryRun !== true ? resolve(options.buildDir) : undefined;
   if (buildDir !== undefined) refuseBuildDir(buildDir, projectDir);
 

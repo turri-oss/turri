@@ -8,18 +8,23 @@ import type { TranscriptStyle } from "./transcript-view.ts";
 /**
  * The side panel's Jobs view: the queue as a tree, read one job at a time.
  *
- * Three sections - running, queued, finished - each opened and closed on its own, and under them one line per job:
+ * Four sections - running, queued, finished, and earlier sessions' from the ledger - each opened and closed on its own,
+ * and under them one line per job:
  * its module, its time and its cost. A job opened shows all of what it builds - the diff, or the spec - and, running,
- * what it is doing; finished, what went on in it. So what is planned can be read without every diff on the screen at once.
+ * what it is doing; finished, what went on in it; earlier, what the ledger says of it. So what is planned can be read
+ * without every diff on the screen at once.
  *
  * A cursor moves over the sections and the jobs; it stays on its row, whatever moves under it - a job that finishes
  * leaves its row to the one after it. A job opened stays open while it stays where it is: moving to another section
  * it closes, and turns up there collapsed. The state is the conversation's, kept while the panel is closed.
  */
 
-export type JobSection = "running" | "queued" | "finished";
+export type JobSection = "running" | "queued" | "finished" | "earlier";
 
-export const SECTIONS: JobSection[] = ["running", "queued", "finished"];
+export const SECTIONS: JobSection[] = ["running", "queued", "finished", "earlier"];
+
+/** A section as its header says it. */
+const SECTION_NAMES: Record<JobSection, string> = { running: "running", queued: "queued", finished: "finished", earlier: "earlier sessions" };
 
 export interface JobsTreeState {
   /** Which sections are open. */
@@ -32,13 +37,16 @@ export interface JobsTreeState {
   cursor: number;
   /** The first line shown. */
   top: number;
+  /** How many runs the ledger has beyond the earlier sessions shown: said under them. */
+  earlierMore?: number;
 }
 
 export function createJobsTreeState(): JobsTreeState {
-  return { open: { running: true, queued: true, finished: false }, openJobs: new Map(), openFiles: new Map(), cursor: 0, top: 0 };
+  return { open: { running: true, queued: true, finished: false, earlier: false }, openJobs: new Map(), openFiles: new Map(), cursor: 0, top: 0 };
 }
 
 export function sectionOf(job: Job): JobSection {
+  if (job.earlier !== undefined) return "earlier";
   return job.status === "running" ? "running" : job.status === "queued" ? "queued" : "finished";
 }
 
@@ -83,7 +91,7 @@ function isOpen(state: JobsTreeState, job: Job): boolean {
 export function selectJob(jobs: Job[], state: JobsTreeState, id: string): boolean {
   const job = jobs.find((entry) => entry.id === id);
   if (job === undefined) return false;
-  const section: JobSection = job.status === "running" ? "running" : job.status === "queued" ? "queued" : "finished";
+  const section = sectionOf(job);
   state.open[section] = true;
   state.openJobs.set(id, section);
   const at = jobsTreeRows(jobs, state).findIndex((row) => row.kind === "job" && row.job.id === id);
@@ -96,12 +104,14 @@ export function jobsTreeRows(jobs: Job[], state: JobsTreeState): TreeRow[] {
   const bySequence = jobs.filter((job) => job.replacedBy === undefined).sort((a, b) => a.sequence - b.sequence);
   const of = (section: JobSection) => {
     const inSection = bySequence.filter((job) => sectionOf(job) === section);
-    return section === "finished" ? inSection.sort((a, b) => (b.finishedAt ?? b.sequence) - (a.finishedAt ?? a.sequence) || b.sequence - a.sequence) : inSection;
+    return section === "finished" || section === "earlier" ? inSection.sort((a, b) => (b.finishedAt ?? b.sequence) - (a.finishedAt ?? a.sequence) || b.sequence - a.sequence) : inSection;
   };
   // Forget what is open for jobs that moved on - they close as they leave.
   for (const job of jobs) isOpen(state, job);
   return SECTIONS.flatMap((section) => {
     const inSection = of(section);
+    // Earlier sessions are there only when the ledger has some.
+    if (section === "earlier" && inSection.length === 0) return [];
     const jobRows = (job: Job): TreeRow[] => [
       { kind: "job", section, job },
       // An open job's diff, a row a file: each opens and closes on its own.
@@ -119,7 +129,8 @@ const MARK: Record<string, (now: number) => string> = { running: spinner, queued
 
 /** A pulse's mark: running or queued as it is; finished, in the colour of how it ended - green it passed, red it failed or did not pass, stopped amber. */
 function markOf(job: Job, style: TranscriptStyle): string {
-  if (sectionOf(job) !== "finished") return MARK[job.status]?.(Date.now()) ?? "·";
+  const section = sectionOf(job);
+  if (section !== "finished" && section !== "earlier") return MARK[job.status]?.(Date.now()) ?? "·";
   return finishedMark(job, { success: style.success ?? style.added, error: style.error, warning: style.warning ?? style.accent });
 }
 
@@ -146,6 +157,8 @@ function named(jobs: Job[], id: string): string {
 /** All of a job, opened: what it builds, and - running - what it is doing; waiting, what it waits on; done, how it ended. */
 function detailLines(job: Job, jobs: Job[], width: number, style: TranscriptStyle): string[] {
   const indent = "        ";
+  // An earlier session's: what the ledger says of it - its transcript is its log's alone.
+  if (job.earlier !== undefined) return job.earlier.lines.flatMap((line) => wrap(line, width, indent, /FAILED|ended with/.test(line) ? style.error : style.muted));
   const lines: string[] = [];
   // A diff is shown a file at a time, in rows of their own after these.
   if ((job.diff === undefined || job.diff.trim() === "") && job.building !== undefined) {
@@ -200,7 +213,7 @@ export function jobsTreeLines(jobs: Job[], state: JobsTreeState, width: number, 
         lines.push("");
         rowStarts[index] = lines.length;
       }
-      const header = `${pointer} ${state.open[row.section] ? "▾" : "▸"} ${row.section} (${row.count})`;
+      const header = `${pointer} ${state.open[row.section] ? "▾" : "▸"} ${SECTION_NAMES[row.section]} (${row.count})`;
       lines.push(here ? style.heading(header) : style.muted(header));
       return;
     }
@@ -224,6 +237,10 @@ export function jobsTreeLines(jobs: Job[], state: JobsTreeState, width: number, 
     lines.push(here ? style.heading(first) : first, ...rest.map((line) => `        ${line}`));
     if (open) lines.push(...detailLines(job, jobs, width, style));
   });
+  // The ledger has more than the runs shown: where to find them.
+  if (state.open.earlier && (state.earlierMore ?? 0) > 0) {
+    lines.push(style.muted(`      ${state.earlierMore} earlier run${state.earlierMore === 1 ? "" : "s"} in the ledger - turri ledger lists them`));
+  }
   return { lines, rowStarts, rows };
 }
 

@@ -30,6 +30,7 @@ import {
   reportUsage,
 } from "./regenerate/activity.ts";
 import { debugLogOf, startDebugLog } from "./regenerate/debug-log.ts";
+import { firstLine, record } from "./regenerate/ledger.ts";
 
 type ThinkingLevel = Parameters<AgentSession["setThinkingLevel"]>[0];
 
@@ -324,6 +325,8 @@ async function askOnce(session: AgentSession, text: string, onDelta?: (delta: st
   // Calls to one tool failing one after another - arguments it refuses, or errors - with nothing going through.
   let failing = 0;
   let failingTool: string | undefined;
+  /** When each tool call under way started, by its id: how long it took is recorded as it ends. */
+  const toolStarted = new Map<string, number>();
   harnessStops.delete(session);
   reportNow("waiting for the model");
   // Every entry says which agent it is from, and what it runs on - for reading one agent at a time.
@@ -383,6 +386,7 @@ async function askOnce(session: AgentSession, text: string, onDelta?: (delta: st
       }
     }
     if (event.type === "tool_execution_start") {
+      toolStarted.set(event.toolCallId, Date.now());
       const args = JSON.stringify(event.args ?? {});
       transcript({ kind: "tool", text: `${shownName(event.toolName)} ${clipText(args, MAX_TOOL_ARGS)}`, full: `${shownName(event.toolName)} ${args}` });
       const took = Date.now() - stepStarted;
@@ -404,6 +408,9 @@ async function askOnce(session: AgentSession, text: string, onDelta?: (delta: st
         stopTurn(session, `${failing} ${shownName(event.toolName)} calls failed in a row`);
       }
       const output = resultText(event.result);
+      const started = toolStarted.get(event.toolCallId);
+      toolStarted.delete(event.toolCallId);
+      record({ kind: "tool.call", tool: event.toolName, ms: started !== undefined ? Date.now() - started : 0, ok: !event.isError, resultChars: output.length }, { agent: modelEventOf(session) });
       transcript({ kind: "result", text: clipText(output, MAX_TOOL_RESULT), error: event.isError, full: output });
       const line = describeToolResult(event.toolName, event.result, event.isError);
       if (line !== undefined) reportActivity(line);
@@ -514,6 +521,7 @@ async function askOnce(session: AgentSession, text: string, onDelta?: (delta: st
   // A turn turri ended is ended, whatever the provider was doing then: what comes back of the abort is not the provider failing.
   if (providerError !== undefined && stoppedFor === undefined) {
     debug?.note(`turn ended with a provider error after ${seconds(Date.now() - turnStarted)}: ${providerError}`);
+    record({ kind: "provider.error", error: firstLine(providerError, 300), transient: TRANSIENT_PROVIDER_ERROR.test(providerError) }, { agent: modelEventOf(session) });
     throw new ProviderError(`${session.model?.id ?? "model"}: ${providerError}`);
   }
 
@@ -729,6 +737,11 @@ export function guardRepeats(tools: ToolDefinition[], session: () => AgentSessio
   // Calls refused in the restricted turn under way, and which turn's set that was.
   let refused = 0;
   let refusedIn: Set<string> | undefined;
+  /** The agent a refusal is of, for the ledger. */
+  const guardPlace = () => {
+    const current = session();
+    return current !== undefined ? { agent: modelEventOf(current) } : {};
+  };
   return tools.map((tool) => ({
     ...tool,
     execute: async (...args: Parameters<ToolDefinition["execute"]>) => {
@@ -738,6 +751,7 @@ export function guardRepeats(tools: ToolDefinition[], session: () => AgentSessio
       if (only !== undefined && !only.has(tool.name)) {
         if (refusedIn !== only) (refused = 0), (refusedIn = only);
         refused += 1;
+        record({ kind: "guard.refused", rule: "restricted", tool: tool.name, times: refused }, guardPlace());
         if (refused > REFUSED_BEFORE_STOP) {
           reportActivity(`  stopped the agent's turn: ${refused} calls to tools this turn does not have`);
           stopTurn(current, `${refused} calls to tools this turn does not have`);
@@ -750,6 +764,7 @@ export function guardRepeats(tools: ToolDefinition[], session: () => AgentSessio
       }
       calls += 1;
       if (budget !== undefined && !budget.finish.includes(tool.name) && calls > budget.calls) {
+        record({ kind: "guard.refused", rule: "budget", tool: tool.name, times: calls - budget.calls }, guardPlace());
         if (calls > budget.calls * 2) {
           reportActivity(`  stopped the agent's turn: ${calls} tool calls, past its budget of ${budget.calls}`);
           stopTurn(session(), `${calls} tool calls, past its budget of ${budget.calls}`);
@@ -778,6 +793,7 @@ export function guardRepeats(tools: ToolDefinition[], session: () => AgentSessio
         // Anything else may have changed what a look would find.
         looks.clear();
       }
+      if (repeats > REPEATS_ALLOWED) record({ kind: "guard.refused", rule: "repeat", tool: tool.name, times: repeats }, guardPlace());
       if (repeats > REPEATS_BEFORE_STOP) {
         reportActivity(`  stopped the agent's turn: it made the same ${tool.name} call ${repeats} times with nothing changed`);
         stopTurn(session(), `the same ${tool.name} call ${repeats} times with nothing changed`);

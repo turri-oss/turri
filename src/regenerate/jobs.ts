@@ -3,7 +3,8 @@ import { availableParallelism } from "node:os";
 import { withPulse } from "./shell.ts";
 import { describeEnvironmentError, EnvironmentError, missingCredentials } from "./environment-error.ts";
 import { addAgentReport, describeAgents, JobStoppedError, withActivity, type AgentReport, type AgentTally, type BuildingSpec, type SpecConflict, type TranscriptEntry, type UsageReport } from "./activity.ts";
-import { startJobLog, type JobLog } from "./job-log.ts";
+import { projectOfLanes, startJobLog, type JobLog } from "./job-log.ts";
+import { firstLine, healing, record, type LedgerPlace } from "./ledger.ts";
 import { chosenStack, withStack } from "../config.ts";
 
 /**
@@ -88,6 +89,11 @@ export interface Job {
   announce?: string;
   error?: string;
   details?: unknown;
+  /**
+   * A pulse of an earlier session, as the ledger recorded it - not this session's registry's: shown, never run, halted or
+   * waited for. Its run, how and when that run was started, and what the ledger says of it, a line each.
+   */
+  earlier?: { run: string; runMode?: string; lines: string[] };
 }
 
 export interface JobOutcome {
@@ -253,6 +259,23 @@ export function createJobRegistry(options?: {
       };
       jobs.set(job.id, job);
       let transcriptChars = 0;
+      // Where what it does is recorded: its project, from the modules it writes.
+      const project = projectOfLanes(claimed);
+      const place: LedgerPlace = { job: id, ...(project !== undefined ? { project } : {}), ...(input.module !== undefined ? { module: input.module } : {}) };
+      record(
+        {
+          kind: "job.queued",
+          jobKind: input.kind,
+          summary: firstLine(input.summary, 300),
+          ...(input.pulse !== undefined ? { pulse: input.pulse } : {}),
+          ...(input.title !== undefined ? { title: input.title } : {}),
+          ...(input.model !== undefined ? { model: input.model } : {}),
+          ...(stack !== undefined ? { stack } : {}),
+          waitingOn: blockers,
+          ...(input.follows !== undefined ? { follows: input.follows } : {}),
+        },
+        place,
+      );
 
       const changed = () => {
         // Like onFinish: a display that throws must not take the job down.
@@ -271,6 +294,8 @@ export function createJobRegistry(options?: {
       const sink = {
         signal: controller.signal,
         job: { id, kind: input.kind, summary: input.summary },
+        ...(project !== undefined ? { project } : {}),
+        ...(input.module !== undefined ? { module: input.module } : {}),
         specConflict(conflict: SpecConflict) {
           job.specConflict = conflict;
           this.transcript({ kind: "stage", text: `the spec contradicts itself: functionalities ${conflict.specs.map((spec) => `${spec.module} ${spec.frid}`).join(" and ")} cannot both hold` });
@@ -278,6 +303,7 @@ export function createJobRegistry(options?: {
         },
         stage(label: string) {
           job.stage = label;
+          record({ kind: "job.stage", label: firstLine(label, 300) }, place);
           this.transcript({ kind: "stage", text: label });
           changed();
         },
@@ -380,22 +406,24 @@ export function createJobRegistry(options?: {
           // and the person is told. What the harness found itself is worked out at once; what an agent said goes as it is.
           if (error instanceof EnvironmentError) {
             job.failedForGood = true;
+            record({ kind: "environment.error", missing: firstLine(error.missing, 300), source: error.source, sandbox: error.sandbox !== undefined }, place);
             if (error.source === "harness" && options?.diagnose !== undefined) {
               sink.stage("the environment lacks something - working out what to do about it");
-              job.diagnosis = await withActivity(sink, () => options.diagnose!(job, [error.message, describeEnvironmentError(error, input.rerun)], log?.file)).catch(() => undefined);
+              job.diagnosis = await withActivity(sink, () => healing("diagnosis", () => options.diagnose!(job, [error.message, describeEnvironmentError(error, input.rerun)], log?.file), (found) => found));
             }
             job.environment = describeEnvironmentError(error, input.rerun);
             throw new Error([job.environment, ...(job.diagnosis !== undefined ? ["", job.diagnosis] : [])].join("\n"));
           }
           failures.push(error !== undefined ? (error instanceof Error ? error.message : String(error)) : outcome!.report);
           if (attempt < retries) {
+            record({ kind: "job.retried", attempt: attempt + 1, of: retries, failure: firstLine(failures.at(-1)!, 300) }, place);
             sink.stage(`the pulse failed - trying it once more (${attempt + 1} of ${retries})`);
             continue;
           }
           job.failedForGood = true;
           if (options?.diagnose !== undefined) {
             sink.stage("the pulse failed again - working out why, and what has to be done");
-            job.diagnosis = await withActivity(sink, () => options.diagnose!(job, failures, log?.file)).catch(() => undefined);
+            job.diagnosis = await withActivity(sink, () => healing("diagnosis", () => options.diagnose!(job, failures, log?.file), (found) => found));
           }
           throw new Error(
             [
@@ -446,6 +474,7 @@ export function createJobRegistry(options?: {
           }
           log = startJobLog(job, claimed);
           if (log !== undefined) job.logFile = log.file;
+          record({ kind: "job.started", waitedMs: job.startedAt - job.queuedAt, ...(log !== undefined ? { logFile: log.file } : {}) }, place);
           // What the job's agents start runs until it ends, and no longer (withPulse) - with the stack it was queued
           // with, whatever is chosen while it waits or runs.
           return withStack(stack, () => (guarded ? runGuarded() : runOnce()));
@@ -473,6 +502,23 @@ export function createJobRegistry(options?: {
             giveSlot();
           }
           finished.finishedAt = Date.now();
+          const outcome = finished.details as { landed?: boolean; passed?: boolean } | undefined;
+          const stopReason = stopReasons.get(id);
+          record(
+            {
+              kind: "job.finished",
+              status: finished.status,
+              ...(typeof outcome?.landed === "boolean" ? { landed: outcome.landed } : {}),
+              ...(typeof outcome?.passed === "boolean" ? { passed: outcome.passed } : {}),
+              ms: finished.finishedAt - finished.startedAt,
+              usage: finished.usage,
+              ...(finished.failedForGood === true ? { failedForGood: true } : {}),
+              ...(finished.status === "stopped" ? { stoppedBy: stopReason !== undefined ? ("turri" as const) : ("person" as const) } : {}),
+              ...(finished.error !== undefined ? { error: firstLine(finished.error, 300) } : {}),
+              ...(finished.logFile !== undefined ? { logFile: finished.logFile } : {}),
+            },
+            place,
+          );
           log?.end(finished.status === "succeeded" ? "finished" : finished.status === "stopped" ? "stopped" : "finished - failed", finished.announce ?? finished.report ?? finished.error, describeAgents(finished.agents));
           // A failing listener must not take the job down with it; the result is
           // already recorded and can still be collected by asking.

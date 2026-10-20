@@ -47,6 +47,7 @@ Each change says when it takes effect. None needs turri started again - what tur
 | the next test run - the running pulse's too | the testing scripts, `testing-scripts-run-on` |
 | the next pulse that lands - the running one too | `release-after-pulse` |
 | the next regeneration that names no `.plain` file | `module` |
+| the next time turri starts here | `ledger-keep` |
 
 A coding model chosen this session - `--coding-model`, or `engine` - gives way to one set here: the last word wins. It says, too, what wins over the change: `models.chat` over `harness-model` (and so on), and a stack's `config.turri.<stack>.yaml`, which is not changed here, while that stack is chosen. In a project still read from `config.yaml`, the first change copies it to `config.turri.yaml` first - see [the old config.yaml](#the-old-configyaml).
 
@@ -91,6 +92,7 @@ models:                              # each agent role's model, thinking and tur
 | `conformance-tests-script` | the conformance testing script, by path from the project root | looked for - see below |
 | `prepare-environment-script` | optional: run as `<script> <build>` before every run of the conformance testing script, which runs only once it passes - see [the testing scripts](regenerating.md#the-testing-scripts). turri never writes one | the one `prepare_environment*.sh` at the root or in `test_scripts/`, else none |
 | `compact-at` | how many tokens of work - past its instructions - an agent kept through a job holds before the harness compacts it between turns; at least 1000; the project's alone | 100,000 - see [agent sessions](regenerating.md#agent-sessions) |
+| `ledger-keep` | how many megabytes of the ledger - what turri did, as facts, in `.turri/ledger` - the project keeps: past it, the oldest runs' are pruned when a run first writes; `0` keeps none, and writes none; the project's alone. See [the ledger](using.md#the-ledger) | 100 |
 | `max-specs-per-pulse` | the most functional specs the planner groups into one pulse - what builds one feature goes together, up to this many; a stack's file wins | 3 |
 | `max-lines-per-pulse` | the most lines of spec in one pulse - its functional specs with the definitions they bring; a group past it is split again, a functional spec a pulse; a stack's file wins | 120 |
 | `parallel-jobs` | how many jobs the chat runs at once - modules that share nothing build side by side up to it; read when the chat starts, from the folder it starts in | half this machine's cores, between one and four - see [how many jobs at once](#how-many-jobs-at-once) |
@@ -229,7 +231,7 @@ How a stack's config is made:
 - **Laid over `config.turri.yaml`, key by key.** What the stack's file gives wins; what it leaves out is the project's. A model it names takes what it leaves out from the project's same model - above, with the stack frontend chosen, everything renders on the project's coding model, thinking `high`.
 - **Pinned to a module when it is asked for.** A module is built with the stack it was asked for with, from its first pulse to its last: the pulses planned after it, its test runs, the scripts found, its plans and its conformance tests, whatever stack is chosen meanwhile. A pulse waiting for a free slot keeps the stack it was queued with. A change to its spec keeps its stack - unless it was built with none and has a stack of its own now; asked for again, its stack is worked out again. What `regenerate` says back names each module's stack, and so does a pulse's report.
 - **Refused with none, when that cannot build.** In a project of stacks, a module asked for with no stack - none named, none named after it, none chosen - is refused before anything is planned when `config.turri.yaml` alone names no unit testing script: every pulse would stop for want of one. The refusal names the stacks and the script each names. A spec change `write_spec_diff` writes is never refused: it is written, and said not to be built yet - passed the stack, everything written is built. `stack: none` builds with `config.turri.yaml` alone all the same.
-- **The project's alone.** `module:`, `harness-model:`, `parallel-jobs:`, `rules-off:` and `compact-at:` are read only from `config.turri.yaml` - there is one conversation, one module built when none is named, one machine. `agent-env:` and `toolchains:` in a stack's file add to the project's.
+- **The project's alone.** `module:`, `harness-model:`, `parallel-jobs:`, `rules-off:`, `compact-at:` and `ledger-keep:` are read only from `config.turri.yaml` - there is one conversation, one module built when none is named, one machine. `agent-env:` and `toolchains:` in a stack's file add to the project's.
 
 The chat is told each stack's config and the one chosen. The skills that write testing scripts put each stack's in its own file once a project has two stacks, each stack named after the module it builds.
 

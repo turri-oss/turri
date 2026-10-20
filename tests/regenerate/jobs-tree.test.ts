@@ -29,6 +29,24 @@ const diff = (line: string) => `--- a/app.plain\n+++ b/app.plain\n@@ -1 +1,2 @@\
 const rowsOf = (jobs: Job[], state = createJobsTreeState()) => jobsTreeRows(jobs, state).map((row) => (row.kind === "section" ? `[${row.section} ${row.count}]` : row.kind === "file" ? `${row.job.id}/${row.file}` : row.job.id));
 
 describe("the jobs tree", () => {
+  it("lists earlier sessions' pulses in a section of their own, closed - opened, what the ledger says of each", () => {
+    const earlier = job("e1", "failed", { module: "backend", pulse: 4, finishedAt: 5, earlier: { run: "r1", lines: ["run r1 (chat, 2026-10-19 22:00)", "the debugger FAILED: No API key"] } });
+    const jobs = [job("b", "running"), earlier];
+    expect(rowsOf(jobs)).toEqual(["[running 1]", "b", "[queued 0]", "[finished 0]", "[earlier 1]"]);
+    const state = createJobsTreeState();
+    state.earlierMore = 2;
+    expect(selectJob(jobs, state, "e1")).toBe(true);
+    const text = jobsTreeLines(jobs, state, 120, PLAIN).lines.join("\n");
+    expect(text).toContain("earlier sessions (1)");
+    expect(text).toContain("backend · regenerate pulse 4");
+    expect(text).toContain("the debugger FAILED: No API key");
+    expect(text).toContain("2 earlier runs in the ledger - turri ledger lists them");
+  });
+
+  it("leaves earlier sessions out when the ledger has none", () => {
+    expect(rowsOf([job("b", "running")])).toEqual(["[running 1]", "b", "[queued 0]", "[finished 0]"]);
+  });
+
   it("shows how long a running or finished pulse took, and no time for a queued one - it has not started", () => {
     const jobs = [job("b", "running", { module: "app", startedAt: Date.now() - 42_000 }), job("c", "queued", { module: "app" }), job("d", "succeeded", { module: "app", startedAt: 0, finishedAt: 90_000 })];
     const state = createJobsTreeState();

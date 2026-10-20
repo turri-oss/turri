@@ -3,6 +3,7 @@ import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent
 import { Type } from "typebox";
 import { ask, createExecutor } from "../pi.ts";
 import { reportActivity } from "./activity.ts";
+import { record } from "./ledger.ts";
 import { diffFiles, digestFiles } from "./codebase.ts";
 import { confinedTools } from "./confine.ts";
 import { REVIEWER_CALLS, reviewKind } from "./conformance-agents.ts";
@@ -405,6 +406,7 @@ async function reviewLoop(
     letGo = [];
     options.stage(`reviewing the code and its unit tests (review ${reviews + 1}): does the code do what the spec says, and does each test fail when that breaks`);
     const review = await reviewer.review(request);
+    record({ kind: "review.verdict", reviewer: "unit", review: reviews + 1, pass: review.pass, problems: review.pass ? 0 : review.problems.length });
     if (review.pass) {
       options.stage("the review has nothing left to improve in the code or its unit tests");
       return waived.length > 0 ? { passed: true, waived, reviews: reviews + 1 } : { passed: true, reviews: reviews + 1 };
@@ -433,6 +435,7 @@ async function reviewLoop(
       });
       // No ruling: the review stands, as it did before there was an arbiter.
       if (ruling !== undefined) {
+        record({ kind: "arbiter.ruling", upheld: ruling.upheld.length, dismissed: ruling.dismissed.length });
         waived.push(...ruling.dismissed.map((entry) => entry.problem));
         if (ruling.dismissed.length > 0) recordNote(options.buildDir, "pitfalls", dismissedNote(ruling, "unit test"), `${options.label} unit tests`);
         if (ruling.upheld.length === 0) {

@@ -55,7 +55,7 @@ describe("/turri-config's settings", () => {
         "unittests-script": "unittestsScript", "conformance-tests-script": "conformanceTestsScript", "prepare-environment-script": "prepareEnvironmentScript",
         "testing-scripts-run-on": "testingScriptsRunOn", "parallel-jobs": "parallelJobs", "max-specs-per-pulse": "maxSpecsPerPulse",
         "max-lines-per-pulse": "maxLinesPerPulse", "turn-limit": "turnLimit", "compact-at": "compactAt", "rules-off": "rulesOff",
-        "agent-env": "agentEnv", toolchains: "toolchains",
+        "agent-env": "agentEnv", toolchains: "toolchains", "ledger-keep": "ledgerKeep",
       }).find(([written]) => written === top)?.[1];
       expect(name, setting.key).toBeDefined();
       expect((config as Record<string, unknown>)[name!], setting.key).toBeDefined();

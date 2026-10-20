@@ -47,6 +47,8 @@ import { describeDiagnosis, diagnoseFailure } from "./regenerate/diagnose.ts";
 import { HISTORY_DIR, historyLog, historyShow } from "./regenerate/lineage.ts";
 import { defaultBuildDir } from "./regenerate/paths.ts";
 import { describeTurnIncident, describeUsage, onModelEvent, type SpecConflict } from "./regenerate/activity.ts";
+import { ledgerWanted, startLedger } from "./regenerate/ledger.ts";
+import { describePastPulse, describeRuns, earlierPulses, ledgerProjects } from "./regenerate/ledger-view.ts";
 import { describeSpecConflict } from "./regenerate/stop-report.ts";
 import { inheritProviders, inheritThinkingLevel } from "./pi.ts";
 import { beginCapture, captureConsole, describeCaptured, dropNoise } from "./quiet.ts";
@@ -461,6 +463,23 @@ function turriExtension(pi: ExtensionAPI, host: TurriHost) {
       const line = describeTurnIncident(event);
       if (line !== undefined) ctx.ui.notify(event.job !== undefined ? `${event.job}: ${line}` : line, "warning");
     });
+  });
+
+  // What this session does, as facts, in the project's .turri/ledger - a pulse's own in its project. Said once, in the
+  // chat, when it cannot be written.
+  const ledgerTrouble: string[] = [];
+  let tellLedgerTrouble: ((message: string) => void) | undefined;
+  if (ledgerWanted()) {
+    startLedger({
+      mode: Object.keys(host).length > 0 ? "host" : "chat",
+      project: cwd,
+      warn: (message) => (tellLedgerTrouble !== undefined ? tellLedgerTrouble(message) : ledgerTrouble.push(message)),
+    });
+  }
+  pi.on("session_start", (_event, ctx) => {
+    if (!ctx.hasUI) return;
+    tellLedgerTrouble = (message) => ctx.ui.notify(message, "warning");
+    for (const message of ledgerTrouble.splice(0)) tellLedgerTrouble(message);
   });
 
   // What a turri that was killed left running - its commands' process groups - stopped as this one starts.
@@ -1653,6 +1672,11 @@ const panelOpeners = new WeakMap<JobRegistry, (ctx: ExtensionContext) => void>()
 /** By registry: the last pulse that failed, stopped or did not pass, not yet looked at - ctrl+h opens on it. */
 const needsLooking = new WeakMap<JobRegistry, string>();
 
+/** What heads a pulse told from the ledger: it is not this session's, and the facts are all there is of it. */
+const pastPulseNote =
+  "A pulse of an earlier session, as the ledger recorded it - facts, not its transcript. Its whole log is the file it names, " +
+  "for the read tool.";
+
 function registerJobTools(pi: ExtensionAPI, jobs: JobRegistry, cwd: string) {
   pi.registerTool({
     name: "diagnose",
@@ -1660,13 +1684,17 @@ function registerJobTools(pi: ExtensionAPI, jobs: JobRegistry, cwd: string) {
     description:
       "Why a pulse did not land, from its whole transcript: how it ended and its diagnosis, the stages that went wrong, the " +
       "last failing test run with its output, the last review that sent the work back, and the tool calls that failed - " +
-      "and where the whole log is.",
+      "and where the whole log is. A pulse of an earlier session is told from the ledger - what it recorded of it, as facts.",
     promptSnippet: "diagnose: why a pulse did not land, from its transcript",
     promptGuidelines: ["When a pulse failed or did not land, call diagnose before you explain it or change the spec: go by what happened, not by the report alone."],
     parameters: Type.Object({ job_id: Type.String({ description: "The pulse's id" }) }),
     async execute(_id, params) {
       const job = jobs.get(params.job_id);
-      if (job === undefined) return { content: [{ type: "text" as const, text: `No pulse ${params.job_id} has run in this session.` }], details: { status: "unknown" } };
+      if (job === undefined) {
+        const past = describePastPulse(ledgerProjects(cwd), params.job_id);
+        if (past !== undefined) return { content: [{ type: "text" as const, text: `${pastPulseNote}\n\n${past}` }], details: { status: "earlier" } };
+        return { content: [{ type: "text" as const, text: `No pulse ${params.job_id} has run in this session, and the ledger has none by that id.` }], details: { status: "unknown" } };
+      }
       return { content: [{ type: "text" as const, text: whyFailed(job) }], details: { status: job.status as string } };
     },
   });
@@ -1676,7 +1704,8 @@ function registerJobTools(pi: ExtensionAPI, jobs: JobRegistry, cwd: string) {
     label: "Pulses",
     description:
       "What is regenerating: with no pulse, every pulse of this session - running, planned and finished - and what deploy started; " +
-      "with a pulse's id, that pulse - whether it is still running, its latest output, and its report once it has finished.",
+      "with a pulse's id, that pulse - whether it is still running, its latest output, and its report once it has finished. " +
+      "A pulse of an earlier session is told from the ledger.",
     promptSnippet: "pulses: every pulse, or one - what is regenerating and how it is going",
     parameters: Type.Object({
       job_id: Type.Optional(Type.String({ description: "The id returned when the pulse started. Omitted: every pulse" })),
@@ -1686,7 +1715,7 @@ function registerJobTools(pi: ExtensionAPI, jobs: JobRegistry, cwd: string) {
     }),
     async execute(_id, params) {
       if (params.job_id === undefined) {
-        return { content: [{ type: "text" as const, text: listJobs(jobs) }], details: { status: "all" } };
+        return { content: [{ type: "text" as const, text: listJobs(jobs, cwd) }], details: { status: "all" } };
       }
       const existing = jobs.get(params.job_id);
       const planned = shownJobs(jobs).find((job) => job.id === params.job_id && jobs.get(job.id) === undefined);
@@ -1697,6 +1726,8 @@ function registerJobTools(pi: ExtensionAPI, jobs: JobRegistry, cwd: string) {
         };
       }
       if (existing === undefined) {
+        const past = describePastPulse(ledgerProjects(cwd), params.job_id);
+        if (past !== undefined) return { content: [{ type: "text" as const, text: `${pastPulseNote}\n\n${past}` }], details: { status: "earlier" } };
         const known = shownJobs(jobs).map((job) => job.id);
         return {
           content: [
@@ -1808,6 +1839,19 @@ function registerJobTools(pi: ExtensionAPI, jobs: JobRegistry, cwd: string) {
   const panelBeside = (): number => (panelDocked && panelTerminal !== undefined ? dockedWidth(paddedColumns(panelTerminal.columns)) : 0);
   // What is open in the pulse list and the map, and where their cursors are: the conversation's, as left each time it opens.
   const jobsTree = createJobsTreeState();
+  // Earlier sessions' pulses, from the ledger: read as the panel first shows them - they do not change while this one runs.
+  let earlier: Job[] | undefined;
+  const earlierJobs = (): Job[] => {
+    if (earlier !== undefined) return earlier;
+    try {
+      const found = earlierPulses(ledgerProjects(cwd), new Set(jobs.list().map((job) => job.id)));
+      earlier = found.jobs;
+      jobsTree.earlierMore = found.more;
+    } catch {
+      earlier = [];
+    }
+    return earlier;
+  };
   const mapState = createSpecMapState();
   // The map from the files - the .plain files asked for, else the project's - with the work loop's plan laid over them.
   const specMap = createSpecMapSource({
@@ -1900,6 +1944,7 @@ function registerJobTools(pi: ExtensionAPI, jobs: JobRegistry, cwd: string) {
         specMap.refresh();
         const view = createSidePanel({
           jobs: () => shownJobs(jobs),
+          earlier: earlierJobs,
           tree: jobsTree,
           map: () => specMap.read(),
           mapState,
@@ -2165,12 +2210,25 @@ function shownJobs(jobs: JobRegistry): Job[] {
   return [...(workLoops.get(jobs)?.loop.planned() ?? []), ...jobs.list()];
 }
 
-function listJobs(jobs: JobRegistry): string {
+function listJobs(jobs: JobRegistry, cwd: string): string {
   const all = [...shownJobs(jobs)].reverse().filter((job) => job.replacedBy === undefined);
   const deployed = runningDeployed().map((item) => `deploy ${item.name}  running  ${item.moduleName}: ${item.url ?? item.command}  (pid ${item.pid}, output in ${relative(process.cwd(), item.log) || item.log})`);
   const listed = deployed.length > 0 ? `\n\nActivated from dist - /halt activated <name> halts one:\n${deployed.join("\n")}` : "";
-  if (all.length === 0) return `No pulses have been started.${listed}`;
-  return `${jobLines(all)}${listed}`;
+  const before = earlierRuns(jobs, cwd);
+  if (all.length === 0) return `No pulses have been started in this session.${listed}${before}`;
+  return `${jobLines(all)}${listed}${before}`;
+}
+
+/** Earlier sessions' last runs and their pulses, from the ledger - nothing when it has none. */
+function earlierRuns(jobs: JobRegistry, cwd: string): string {
+  try {
+    const found = earlierPulses(ledgerProjects(cwd), new Set(jobs.list().map((job) => job.id)));
+    if (found.runs.length === 0) return "";
+    const more = found.more > 0 ? `\n\n${found.more} earlier run${found.more === 1 ? "" : "s"} beyond these are in the ledger.` : "";
+    return `\n\nEarlier sessions, from the ledger - pulses or diagnose with a pulse's id tells one:\n${describeRuns(found.runs)}${more}`;
+  } catch {
+    return "";
+  }
 }
 
 function jobLines(all: Job[]): string {

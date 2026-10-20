@@ -3,6 +3,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { basename, dirname, join } from "node:path";
 import { reportActivity } from "./activity.ts";
 import { historyError } from "./environment-error.ts";
+import { firstLine, record } from "./ledger.ts";
 import { projectRootOf } from "./paths.ts";
 
 /**
@@ -89,7 +90,7 @@ function ensureHistory(moduleDir: string): boolean {
  */
 export function recordHistory(dir: string, subject: string, body?: string): string | undefined {
   try {
-    return commitAll(dir, subject, body).commit;
+    return recorded(dir, subject, commitAll(dir, subject, body), false).commit;
   } catch {
     return undefined;
   }
@@ -109,8 +110,22 @@ export function landWork(dir: string, subject: string, body?: string): string | 
   } catch (error) {
     made = { failed: error instanceof Error ? error.message : String(error) };
   }
+  recorded(dir, subject, made, true);
   if (made.failed !== undefined) throw historyError(moduleDir, made.failed);
   return made.commit;
+}
+
+/** A commit made or failed, in the ledger - nothing for a step that changed nothing. */
+function recorded(dir: string, subject: string, made: { commit?: string; failed?: string }, landing: boolean): { commit?: string; failed?: string } {
+  const place = placeOf(moduleDirOf(dir));
+  if (made.failed !== undefined) record({ kind: "history.failed", subject: firstLine(subject, 200), said: firstLine(made.failed, 400), landing }, place);
+  else if (made.commit !== undefined) record({ kind: "history.committed", subject: firstLine(subject, 200), commit: made.commit }, place);
+  return made;
+}
+
+/** Where a module's history is, for the ledger: its project and its name. */
+function placeOf(moduleDir: string): { project: string; module: string } {
+  return { project: projectRootOf(moduleDir), module: basename(moduleDir) };
 }
 
 /** Commit everything the step changed in the module `dir` belongs to: the commit, nothing when nothing changed, or why git failed. */
@@ -186,6 +201,7 @@ export function resetToLastCommit(dir: string): string[] {
     if (changed.length === 0) return [];
     git(moduleDir, ["reset", "-q", "--hard", "HEAD"]);
     git(moduleDir, ["clean", "-q", "-fd"]);
+    record({ kind: "history.reset", undone: changed.length, paths: changed.slice(0, 20) }, placeOf(moduleDir));
     return changed;
   } catch {
     return [];
@@ -272,6 +288,7 @@ export function abandonWork(start: WorkStart | undefined, moduleName: string, wh
       git(moduleDir, ["reset", "-q", "--hard", commit]);
       git(moduleDir, ["clean", "-q", "-fd"]);
       cleanTestsBuild(moduleDir);
+      record({ kind: "history.rolledBack", why: firstLine(why, 300) }, placeOf(moduleDir));
       reportActivity(`${moduleName}: ${why} - ${basename(moduleDir)} is back where the work started`);
     } catch {
       // Nothing to undo with.

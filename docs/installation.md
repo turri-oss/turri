@@ -93,3 +93,4 @@ For Gemini, `GEMINI_API_KEY` is what makes pi *offer* the google provider, but w
 | --- | --- |
 | `PLAIN_TEMPLATE_DIRS` | colon-separated template directories, e.g. the standard library |
 | `TURRI_COMMAND_TIMEOUT` | seconds a command may run before it is stopped - an agent's own, its tests (default `120`) |
+| `TURRI_LEDGER` | `off`: write no [ledger](using.md#the-ledger) at all, whatever `ledger-keep:` says - the test suite sets it |

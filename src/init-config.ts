@@ -168,6 +168,7 @@ export const DEFAULTS = {
   compactAt: 100000,
   maxSpecsPerPulse: 3,
   maxLinesPerPulse: 120,
+  ledgerKeep: 100,
 } as const;
 
 /** How many pulses run at once without a setting: half this machine's cores, one to four - as regenerate/jobs.ts has it. */
@@ -234,6 +235,10 @@ export function quickStartConfig(vendor: Vendor = "other", bedrock?: BedrockChoi
     "",
     "# Folders of this machine an agent's commands may read beside the usual ones - a toolchain somewhere unusual: [/srv/zig].",
     "toolchains: []",
+    "",
+    "# Megabytes of the ledger - what turri did, as facts, in .turri/ledger, never committed - the project keeps; past it,",
+    "# the oldest runs' are pruned. 0 keeps none.",
+    `ledger-keep: ${DEFAULTS.ledgerKeep}`,
     "",
     "# The testing scripts, by path from the project root - written here by the skill that writes them. One not named is",
     "# looked for at the root, then in test_scripts/. Each runs the static checks of what it tests - the formatter, the",

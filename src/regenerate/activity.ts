@@ -33,6 +33,9 @@ export interface ActivitySink {
   signal?: AbortSignal;
   /** Which job this is, for what records it - a debug log's header. */
   job?: { id: string; kind: string; summary: string };
+  /** The project the job works in, and its module: where what it does is recorded (ledger.ts). */
+  project?: string;
+  module?: string;
   /** The spec was found to contradict itself - for the person to decide. */
   specConflict?(conflict: SpecConflict): void;
   /** The functional spec being built now, or nothing when none is. */
@@ -94,6 +97,17 @@ export function currentStopSignal(): AbortSignal | undefined {
 /** The job this code is running for, if it is running for one. */
 export function currentJob(): { id: string; kind: string; summary: string } | undefined {
   return store.getStore()?.job;
+}
+
+/** Where this code runs: the job it runs for, its project and its module - each when it runs for one. */
+export function currentPlace(): { job?: string; project?: string; module?: string } {
+  const sink = store.getStore();
+  if (sink === undefined) return {};
+  return {
+    ...(sink.job !== undefined ? { job: sink.job.id } : {}),
+    ...(sink.project !== undefined ? { project: sink.project } : {}),
+    ...(sink.module !== undefined ? { module: sink.module } : {}),
+  };
 }
 
 /**

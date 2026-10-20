@@ -1,6 +1,6 @@
 import { Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type TuiMouseEvent, type TuiMouseEventResult } from "@earendil-works/pi-tui";
 import type { Job } from "./jobs.ts";
-import { createJobsTreeState, jobsTreeLines, jobsTreeRows, keepCursorInView, scrollTree, treeKey, type JobsTreeState, type TreeRow } from "./jobs-tree.ts";
+import { createJobsTreeState, jobsTreeLines, jobsTreeRows, keepCursorInView, scrollTree, sectionOf, treeKey, type JobsTreeState, type TreeRow } from "./jobs-tree.ts";
 import type { MarkedPage } from "./spec-map.ts";
 import { columnHeadings, createSpecMapState, DISCUSS_KEY, legendLines, minimap, shownPage, specMapHeader, specMapLines, switchTab, tabBar, type MapRow, type SpecMapState } from "./spec-map-view.ts";
 import type { TranscriptStyle } from "./transcript-view.ts";
@@ -19,6 +19,8 @@ import type { TranscriptStyle } from "./transcript-view.ts";
 export interface SidePanelOptions {
   /** Every job, oldest first. */
   jobs: () => Job[];
+  /** Earlier sessions' pulses, from the ledger: listed under this session's, in a section of their own. */
+  earlier?: () => Job[];
   /** The regeneration's pages. Not given: the pulse list alone. */
   map?: () => MarkedPage[];
   /** Rows the panel may use. */
@@ -127,7 +129,8 @@ export function createSidePanel(options: SidePanelOptions) {
     const bodyHeight = Math.max(3, rows - top.length - 2);
     lastBodyHeight = bodyHeight;
     // The tree scrolls to keep the cursor in sight, and only that far.
-    const tree_ = jobsTreeLines(options.jobs(), tree, width, style);
+    // This session's pulses, and under them the earlier sessions' the ledger has.
+    const tree_ = jobsTreeLines([...options.jobs(), ...(options.earlier?.() ?? [])], tree, width, style);
     drawnTree = { rows: tree_.rows, rowStarts: tree_.rowStarts, lineCount: tree_.lines.length };
     keepCursorInView(tree, tree_.rowStarts, tree_.lines.length, bodyHeight);
     const visible = tree_.lines.slice(tree.top, tree.top + bodyHeight);
@@ -186,7 +189,7 @@ export function createSidePanel(options: SidePanelOptions) {
     const jobs = options.jobs();
     const job = jobs.find((entry) => entry.id === id);
     if (job === undefined) return;
-    const section = job.status === "running" ? "running" : job.status === "queued" ? "queued" : "finished";
+    const section = sectionOf(job);
     tree.open[section] = true;
     const at = jobsTreeRows(jobs, tree).findIndex((entry) => entry.kind === "job" && entry.job.id === id);
     if (at !== -1) tree.cursor = at;

@@ -4,6 +4,7 @@ import { accessSync, constants, copyFileSync, existsSync, mkdirSync, readdirSync
 import { basename, delimiter, dirname, join, resolve, sep } from "node:path";
 import { CONFIG_FILE, CONFIG_KEYS, projectConfigFile, readProjectConfig, stackConfigFile, stackConfigFileIn, stackOf, stacksOf } from "../config.ts";
 import { reportActivity, reportLogNote, reportNote } from "./activity.ts";
+import { record, signatureHash } from "./ledger.ts";
 import { ensureInModulesScratch, modulesScratchDir } from "./paths.ts";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -447,7 +448,7 @@ async function runScript(cwd: string, script: string, args: string[], logDir: st
   const noted = withScriptLineNote(text, script);
   // Its failures, counts and end are what the agent is shown; the whole is kept, a read_output away.
   const log = keepTestOutput(logDir, basename(script), noted);
-  return {
+  const run: ScriptRun = {
     command: shown(script),
     exitCode: timedOut === true ? 124 : exitCode,
     output: shownTestOutput(noted, log),
@@ -456,6 +457,16 @@ async function runScript(cwd: string, script: string, args: string[], logDir: st
     elapsedMs: Date.now() - started,
     ...(log !== undefined ? { log } : {}),
   };
+  record({
+    kind: "script.run",
+    script: basename(script),
+    exit: run.exitCode,
+    ms: run.elapsedMs!,
+    timedOut: run.timedOut === true,
+    inPlace: options.named === undefined,
+    ...(run.exitCode !== 0 ? { signature: signatureHash(failureSignature(run)) } : {}),
+  });
+  return run;
 }
 
 /** What bash says when a line of the script itself cannot run: a command or file that is not there, or not runnable. */

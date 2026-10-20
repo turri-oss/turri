@@ -16,6 +16,7 @@
 | `highlightLines`, `roleOf` | a spec's lines coloured by turri's own \*\*\*plain grammar. |
 | `functionalityCompletion`, `createWorkLoop`, `createJobRegistry`, `promptOf`, `describeModules` | how far each functional spec is built, and - on a loop of the host's own with `dryRun` - the work a spec change would plan, as `turri glimpse` does. |
 | `onModelEvent`, `describeTurnIncident` | a provider failing and waited out, a turn turri ended itself. |
+| `onLedgerEvent`, `readLedger`, `ledgerDir`, `runViews`, `pulseView`, `describePulseView`, `describeRuns`, `ledgerProjects`, `earlierPulses`, `asJob` | what turri did, as facts - the [ledger](using.md#the-ledger): each event heard as it is recorded, and every run and pulse read back, earlier sessions' too - see [the ledger in a host](#the-ledger-in-a-host). |
 | `sweepOrphanedGroups` | stop what a turri killed outright left running, before anything starts. |
 
 It is turri's own code, as the terminal runs it: a 0.x release may change any of it.
@@ -63,6 +64,33 @@ the chat, and the toolbar's buttons send them too.
 - Your questions appear as cards above the message box: the person picks an option or types an answer there.
 - The Run button releases what is built and opens it.`;
 ```
+
+## The ledger in a host
+
+The conversation's extension starts the ledger itself, in the folder the host made the session in - so a host that runs it there, the project's, needs nothing to have one: its pulses are recorded as `host` runs, and the conversation's `pulses` and `diagnose` already tell the model of earlier sessions' pulses. What the host can do with it is show it.
+
+```js
+import { onLedgerEvent, pulseView, readLedger, runViews } from "@turri-dev/cli/host";
+
+// Each event as it is recorded - written or not, so a project with ledger-keep: 0 is heard too.
+const stop = onLedgerEvent((entry, project) => {
+  if (entry.kind === "healer.failed") notify(`the ${entry.healer} failed: ${entry.error}`);
+  if (entry.kind === "provider.error" && !entry.transient) notify(`the model provider: ${entry.error}`);
+});
+
+// The project's runs, the most recent first, each with its pulses - how each ended, how long, what it cost.
+const runs = runViews(projectDir);
+
+// One pulse, from this session or an earlier one: its rounds, test runs, verdicts, healers, refusals, history.
+const view = pulseView("646d", readLedger(projectDir, { job: "646d" }));
+
+// Earlier sessions' pulses as jobs, to list beside this session's - none this session's registry knows.
+const { jobs, more } = earlierPulses(ledgerProjects(projectDir), new Set(registry.list().map((job) => job.id)));
+```
+
+- **Live.** `onLedgerEvent(listener)` is told every event as turri records it, with the project it is about, until what it returns is called; a listener that throws misses that event and nothing else. It is the pulse's own detail - its stages, test runs, verdicts, refusals - where `onJobChange` is the job as a whole.
+- **Read back.** `readLedger(project, { job, run, kinds, since })` is the project's events, oldest first, the gzipped runs too; `runViews` and `pulseView` gather them into runs and pulses, and `describePulseView` and `describeRuns` say them in lines, as `turri ledger` prints them. `ledgerProjects(dir)` finds the ledgers of a folder and the projects under it. `earlierPulses(projects, known, runs = 3)` gives the last runs before this one as `Job`s - the shape a host already draws for this session's - each marked `earlier: { run, runMode, lines }`, `lines` what the ledger says of it; `more` is how many runs are beyond them. They are read only: never started, halted or waited for. turri's own side panel lists them so, as **earlier sessions**.
+- **What it is for.** Looking up, never deciding: what is built and what is left come from the records and the work loop, as before. Its events and their fields are `LedgerEvent`'s - a kind is added, never changed, and every event carries `v: 1`.
 
 ## Running it
 

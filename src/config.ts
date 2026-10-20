@@ -478,6 +478,11 @@ export interface ProjectConfig {
    * toolchain installed somewhere unusual. A module's own are added to the project's.
    */
   toolchains?: string[];
+  /**
+   * Megabytes of the ledger - what turri did, as facts, in .turri/ledger - the project keeps: past it, the oldest runs'
+   * are pruned when a run first writes. 0 keeps none, and writes none. The project's alone. Unset: 100.
+   */
+  ledgerKeep?: number;
   /** Each agent role's own model, thinking and turn limit; `default` for every role not named. */
   models?: Partial<Record<AgentRole | "default", RoleChoice>>;
   /** Seconds each turn of an agent a render starts has, for every role without its own. Unset: 120. 0: none. */
@@ -507,6 +512,7 @@ export const CONFIG_KEYS = {
   maxLinesPerPulse: "max-lines-per-pulse",
   agentEnv: "agent-env",
   toolchains: "toolchains",
+  ledgerKeep: "ledger-keep",
   models: "models",
   turnLimit: "turn-limit",
 } as const satisfies Record<keyof ProjectConfig, string>;
@@ -564,7 +570,7 @@ function readStackedConfig(root: string, stack?: string): ProjectConfig {
   // The project's alone: one conversation, one module built when none is named.
   const merged: ProjectConfig = { ...project };
   for (const key of Object.keys(CONFIG_KEYS) as Array<keyof ProjectConfig>) {
-    if (key === "module" || key === "harnessModel" || key === "parallelJobs" || key === "rulesOff" || key === "compactAt" || key === "toolchains" || key === "agentEnv" || own[key] === undefined) continue;
+    if (key === "module" || key === "harnessModel" || key === "parallelJobs" || key === "rulesOff" || key === "compactAt" || key === "ledgerKeep" || key === "toolchains" || key === "agentEnv" || own[key] === undefined) continue;
     (merged as Record<string, unknown>)[key] = own[key];
   }
   merged.agentEnv = joinAgentEnv(project.agentEnv, own.agentEnv);
@@ -690,6 +696,10 @@ function readConfigFile(path: string): ProjectConfig {
         : undefined,
     maxSpecsPerPulse: positiveInteger(raw[CONFIG_KEYS.maxSpecsPerPulse]),
     maxLinesPerPulse: positiveInteger(raw[CONFIG_KEYS.maxLinesPerPulse]),
+    ledgerKeep:
+      typeof raw[CONFIG_KEYS.ledgerKeep] === "number" && Number.isInteger(raw[CONFIG_KEYS.ledgerKeep]) && (raw[CONFIG_KEYS.ledgerKeep] as number) >= 0
+        ? (raw[CONFIG_KEYS.ledgerKeep] as number)
+        : undefined,
     models: modelsSetting(raw[CONFIG_KEYS.models]),
     turnLimit: turnLimitSetting(raw[CONFIG_KEYS.turnLimit]),
   };

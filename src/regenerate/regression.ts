@@ -7,6 +7,7 @@ import { confinedTools } from "./confine.ts";
 import { projectRootOf } from "./paths.ts";
 import { buildRegressionFixPrompt, sectionModules } from "./prompt.ts";
 import { abandonWork, landWork, markWork, type WorkStart } from "./lineage.ts";
+import { record } from "./ledger.ts";
 import { missingToolchainError } from "./environment-error.ts";
 import { workspaceBlock } from "./workspace.ts";
 import { CODER_COMPACTION } from "./compaction.ts";
@@ -236,6 +237,7 @@ export async function ensureRegressionPasses(input: {
     if (round === maxRounds) break;
 
     input.onEvent?.({ type: "repair", frids: input.frids });
+    record({ kind: "gate.round", gate: "regression", round: round + 1, of: maxRounds });
     reportStage(`${unitOf(input.moduleName)}: an earlier functionality broke - repairing (round ${round + 1} of ${maxRounds})`);
     repairs.push(
       await repairRegression({

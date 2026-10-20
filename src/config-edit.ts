@@ -11,7 +11,7 @@ import { adoptLegacyConfig, AGENT_ROLES, CONFIG_FILE, chosenStack, projectConfig
  */
 
 /** When a change takes effect. Nothing turri reads needs a restart: what is fixed at its start is changed live. */
-export type Effect = "now" | "next-message" | "next-pulse" | "next-plan" | "next-test-run" | "next-landing" | "next-regenerate";
+export type Effect = "now" | "next-message" | "next-pulse" | "next-plan" | "next-test-run" | "next-landing" | "next-regenerate" | "next-start";
 
 export type SettingKind = "boolean" | "choice" | "number" | "model" | "list" | "path" | "budget";
 
@@ -41,6 +41,7 @@ export const EFFECT_TEXT: Record<Effect, string> = {
   "next-test-run": "in effect from the next test run - the running pulse's too",
   "next-landing": "in effect from the next pulse that lands - the running one too",
   "next-regenerate": "in effect for the next regeneration that names no .plain file",
+  "next-start": "in effect the next time turri starts here",
 };
 
 const SECONDS = ["0", "60", "120", "180", "300"];
@@ -108,6 +109,7 @@ export function settings(rules: string[] = []): Setting[] {
     { key: "agent-env.files", about: "dotenv files whose variables the agents' commands get", kind: "list", unset: "none", effect: "next-pulse", projectOnly: true },
     { key: "agent-env.vars", about: "variables from turri's environment the agents' commands get, by name", kind: "list", unset: "none", effect: "next-pulse", projectOnly: true },
     { key: "toolchains", about: "folders of this machine an agent's commands may read beside the usual ones", kind: "list", unset: "none", effect: "next-pulse", projectOnly: true },
+    { key: "ledger-keep", about: "megabytes of the ledger - what turri did, as facts - the project keeps; 0 keeps none", kind: "number", options: ["0", "50", "100", "500"], min: 0, unset: "100", effect: "next-start", projectOnly: true },
     ...roles,
   ];
 }

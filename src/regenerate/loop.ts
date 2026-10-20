@@ -6,6 +6,7 @@ import { ACCEPTANCE_TESTS, FUNCTIONAL_REQUIREMENTS, REQUIRED_FUNCTIONAL_SPECS, T
 import { reportActivity, reportStage } from "./activity.ts";
 import { llmChunkAgents, MAX_LINES_PER_JOB, MAX_SPECS_PER_JOB, planChunks, stepsOf, type ChunkAgents, type PlanInput } from "./chunk-plan.ts";
 import { commitNotes, landWork, recordHistory, resetToLastCommit } from "./lineage.ts";
+import { firstLine, record } from "./ledger.ts";
 import { NOTES_FILE, recordPulse, type SpecGap } from "./notes.ts";
 import { createJobRegistry, formatDuration, type Job, type JobRegistry } from "./jobs.ts";
 import { moduleLanes } from "./lanes.ts";
@@ -28,7 +29,7 @@ import {
 } from "./records.ts";
 import { describeSpecDiffConformance, renderSpecDiffConformance } from "./conform.ts";
 import { conformanceDirFor } from "./conformance.ts";
-import { modulesRoot } from "./paths.ts";
+import { modulesRoot, projectRootOf } from "./paths.ts";
 import { budgetFor, choosingWhen, configForSpec, conformanceSwitchedOn, stackForModule, stackPinned, withStack } from "../config.ts";
 import { describeSpecChange } from "./prompt.ts";
 import { resolveTemplateDirs } from "./paths.ts";
@@ -548,6 +549,11 @@ export function createWorkLoop(options: {
   let ticking: Promise<void> = Promise.resolve();
 
   const tipEntry = (state: ModuleState) => tipOf(state.chain);
+  /** Where what the loop decides for a module is recorded: its tip's project, the module and the pulse it is about. */
+  const loopPlace = (state: ModuleState, job: string) => {
+    const tip = tipEntry(state);
+    return { project: projectRootOf(tip.buildDir), module: tip.moduleName, job };
+  };
   /** `work` with the codebase's stack chosen - the one it was asked for with - when it has one pinned. */
   const inStack = <T>(state: ModuleState, work: () => T): T => (state.stack !== undefined ? withStack(state.stack.name, work) : work());
   const keyOf = (spec: SpecSnapshot) => serializeTree(codeTree(spec.tree));
@@ -1045,6 +1051,7 @@ export function createWorkLoop(options: {
           /* a spec that does not parse halts it all the same */
         }
         state.halted = { why: `${why} - nothing more is built on it until its conformance tests pass`, specKey: key, pulse: pulseOf(running), ...(settled?.status === "stopped" ? {} : causeOf(settled)) };
+        record({ kind: "loop.halted", why: firstLine(state.halted.why, 300), track: "conformance" }, loopPlace(state, running.jobId));
       }
     } else if (running !== undefined && !landed) {
       // What it wrote and never committed is gone: code, tests and record agree again.
@@ -1061,6 +1068,7 @@ export function createWorkLoop(options: {
         }
         const why = settled?.status === "stopped" ? `pulse ${running.jobId} was stopped` : `pulse ${running.jobId} ("${running.planned.title}") did not land`;
         state.halted = { why: `${why} - it runs again once the spec changes, or the module is asked for again`, specKey: key, pulse: pulseOf(running), ...(settled?.status === "stopped" ? {} : causeOf(settled)) };
+        record({ kind: "loop.halted", why: firstLine(state.halted.why, 300), track: "code" }, loopPlace(state, running.jobId));
       }
     } else {
       const own = running?.planned.track === "conformance" ? state.conformancePlan : state.plan;
@@ -1220,6 +1228,7 @@ export function createWorkLoop(options: {
         } else {
           state.running.stopping = true;
           state.why = `pulse ${state.running.jobId} was stopped: ${why}, which it was regenerating from`;
+          record({ kind: "loop.stopped", why: firstLine(why, 300) }, loopPlace(state, state.running.jobId));
           reportActivity(`  ${tip.moduleName}: ${state.why}`);
           options.registry.stop(
             state.running.jobId,

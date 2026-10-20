@@ -1,6 +1,7 @@
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { readProjectConfig, stackOf } from "../config.ts";
 import { reportNote } from "./activity.ts";
+import { record } from "./ledger.ts";
 import { agentEnvironment, DARWIN_TEMP_SUFFIX, packageCacheDir, TOOLCHAIN_VARIABLES } from "./agent-env.ts";
 import { afterCommand, auditMessage, beforeCommand } from "./audit.ts";
 import { checkCommand, machineReadable, type CheckResult, type CommandFence } from "./command-check.ts";
@@ -103,6 +104,9 @@ export function agentShell(role: ShellRole, options: { wall?: Wall; busy?: (modu
       throw error;
     }
     const result = afterCommand(before);
+    if (result.putBack.length + result.left.length + result.lost.length + result.conversation.length > 0) {
+      record({ kind: "audit.putBack", putBack: result.putBack.length, left: result.left.length, lost: result.lost.length, conversation: result.conversation.length });
+    }
     if (result.putBack.length > 0) reportNote(`  an agent's command changed ${result.putBack.join(", ")} - put back`);
     if (result.left.length > 0) reportNote(`  an agent's command changed ${result.left.join(", ")}, where another pulse is at work - left`);
     if (result.lost.length > 0) reportNote(`  an agent's command changed ${result.lost.join(", ")}, and it could not be put back`);
@@ -125,6 +129,7 @@ export function agentShell(role: ShellRole, options: { wall?: Wall; busy?: (modu
     async run(command, runOptions = {}) {
       const checked = checkCommand(command, commandFence);
       if (!checked.ok) {
+        record({ kind: "command.refused", rule: checked.rule });
         reportNote(`  refused an agent's command (${checked.rule}): ${command.length > 120 ? `${command.slice(0, 120)}...` : command}`);
         const output = `Not run: ${checked.reason}`;
         runOptions.onData?.(Buffer.from(output));

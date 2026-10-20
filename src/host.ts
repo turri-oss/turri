@@ -28,3 +28,7 @@ export { createWorkLoop, describeModules, functionalityCompletion, promptOf, typ
 export { createJobRegistry, defaultParallelJobs, type Job, type JobRegistry } from "./regenerate/jobs.ts";
 export { describeTurnIncident, onModelEvent, type TranscriptEntry } from "./regenerate/activity.ts";
 export { sweepOrphanedGroups } from "./regenerate/shell.ts";
+
+// What turri did, as facts: the ledger, heard live and read back - this session's pulses and every earlier one's.
+export { ledgerDir, onLedgerEvent, readLedger, type AgentRef, type LedgerEntry, type LedgerEvent, type LedgerKind, type LedgerQuery } from "./regenerate/ledger.ts";
+export { asJob, describePulseView, describeRuns, earlierPulses, ledgerProjects, pulseView, runViews, type PulseView, type RunView } from "./regenerate/ledger-view.ts";
