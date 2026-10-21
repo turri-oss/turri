@@ -145,7 +145,7 @@ Every skill in `genome/skills/` can be run from a conversation; most are also us
 
 | to… | skills |
 | --- | --- |
-| start a project | `brood`, `spawn`, `init-plain-project` |
+| start a project | `brood`, `spawn` |
 | make rough \*\*\*plain build | `mature` |
 | add to \*\*\*plain | `bud`, `add-functional-spec`, `add-functional-specs`, `add-concept`, `add-implementation-requirement`, `add-test-requirement`, `add-acceptance-test`, `add-resource`, `add-template` |
 | check what is written | `analyze-if-func-spec-too-complex`, `analyze-2-func-specs`, `analyze-func-specs`, `resolve-section-ownership` |
