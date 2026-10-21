@@ -16,7 +16,7 @@ my-project/
   plain_modules/       # generated - code, tests, history; never edited by hand
 ```
 
-## What a spec is made of
+## What \*\*\*plain is made of
 
 A `.plain` file is one module: optional YAML frontmatter, then up to four sections, in this order.
 

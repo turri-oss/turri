@@ -184,7 +184,7 @@ Each planned job knows its cases - which functional specs it adds, changes (thei
 
 A plan is kept until the spec, what it starts from or its steering changes. `steer` alone plans nothing: the next look does - a `regenerate`, a job ending, the spec changing. Then the work not running yet is planned again to follow it, a running job going on as it is. Where a plan did not do as asked, it says so, and what `regenerate` returns lists it under "what the plan did not do as asked": each wish an agent did not follow, with why (both tools take a `notes` for that), a grouping or placement that did not hold, with what was wrong, and a group split for its size. The conversation tells the person that, rather than guessing.
 
-### When the spec changes
+### When \*\*\*plain changes
 
 A spec change is a notice, not a diff to run: **`regenerate`**, called after the spec was edited by any means - the file tools, a skill, you in an editor - has the loop work out the work again. A job running goes on while every change it makes is still part of the work, measured from the same record; one that is making something the spec no longer wants is stopped, rolled back, and the work planned again - a fixed rule, no agent. Say a module of 50 functionalities is rendering and the spec changes while functionality 25 builds: 25 goes on if the change leaves it as it is, and the work after it is planned again from what 25 lands. A job stopped so says it was turri, not you, and what changed under it - the functional spec that reads otherwise now, or the file it links that holds something else (`whyNotWanted`).
 
