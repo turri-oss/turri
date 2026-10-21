@@ -13,9 +13,9 @@ The suite runs the projects' testing scripts on this machine, as turri does. The
 
 The `mutation` workflow (`.github/workflows/mutation.yml`) runs it on GitHub, started by hand: Actions, mutation, Run workflow. It takes the parts to run, space-separated (empty for every part), each a job of its own side by side, on four cores (`TURRI_MUTATION_CONCURRENCY`; six here). Each part's `mutation.html` and `mutation.json` are uploaded as an artifact, `mutation-<part>`, and summed up on the run's page. Stryker's incremental file is cached from run to run, so a run tests again only the mutants whose code or tests changed; tick `fresh` to test every one again.
 
-Working on turri itself, `npm link` points the global `turri` at this clone, so edits take effect immediately. `npm run chat` starts pi with the extension loaded from `src/`.
+Working on turri itself, `npm link` points the global `turri` at this clone, so edits take effect immediately. `npm run chat` starts [pi](https://pi.dev) with the extension loaded from `src/`.
 
-The package on npm is built: Node runs no `.ts` file inside a `node_modules`, so `npm run build` (`scripts/build.mjs`, over `tsconfig.build.json`) compiles `src/` into `dist/`, file for file - each file as deep as its source, so it finds `genome/`, `stdlib/` and `.pi/` the same way - with its imports' `.ts` rewritten to `.js`, and copies the other files in `src/` beside them. `npm pack` and `npm publish` run it first (`prepack`), and the package holds `dist/`, not `src/`. `bin/turri.mjs` runs `src/cli.ts` where there is one and `dist/cli.js` otherwise; `cli.ts` starts pi with the launcher and extension beside itself, whichever they are. To try the package as users get it: `npm pack`, then `npm install -g ./turri-dev-cli-<version>.tgz`.
+The package on npm is built: Node runs no `.ts` file inside a `node_modules`, so `npm run build` (`scripts/build.mjs`, over `tsconfig.build.json`) compiles `src/` into `dist/`, file for file - each file as deep as its source, so it finds `genome/`, `stdlib/` and `.pi/` the same way - with its imports' `.ts` rewritten to `.js`, and copies the other files in `src/` beside them. `npm pack` and `npm publish` run it first (`prepack`), and the package holds `dist/`, not `src/`. `bin/turri.mjs` runs `src/cli.ts` where there is one and `dist/cli.js` otherwise; `cli.ts` starts [pi](https://pi.dev) with the launcher and extension beside itself, whichever they are. To try the package as users get it: `npm pack`, then `npm install -g ./turri-dev-cli-<version>.tgz`.
 
 ## Publishing
 
@@ -33,12 +33,12 @@ The workflow signs in to npm with npm's trusted publishing (OIDC), not a token: 
 | `bin/turri.mjs` | the launcher: checks the Node version, then loads `src/cli.ts` |
 | `src/cli.ts` | the `turri` command and its subcommands |
 | `src/setup.ts`, `src/doctor-tool.ts`, `src/environment.ts`, `src/stack.ts` | `turri doctor` and the chat's `doctor` tool, and what they check - this machine, and in a project what its modules need of it |
-| `src/extension.ts` | the pi extension: every tool and command the conversation has |
+| `src/extension.ts` | the [pi](https://pi.dev) extension: every tool and command the conversation has |
 | `src/skill.ts` | parses `SKILL.md` into steps and gates |
 | `src/graph.ts` | compiles a skill into a LangGraph `StateGraph`: step -> gate -> route |
 | `src/judge.ts` | runs independent judges, applies the quorum, builds the critique |
 | `src/genome.ts` | `runSkill()` - the one entry point the CLI and the extension share |
-| `src/pi.ts` | pi session factories for executors, sub-agents and judges |
+| `src/pi.ts` | [pi](https://pi.dev) session factories for executors, sub-agents and judges |
 | `src/spec-tools.ts` | `write_spec_diff` |
 | `src/loop-tools.ts` | `regenerate`, `drift` and `halt` - one definition each, for the conversation and the skills alike |
 | `src/mature-tools.ts` | `mature`'s own two: `watch_jobs` and `spec_findings` |
@@ -54,7 +54,7 @@ The workflow signs in to npm with npm's trusted publishing (OIDC), not a token: 
 | `src/regenerate/engine.ts` | choosing and resolving render models |
 | `src/regenerate/job-panel.ts`, `src/regenerate/transcript-view.ts`, `src/regenerate/diff-view.ts` | the job panel, the side panel's colours, and a spec diff as they show it - highlighted and banded |
 | `src/regenerate/side-panel.ts`, `src/regenerate/panel-dock.ts` | the side panel, and the chat narrowed beside it when it is docked |
-| `src/screen-padding.ts` | the blank row above and below the whole screen and the two columns either side, in both of pi's ways of drawing it |
+| `src/screen-padding.ts` | the blank row above and below the whole screen and the two columns either side, in both of [pi](https://pi.dev)'s ways of drawing it |
 | `src/regenerate/spec-map.ts`, `src/regenerate/spec-map-view.ts` | regen: each item's mark, from the records, the `.plain` files and the work loop's plan (`mapPlan`), and the map drawn |
 | `src/regenerate/debug-log.ts` | each render agent's whole conversation, streamed to `.turri/debug/` - while its pulse runs, and kept in debug mode |
 | `src/regenerate/pulse-files.ts` | what a pulse writes only for a person - its logs, outputs, temporary files, its chain's installed dependencies - removed as it ends outside debug mode |
@@ -67,4 +67,4 @@ The workflow signs in to npm with npm's trusted publishing (OIDC), not a token: 
 - The executor keeps one session across steps and retries, so context builds up with attempts. Long skills want compaction or a session per step.
 - A gate's escalation lives in memory (LangGraph's `MemorySaver`): it must be answered in the same run.
 - The gate machinery has no automated coverage; see [trying the gate semantics](skills-and-gates.md#trying-the-gate-semantics).
-- Jobs live in memory: there is no resuming a job after pi exits. The work itself is on disk, so a killed job leaves a partial build rather than nothing.
+- Jobs live in memory: there is no resuming a job after [pi](https://pi.dev) exits. The work itself is on disk, so a killed job leaves a partial build rather than nothing.

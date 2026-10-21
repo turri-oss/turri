@@ -11,8 +11,8 @@ turri doctor
 Everything marked `✗` stops the run, so fix those first. Two more things matter for a long run:
 
 - **The toolchains.** The agents use this machine's: run `turri doctor` in the project, and it says which toolchain a module's implementation reqs name that this machine lacks.
-- **The models.** In a project, `turri doctor` sends each model `config.turri.yaml` names one short request, as turri's agents will - so a key the provider refuses, a model pi does not know or an account without access to it shows now, not an hour into the run. Models the run is given on the command line are given to doctor the same way - `--harness-model`, `--coding-model`, `--judge-model`, read as the config's keys - and are checked with the config's.
-- **Credentials that do not expire mid-run.** An API key in the environment (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, ...) or pi's saved login - whatever `doctor` shows as the model provider.
+- **The models.** In a project, `turri doctor` sends each model `config.turri.yaml` names one short request, as turri's agents will - so a key the provider refuses, a model [pi](https://pi.dev) does not know or an account without access to it shows now, not an hour into the run. Models the run is given on the command line are given to doctor the same way - `--harness-model`, `--coding-model`, `--judge-model`, read as the config's keys - and are checked with the config's.
+- **Credentials that do not expire mid-run.** An API key in the environment (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, ...) or [pi](https://pi.dev)'s saved login - whatever `doctor` shows as the model provider.
 
 Check the spec parses, without spending anything:
 
@@ -169,7 +169,7 @@ A module that `requires` others is built in its own codebase on top of theirs: t
 }
 ```
 
-**Usage.** Every model response an agent gets counts, in a pulse or not. `total` is `in_pulses` plus `outside_pulses`, and `in_pulses` is the pulses' own usage added up - the figures their lines in the notes and the pulse logs print - so the totals can be checked by hand against them. `llm_calls` counts model responses, a compaction's included; `agent_turns` the harness's requests to an agent, each as many responses as it takes; `model_seconds` the time from each request to its response's end, added up - several agents working at once each count theirs, so it can exceed the run's duration. Tokens and cost are as the provider reports them to pi. `by_model`, `by_role` and `by_pulse_kind` split the same calls; a role or model turri could not tell is `unknown`.
+**Usage.** Every model response an agent gets counts, in a pulse or not. `total` is `in_pulses` plus `outside_pulses`, and `in_pulses` is the pulses' own usage added up - the figures their lines in the notes and the pulse logs print - so the totals can be checked by hand against them. `llm_calls` counts model responses, a compaction's included; `agent_turns` the harness's requests to an agent, each as many responses as it takes; `model_seconds` the time from each request to its response's end, added up - several agents working at once each count theirs, so it can exceed the run's duration. Tokens and cost are as the provider reports them to [pi](https://pi.dev). `by_model`, `by_role` and `by_pulse_kind` split the same calls; a role or model turri could not tell is `unknown`.
 
 **Pulses.** `landed`: its work is committed. `rolled_back`: it ended without landing - failed, stopped, or did not pass - and everything it wrote was undone. A pulse that failed is tried once more before it counts as failed; both tries are the one pulse.
 
@@ -177,7 +177,7 @@ A module that `requires` others is built in its own codebase on top of theirs: t
 
 **Spec gaps.** A behaviour the spec leaves open that an agent met and decided on its own - reported with `report_spec_gap` (see [regenerating](regenerating.md)). In the chat they are put to you as the pulse ends; a headless run has no one to ask, so they are listed here, in the order the pulses started, and printed under the pulse that met them. `assumption` is what the agent decided meanwhile, also in the codebase's notes' assumptions while its pulse is `landed`; a pulse rolled back takes it out of the notes, but the question still stands. Settle the ones you care about in the spec and run again.
 
-**Turn incidents.** Each time the model provider failed for a moment and pi or turri waited it out before trying the request again, each time the provider sent nothing back on a request for two minutes, and each turn turri stopped itself - an agent going round in a circle, its calls failing again and again, its time up - after which the run carried on. The provider failing or stalling is printed as it happens, in orange, under the pulse; a stop is the work's normal course and is only listed. They are counted in the usage as `provider_retries`, `provider_stalls` and `turns_stopped`. Many of any point at the model, not the spec: a provider at its limits, or a model too small for the role it was given.
+**Turn incidents.** Each time the model provider failed for a moment and [pi](https://pi.dev) or turri waited it out before trying the request again, each time the provider sent nothing back on a request for two minutes, and each turn turri stopped itself - an agent going round in a circle, its calls failing again and again, its time up - after which the run carried on. The provider failing or stalling is printed as it happens, in orange, under the pulse; a stop is the work's normal course and is only listed. They are counted in the usage as `provider_retries`, `provider_stalls` and `turns_stopped`. Many of any point at the model, not the spec: a provider at its limits, or a model too small for the role it was given.
 
 **Completed functional specs** - the pass rate, the figure to compare runs by. A functional spec is completed when the code record of the codebase the run delivers - the furthest-built of the chain, the one `--build-dir` exports - as last committed, holds it as the spec has it now: the same text, every file it links holding the same, no definition it uses changed, and not marked to regenerate again. A record moves only when a pulse lands, and a pulse lands only once the code's unit tests pass (its conformance tests too, when they are on), so completed means landed and passing. Each module counts its own functional specs: a module below the tip counts from what the tip's code was built on, and a module above the delivered codebase has none completed. `conformance_tested` is those of the completed ones whose conformance tests are recorded as written for them as they are now (`plain_modules/<module>/tests/.turri.json`).
 
@@ -206,7 +206,7 @@ turri regenerate app.plain --harness-model amazon-bedrock/eu.anthropic.claude-op
   --start-over --build-dir /out/build --report /out/report.json < /dev/null
 ```
 
-- **What it needs:** Node 22.19 or newer, `bash`, `git` (each module's history, and the spec diffs the work is planned from), `/bin/sh` with `kill` and `sleep`, a writable `HOME` (pi keeps `~/.pi/agent/auth.json` there, even with no login - or set `PI_CODING_AGENT_DIR`) and `TMPDIR`, and the toolchains the project's testing scripts and implementation reqs name. `turri doctor` in the project, given the run's models, checks them all and that each model answers - at the start of the task's log, not when a pulse fails:
+- **What it needs:** Node 22.19 or newer, `bash`, `git` (each module's history, and the spec diffs the work is planned from), `/bin/sh` with `kill` and `sleep`, a writable `HOME` ([pi](https://pi.dev) keeps `~/.pi/agent/auth.json` there, even with no login - or set `PI_CODING_AGENT_DIR`) and `TMPDIR`, and the toolchains the project's testing scripts and implementation reqs name. `turri doctor` in the project, given the run's models, checks them all and that each model answers - at the start of the task's log, not when a pulse fails:
 
   ```bash
   turri doctor --harness-model amazon-bedrock/eu.anthropic.claude-opus-5-5 \
@@ -216,13 +216,13 @@ turri regenerate app.plain --harness-model amazon-bedrock/eu.anthropic.claude-op
   It exits 1 on anything marked `✗`.
 - **Without bubblewrap:** a container that cannot make user namespaces - no `--security-opt seccomp=unconfined` - has no OS sandbox. turri runs anyway, the command check and the audit holding alone under the agents' commands; `turri doctor` shows it as `!`, not `✗`. Installing the `bubblewrap` package is worth it where it can start.
 - **As another user:** run it as the user who will own `plain_modules/`. git refuses a repository another user made (`dubious ownership`), so do not let root create it first.
-- **Amazon Bedrock:** `AWS_BEARER_TOKEN_BEDROCK` (or the usual AWS credentials) and `AWS_REGION` are enough - no pi login. An `eu.` inference profile needs an EU region. A model id pi does not know stops the first pulse; `turri --list-models bedrock` lists the ones it does.
+- **Amazon Bedrock:** `AWS_BEARER_TOKEN_BEDROCK` (or the usual AWS credentials) and `AWS_REGION` are enough - no [pi](https://pi.dev) login. An `eu.` inference profile needs an EU region. A model id [pi](https://pi.dev) does not know stops the first pulse; `turri --list-models bedrock` lists the ones it does.
 - **A project with only a `config.yaml`:** it is read while there is no `config.turri*.yaml` - `unittests-script`, `conformance-tests-script` and `prepare-environment-script` included, relative to the project; the keys turri does not know are ignored. Do not write a `config.turri.yaml` beside it to turn on conformance tests or review: from then on `config.yaml` is not read. The options above do it instead.
 - **Long test suites:** a testing script run is stopped after 120 seconds; set `TURRI_COMMAND_TIMEOUT` (seconds) for more.
 
 ## Asking in words instead
 
-pi's print mode runs one request and exits, with the render tools waiting for their work rather than starting background jobs:
+[pi](https://pi.dev)'s print mode runs one request and exits, with the render tools waiting for their work rather than starting background jobs:
 
 ```bash
 nohup turri -p "Render app.plain as a whole module, with conformance tests" > render.log 2>&1 &

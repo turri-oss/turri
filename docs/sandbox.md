@@ -1,6 +1,6 @@
 # The sandbox
 
-A rendering agent is building one module. It has no business reading the `.plain` specs it was not given, the rest of the project, or anything else on the machine - and pi's `cwd` is only where relative paths start: an absolute path resolves to itself and `bash` can `cd` anywhere. So turri fences its agents: their file tools check every path, and every command they run on this machine passes a command check, runs in an environment of the module's own behind an OS sandbox where the OS has one, and is audited afterwards. The rules live in code that runs the same on every platform; the OS sandbox is an extra wall under them.
+A rendering agent is building one module. It has no business reading the `.plain` specs it was not given, the rest of the project, or anything else on the machine - and [pi](https://pi.dev)'s `cwd` is only where relative paths start: an absolute path resolves to itself and `bash` can `cd` anywhere. So turri fences its agents: their file tools check every path, and every command they run on this machine passes a command check, runs in an environment of the module's own behind an OS sandbox where the OS has one, and is audited afterwards. The rules live in code that runs the same on every platform; the OS sandbox is an extra wall under them.
 
 ## What an agent can reach
 
@@ -14,7 +14,7 @@ Each agent's file tools reach its own module and only the parts its role needs:
 | Explorers | its module's `code/` | nothing |
 | Test review | its module's `tests/` and `code/` | nothing |
 
-Nothing else exists for them: not another module, not turri's scratch area `plain_modules/.turri` (a test run's whole output reaches them through `read_output`, not by path), not the module's lineage `.plaingit`, and nothing above `plain_modules`. The specs it is building from reach it only through the prompt the harness writes. Nor does any context file: pi puts every `AGENTS.md` / `CLAUDE.md` from an agent's folder up into its system prompt, and turri turns that off for every agent it starts - so the project's own `AGENTS.md`, or yours in `~/.pi/agent`, never reaches a rendering agent, a judge or a skill's agent. Nor do pi's skills, which pi would list for an agent to load: each agent turri starts has one job, and turri runs its own gated skills itself. The conversation you talk to still loads both, as pi does - but for the skills turri has already, its own and any about [\*\*\*plain](https://plainlang.org/docs/) (see [a project's own skills](skills-and-gates.md#a-projects-own-skills)).
+Nothing else exists for them: not another module, not turri's scratch area `plain_modules/.turri` (a test run's whole output reaches them through `read_output`, not by path), not the module's lineage `.plaingit`, and nothing above `plain_modules`. The specs it is building from reach it only through the prompt the harness writes. Nor does any context file: [pi](https://pi.dev) puts every `AGENTS.md` / `CLAUDE.md` from an agent's folder up into its system prompt, and turri turns that off for every agent it starts - so the project's own `AGENTS.md`, or yours in `~/.pi/agent`, never reaches a rendering agent, a judge or a skill's agent. Nor do [pi](https://pi.dev)'s skills, which [pi](https://pi.dev) would list for an agent to load: each agent turri starts has one job, and turri runs its own gated skills itself. The conversation you talk to still loads both, as [pi](https://pi.dev) does - but for the skills turri has already, its own and any about [\*\*\*plain](https://plainlang.org/docs/) (see [a project's own skills](skills-and-gates.md#a-projects-own-skills)).
 
 ## Every agent knows its walls
 
@@ -33,7 +33,7 @@ No other path is named - nothing into `plain_modules/.turri`. A test run or a co
 
 ## File tools
 
-`src/regenerate/confine.ts` rebuilds `read`, `write`, `edit`, `ls`, `grep` and `find` from pi's own factories with a check in front of every path. The check runs twice: once on the argument the tool was called with, and once on the absolute path the tool resolved it to, because the two can differ. Symlinks are resolved before comparing, so a link cannot walk out, and a glob containing `..` is refused outright.
+`src/regenerate/confine.ts` rebuilds `read`, `write`, `edit`, `ls`, `grep` and `find` from [pi](https://pi.dev)'s own factories with a check in front of every path. The check runs twice: once on the argument the tool was called with, and once on the absolute path the tool resolved it to, because the two can differ. Symlinks are resolved before comparing, so a link cannot walk out, and a glob containing `..` is refused outright.
 
 The record of what the code is built from, `code/.turri.json`, is the harness's: no agent reads or writes it. `read` refuses it, and `ls`, `grep` and `find` leave it out of what they list - as the command check, the OS sandbox and the audit keep it from commands.
 

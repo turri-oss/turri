@@ -14,7 +14,7 @@
 
 ## Quick start
 
-**turri** is built on [pi](https://pi.dev), the coding agent, and runs wherever pi runs: macOS, Linux, WSL; native Windows best effort, with Git Bash. You need git, bash and [Node](https://nodejs.org/en/download) 22.19 or newer - a Linux distribution's own `nodejs` package is often older. The agents use this machine's toolchains, fenced by a command check and an audit everywhere, and an OS sandbox where the OS has one - Seatbelt on macOS, bubblewrap on Linux (`apt install bubblewrap`) - see [installation](docs/installation.md#installation).
+**turri** is built on [pi](https://pi.dev), the coding agent, and runs wherever [pi](https://pi.dev) runs: macOS, Linux, WSL; native Windows best effort, with Git Bash. You need git, bash and [Node](https://nodejs.org/en/download) 22.19 or newer - a Linux distribution's own `nodejs` package is often older. The agents use this machine's toolchains, fenced by a command check and an audit everywhere, and an OS sandbox where the OS has one - Seatbelt on macOS, bubblewrap on Linux (`apt install bubblewrap`) - see [installation](docs/installation.md#installation).
 
 ```bash
 npm install -g @turri-dev/cli # puts `turri` on your PATH
@@ -23,7 +23,7 @@ turri doctor              # checks the machine
 
 To follow `main` as it moves, or work on turri itself, run it [from a clone](#from-a-clone) instead.
 
-`doctor` checks for Node 22.19+, bash, the OS sandbox and a model provider for pi; in a project, the toolchains its modules need, what its testing scripts run against this machine, and that each model `config.turri.yaml` names answers with your credentials. It changes nothing without asking: when a check fails - the OS sandbox does not start, say - it says why, and the command for you to run. Run it again whenever something breaks. What each check means: [installation](docs/installation.md).
+`doctor` checks for Node 22.19+, bash, the OS sandbox and a model provider for [pi](https://pi.dev); in a project, the toolchains its modules need, what its testing scripts run against this machine, and that each model `config.turri.yaml` names answers with your credentials. It changes nothing without asking: when a check fails - the OS sandbox does not start, say - it says why, and the command for you to run. Run it again whenever something breaks. What each check means: [installation](docs/installation.md).
 
 Then start it in your project, signed in to your model providers:
 
@@ -127,7 +127,7 @@ So the tools speak its language: **`regenerate`** regenerates the code from \*\*
 
 ## Models
 
-`init-config`'s models are only a starting point. **turri** is built on [pi](https://github.com/earendil-works/pi), so any model pi supports works - Anthropic, OpenAI, Google, Amazon Bedrock, OpenRouter, a local one. A model is reached as pi reaches it - `/login`, in `turri` as in `pi`, the provider's API key in the environment (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, ...), or a cloud account - and named as pi names it, `provider/model-id`, with `:high`, `:low` and so on for how hard it thinks. It uses three: the **harness** model you talk to, which writes \*\*\*plain and plans the work - worth a capable one - and the **coding** and **judge** models its agents build and judge with, which can be smaller and cheaper, such as GPT-6 Luna or Gemini 3.1 Flash Lite. `turri --harness-model` and `--coding-model` choose them for a session, and pi's `/model` switches the one you talk to as you go; to keep them for the project, set them with `/turri-config harness-model`, `/turri-config coding-model` and so on - each role's too, as `models.<role>` - or write them in its `config.turri.yaml`:
+`init-config`'s models are only a starting point. **turri** is built on [pi](https://pi.dev), so any model [pi](https://pi.dev) supports works - Anthropic, OpenAI, Google, Amazon Bedrock, OpenRouter, a local one. A model is reached as [pi](https://pi.dev) reaches it - `/login`, in `turri` as in `pi`, the provider's API key in the environment (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, ...), or a cloud account - and named as [pi](https://pi.dev) names it, `provider/model-id`, with `:high`, `:low` and so on for how hard it thinks. It uses three: the **harness** model you talk to, which writes \*\*\*plain and plans the work - worth a capable one - and the **coding** and **judge** models its agents build and judge with, which can be smaller and cheaper, such as GPT-6 Luna or Gemini 3.1 Flash Lite. `turri --harness-model` and `--coding-model` choose them for a session, and [pi](https://pi.dev)'s `/model` switches the one you talk to as you go; to keep them for the project, set them with `/turri-config harness-model`, `/turri-config coding-model` and so on - each role's too, as `models.<role>` - or write them in its `config.turri.yaml`:
 
 ```yaml
 harness-model: anthropic/claude-opus-5-5    # the model you talk to: a capable one

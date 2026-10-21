@@ -8,7 +8,7 @@ turri --use-theme turri-light/turri-dark    # follows terminal appearance
 turri --use-theme dark                      # pi's own
 ```
 
-The second form follows your terminal's light/dark appearance. The default is for `turri` only: pi's settings are left alone, so a plain `pi` keeps its theme. With the themes copied to `~/.pi/agent/themes/` (`cp .pi/themes/*.json ~/.pi/agent/themes/`), `{"theme": "turri-dark"}` in `~/.pi/agent/settings.json` gives a plain `pi` the same one.
+The second form follows your terminal's light/dark appearance. The default is for `turri` only: [pi](https://pi.dev)'s settings are left alone, so a plain `pi` keeps its theme. With the themes copied to `~/.pi/agent/themes/` (`cp .pi/themes/*.json ~/.pi/agent/themes/`), `{"theme": "turri-dark"}` in `~/.pi/agent/settings.json` gives a plain `pi` the same one.
 
 Bad input fails quietly - an unknown `--use-theme` name and a malformed theme file both run without complaint - so if the colours do not change, suspect a typo rather than the mechanism.
 
@@ -74,4 +74,4 @@ A spec diff in the panels is not painted with the theme's colours for code: thos
 
 ## The font
 
-The design system's fonts cannot be applied. pi draws into a terminal, so the typeface is your terminal emulator's setting. Its monospaced face is Geist Mono - set it in iTerm2 / Ghostty / Alacritty for the brand look; Neue Montreal, for headings, is proportional, and a terminal needs a monospaced face.
+The design system's fonts cannot be applied. [pi](https://pi.dev) draws into a terminal, so the typeface is your terminal emulator's setting. Its monospaced face is Geist Mono - set it in iTerm2 / Ghostty / Alacritty for the brand look; Neue Montreal, for headings, is proportional, and a terminal needs a monospaced face.

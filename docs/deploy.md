@@ -45,6 +45,6 @@ Off by default: without the key, releasing after a pulse is the chat's, when its
 turri release [file.plain] [--in-module <module>] [--guidance <text>] [--model <provider/id>]
 ```
 
-The same, without the chat: a one-off agent on `coding-model`, thinking low (or `--model`; without either, pi's default) is given the project's AGENTS.md and what `--guidance <text>` says, looks for guidance in them, and releases as above - as the guidance says, or to `dist/<module>` - then works out how to start it and starts it here, installing what it needs without asking. It stays in the foreground with the servers' output; `Ctrl-C` stops them. If it does not get there, deploy from the chat instead.
+The same, without the chat: a one-off agent on `coding-model`, thinking low (or `--model`; without either, [pi](https://pi.dev)'s default) is given the project's AGENTS.md and what `--guidance <text>` says, looks for guidance in them, and releases as above - as the guidance says, or to `dist/<module>` - then works out how to start it and starts it here, installing what it needs without asking. It stays in the foreground with the servers' output; `Ctrl-C` stops them. If it does not get there, deploy from the chat instead.
 
 `turri regenerate`, `spec-diff` and `conform` end a build that landed with `To try it: turri release <spec>`.
