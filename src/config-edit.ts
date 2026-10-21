@@ -86,7 +86,7 @@ export function settings(rules: string[] = []): Setting[] {
     },
   ]);
   return [
-    { key: "harness-model", about: "the model you talk to: it writes the specs and plans the work", kind: "model", unset: "pi's own choice", effect: "now", projectOnly: true },
+    { key: "harness-model", about: "the model you talk to: it writes the ***plain and plans the work", kind: "model", unset: "pi's own choice", effect: "now", projectOnly: true },
     { key: "coding-model", about: "the model that writes the code", kind: "model", unset: "harness-model", effect: "next-pulse" },
     { key: "judge-model", about: "the judge and the test review of a conformance run", kind: "model", unset: "coding-model", effect: "next-pulse" },
     { key: "module", about: "the .plain file turri regenerate builds when none is named", kind: "path", unset: "the folder's .plain files", effect: "next-regenerate", projectOnly: true },
@@ -94,7 +94,7 @@ export function settings(rules: string[] = []): Setting[] {
     { key: "conformance-budget", about: "under conformance-tests: chosen or module, how many may be chosen - a count or a share", kind: "budget", options: ["10%", "30%", "50%", "5", "10"], unset: "no limit", effect: "next-plan" },
     { key: "review", about: "whether the code and its tests are reviewed once they pass", kind: "boolean", unset: "true", effect: "next-pulse" },
     { key: "mutation-testing", about: "whether the coding agent and the reviewer can put a bug in the code for one test run (can_it_fail)", kind: "boolean", unset: "true", effect: "next-pulse" },
-    { key: "allow-to-stop-jobs", about: "whether turri stops a running pulse the spec has moved on from", kind: "boolean", unset: "true", effect: "now" },
+    { key: "allow-to-stop-jobs", about: "whether turri stops a running pulse the ***plain has moved on from", kind: "boolean", unset: "true", effect: "now" },
     { key: "release-after-pulse", about: "whether every pulse that lands code releases it", kind: "boolean", unset: "false", effect: "next-landing" },
     { key: "unittests-script", about: "the unit testing script, by path from the project root", kind: "path", unset: "the one run_unittests*.sh found", effect: "next-test-run" },
     { key: "conformance-tests-script", about: "the conformance testing script, by path from the project root", kind: "path", unset: "the one run_conformance_tests*.sh found", effect: "next-test-run" },
@@ -102,10 +102,10 @@ export function settings(rules: string[] = []): Setting[] {
     { key: "testing-scripts-run-on", about: "what the testing scripts run on: the code itself, or a fresh copy", kind: "choice", options: ["in-place", "copy"], unset: "in-place", effect: "next-test-run" },
     { key: "parallel-jobs", about: "how many pulses run at once, on modules that share nothing", kind: "number", options: ["1", "2", "3", "4", "6"], min: 1, unset: "half this machine's cores, one to four", effect: "now", projectOnly: true },
     { key: "max-specs-per-pulse", about: "the most functional specs the planner groups into one pulse", kind: "number", options: ["1", "2", "3", "4", "5", "6"], min: 1, unset: "3", effect: "next-plan" },
-    { key: "max-lines-per-pulse", about: "the most lines of spec in one pulse before a group is split", kind: "number", options: ["60", "120", "200", "300"], min: 1, unset: "120", effect: "next-plan" },
+    { key: "max-lines-per-pulse", about: "the most lines of ***plain in one pulse before a group is split", kind: "number", options: ["60", "120", "200", "300"], min: 1, unset: "120", effect: "next-plan" },
     { key: "turn-limit", about: "seconds each agent turn has, for every role without its own - 0 for none", kind: "number", options: SECONDS, min: 0, unset: "120", effect: "next-pulse" },
     { key: "compact-at", about: "tokens of work an agent holds before it is compacted between turns", kind: "number", options: ["50000", "100000", "150000", "200000"], min: 1000, unset: "100000", effect: "next-pulse", projectOnly: true },
-    { key: "rules-off", about: "***plain rules left out of the spec-writing agents' prompts", kind: "list", options: rules, unset: "none", effect: "next-message", projectOnly: true },
+    { key: "rules-off", about: "***plain rules left out of the prompts of the agents that write ***plain", kind: "list", options: rules, unset: "none", effect: "next-message", projectOnly: true },
     { key: "agent-env.files", about: "dotenv files whose variables the agents' commands get", kind: "list", unset: "none", effect: "next-pulse", projectOnly: true },
     { key: "agent-env.vars", about: "variables from turri's environment the agents' commands get, by name", kind: "list", unset: "none", effect: "next-pulse", projectOnly: true },
     { key: "toolchains", about: "folders of this machine an agent's commands may read beside the usual ones", kind: "list", unset: "none", effect: "next-pulse", projectOnly: true },
@@ -115,6 +115,9 @@ export function settings(rules: string[] = []): Setting[] {
     ...roles,
   ];
 }
+
+/** Every setting, as a host is given them: `settings` under the name it has beside the host's other config. */
+export const configSettings = settings;
 
 /** A setting by its key - `review`, `models.coding` - or nothing. */
 export function settingOf(key: string, rules: string[] = []): Setting | undefined {

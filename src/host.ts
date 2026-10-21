@@ -14,6 +14,9 @@ export * as pi from "@earendil-works/pi-coding-agent";
 // The project and its settings.
 export { configForSpec, debugMode, hasProjectConfig, modelSpec, projectModels, readProjectConfig, stacksOf, type ProjectConfig } from "./config.ts";
 export { MODULES_DIR, projectDirOf, resolveTemplateDirs } from "./regenerate/paths.ts";
+// Every setting of config.turri.yaml as /turri-config knows it - what it takes, what it is unset, when a change takes
+// effect - and what the file has now: for a host that shows them all, changing each through /turri-config.
+export { configSettings, currentValue, EFFECT_TEXT, overriddenBy, readConfigText, type Effect, type Setting, type SettingKind } from "./config-edit.ts";
 // A project's first config.turri.yaml, as `turri init-config` writes it - the vendor, or the two models themselves, chosen by the host.
 export {
   BEDROCK_DEFAULT,
