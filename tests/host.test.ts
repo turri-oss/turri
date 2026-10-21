@@ -94,7 +94,7 @@ describe("turri for a host that runs it itself", () => {
   it("writes a project's first config.turri.yaml with the models of the vendor the host chose", async () => {
     const { initConfig, VENDORS } = await import("../src/host.ts");
     const dir = mkdtempSync(join(tmpdir(), "turri-host-"));
-    const result = initConfig(dir, { vendor: "anthropic" });
+    const result = await initConfig(dir, { vendor: "anthropic" });
     const written = readFileSync(join(dir, "config.turri.yaml"), "utf8");
     expect(result.written).toBe(true);
     expect(written).toContain(`harness-model: ${VENDORS.anthropic.harness}`);

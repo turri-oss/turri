@@ -12,7 +12,9 @@
 | `pi` | pi itself, as turri's extension is built against it. Make the session with this one - `pi.createAgentSession`, `pi.DefaultResourceLoader` - not another copy. |
 | `readProjectConfig`, `projectModels`, `modelSpec`, `configForSpec`, `hasProjectConfig`, `stacksOf` | the project's settings, as [config.turri.yaml](config.md) has them. |
 | `debugMode` | whether turri keeps, in a project, what it writes only for debugging it - `debug:`, or `TURRI_DEBUG` over it (see [debug mode](config.md#debug-mode)). |
-| `initConfig(dir, { vendor, bedrock, force })`, `VENDORS`, `BEDROCK_REGIONS`, `BEDROCK_DEFAULT`, `bedrockModels` | a project's first config.turri.yaml, as `turri init-config` writes it: the host asks which vendor's models - `VENDORS` has each one's label and its two models, `BEDROCK_REGIONS` where Bedrock serves each maker's - and `initConfig` writes it, saying what it did. One already there keeps everything but its two models. |
+| `initConfig(dir, { vendor, bedrock, models, force, catalogue })`, `VENDORS`, `BEDROCK_REGIONS`, `BEDROCK_DEFAULT` | a project's first config.turri.yaml, as `turri init-config` writes it - async, it may read pi's catalogue - see [a project's first config](#a-projects-first-config). |
+| `piModelCatalogue`, `bedrockMakers`, `bedrockModelsIn`, `bedrockDefaultModels`, `bedrockModels`, `bedrockPlaceOf`, `makerLabel`, `BEDROCK_GEOGRAPHIES`, `BEDROCK_IN_REGION` | pi's model catalogue, read without a request, and Bedrock in it: whose models it serves, in which geographies, which two turri offers for a maker and geography. |
+| `bedrockAwsRegion`, `bedrockNeedsAwsRegion` | the AWS region to set `AWS_REGION` to for a Bedrock geography, and whether it has to be set. |
 | `checkPlainFile`, `plainFileParser`, `resolveTemplateDirs`, `iterateFunctionalSpecs`, `FUNCTIONAL_REQUIREMENTS` | a spec checked and parsed, its functional specs one by one - as `turri validate` reads it. |
 | `highlightLines`, `roleOf` | a spec's lines coloured by turri's own \*\*\*plain grammar. |
 | `functionalityCompletion`, `createWorkLoop`, `createJobRegistry`, `promptOf`, `describeModules` | how far each functional spec is built, and - on a loop of the host's own with `dryRun` - the work a spec change would plan, as `turri glimpse` does. |
@@ -22,6 +24,27 @@
 | `sweepOrphanedGroups` | stop what a turri killed outright left running, before anything starts. |
 
 It is turri's own code, as the terminal runs it: a 0.x release may change any of it.
+
+## A project's first config
+
+```js
+import { initConfig, piModelCatalogue, bedrockMakers, bedrockModelsIn, bedrockDefaultModels } from "@turri-dev/cli/host";
+
+const catalogue = await piModelCatalogue();
+bedrockMakers(catalogue);                                     // [{ maker: "xai", label: "xAI", regions: ["global", "us", "in-region"] }, ...]
+bedrockModelsIn(catalogue, { maker: "xai", region: "global" }); // the maker's chat models there, with their prices
+const offered = bedrockDefaultModels(catalogue, { maker: "xai", region: "global" });
+const { written, message } = await initConfig(project, { models: { harness, coding }, catalogue });
+```
+
+`initConfig` writes config.turri.yaml as `turri init-config` does, and returns what it did - `written`, and `message`, the lines the terminal prints. It is async.
+
+- `vendor` - `anthropic`, `openai`, `google`, `amazon-bedrock` or `other` - fills in that vendor's own two models (`VENDORS` has each one's label and models).
+- `bedrock: { maker?, region }`, on Amazon Bedrock, says whose and where. turri's own pair is written where it has one - Anthropic's and OpenAI's in `BEDROCK_REGIONS` - and otherwise the pair `bedrockDefaultModels` offers from pi's catalogue: any maker and geography it has.
+- `models: { harness, coding, strong? }` writes those two instead - any pair pi's catalogue has as chat models, full specs without a thinking level (`amazon-bedrock/global.xai.grok-4.7`). They go wherever the vendor's own would: the two models with the thinking turri writes, the commented-out `judge-model` and `models:` examples, `strong` - the judging examples' model - being `harness` unless given. The vendor, the Bedrock maker and the geography are read from them, so neither `vendor` nor `bedrock` is needed. A model the catalogue does not have, or that is not a chat model, writes nothing: `written` is false and `message` says which, with the closest the catalogue has.
+- `catalogue`, the one the host already read, saves reading it again.
+
+The message says whose models were written - "with xAI's models on Amazon Bedrock (global)" - and how to sign in, with the `AWS_REGION` for the geography: `bedrockAwsRegion(geography)` is that region, and `bedrockNeedsAwsRegion(geography)` whether it has to be set - every geography but `global`, `us` and `in-region`, pi calling Bedrock in `us-east-1` unless `AWS_REGION` or the profile names another.
 
 ## doctor in a host
 

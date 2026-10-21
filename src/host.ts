@@ -14,8 +14,32 @@ export * as pi from "@earendil-works/pi-coding-agent";
 // The project and its settings.
 export { configForSpec, debugMode, hasProjectConfig, modelSpec, projectModels, readProjectConfig, stacksOf, type ProjectConfig } from "./config.ts";
 export { MODULES_DIR, projectDirOf, resolveTemplateDirs } from "./regenerate/paths.ts";
-// A project's first config.turri.yaml, as `turri init-config` writes it - the vendor whose models it takes chosen by the host.
-export { BEDROCK_DEFAULT, BEDROCK_REGIONS, bedrockModels, initConfig, VENDORS, type BedrockChoice, type Vendor } from "./init-config.ts";
+// A project's first config.turri.yaml, as `turri init-config` writes it - the vendor, or the two models themselves, chosen by the host.
+export {
+  BEDROCK_DEFAULT,
+  BEDROCK_GEOGRAPHIES,
+  BEDROCK_IN_REGION,
+  BEDROCK_REGIONS,
+  bedrockAwsRegion,
+  bedrockDefaultModels,
+  bedrockMakers,
+  bedrockModels,
+  bedrockModelsIn,
+  bedrockNeedsAwsRegion,
+  bedrockPlaceOf,
+  initConfig,
+  makerLabel,
+  VENDORS,
+  type BedrockChoice,
+  type BedrockMaker,
+  type BedrockOffer,
+  type InitConfigOptions,
+  type ModelChoice,
+  type ModelSet,
+  type Vendor,
+} from "./init-config.ts";
+// pi's model catalogue, read without a request: what initConfig checks the models given against, and what a host offers.
+export { piModelCatalogue, type CatalogueModel, type ModelCatalogue } from "./model-check.ts";
 
 // Whether this machine, and a project on it, is ready for turri - as `turri doctor` checks it, printing nothing.
 export { doctor, type Check, type DoctorOptions, type Level } from "./setup.ts";

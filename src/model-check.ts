@@ -50,10 +50,69 @@ export interface ModelAccess {
   ask(model: unknown): Promise<string | undefined>;
 }
 
+/** pi's own model runtime: its catalogue with models.json's, and pi's credentials - auth.json and the environment. */
+async function piRuntime(): Promise<ModelRuntime> {
+  const agentDir = getAgentDir();
+  return ModelRuntime.create({ authPath: join(agentDir, "auth.json"), modelsPath: join(agentDir, "models.json") });
+}
+
+/** A model in pi's catalogue: what turri chooses among, and checks a model it is given against. */
+export interface CatalogueModel {
+  provider: string;
+  id: string;
+  name: string;
+  /** chat for a model turri's agents can talk to; pi's image and classifier models are in the catalogue too. */
+  type: string;
+  reasoning: boolean;
+  /** Dollars a million tokens. */
+  cost: { input: number; output: number };
+}
+
+/** pi's model catalogue, as turri's agents have it - its built-in models and models.json's. */
+export interface ModelCatalogue {
+  /** A provider's models, every type - none for a provider pi does not know. */
+  models(provider: string): CatalogueModel[];
+}
+
+/** pi's catalogue, read once: no request, no model asked. */
+export async function piModelCatalogue(): Promise<ModelCatalogue> {
+  const runtime = await piRuntime();
+  return {
+    models: (provider) =>
+      runtime.getAllModels(provider).map((model) => {
+        const entry = model as { name?: string; type?: string; reasoning?: boolean; cost?: { input?: number; output?: number } };
+        return {
+          provider: model.provider,
+          id: model.id,
+          name: entry.name ?? model.id,
+          type: entry.type ?? "chat",
+          reasoning: entry.reasoning === true,
+          cost: { input: entry.cost?.input ?? 0, output: entry.cost?.output ?? 0 },
+        };
+      }),
+  };
+}
+
+/** The ids of `known` closest to `id`, at most three: the most of its words in common - claude, haiku - then the most of its characters in order. */
+export function closestModels(id: string, known: string[]): string[] {
+  const words = id.toLowerCase().split(/[^a-z0-9]+/).filter((word) => word !== "");
+  const score = (other: string) => {
+    const theirs = other.toLowerCase().split(/[^a-z0-9]+/);
+    return words.filter((word) => theirs.includes(word)).length * 100 + commonPrefix(id.toLowerCase(), other.toLowerCase());
+  };
+  const scored = known.map((other) => ({ other, score: score(other) })).filter((entry) => entry.score >= 100);
+  // Only those sharing as many words as the best: claude-haiku-* for claude-haiku-9-9, not every claude.
+  const most = Math.max(0, ...scored.map((entry) => Math.floor(entry.score / 100)));
+  return scored
+    .filter((entry) => Math.floor(entry.score / 100) === most)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3)
+    .map((entry) => entry.other);
+}
+
 /** pi's own model runtime, with pi's credentials - auth.json, models.json and the environment - as turri's agents have them. */
 export async function piModelAccess(): Promise<ModelAccess> {
-  const agentDir = getAgentDir();
-  const runtime = await ModelRuntime.create({ authPath: join(agentDir, "auth.json"), modelsPath: join(agentDir, "models.json") });
+  const runtime = await piRuntime();
   const registry = new ModelRegistry(runtime);
   return {
     find: (provider, id) => registry.find(provider, id),
@@ -119,20 +178,7 @@ export async function checkModels(models: UsedModel[], access: ModelAccess): Pro
       if (model === undefined) {
         const known = access.known(provider);
         if (known.length === 0) return { ok: false, spec, usedBy, problem: `pi knows no provider ${provider}`, fix: "use a provider pi supports - https://pi.dev" };
-        // The closest first: the most of its words in common - claude, haiku - then the most of its characters in order.
-        const words = id.toLowerCase().split(/[^a-z0-9]+/).filter((word) => word !== "");
-        const score = (other: string) => {
-          const theirs = other.toLowerCase().split(/[^a-z0-9]+/);
-          return words.filter((word) => theirs.includes(word)).length * 100 + commonPrefix(id.toLowerCase(), other.toLowerCase());
-        };
-        const scored = known.map((other) => ({ other, score: score(other) })).filter((entry) => entry.score >= 100);
-        // Only those sharing as many words as the best: claude-haiku-* for claude-haiku-9-9, not every claude.
-        const most = Math.max(0, ...scored.map((entry) => Math.floor(entry.score / 100)));
-        const close = scored
-          .filter((entry) => Math.floor(entry.score / 100) === most)
-          .sort((a, b) => b.score - a.score)
-          .slice(0, 3)
-          .map((entry) => entry.other);
+        const close = closestModels(id, known);
         return { ok: false, spec, usedBy, problem: `pi knows no model ${id} at ${provider}`, fix: close.length > 0 ? `did you mean ${close.map((other) => `${provider}/${other}`).join(", ")}?` : `change it in config.turri.yaml to a model pi knows at ${provider}` };
       }
       const started = Date.now();
