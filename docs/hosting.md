@@ -16,7 +16,7 @@
 | `piModelCatalogue`, `bedrockMakers`, `bedrockModelsIn`, `bedrockDefaultModels`, `bedrockModels`, `bedrockPlaceOf`, `makerLabel`, `BEDROCK_GEOGRAPHIES`, `BEDROCK_IN_REGION` | pi's model catalogue, read without a request, and Bedrock in it: whose models it serves, in which geographies, which two turri offers for a maker and geography. |
 | `bedrockAwsRegion`, `bedrockNeedsAwsRegion` | the AWS region to set `AWS_REGION` to for a Bedrock geography, and whether it has to be set. |
 | `checkPlainFile`, `plainFileParser`, `resolveTemplateDirs`, `iterateFunctionalSpecs`, `FUNCTIONAL_REQUIREMENTS` | a spec checked and parsed, its functional specs one by one - as `turri validate` reads it. |
-| `highlightLines`, `roleOf` | a spec's lines coloured by turri's own \*\*\*plain grammar. |
+| `highlightLines`, `roleOf` | a spec's lines coloured by turri's own [\*\*\*plain](https://plainlang.org/docs/) grammar. |
 | `functionalityCompletion`, `createWorkLoop`, `createJobRegistry`, `promptOf`, `describeModules` | how far each functional spec is built, and - on a loop of the host's own with `dryRun` - the work a spec change would plan, as `turri glimpse` does. |
 | `onModelEvent`, `describeTurnIncident` | a provider failing and waited out, a turn turri ended itself. |
 | `onLedgerEvent`, `readLedger`, `ledgerDir`, `runViews`, `pulseView`, `describePulseView`, `describeRuns`, `ledgerProjects`, `earlierPulses`, `asJob` | what turri did, as facts - the [ledger](using.md#the-ledger): each event heard as it is recorded, and every run and pulse read back, earlier sessions' too - see [the ledger in a host](#the-ledger-in-a-host). |

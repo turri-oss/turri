@@ -1,6 +1,6 @@
 # turri documentation
 
-turri implements regenerative software: the \*\*\*plain specs are the durable definition of what a system does, and the code is generated from them, validated against them, and regenerated as they change. The [project README](../README.md) says why, and how to install and start; these pages go into each part.
+turri implements regenerative software: the [\*\*\*plain](https://plainlang.org/docs/) specs are the durable definition of what a system does, and the code is generated from them, validated against them, and regenerated as they change. The [project README](../README.md) says why, and how to install and start; these pages go into each part.
 
 ## Start here
 

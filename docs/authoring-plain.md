@@ -1,6 +1,6 @@
 # Authoring \*\*\*plain
 
-Rendering turns a spec into code; authoring is the half that decides what gets built. The code is only ever as good as the spec - a fact in the wrong section is silently ignored, a functional spec that is too big comes out half-built, two specs that contradict each other break each other's tests. So this repo carries as much for writing specs as for rendering them: the authoring rules, a library of skills that apply them, and independent review of what they write.
+A spec is written in [\*\*\*plain](https://plainlang.org/docs/) - its documentation is the language's whole reference. Rendering turns a spec into code; authoring is the half that decides what gets built. The code is only ever as good as the spec - a fact in the wrong section is silently ignored, a functional spec that is too big comes out half-built, two specs that contradict each other break each other's tests. So this repo carries as much for writing specs as for rendering them: the authoring rules, a library of skills that apply them, and independent review of what they write.
 
 The rule underneath all of it: **the specs are the source of truth**. The generated code in `plain_modules/` is never edited by hand. A bug is fixed in the spec, and a change that is wanted goes into the spec - that is what persists and what the next render builds from.
 

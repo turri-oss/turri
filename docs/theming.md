@@ -26,7 +26,7 @@ Both themes, the command line's colours, the spec diff's, the banner's jellyfish
 | path | `#3e5a6b` | the editor's border, what is dim: `dim`, line numbers |
 | grauzone | `#85a3b2` | body text, and what can be skimmed: `text`, `muted` |
 | white | `#f4f7f9` | headings, tool titles, what you typed |
-| siesta tan | `#e9d8c8` | strings in code, \*\*\*plain's text in quotes or backticks |
+| siesta tan | `#e9d8c8` | strings in code, [\*\*\*plain](https://plainlang.org/docs/)'s text in quotes or backticks |
 | eggplant | `#732553` | a removed line's fill in a spec diff, the jellyfish's rim |
 | neon | `#5ce1e6` | links, focus, the selection, section labels, \*\*\*plain's concepts in a spec diff: `accent`, `mdLink`, regen's `◆` |
 | neon hover | `#8eebee` | inline code - siesta tan beside white text was too close to tell apart, and tiring to read - types in code, an added line's fill in a light theme's spec diff: `mdCode` |

@@ -101,7 +101,7 @@ With **turri** you work on the durable intent. You say what the software must do
 
 ## How it works
 
-**turri** captures the durable intent in [\*\*\*plain](https://plainlang.org/), a language for saying what software should do. \*\*\*plain breaks the intent down into functionalities - small units, each a single thing the software does - and **turri** regenerates the code from them piece by piece.
+**turri** captures the durable intent in [\*\*\*plain](https://plainlang.org/docs/), a language for saying what software should do. \*\*\*plain breaks the intent down into functionalities - small units, each a single thing the software does - and **turri** regenerates the code from them piece by piece.
 
 1. **Define.** You say what the software should do; **turri** writes it down as \*\*\*plain.
 2. **Review and refine.** You review \*\*\*plain and change it with **turri** until it says what you mean.
