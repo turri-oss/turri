@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -35,6 +35,18 @@ const reach = (port: number, path = "/") =>
     () => "down",
   );
 
+/**
+ * A worker that counts in `beat` ten times a second, and whether it still does: its own pid is no use to the test, as
+ * behind bubblewrap's pid namespace `$$` is not a pid on this machine.
+ */
+const WORKER = "i=0; echo ready; while :; do i=$((i+1)); echo $i > beat; sleep 0.1; done";
+async function beating(dir: string): Promise<boolean> {
+  const read = () => (existsSync(join(dir, "beat")) ? readFileSync(join(dir, "beat"), "utf8") : "");
+  const before = read();
+  await new Promise((done) => setTimeout(done, 500));
+  return read() !== before;
+}
+
 describe.skipIf(process.platform === "win32")("a service an agent starts on this machine", () => {
   it("runs until it is up, answers from outside, prints to a log - and is stopped, it and what it started", async () => {
     const port = await freePort();
@@ -55,23 +67,19 @@ describe.skipIf(process.platform === "win32")("a service an agent starts on this
     expect(failed).toContain("It exited before it was up");
     expect(failed).toContain("cannot bind to port");
 
-    const marker = join(code, "worker.pid");
-    expect(await call(services.tools, "start_service", { name: "worker", command: `echo $$ > worker.pid; echo worker ready; sleep 600`, ready_log: "worker ready" })).toContain("worker is up");
-    const pid = Number(readFileSync(marker, "utf8").trim());
-    expect(() => process.kill(pid, 0)).not.toThrow();
+    expect(await call(services.tools, "start_service", { name: "worker", command: WORKER, ready_log: "ready" })).toContain("worker is up");
+    expect(await beating(code)).toBe(true);
     await services.stopAll();
-    expect(() => process.kill(pid, 0)).toThrow();
+    expect(await beating(code)).toBe(false);
   });
 
   it("is stopped when its pulse ends, though nothing asked", async () => {
-    let pid = 0;
     await withPulse(async () => {
       const services = createServiceTools({ dir: code });
-      await call(services.tools, "start_service", { name: "worker", command: "echo $$ > worker.pid; echo ready; sleep 600", ready_log: "ready" });
-      pid = Number(readFileSync(join(code, "worker.pid"), "utf8").trim());
+      await call(services.tools, "start_service", { name: "worker", command: WORKER, ready_log: "ready" });
+      expect(await beating(code)).toBe(true);
     });
-    await new Promise((done) => setTimeout(done, 100));
-    expect(() => process.kill(pid, 0)).toThrow();
+    expect(await beating(code)).toBe(false);
   });
 
   it("is not started when the command check refuses it - the same check as the agent's shell", async () => {
