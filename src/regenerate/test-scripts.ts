@@ -871,9 +871,9 @@ export function missingToolchain(run: Pick<ScriptRun, "exitCode" | "output">): {
   return command !== undefined ? { command } : undefined;
 }
 
-/** Where `command` is on this machine's PATH, or undefined when it is not there. */
-export function onThisMachine(command: string): string | undefined {
-  for (const dir of (process.env.PATH ?? "").split(delimiter)) {
+/** Where `command` is on this machine's PATH - `env`'s, by default turri's own - or undefined when it is not there. */
+export function onThisMachine(command: string, env: NodeJS.ProcessEnv = process.env): string | undefined {
+  for (const dir of (env.PATH ?? "").split(delimiter)) {
     if (dir === "") continue;
     const path = join(dir, command);
     try {

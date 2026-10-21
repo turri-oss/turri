@@ -18,9 +18,27 @@
 | `functionalityCompletion`, `createWorkLoop`, `createJobRegistry`, `promptOf`, `describeModules` | how far each functional spec is built, and - on a loop of the host's own with `dryRun` - the work a spec change would plan, as `turri glimpse` does. |
 | `onModelEvent`, `describeTurnIncident` | a provider failing and waited out, a turn turri ended itself. |
 | `onLedgerEvent`, `readLedger`, `ledgerDir`, `runViews`, `pulseView`, `describePulseView`, `describeRuns`, `ledgerProjects`, `earlierPulses`, `asJob` | what turri did, as facts - the [ledger](using.md#the-ledger): each event heard as it is recorded, and every run and pulse read back, earlier sessions' too - see [the ledger in a host](#the-ledger-in-a-host). |
+| `doctor({ dir, models, env })`, `Check`, `Level` | whether the machine - and, with `dir`, that project - is ready for turri, as `turri doctor` checks it: a list of checks to show in the host's own way - see [doctor in a host](#doctor-in-a-host). |
 | `sweepOrphanedGroups` | stop what a turri killed outright left running, before anything starts. |
 
 It is turri's own code, as the terminal runs it: a 0.x release may change any of it.
+
+## doctor in a host
+
+```js
+import { doctor } from "@turri-dev/cli/host";
+
+const checks = await doctor({ dir: project, env: engineEnv });
+// [{ level: "ok" | "missing" | "limited" | "info", name, detail, more?, fix? }, ...]
+```
+
+`doctor` runs the checks `turri doctor` prints, and returns them: Node, bash, git, which OS sandbox is up under the agents' commands, and whether any model provider has credentials. With `dir`, the project too: whether this machine has the toolchains its modules' implementation reqs name, and what in its testing scripts it does not have. It prints nothing and asks nothing; each check's `fix` is plain text, to show as it is. A check `missing` means turri cannot run until it is fixed, `limited` that it runs with less.
+
+- `dir` is the project to check - not the process's working folder, which in a host is not the project. Without it, only the machine is checked.
+- `models: true` asks each model the project's config.turri.yaml names for a word, with this machine's credentials - a request a model, which costs money. It is off by default: run it when the person asks.
+- `env` is the environment whose PATH is looked in - for bash, git, the sandbox, the toolchains and what the testing scripts run - by default the process's own. A Mac app opened from Finder runs with `/usr/bin:/bin:/usr/sbin:/sbin`, not the person's shell's PATH: pass the environment the host's engine runs turri with, so doctor checks the PATH turri will actually have.
+
+What matters only in a terminal - `turri` on the PATH, a plain `pi` an older turri made load turri - is left to `turri doctor`.
 
 ## The conversation in a host
 

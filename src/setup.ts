@@ -4,8 +4,8 @@ import { join, relative } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { globalExtensionFile, MIN_NODE, nodeVersionOk, PACKAGE_ROOT, turriOnPath } from "./environment.ts";
-import { sandboxAvailable, type Wall } from "./regenerate/os-sandbox.ts";
-import { findTestScripts } from "./regenerate/test-scripts.ts";
+import { sandboxAvailable, sandboxWith, type Wall } from "./regenerate/os-sandbox.ts";
+import { findTestScripts, onThisMachine } from "./regenerate/test-scripts.ts";
 import { configKeyOptions, parseArgs } from "./cli-options.ts";
 import { hasProjectConfig, readProjectConfig, stackOf } from "./config.ts";
 import { checkModels, modelsInUse, piModelAccess, type ModelAccess } from "./model-check.ts";
@@ -20,9 +20,11 @@ import { readScript, scriptAgainstMachine, stackOnMachine } from "./stack.ts";
  * implementation reqs name and what its testing scripts run, and whether each model its config names answers with this
  * machine's credentials - one short request a model (model-check.ts). It changes one thing, asked first: a plain `pi`
  * that an older turri made load turri too is put back to plain pi.
+ *
+ * `doctor()` is the checks alone, for the CLI and for a host (src/host.ts): it prints nothing and asks nothing.
  */
 
-type Level = "ok" | "missing" | "limited" | "info";
+export type Level = "ok" | "missing" | "limited" | "info";
 
 export interface Check {
   level: Level;
@@ -193,17 +195,48 @@ export async function checkProjectModels(project: string, access?: ModelAccess):
   });
 }
 
-/** `modelsGiven`: models named on the command line - checked wherever doctor runs, a project or not. */
-async function allChecks(options: { models?: boolean; modelsGiven?: boolean } = {}): Promise<Check[]> {
-  const checks: Check[] = [checkNode(), checkShell(), checkGit(), checkSandbox(), await checkProvider(), checkPath(), ...checkGlobal()];
+export interface DoctorOptions {
+  /** The project to check. Without it, only the machine. */
+  dir?: string;
+  /** Ask each model the project's config names for a word - a request a model, which costs money. Off by default. */
+  models?: boolean;
+  /** The environment whose PATH is looked in - bash, git, the sandbox, the toolchains, what the testing scripts run. */
+  env?: NodeJS.ProcessEnv;
+}
+
+/** The CLI's own: what matters only in a terminal, and models named on the command line - asked of, a project or not. */
+interface CliOptions {
+  cli?: boolean;
+  modelsGiven?: boolean;
+}
+
+/** Whether doctor asks the models: asked to, and a config that names them - or models named on the command line. */
+function asksModels(options: DoctorOptions & CliOptions): options is DoctorOptions & CliOptions & { dir: string } {
+  return options.models === true && options.dir !== undefined && (hasProjectConfig(options.dir) || options.modelsGiven === true);
+}
+
+/** Whether `command` runs with `env` - its PATH looked in, as the agents' shells and the testing scripts would. */
+function runs(command: string, env: NodeJS.ProcessEnv): boolean {
+  return spawnSync(command, ["--version"], { stdio: "ignore", windowsHide: true, env }).status === 0;
+}
+
+/**
+ * Whether this machine - and, with `dir`, that project - is ready for turri, as checks. It prints nothing and asks
+ * nothing, so a host can show them in its own way; `turri doctor` prints the same.
+ */
+export async function doctor(options: DoctorOptions = {}): Promise<Check[]> {
+  return allChecks({ ...options, cli: false, modelsGiven: false });
+}
+
+async function allChecks(options: DoctorOptions & CliOptions): Promise<Check[]> {
+  const env = options.env ?? process.env;
+  const checks: Check[] = [checkNode(), checkShell(runs("bash", env)), checkGit(runs("git", env)), checkSandbox(sandboxWith(env)), await checkProvider()];
+  if (options.cli === true) checks.push(checkPath(), ...checkGlobal());
   // In a project: what it needs of this machine, and whether its models answer.
-  const project = process.cwd();
-  const inProject = hasProjectConfig(project) || existsSync(join(project, "plain_modules"));
-  if (inProject) checks.push(...checkProject(project));
-  if (options.models !== false && (hasProjectConfig(project) || options.modelsGiven === true)) {
-    console.log(brand.muted("Asking each model the config names for a word..."));
-    checks.push(...(await checkProjectModels(project)));
-  }
+  const project = options.dir;
+  if (project === undefined) return checks;
+  if (hasProjectConfig(project) || existsSync(join(project, "plain_modules"))) checks.push(...checkProject(project, { has: (command) => onThisMachine(command, env) !== undefined }));
+  if (asksModels(options)) checks.push(...(await checkProjectModels(project)));
   return checks;
 }
 
@@ -277,7 +310,9 @@ export async function main(args: string[]): Promise<number> {
   console.log(brand.bold(brand.accent("Checking what turri needs.")));
   if (!nodeVersionOk()) return report([checkNode()]);
   const modelsGiven = ["harness-model", "model", "judge-model"].some((name) => options[name] !== undefined);
-  const code = report(await allChecks({ models: options["no-models"] === undefined, modelsGiven }));
+  const checking = { dir: process.cwd(), models: options["no-models"] === undefined, cli: true, modelsGiven };
+  if (asksModels(checking)) console.log(brand.muted("Asking each model the config names for a word..."));
+  const code = report(await allChecks(checking));
   // turri and pi are kept apart: a plain pi does not start turri. An older turri's file that made it do so goes, asked.
   const global = globalExtensionFile();
   if (global !== undefined && (await confirm(`\nA plain \`pi\` loads turri too, through ${global}. Remove it, so pi stays pi?`, true, options.yes !== undefined || args.includes("-y")))) {

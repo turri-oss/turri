@@ -17,6 +17,9 @@ export { MODULES_DIR, projectDirOf, resolveTemplateDirs } from "./regenerate/pat
 // A project's first config.turri.yaml, as `turri init-config` writes it - the vendor whose models it takes chosen by the host.
 export { BEDROCK_DEFAULT, BEDROCK_REGIONS, bedrockModels, initConfig, VENDORS, type BedrockChoice, type Vendor } from "./init-config.ts";
 
+// Whether this machine, and a project on it, is ready for turri - as `turri doctor` checks it, printing nothing.
+export { doctor, type Check, type DoctorOptions, type Level } from "./setup.ts";
+
 // A spec: parsed, checked, coloured.
 export { checkPlainFile, type CheckResult } from "./plain/check.ts";
 export { plainFileParser } from "./plain/parser.ts";

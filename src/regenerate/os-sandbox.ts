@@ -239,7 +239,12 @@ export function sandboxAvailable(): Wall {
   return probed;
 }
 
-function probe(): Wall {
+/** Which wall would be up with `env`'s PATH - doctor's for a host whose engine runs with another PATH; tried each time. */
+export function sandboxWith(env: NodeJS.ProcessEnv): Wall {
+  return env === process.env ? sandboxAvailable() : probe(env);
+}
+
+function probe(env: NodeJS.ProcessEnv = process.env): Wall {
   if (process.platform === "darwin") {
     if (!existsSync("/usr/bin/sandbox-exec")) return { kind: "none", why: "this macOS has no sandbox-exec (Seatbelt)" };
     const run = spawnSync("/usr/bin/sandbox-exec", ["-p", "(version 1)(allow default)", "/usr/bin/true"], { encoding: "utf8", timeout: 10_000 });
@@ -250,6 +255,7 @@ function probe(): Wall {
       spawnSync("bwrap", ["--ro-bind", "/", "/", ...(proc === "mount" ? ["--proc", "/proc"] : ["--ro-bind", "/proc", "/proc"]), "--dev", "/dev", "--unshare-pid", "--", "true"], {
         encoding: "utf8",
         timeout: 10_000,
+        env,
       });
     const mounted = tryProc("mount");
     if (mounted.status === 0) return { kind: "bubblewrap", proc: "mount" };
