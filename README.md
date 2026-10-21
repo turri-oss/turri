@@ -10,7 +10,7 @@
 
 **turri** is named after *Turritopsis dohrnii*, the immortal jellyfish that regenerates itself from its young form, again and again - as **turri** regenerates the code from the durable intent - see [the name](#the-name).
 
-**turri** has a desktop app too: [turri-app](https://github.com/turri-oss/turri-app), a proof of concept.
+**turri** has a desktop app too: [turri-app](https://github.com/turri-oss/turri-app).
 
 ## Quick start
 
