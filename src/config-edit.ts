@@ -1,6 +1,8 @@
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { dump as dumpYaml, load as loadYaml } from "js-yaml";
+import { PACKAGE_ROOT } from "./environment.ts";
+import { loadRules } from "./rules.ts";
 import { adoptLegacyConfig, AGENT_ROLES, CONFIG_FILE, chosenStack, projectConfigFile, stackConfigFileIn, stacksOf, splitModelSpec, THINKING_LEVELS } from "./config.ts";
 
 /**
@@ -116,8 +118,10 @@ export function settings(rules: string[] = []): Setting[] {
   ];
 }
 
-/** Every setting, as a host is given them: `settings` under the name it has beside the host's other config. */
-export const configSettings = settings;
+/** Every setting, as a host is given them: rules-off offering turri's own rules, as /turri-config offers them. */
+export function configSettings(): Setting[] {
+  return settings(loadRules(join(PACKAGE_ROOT, "genome", "rules")).map((rule) => rule.name));
+}
 
 /** A setting by its key - `review`, `models.coding` - or nothing. */
 export function settingOf(key: string, rules: string[] = []): Setting | undefined {

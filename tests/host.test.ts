@@ -200,13 +200,14 @@ describe("the skills the person starts with a command", () => {
 });
 
 describe("config settings for a host", () => {
-  it("lists every setting /turri-config changes, and reads what the file has", async () => {
+  it("lists every setting /turri-config changes, rules-off offering turri's own rules, and reads what the file has", async () => {
     const host = await import("../src/host.ts");
     const keys = host.configSettings().map((setting) => setting.key);
     expect(keys).toEqual(expect.arrayContaining(["harness-model", "review", "mutation-testing", "release-after-pulse", "parallel-jobs", "models.coding"]));
     const review = host.configSettings().find((setting) => setting.key === "review")!;
     expect(review).toMatchObject({ kind: "boolean", unset: "true" });
     expect(host.EFFECT_TEXT[review.effect]).toMatch(/next pulse/);
+    expect(host.configSettings().find((setting) => setting.key === "rules-off")!.options).toContain("turri-regeneration");
     expect(host.currentValue("review: false\nmodels:\n  coding: anthropic/claude-opus-5-5:low\n", "models.coding")).toBe("anthropic/claude-opus-5-5:low");
   });
 });
