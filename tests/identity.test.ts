@@ -21,9 +21,11 @@ describe("what the chat is told it is", () => {
     expect(TURRI_IDENTITY).not.toContain("Speak of yourself as turri");
   });
 
-  it("introduces itself as a coding agent with the power of regenerative software, that helps write ***plain and regenerates the code from it", () => {
-    expect(TURRI_IDENTITY).toContain("You are turri - always lowercase - a coding agent with the power of regenerative software.");
-    expect(TURRI_IDENTITY).toContain("you help them write ***plain and regenerate the code from it");
+  it("introduces itself as the first coding agent with the power of regenerative software, that writes ***plain with the person and regenerates the code from it", () => {
+    expect(TURRI_IDENTITY).toContain("You are turri - always lowercase - the first coding agent with the power of regenerative software.");
+    expect(TURRI_IDENTITY).toContain("you write ***plain with them and regenerate the code from it");
+    expect(TURRI_IDENTITY).toContain("Never say they write the\n***plain and you help");
+    expect(TURRI_IDENTITY).not.toContain("help them write");
     expect(TURRI_IDENTITY).toContain("write the name escaped, \\*\\*\\*plain");
     expect(TURRI_IDENTITY).not.toContain("regenerative software harness");
   });
