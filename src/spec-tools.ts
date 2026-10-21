@@ -51,7 +51,7 @@ export function createSpecDiffTools(options: {
   let answeredSinceLastDiff = true;
 
   const writeDiff = defineTool({
-    name: "write_spec_diff",
+    name: "change_plain",
     label: "Write spec diff",
     description:
       "Apply a change to the ***plain specs, given as a git diff of the .plain files, and start building it in " +
@@ -60,7 +60,7 @@ export function createSpecDiffTools(options: {
       "every change is built, whatever it touches.",
     promptSnippet: "apply a git diff of the .plain specs and start building it",
     promptGuidelines: [
-      "Every change to a .plain file in the product phase goes through write_spec_diff, as a git diff with paths relative to the project root. It writes the change and starts its build in one step.",
+      "Every change to a .plain file in the product phase goes through change_plain, as a git diff with paths relative to the project root. It writes the change and starts its build in one step.",
       skillPaced
         ? "One change per answer, and a new one only after the user has answered a question about it. Set fixes_earlier to correct something already written."
         : "Write the changes one after another, on your own: no answer is needed between them, and none is asked for. Set fixes_earlier to correct something already written.",

@@ -162,7 +162,7 @@ describe("spawn, brood's quick twin", () => {
     expect(skill.steps.map((step) => step.name)).toEqual(["start", "skeleton", "regenerate"]);
     expect(skill.steps.every((step) => step.gate === undefined)).toBe(true);
     expect(skill.paced).toBe(false);
-    expect(skill.allowedTools).toContain("write_spec_diff");
+    expect(skill.allowedTools).toContain("change_plain");
     // brood's interview stays paced: one answer, one change.
     expect(loadSkill("genome/skills/brood").paced).toBe(true);
   });
@@ -195,7 +195,7 @@ describe("mature", () => {
   it("regenerates a rough spec until it is fully regenerated, on its own - with the conversation's regenerate, drift and halt, and its own tools to watch the pulses and read what they decided", () => {
     const skill = loadSkill("genome/skills/mature");
     expect(skill.steps.map((step) => step.name)).toEqual(["intake", "regenerate", "report"]);
-    expect(skill.allowedTools).toEqual(expect.arrayContaining(["write_spec_diff", "regenerate", "drift", "halt", "watch_jobs", "spec_findings"]));
+    expect(skill.allowedTools).toEqual(expect.arrayContaining(["change_plain", "regenerate", "drift", "halt", "watch_jobs", "spec_findings"]));
     expect(skill.paced).toBe(false);
   });
 });
@@ -206,7 +206,7 @@ describe("bud", () => {
     expect(skill.steps.map((step) => step.name)).toEqual(["intent", "scope", "product"]);
     expect(skill.questioning).toEqual(["product"]);
     expect(skill.diffPerAnswer).toEqual(["product"]);
-    expect(skill.allowedTools).toContain("write_spec_diff");
+    expect(skill.allowedTools).toContain("change_plain");
     expect(skill.paced).toBe(true);
   });
 });

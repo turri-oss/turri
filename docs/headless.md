@@ -1,6 +1,6 @@
 # Running unattended
 
-Given a spec, build it without a conversation - overnight, in CI, on a spare machine.
+Given \*\*\*plain, build it without a conversation - overnight, in CI, on a spare machine.
 
 ## Before you leave it
 
@@ -14,7 +14,7 @@ Everything marked `✗` stops the run, so fix those first. Two more things matte
 - **The models.** In a project, `turri doctor` sends each model `config.turri.yaml` names one short request, as turri's agents will - so a key the provider refuses, a model [pi](https://pi.dev) does not know or an account without access to it shows now, not an hour into the run. Models the run is given on the command line are given to doctor the same way - `--harness-model`, `--coding-model`, `--judge-model`, read as the config's keys - and are checked with the config's.
 - **Credentials that do not expire mid-run.** An API key in the environment (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, ...) or [pi](https://pi.dev)'s saved login - whatever `doctor` shows as the model provider.
 
-Check the spec parses, without spending anything:
+Check \*\*\*plain parses, without spending anything:
 
 ```bash
 cd ~/my-project                  # the directory that holds the spec
@@ -52,7 +52,7 @@ judge-model: anthropic/claude-opus-5-5    # the judge and the test review (defau
 conformance-tests: true            # write and run conformance tests where there are test reqs (default: false)
 ```
 
-The same file names the [testing scripts](regenerating.md#the-testing-scripts); every key is in [the project config](config.md). `turri regenerate`, `spec-diff` and `conform` take five of its keys on the command line too - `--harness-model`, `--coding-model` (`--model` is the same), `--judge-model`, `--review` and, but for `conform`, `--conformance-tests`. Each is read as if the file had it, in its place: it takes that key's value, and every key keeps its place in the order the config resolves them in - a `models:` entry still wins over `harness-model`, `coding-model` or `judge-model`, the planner and the conformance chooser run on the harness model, the judge falls back on the coding model. So a run with the options is the same as one, or a chat, with those keys in `config.turri.yaml` - and a `config.yaml` the project has is left as it is. A project whose parts are on different stacks keeps each stack's settings in `config.turri.<stack>.yaml` beside it ([stacks](config.md#stacks)). Choose the one to build with `--stack <name>` - on any command: `regenerate`, `conform`, `spec-diff`, `glimpse`, `release`, `cultivate` - or `TURRI_STACK`: `turri regenerate backend.plain --stack backend`. With none chosen, `config.turri.yaml` alone is used; a stack the project has no file for is refused.
+The same file names the [testing scripts](regenerating.md#the-testing-scripts); every key is in [the project config](config.md). `turri regenerate`, `change-plain` and `conform` take five of its keys on the command line too - `--harness-model`, `--coding-model` (`--model` is the same), `--judge-model`, `--review` and, but for `conform`, `--conformance-tests`. Each is read as if the file had it, in its place: it takes that key's value, and every key keeps its place in the order the config resolves them in - a `models:` entry still wins over `harness-model`, `coding-model` or `judge-model`, the planner and the conformance chooser run on the harness model, the judge falls back on the coding model. So a run with the options is the same as one, or a chat, with those keys in `config.turri.yaml` - and a `config.yaml` the project has is left as it is. A project whose parts are on different stacks keeps each stack's settings in `config.turri.<stack>.yaml` beside it ([stacks](config.md#stacks)). Choose the one to build with `--stack <name>` - on any command: `regenerate`, `conform`, `change-plain`, `glimpse`, `release`, `cultivate` - or `TURRI_STACK`: `turri regenerate backend.plain --stack backend`. With none chosen, `config.turri.yaml` alone is used; a stack the project has no file for is refused.
 
 Useful options - `turri regenerate --help` lists all of them:
 
@@ -73,11 +73,11 @@ Useful options - `turri regenerate --help` lists all of them:
 
 An option a command does not take is refused, not ignored.
 
-`turri regenerate` queues the jobs the chat's `regenerate` does - a spec diff that brings what is built in line, when it no longer matches the spec, then one render functionality job per functional spec not built, each with its conformance job - and runs them all to the end, the queue master reworking them as in the chat (see [a whole module](regenerating.md#a-whole-module)). Conformance tests follow `conformance-tests:` in `config.turri.yaml`, or `--conformance-tests`.
+`turri regenerate` queues the jobs the chat's `regenerate` does - a \*\*\*plain diff that brings what is built in line, when it no longer matches \*\*\*plain, then one regenerate functionality job per functional spec not built, each with its conformance job - and runs them all to the end, the queue master reworking them as in the chat (see [a whole module](regenerating.md#a-whole-module)). Conformance tests follow `conformance-tests:` in `config.turri.yaml`, or `--conformance-tests`.
 
 ## In the morning
 
-The command exits `0` only when every module is complete: its code regenerated from the spec as it is now, and its conformance tests written for what is built when they are on - no pulse failed, nothing halted, nothing waiting for a start over. Anything else exits `1`, and the last lines say which module is not complete, and why. A behaviour the spec leaves open that an agent had to decide is printed as a `spec gap` under its pulse, with what was decided meanwhile. The log says, per functionality, what was built and whether its tests passed.
+The command exits `0` only when every module is complete: its code regenerated from \*\*\*plain as it is now, and its conformance tests written for what is built when they are on - no pulse failed, nothing halted, nothing waiting for a start over. Anything else exits `1`, and the last lines say which module is not complete, and why. A behaviour \*\*\*plain leaves open that an agent had to decide is printed as a `spec gap` under its pulse, with what was decided meanwhile. The log says, per functionality, what was built and whether its tests passed.
 
 | | |
 | --- | --- |
@@ -173,17 +173,17 @@ A module that `requires` others is built in its own codebase on top of theirs: t
 
 **Pulses.** `landed`: its work is committed. `rolled_back`: it ended without landing - failed, stopped, or did not pass - and everything it wrote was undone. A pulse that failed is tried once more before it counts as failed; both tries are the one pulse.
 
-**Time to first regeneration.** `pulses.first_started_seconds` is how long after the run started its first code pulse started - planning the work, and any wait for a free slot, before it - and `first_landed_seconds` how long until the first one landed, when there is first something to try. Both are `null` until it happens. In the chat, `spawn` and the other skills that write spec diffs say the same in their result, counted from when the skill began.
+**Time to first regeneration.** `pulses.first_started_seconds` is how long after the run started its first code pulse started - planning the work, and any wait for a free slot, before it - and `first_landed_seconds` how long until the first one landed, when there is first something to try. Both are `null` until it happens. In the chat, `spawn` and the other skills that write \*\*\*plain diffs say the same in their result, counted from when the skill began.
 
-**Spec gaps.** A behaviour the spec leaves open that an agent met and decided on its own - reported with `report_spec_gap` (see [regenerating](regenerating.md)). In the chat they are put to you as the pulse ends; a headless run has no one to ask, so they are listed here, in the order the pulses started, and printed under the pulse that met them. `assumption` is what the agent decided meanwhile, also in the codebase's notes' assumptions while its pulse is `landed`; a pulse rolled back takes it out of the notes, but the question still stands. Settle the ones you care about in the spec and run again.
+**Gaps in \*\*\*plain.** A behaviour \*\*\*plain leaves open that an agent met and decided on its own - reported with `report_spec_gap` (see [regenerating](regenerating.md)). In the chat they are put to you as the pulse ends; a headless run has no one to ask, so they are listed here, in the order the pulses started, and printed under the pulse that met them. `assumption` is what the agent decided meanwhile, also in the codebase's notes' assumptions while its pulse is `landed`; a pulse rolled back takes it out of the notes, but the question still stands. Settle the ones you care about in \*\*\*plain and run again.
 
-**Turn incidents.** Each time the model provider failed for a moment and [pi](https://pi.dev) or turri waited it out before trying the request again, each time the provider sent nothing back on a request for two minutes, and each turn turri stopped itself - an agent going round in a circle, its calls failing again and again, its time up - after which the run carried on. The provider failing or stalling is printed as it happens, in orange, under the pulse; a stop is the work's normal course and is only listed. They are counted in the usage as `provider_retries`, `provider_stalls` and `turns_stopped`. Many of any point at the model, not the spec: a provider at its limits, or a model too small for the role it was given.
+**Turn incidents.** Each time the model provider failed for a moment and [pi](https://pi.dev) or turri waited it out before trying the request again, each time the provider sent nothing back on a request for two minutes, and each turn turri stopped itself - an agent going round in a circle, its calls failing again and again, its time up - after which the run carried on. The provider failing or stalling is printed as it happens, in orange, under the pulse; a stop is the work's normal course and is only listed. They are counted in the usage as `provider_retries`, `provider_stalls` and `turns_stopped`. Many of any point at the model, not \*\*\*plain: a provider at its limits, or a model too small for the role it was given.
 
-**Completed functional specs** - the pass rate, the figure to compare runs by. A functional spec is completed when the code record of the codebase the run delivers - the furthest-built of the chain, the one `--build-dir` exports - as last committed, holds it as the spec has it now: the same text, every file it links holding the same, no definition it uses changed, and not marked to regenerate again. A record moves only when a pulse lands, and a pulse lands only once the code's unit tests pass (its conformance tests too, when they are on), so completed means landed and passing. Each module counts its own functional specs: a module below the tip counts from what the tip's code was built on, and a module above the delivered codebase has none completed. `conformance_tested` is those of the completed ones whose conformance tests are recorded as written for them as they are now (`plain_modules/<module>/tests/.turri.json`).
+**Completed functional specs** - the pass rate, the figure to compare runs by. A functional spec is completed when the code record of the codebase the run delivers - the furthest-built of the chain, the one `--build-dir` exports - as last committed, holds it as \*\*\*plain has it now: the same text, every file it links holding the same, no definition it uses changed, and not marked to regenerate again. A record moves only when a pulse lands, and a pulse lands only once the code's unit tests pass (its conformance tests too, when they are on), so completed means landed and passing. Each module counts its own functional specs: a module below the tip counts from what the tip's code was built on, and a module above the delivered codebase has none completed. `conformance_tested` is those of the completed ones whose conformance tests are recorded as written for them as they are now (`plain_modules/<module>/tests/.turri.json`).
 
 ## If it stopped
 
-Run the same command again. Functionalities already built from the current spec are left alone, and modules that are complete are skipped, so it picks up where it stopped - after a crash, a provider outage, or a machine that went to sleep anyway. Whatever the stopped run left half-written is undone first: each step starts from the module's last commit. A functionality whose spec has changed since counts as not built, so editing the spec and re-running rebuilds what changed. `--from-scratch` rebuilds the module; `--from-scratch-chain` rebuilds every module of its chain.
+Run the same command again. Functionalities already built from the current \*\*\*plain description are left alone, and modules that are complete are skipped, so it picks up where it stopped - after a crash, a provider outage, or a machine that went to sleep anyway. Whatever the stopped run left half-written is undone first: each step starts from the module's last commit. A functionality whose \*\*\*plain has changed since counts as not built, so editing \*\*\*plain and re-running rebuilds what changed. `--from-scratch` rebuilds the module; `--from-scratch-chain` rebuilds every module of its chain.
 
 ## Rebuilding one functionality
 
@@ -191,9 +191,9 @@ Run the same command again. Functionalities already built from the current spec 
 turri regenerate app.plain 3
 ```
 
-It rebuilds just functionality 3 over the code that already exists - after its spec changed, or as it is - without rebuilding the ones before it. To change what it does, change its spec first: the spec is what the code is built from, and a change made there lasts. Then it updates the functionality's conformance tests and runs every conformance test in the codebase, since a change can break something built later as easily as something built earlier. It works in the codebase the functionality now lives in: when later modules are built on top of this one, the furthest-built of them. It exits `0` when everything passes, and refuses when there is no code yet - regenerate the module first.
+It rebuilds just functionality 3 over the code that already exists - after its \*\*\*plain changed, or as it is - without rebuilding the ones before it. To change what it does, change its \*\*\*plain first: \*\*\*plain is what the code is built from, and a change made there lasts. Then it updates the functionality's conformance tests and runs every conformance test in the codebase, since a change can break something built later as easily as something built earlier. It works in the codebase the functionality now lives in: when later modules are built on top of this one, the furthest-built of them. It exits `0` when everything passes, and refuses when there is no code yet - regenerate the module first.
 
-Several changes do not need one command each: after editing the spec, re-running `turri regenerate` brings the code up to it - one spec diff for what changed in what is built, then the functional specs not built yet.
+Several changes do not need one command each: after editing \*\*\*plain, re-running `turri regenerate` brings the code up to it - one \*\*\*plain diff for what changed in what is built, then the functional specs not built yet.
 
 ## In a container
 
@@ -206,7 +206,7 @@ turri regenerate app.plain --harness-model amazon-bedrock/eu.anthropic.claude-op
   --start-over --build-dir /out/build --report /out/report.json < /dev/null
 ```
 
-- **What it needs:** Node 22.19 or newer, `bash`, `git` (each module's history, and the spec diffs the work is planned from), `/bin/sh` with `kill` and `sleep`, a writable `HOME` ([pi](https://pi.dev) keeps `~/.pi/agent/auth.json` there, even with no login - or set `PI_CODING_AGENT_DIR`) and `TMPDIR`, and the toolchains the project's testing scripts and implementation reqs name. `turri doctor` in the project, given the run's models, checks them all and that each model answers - at the start of the task's log, not when a pulse fails:
+- **What it needs:** Node 22.19 or newer, `bash`, `git` (each module's history, and the \*\*\*plain diffs the work is planned from), `/bin/sh` with `kill` and `sleep`, a writable `HOME` ([pi](https://pi.dev) keeps `~/.pi/agent/auth.json` there, even with no login - or set `PI_CODING_AGENT_DIR`) and `TMPDIR`, and the toolchains the project's testing scripts and implementation reqs name. `turri doctor` in the project, given the run's models, checks them all and that each model answers - at the start of the task's log, not when a pulse fails:
 
   ```bash
   turri doctor --harness-model amazon-bedrock/eu.anthropic.claude-opus-5-5 \
@@ -222,7 +222,7 @@ turri regenerate app.plain --harness-model amazon-bedrock/eu.anthropic.claude-op
 
 ## Asking in words instead
 
-[pi](https://pi.dev)'s print mode runs one request and exits, with the render tools waiting for their work rather than starting background jobs:
+[pi](https://pi.dev)'s print mode runs one request and exits, with the tools that regenerate waiting for their work rather than starting background jobs:
 
 ```bash
 nohup turri -p "Render app.plain as a whole module, with conformance tests" > render.log 2>&1 &

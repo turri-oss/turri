@@ -13,7 +13,7 @@ description: >-
   what they want alone, use its quick twin, `spawn`. Not for adding a
   feature to an existing project (use `bud`) or for editing generated code (the .plain
   specs are the source of truth).
-allowed-tools: [read, write, edit, bash, ls, grep, find, write_spec_diff]
+allowed-tools: [read, write, edit, bash, ls, grep, find, change_plain]
 metadata:
   # Started only by the person, with its command - /brood - never by the model on its own.
   command-only: true
@@ -27,8 +27,8 @@ metadata:
   # medium 5, thorough 10, best judgement as many as turri judges the phase needs.
   questioning: [stack, product]
   # Every answer in the product phase is a spec change: the next question waits until it is
-  # written with write_spec_diff. Changes turri decides itself need no answer before them.
-  spec-diff-per-answer: [product]
+  # written with change_plain. Changes turri decides itself need no answer before them.
+  change-plain-per-answer: [product]
 ---
 
 # Brood
@@ -39,9 +39,9 @@ Load the `***plain` syntax rules before writing anything — they are in the sys
 
 Act as a `***plain` spec writer. The only output is `.plain` specification files — never code. Code is generated from the specs and lives in `plain_modules/` as a read-only artifact; never write or edit it. Frame every message to the user in terms of specs: "I'll add this to the spec," "Let me change the spec to fix that." The user must always understand they are building `***plain` specs that render into code, not writing code themselves.
 
-In the product phase, every change you make to the specs is a **spec diff**: a git diff of the `.plain` files, written with `write_spec_diff`, which applies it and starts building it. The spec diffs are the output of the interview; the builds follow from them.
+In the product phase, every change you make to the specs is a **spec diff**: a git diff of the `.plain` files, written with `change_plain`, which applies it and starts building it. The spec diffs are the output of the interview; the builds follow from them.
 
-The testing phase is the exception: it changes only `***test reqs***`, and comes before anything is built, so it writes them with the ordinary file tools and never with `write_spec_diff`. It comes before the product phase so that every spec change the product phase writes is conformance tested as it is built: with conformance on, each build writes and runs the change's conformance tests, and keeps every earlier one passing.
+The testing phase is the exception: it changes only `***test reqs***`, and comes before anything is built, so it writes them with the ordinary file tools and never with `change_plain`. It comes before the product phase so that every spec change the product phase writes is conformance tested as it is built: with conformance on, each build writes and runs the change's conformance tests, and keeps every earlier one passing.
 
 ## Phase discipline
 
@@ -64,7 +64,7 @@ The first question of the intent phase is the harness's own, not yours: how many
 
 At every level the questions reach all of the phase's topics; fewer questions only go less deep. The intent and testing phases are not capped. Follow-ups count; the closing confirmation of a phase - asked with `confirms_phase: true` - does not. Past the cap `ask_user` refuses the question. To stop sooner, or under best judgement once the phase is settled enough to build, call `end_questions`.
 
-The level limits the questions, never the spec changes. In the product phase **every answer is a spec change**, whatever the level: written with `write_spec_diff` and built at once, before the next question - `ask_user` refuses the next one until it is. A broad answer that covers several features is several changes, one a feature, and you write them all. What the questions leave open - the details of a light answer, what is left once they are over - is yours to decide, as a careful engineer would, in the light of the intent brief: each decision a spec change of its own, written with `write_spec_diff` with no answer needed before it, and said in one line. Write as many as the product needs. The phase's summary names every decision you made yourself, so the confirmation is where the person can change it.
+The level limits the questions, never the spec changes. In the product phase **every answer is a spec change**, whatever the level: written with `change_plain` and built at once, before the next question - `ask_user` refuses the next one until it is. A broad answer that covers several features is several changes, one a feature, and you write them all. What the questions leave open - the details of a light answer, what is left once they are over - is yours to decide, as a careful engineer would, in the light of the intent brief: each decision a spec change of its own, written with `change_plain` with no answer needed before it, and said in one line. Write as many as the product needs. The phase's summary names every decision you made yourself, so the confirmation is where the person can change it.
 
 ## Question style
 
@@ -100,11 +100,11 @@ Read `references/stack.md` and walk its topics in order, within the questioning 
 
 Offer the standard library's stacks first, those in a language this machine can build now (the stdlib rule, in `<plain-rules>`, `<toolchains on this machine>`, and the first section of `references/stack.md`): a stack from it is one import, and only what it leaves open - storage, external services, other constraints - is asked and written.
 
-Create the module structure and frontmatter so there is a `.plain` file to build into, and author every requirement into `***implementation reqs***` at the right scope — shared requirements into the template, module-specific ones into the module. Write these with the ordinary file tools; **nothing is built in this phase**, and `write_spec_diff` is not used here.
+Create the module structure and frontmatter so there is a `.plain` file to build into, and author every requirement into `***implementation reqs***` at the right scope — shared requirements into the template, module-specific ones into the module. Write these with the ordinary file tools; **nothing is built in this phase**, and `change_plain` is not used here.
 
 Write no definitions, no functional specs, no `***test reqs***` and no `***acceptance tests***`.
 
-End the phase with the unit tests: their framework, as a `:UnitTests:` requirement, and the unit testing script, which every build needs from the first one on. If turri already finds a script - named by `unittests-script:` in `config.turri.yaml` at the project root, or the one `run_unittests*.sh` in the root or in `test_scripts/` - keep it. Otherwise write `test_scripts/run_unittests_<language>.sh` with the `implement-unit-testing-script` skill, for the language and framework just settled. Do not link it from the specs. Without it, every build stops before it starts. When this module sits in a project beside another on a different stack - a frontend beside a backend, sharing only an imported module - its script is its stack's: name it in that stack's `config.turri.<stack>.yaml` beside `config.turri.yaml` (`unittests-script:`) - `config.turri.frontend.yaml` for the stack `frontend` - not in `config.turri.yaml`, which is the project's and holds what the stacks share. Name the stack after this module - `config.turri.frontend.yaml` for `frontend.plain` - and it is built with it by itself, with nothing to choose. A stack the project already has under another name is passed as `stack` to `write_spec_diff`.
+End the phase with the unit tests: their framework, as a `:UnitTests:` requirement, and the unit testing script, which every build needs from the first one on. If turri already finds a script - named by `unittests-script:` in `config.turri.yaml` at the project root, or the one `run_unittests*.sh` in the root or in `test_scripts/` - keep it. Otherwise write `test_scripts/run_unittests_<language>.sh` with the `implement-unit-testing-script` skill, for the language and framework just settled. Do not link it from the specs. Without it, every build stops before it starts. When this module sits in a project beside another on a different stack - a frontend beside a backend, sharing only an imported module - its script is its stack's: name it in that stack's `config.turri.<stack>.yaml` beside `config.turri.yaml` (`unittests-script:`) - `config.turri.frontend.yaml` for the stack `frontend` - not in `config.turri.yaml`, which is the project's and holds what the stacks share. Name the stack after this module - `config.turri.frontend.yaml` for `frontend.plain` - and it is built with it by itself, with nothing to choose. A stack the project already has under another name is passed as `stack` to `change_plain`.
 
 The unit testing script runs the static checks too - the formatter, linter and type checker the stack names, which count as the unit tests do; `implement-unit-testing-script` says which for each language. There is no separate static checks script.
 
@@ -118,7 +118,7 @@ Read `references/testing.md`. Carry the intent brief and the stack in; ask about
 
 First the decision: are there conformance tests at all? Ask it explicitly - even when `config.turri.yaml` already says, ask, offering what it says first - and write the answer to `config.turri.yaml` as `conformance-tests:` - the chat and every build follow it. A project with only a `config.yaml` has it copied to `config.turri.yaml` first; never write `config.yaml`. Off, and the phase is done once the user confirms: the product phase's builds then write and run no conformance tests.
 
-On: when the stack came from the standard library, import its conformance template (`stdlib/<kind>/conformance/<stack>`) and ask only about what it does not settle. Each answer about how the tests are written and run becomes a `:ConformanceTests:` requirement in `***test reqs***`, written with the ordinary file tools. A change to the test reqs is not a spec diff: never use `write_spec_diff` in this phase. Then make sure the project has its conformance testing script - `implement-conformance-testing-script` writes it into `test_scripts/` when turri finds none - and run `validate` on what you changed. Without both, the first build of the product phase stops before it starts.
+On: when the stack came from the standard library, import its conformance template (`stdlib/<kind>/conformance/<stack>`) and ask only about what it does not settle. Each answer about how the tests are written and run becomes a `:ConformanceTests:` requirement in `***test reqs***`, written with the ordinary file tools. A change to the test reqs is not a spec diff: never use `change_plain` in this phase. Then make sure the project has its conformance testing script - `implement-conformance-testing-script` writes it into `test_scripts/` when turri finds none - and run `validate` on what you changed. Without both, the first build of the product phase stops before it starts.
 
 Finish by summarizing the decision, the test reqs and the script, and saying that from the first spec change on, every build writes and runs its conformance tests. Get explicit confirmation.
 
@@ -131,10 +131,10 @@ Walk its topics in order, and run this loop while the questioning level allows (
 1. **Ask** one question with `ask_user` - about a feature, a step of a flow, a rule; never about a spec section.
 2. The user **answers**.
 3. **Make the spec change** the answer calls for, as one git diff of the `.plain` files - across every section it needs: the concepts it introduces, a policy it states, the functional spec it adds or changes.
-4. **Write it with `write_spec_diff`**, which applies it and starts a render spec diff job for it, whatever it touches. With conformance on, that build also writes and runs the change's conformance tests. An answer that covers several features is a change for each: write them all. Then the changes for what you decide yourself around it, if any.
+4. **Write it with `change_plain`**, which applies it and starts a render spec diff job for it, whatever it touches. With conformance on, that build also writes and runs the change's conformance tests. An answer that covers several features is a change for each: write them all. Then the changes for what you decide yourself around it, if any.
 5. Move straight on to the next question; never wait for a build.
 
-Every answer, at least one spec change and one render spec diff job, written before the next question - at every level. Once the questions are over, write what is left of the product the same way - one decision of yours, one spec change - with no answer between. Correct something already written with a diff and `fixes_earlier`, before the next question. Never change a `.plain` file in this phase by any other means than `write_spec_diff`.
+Every answer, at least one spec change and one render spec diff job, written before the next question - at every level. Once the questions are over, write what is left of the product the same way - one decision of yours, one spec change - with no answer between. Correct something already written with a diff and `fixes_earlier`, before the next question. Never change a `.plain` file in this phase by any other means than `change_plain`.
 
 Report each build result between questions, in one sentence. Use `drift` when the user asks how the builds are going.
 

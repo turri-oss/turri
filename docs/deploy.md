@@ -1,8 +1,8 @@
 # Trying what is built: deploy
 
-Ask to try it - "let me try it", "run the app" - at any time, even while a render is running. The chat calls `deploy`: it puts the module's code, as it was last built, in `dist/<module>` in the project, and starts it on your machine. An app with a backend and a frontend is started whole, and you are told where to open your browser. For a command-line tool or a library you get a few commands to paste, run from `dist/<module>`, and what they print.
+Ask to try it - "let me try it", "run the app" - at any time, even while a regeneration is running. The chat calls `deploy`: it puts the module's code, as it was last built, in `dist/<module>` in the project, and starts it on your machine. An app with a backend and a frontend is started whole, and you are told where to open your browser. For a command-line tool or a library you get a few commands to paste, run from `dist/<module>`, and what they print.
 
-Every pulse that lands code - a render, a spec diff, a conformance run, a functionality regenerated - ends with "Want to try it? Just ask me - I'll set it up from what's built so far." When a render's conformance tests follow as a pulse of their own, the conformance pulse says it, once they pass too.
+Every pulse that lands code - a regeneration, a \*\*\*plain diff, a conformance run, a functionality regenerated - ends with "Want to try it? Just ask me - I'll set it up from what's built so far." When a regeneration's conformance tests follow as a pulse of their own, the conformance pulse says it, once they pass too.
 
 ## When the project says how it is released
 
@@ -17,7 +17,7 @@ The chat reacts to every pulse that finishes as it finishes, without waiting for
 
 ## What goes in dist
 
-- **The module on top.** Code accumulates up a `requires` chain: a module starts from a copy of the code of the one it requires. So deploy always takes the module on top of the spec's chain - the project's `module` from `config.turri.yaml` unless another spec is named. Before the module on top has anything built, it takes the nearest one below it that has, and says so.
+- **The module on top.** Code accumulates up a `requires` chain: a module starts from a copy of the code of the one it requires. So deploy always takes the module on top of the `requires` chain - the project's `module` from `config.turri.yaml` unless another module's \*\*\*plain is named. Before the module on top has anything built, it takes the nearest one below it that has, and says so.
 - **Its last commit.** Each `plain_modules/<module>` is a git repository (`.plaingit`), and every unit of work starts from a commit and ends with one. What a pulse is writing right now is half-done, so it is left out: deploy exports the commit - `git archive` of `code/` - which is the working tree with every unstaged and untracked change put back, and no `node_modules`, `.venv`, `target` or other build leftovers, whatever the stack. The working tree the pulse is using is never read or touched. The harness's own files - `.turri.json`, the agents' notes - are left out too.
 - **Replaced whole.** Each deploy stops what the last one of the module started, empties `dist/<module>` and exports again. Change nothing there you want to keep. `dist/` is not added to `.gitignore`: whether it is committed is yours to decide.
 
@@ -47,4 +47,4 @@ turri release [file.plain] [--in-module <module>] [--guidance <text>] [--model <
 
 The same, without the chat: a one-off agent on `coding-model`, thinking low (or `--model`; without either, [pi](https://pi.dev)'s default) is given the project's AGENTS.md and what `--guidance <text>` says, looks for guidance in them, and releases as above - as the guidance says, or to `dist/<module>` - then works out how to start it and starts it here, installing what it needs without asking. It stays in the foreground with the servers' output; `Ctrl-C` stops them. If it does not get there, deploy from the chat instead.
 
-`turri regenerate`, `spec-diff` and `conform` end a build that landed with `To try it: turri release <spec>`.
+`turri regenerate`, `change-plain` and `conform` end a build that landed with `To try it: turri release <spec>`.

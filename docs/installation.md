@@ -9,7 +9,7 @@ npm install -g @turri-dev/cli   # puts `turri` on your PATH
 turri doctor           # checks the machine: what turri needs, and what is missing
 ```
 
-Then, in the project that holds your specs:
+Then, in the project that holds your \*\*\*plain:
 
 ```bash
 cd ~/my-project
@@ -60,7 +60,7 @@ In a project - a folder with `config.turri.yaml` (or the old `config.yaml`) or `
 
 Removing that file is the one thing `doctor` changes, and it asks first; `turri doctor --yes` says yes. Run without a terminal - piped, or in CI - it asks nothing and changes nothing. Run it again whenever something breaks; `turri doctor --no-models` leaves out the models' requests. In the chat, ask for a self check: the `doctor` tool runs the same checks, the models only when you ask. A host - a desktop app - runs the same checks through `doctor` and shows them itself (see [doctor in a host](hosting.md#doctor-in-a-host)).
 
-The chat is told every turn which wall is up and what the project's modules need of this machine that it lacks. What they need is worked out from every spec of the project - seconds, on a project of long requires chains - so it is worked out once the chat is up and again after a turn in which a spec changed, never while your message waits: a turn is told what was known last.
+The chat is told every turn which wall is up and what the project's modules need of this machine that it lacks. What they need is worked out from all the project's \*\*\*plain - seconds, on a project of long requires chains - so it is worked out once the chat is up and again after a turn in which \*\*\*plain changed, never while your message waits: a turn is told what was known last.
 
 ## turri and `pi`
 

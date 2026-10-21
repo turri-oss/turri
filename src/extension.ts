@@ -777,11 +777,11 @@ function turriExtension(pi: ExtensionAPI, host: TurriHost) {
       // A skill that edits the specs with the file tools builds nothing: the change is the conversation's to render.
       const specsChanged = changes.filter((path) => path.endsWith(".plain"));
       const unrendered =
-        specsChanged.length > 0 && !skill.allowedTools.includes("write_spec_diff")
+        specsChanged.length > 0 && !skill.allowedTools.includes("change_plain")
           ? `${specsChanged.join(", ")} changed, and nothing is regenerated from that yet: call regenerate for it, and the code is brought up to the spec.`
           : "";
       const gated = skill.steps.some((step) => step.gate !== undefined);
-      const first = skill.allowedTools.includes("write_spec_diff") ? firstRegeneration(jobs.list(), began) : {};
+      const first = skill.allowedTools.includes("change_plain") ? firstRegeneration(jobs.list(), began) : {};
       const ttfr =
         first.started === undefined
           ? ""
@@ -1285,7 +1285,7 @@ export function projectConfigBlock(root: string): string {
         stacks.length > 0 ? "project of stacks" : "project",
       ),
       ...(stacks.length > 0
-        ? ["", `Stacks: ${stacks.join(", ")} - chosen now: ${chosen ?? "none, so the project's file alone"}. Each module is built with the stack of its part, pinned to its pulses whatever is chosen after: a stack named after the module is its own - backend.plain is built with config.turri.backend.yaml - with nothing to choose. For a module whose stack has another name, pass it as stack to regenerate, conform, glimpse and write_spec_diff. Choose one for the whole session with the stack tool only when the user asks.`]
+        ? ["", `Stacks: ${stacks.join(", ")} - chosen now: ${chosen ?? "none, so the project's file alone"}. Each module is built with the stack of its part, pinned to its pulses whatever is chosen after: a stack named after the module is its own - backend.plain is built with config.turri.backend.yaml - with nothing to choose. For a module whose stack has another name, pass it as stack to regenerate, conform, glimpse and change_plain. Choose one for the whole session with the stack tool only when the user asks.`]
         : []),
       // A stack: its file over the project's, for everything built while it is chosen.
       ...stacks.flatMap((stack) => [
@@ -1472,7 +1472,7 @@ function setRenderModelTool(pi: ExtensionAPI, conversation?: ExtensionContext) {
     description:
       "The engine: which model the agents that regenerate the code run on. With no model, say which it is. With one, choose it " +
       "for the rest of this session: for spec changes " +
-      "(render spec diff pulses, and the ones write_spec_diff queues), for functionalities (render, module, " +
+      "(render spec diff pulses, and the ones change_plain queues), for functionalities (render, module, " +
       "regenerate with functionalities named, conformance), or for everything. By default " +
       "each runs on the model the project's config.turri.yaml names, or else the conversation's model. The model may be given as provider/model-id or by name as " +
       "the user said it; a name that fits more than one model, or none with credentials, comes back as a " +

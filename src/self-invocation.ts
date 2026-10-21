@@ -16,7 +16,7 @@ const TOOL_FOR: Record<string, string> = {
   conform: "conform",
   cultivate: "cultivate",
   release: "release",
-  "spec-diff": "regenerate",
+  "change-plain": "regenerate",
   chat: "nothing - you are the conversation already",
   ask: "nothing - you are the conversation already",
 };
@@ -34,7 +34,7 @@ const NPM_SCRIPT: Record<string, string> = {
 const ENTRY: Record<string, string> = {
   "regenerate-cli": "regenerate",
   "conform-cli": "conform",
-  "spec-diff-cli": "spec-diff",
+  "change-plain-cli": "change-plain",
   "cultivate-cli": "cultivate",
   "release-cli": "release",
 };
@@ -48,9 +48,9 @@ const AT_COMMAND = String.raw`(?:^|[\s;&|()\x60$])`;
  * agent - and neither are setup and doctor.
  */
 export function selfInvocation(command: string): string | undefined {
-  const cli = new RegExp(`${AT_COMMAND}(?:npx\\s+)?turri\\s+(regenerate|glimpse|conform|cultivate|release|spec-diff)\\b`).exec(command);
+  const cli = new RegExp(`${AT_COMMAND}(?:npx\\s+)?turri\\s+(regenerate|glimpse|conform|cultivate|release|change-plain)\\b`).exec(command);
   if (cli) return cli[1];
-  const launcher = new RegExp(`(?:bin/turri\\.mjs|src/cli\\.ts)\\s+(regenerate|glimpse|conform|cultivate|release|spec-diff)\\b`).exec(command);
+  const launcher = new RegExp(`(?:bin/turri\\.mjs|src/cli\\.ts)\\s+(regenerate|glimpse|conform|cultivate|release|change-plain)\\b`).exec(command);
   if (launcher) return launcher[1];
   // turri alone, or with options, is the conversation - where a command starts, not a word an argument names (`which turri`).
   const bare =
@@ -85,7 +85,7 @@ export function askedForCommandLine(message: string): boolean {
   const text = message.toLowerCase();
   return (
     /\b(headless|command[ -]line|cli|terminal|shell|in bash|via bash|through bash|npm run|nohup)\b/.test(text) ||
-    /\bturri\s+(regenerate|glimpse|conform|spec-diff|cultivate|release)\b/.test(text) ||
+    /\bturri\s+(regenerate|glimpse|conform|change-plain|cultivate|release)\b/.test(text) ||
     /(^|\s)turri\s+-p\b/.test(text) ||
     /(^|\s)pi\s+-p\b/.test(text)
   );
@@ -110,7 +110,7 @@ export const TOOLS_NOT_CLI = [
   "<turri-tools>",
   "In this conversation, you do your work with your tools - regenerate, conform, cultivate and the rest - which run as",
   "background jobs the user can watch and halt. To try what is regenerated, release it - never by hand in plain_modules. Never",
-  "run your own command line (turri regenerate, glimpse, conform, spec-diff, cultivate, release, turri itself; npm run",
+  "run your own command line (turri regenerate, glimpse, conform, change-plain, cultivate, release, turri itself; npm run",
   "regenerate and the like) or start another pi through bash:",
   "that is a separate headless run the user cannot see or stop. Only when the user explicitly asks for the",
   "command line, run it. Configuring pi itself - pi install, update, list, config, auth, or its settings files -",

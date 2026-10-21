@@ -30,7 +30,7 @@ import { startRunReport, type ModuleState, type RunReporter } from "./run-report
 import { configKeyOptions, optionValue } from "./cli-options.ts";
 
 /**
- * What every command that builds - `turri regenerate`, `conform`, `spec-diff` - does around its own
+ * What every command that builds - `turri regenerate`, `conform`, `change-plain` - does around its own
  * request of the work loop, as the chat does it: the project's models, a job that fails run once more and, failing again,
  * diagnosed, a line as each job starts and ends; then the loop run until nothing more can start, how each job ended,
  * and exit 1 when any failed or a module is not complete. With `dryRun`, the work is planned and the prompt of the first job each codebase would

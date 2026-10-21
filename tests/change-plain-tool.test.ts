@@ -65,7 +65,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("write_spec_diff", () => {
+describe("change_plain", () => {
   it("applies the change and starts building it, in one call", async () => {
     writeFileSync(join(dir, "app.plain"), plain(["- A :User: can register."]));
     const { call, loop } = setup();

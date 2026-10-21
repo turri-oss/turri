@@ -79,7 +79,7 @@ const COMMANDS: Record<string, { module: string; blurb: string; args?: string[] 
   glimpse: { module: "./regenerate-cli.ts", blurb: "plan the work and print the first job's prompt, starting nothing", args: ["--dry-run"] },
   drift: { module: "./drift-cli.ts", blurb: "what is left to regenerate: how far the code has drifted from its spec" },
   conform: { module: "./conform-cli.ts", blurb: "write and run a module's conformance tests" },
-  "spec-diff": { module: "./spec-diff-cli.ts", blurb: "apply a change to the specs, given as a git diff, and regenerate it" },
+  "change-plain": { module: "./change-plain-cli.ts", blurb: "apply a change to ***plain, given as a git diff, and regenerate it" },
   validate: { module: "./validate-cli.ts", blurb: "validate a ***plain spec, regenerating nothing" },
   lineage: { module: "./lineage-cli.ts", blurb: "a module's lineage: what was regenerated into it, and when" },
   ledger: { module: "./ledger-cli.ts", blurb: "what turri did here: the last runs and their pulses, or one pulse, from the ledger" },

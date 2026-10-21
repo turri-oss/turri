@@ -204,7 +204,7 @@ export function createEndQuestionsTool(questioning: Pick<Questioning, "end">) {
     description:
       "End this phase's questions: you have asked what the person must decide, and you decide what is left " +
       "yourself, saying what you chose. Afterwards ask_user asks only the phase's closing confirmation, and " +
-      "write_spec_diff needs no answer between changes.",
+      "change_plain needs no answer between changes.",
     promptSnippet: "end this phase's questions and decide what is left yourself",
     parameters: Type.Object({}),
     async execute() {

@@ -11,7 +11,7 @@ description: >-
   is stuck on something the spec cannot settle. Use when the user has a rough or hand-written spec
   and wants it made to build without steering it. Not for starting from nothing (`brood`,
   `spawn`) or adding a feature (`bud`).
-allowed-tools: [read, write, edit, bash, ls, grep, find, write_spec_diff, regenerate, drift, halt, watch_jobs, spec_findings]
+allowed-tools: [read, write, edit, bash, ls, grep, find, change_plain, regenerate, drift, halt, watch_jobs, spec_findings]
 metadata:
   # What each phase does, in a line - shown under the skill's progress while it runs.
   phases:
@@ -37,14 +37,14 @@ Act as a `***plain` spec writer who hardens a spec by building it, on your own, 
 Where a spec is silent, the agent that renders it has to decide - a format, a default, an error, a rule - and when the decision is hard, or the spec reads two ways, it struggles: its tests keep failing, the judge keeps finding the tests or the code wrong, it runs far too long. Much of that is the spec's to settle, and once the spec says it, the next build does not struggle. Some of it is not
 - a bug the agent will fix, an environment problem, turri itself - and the spec stays out of that.
 
-You never ask the user: this runs on its own. Where the spec leaves a real choice, take the reading that best fits the rest of the spec, the intent it states and what the builds already did, write it, and record the decision for the report. You never change what the spec plainly means, never write the spec to match code that does something else, never add features, never touch generated code, and never edit a `.plain` file with the file tools once rendering has started - every change is a spec diff, with `write_spec_diff`.
+You never ask the user: this runs on its own. Where the spec leaves a real choice, take the reading that best fits the rest of the spec, the intent it states and what the builds already did, write it, and record the decision for the report. You never change what the spec plainly means, never write the spec to match code that does something else, never add features, never touch generated code, and never edit a `.plain` file with the file tools once rendering has started - every change is a spec diff, with `change_plain`.
 
 ## Steps
 
 ### intake
 
 1. Find the spec: the `.plain` file(s) the user named, or the project's modules. Read them whole, with their `import` and `requires` chains, and the project's `config.turri.yaml` (or the old `config.yaml`, when there is no `config.turri.yaml`) and each stack's `config.turri.<stack>.yaml`.
-2. Run `validate` on each, and fix only what stops it parsing - with the file tools, while nothing is built from it yet, otherwise with `write_spec_diff`.
+2. Run `validate` on each, and fix only what stops it parsing - with the file tools, while nothing is built from it yet, otherwise with `change_plain`.
 3. Make sure a build can start: the unit testing script (and, with conformance tests on, the conformance testing script) turri finds. When one is missing, write it by following the `implement-unit-testing-script` (or `implement-conformance-testing-script`) skill, for the stack the spec's implementation reqs name. The static checks - formatter, linter, type checker - are part of the unit testing script, as that skill writes it.
 
 Say in two lines what will be rendered, and go on.
@@ -61,7 +61,7 @@ Run cycles until the goal is met - or you are stuck - and at most twenty. Each c
    - **Not the spec's** - a bug the agent is working through, a missing tool or package, a flaky service, turri itself. Leave the build to it, note it for the report, and keep watching. Stopping it would throw its work away for nothing.
 5. **When the builds finish**, read `spec_findings`, and write into the spec every assumption about what the software does that a user, a caller or a test can see - as the build assumed it, unless that is not what the spec meant - so the next build does not have to guess. An assumption about how it is built inside - a library, a file layout, a name - stays out. A diagnosis that says the fix is in the spec is written; one that says code, environment or turri is noted. Then the next cycle: what failed, and what the new diffs changed, is rendered again.
 
-**Writing a fix.** A git diff of the `.plain` file(s), paths from the project root, a few lines of context, with `write_spec_diff`. One diff per concern - a functionality's missing rules together, a concept and what it means together - never one diff for everything. Put each where it belongs: a rule of one functionality into its functional spec, a policy for many into `***implementation reqs***`, a term into `***definitions***`, following `add-concept`, `add-functional-spec` and `add-implementation-requirement` for how it is written. Each diff is built as it is written: what is left to build is worked out again from the spec - only what it changes is rendered again.
+**Writing a fix.** A git diff of the `.plain` file(s), paths from the project root, a few lines of context, with `change_plain`. One diff per concern - a functionality's missing rules together, a concept and what it means together - never one diff for everything. Put each where it belongs: a rule of one functionality into its functional spec, a policy for many into `***implementation reqs***`, a term into `***definitions***`, following `add-concept`, `add-functional-spec` and `add-implementation-requirement` for how it is written. Each diff is built as it is written: what is left to build is worked out again from the spec - only what it changes is rendered again.
 
 **When you are stuck, stop.** The same functionality struggling three times after you clarified the spec for it is not something the spec can settle: stop maturing it, and report it. Two cycles in a row with nothing newly built and nothing newly settled: stop, and report what is open. Twenty cycles: stop, and report.
 

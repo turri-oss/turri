@@ -12,7 +12,7 @@
 | `src/plain/files.ts` | `file_utils.open_from` / `get_loaded_templates`, base64 blob detection |
 | `src/plain/stdlib.ts` | nothing - turri's own: `stdlib/` is a reserved import prefix, read from turri's standard library only, and a project module at such a path is an error (see [the standard library](authoring-plain.md#the-standard-library)) |
 
-## Checking a spec
+## Checking \*\*\*plain
 
 ```bash
 turri validate <file.plain>        # one spec
@@ -39,7 +39,7 @@ The exit code is 0 only when every file passed. In a conversation the same check
 
 ## The functional-spec iterator
 
-`getFrids` walks functionalities depth-first through nested sections; `getSpecificationsForFrid` builds what a single functionality is rendered with. `iterateFunctionalSpecs` pairs them:
+`getFrids` walks functionalities depth-first through nested sections; `getSpecificationsForFrid` builds what a single functionality is regenerated with. `iterateFunctionalSpecs` pairs them:
 
 ```ts
 import { plainFileParser, iterateFunctionalSpecs } from "./src/plain/index.ts";
@@ -55,11 +55,11 @@ for (const { frid, specifications, codeVariables } of iterateFunctionalSpecs(tre
 
 ## Parsing once
 
-A module's parse reads its imports and the whole of its `requires` chain, so a long chain asks for the same files over and over: bringing an 18-module chain up to its spec parsed for minutes. Two caches keep it to once. Inside `withParseCache`, one question about the specs, each file is parsed once. Between calls, a parse is kept with a fingerprint of every file directly in its template folders and the current one - name, size, modification time, and a `.plain` file's text - and handed out again, as a copy, while the fingerprint is the same; a spec that does not parse is kept as that too. What a parse returns is unchanged: the cache only decides whether to parse again.
+A module's parse reads its imports and the whole of its `requires` chain, so a long chain asks for the same files over and over: bringing an 18-module chain up to its \*\*\*plain parsed for minutes. Two caches keep it to once. Inside `withParseCache`, one question about \*\*\*plain, each file is parsed once. Between calls, a parse is kept with a fingerprint of every file directly in its template folders and the current one - name, size, modification time, and a `.plain` file's text - and handed out again, as a copy, while the fingerprint is the same; \*\*\*plain that does not parse is kept as that too. What a parse returns is unchanged: the cache only decides whether to parse again.
 
 ## Fidelity
 
-The port is checked against the Python implementation directly, not only against the ported assertions. Both parsers are run over a corpus and their module name, marshalled tree, required modules, functionality ids and per-functionality specifications compared:
+The port is checked against the Python implementation directly, not only against the ported assertions. Both parsers are run over a corpus and their module name, marshalled tree, required modules, functionality ids and each functionality's \*\*\*plain compared:
 
 | corpus | files | identical | differences |
 |---|---|---|---|
@@ -68,7 +68,7 @@ The port is checked against the Python implementation directly, not only against
 
 The 4 differences are all the same thing: template partials (`implement.plain`, `implement_2.plain`, `header.plain`, `pr_implement.plain`) are meant to be included with arguments, not parsed alone. Both implementations reject them for the same reason - an undefined Liquid variable - but the message text comes from the template engine, and liquidjs phrases it differently from liquid2.
 
-Real specs exposed three places where mdast and mistletoe disagree, each covered by `tests/plain/renderer.test.ts`:
+Real \*\*\*plain exposed three places where mdast and mistletoe disagree, each covered by `tests/plain/renderer.test.ts`:
 
 - **Inline decoding.** mdast resolves `\"` to `"` and forgets whether emphasis was written with `_` or `*`; mistletoe round-trips the source. Inline leaf nodes are pinned back to their original source slice at parse time.
 - **List geometry.** mistletoe indents an item's continuation lines by its `prepend`, measured in coordinates with the enclosing item's indentation stripped - not by the column gap between parent and child. An acceptance test rendered detached from its functionality keeps 6 and 10 spaces where the naive reading gives 4 and 8.

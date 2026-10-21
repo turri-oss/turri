@@ -10,7 +10,7 @@ describe("what the chat is told it is", () => {
     expect(TURRI_IDENTITY).toContain("\"Job\" in what you read is a pulse; say pulse.");
     expect(TURRI_IDENTITY).toContain("It was the regeneration, the job queue, or the job panel.");
     expect(TURRI_IDENTITY).toContain("Say regen,");
-    expect(TURRI_IDENTITY).toContain("mutate, in a skill's activity, is write_spec_diff");
+    expect(TURRI_IDENTITY).toContain("mutate, in a skill's activity, is change_plain");
   });
 
   it("is turri itself, speaking in the first person, never of turri as someone else to pass a message to", () => {

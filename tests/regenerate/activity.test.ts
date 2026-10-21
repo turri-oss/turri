@@ -92,8 +92,8 @@ describe("tool calls as one line", () => {
   });
 
   it("shows a tool by the name the person knows it by, not the one its agent calls", () => {
-    expect(describeToolCall("write_spec_diff", { plain_file: "app.plain", diff: "" })).toBe("• mutate");
-    expect(describeToolResult("write_spec_diff", {}, true)).toBe("  ✗ mutate failed");
+    expect(describeToolCall("change_plain", { plain_file: "app.plain", diff: "" })).toBe("• mutate");
+    expect(describeToolResult("change_plain", {}, true)).toBe("  ✗ mutate failed");
   });
 });
 

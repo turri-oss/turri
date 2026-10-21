@@ -59,7 +59,7 @@ const IDENTITY_BEFORE = [
 ];
 
 const IDENTITY_AFTER = [
-  "- mutate, in a skill's activity, is write_spec_diff: a spec change written and regenerated in one step.",
+  "- mutate, in a skill's activity, is change_plain: a spec change written and regenerated in one step.",
   "- Regenerate is the word for what you do to the code: never grow, grew or grown - older text, a tool's description",
   "  or a report may still say it, and means regenerate.",
 ];

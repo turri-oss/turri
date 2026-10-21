@@ -1,6 +1,6 @@
 # turri documentation
 
-turri implements regenerative software: [\*\*\*plain](https://plainlang.org/docs/) captures the durable definition of what a system does, and the code is regenerated from it and validated against. The [project README](../README.md) says why, and how to install and start; these pages go into each part.
+turri is the first coding agent with the power of regenerative software: [\*\*\*plain](https://plainlang.org/docs/) captures the durable definition of what a system does, and the code is regenerated from it and validated against. The [project README](../README.md) says why, and how to install and start; these pages go into each part.
 
 ## Start here
 
@@ -14,7 +14,7 @@ turri implements regenerative software: [\*\*\*plain](https://plainlang.org/docs
 | to find out… | read |
 | --- | --- |
 | what my machine needs, and why a check failed | [installation](installation.md) |
-| what turri needs of this machine, and what `turri doctor` checks | [installation](installation.md#what-turri-setup-checks) |
+| what turri needs of this machine, and what `turri doctor` checks | [installation](installation.md#what-turri-doctor-checks) |
 | how to start a project, or add a feature, in a conversation | [using](using.md#in-a-conversation) |
 | which model codes, and how to change it | [using](using.md#choosing-a-model), [the project config](config.md#models) |
 | what `config.turri.yaml` can set, and what happens without it | [the project config](config.md) |

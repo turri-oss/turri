@@ -179,7 +179,7 @@ turri regenerate app.plain      # regenerate the code from ***plain: planned int
 turri regenerate app.plain 3    # regenerate functionality 3, changed or not
 ```
 
-More: [using **turri**](docs/using.md); to render \*\*\*plain overnight, see [running unattended](docs/headless.md).
+More: [using **turri**](docs/using.md); to regenerate \*\*\*plain overnight, see [running unattended](docs/headless.md).
 
 ## Documentation
 
@@ -192,7 +192,7 @@ Start at the [documentation index](docs/README.md), or go straight to a page:
 | [Using **turri**](docs/using.md) | the conversation, skills, tools, pulses and regen, choosing models, the command line |
 | [The project config](docs/config.md) | `config.turri.yaml` and each stack's `config.turri.<stack>.yaml`: every key, models and their inheritance, conformance, the testing scripts, stacks and choosing one, the old `config.yaml` |
 | [Deploy](docs/deploy.md) | trying what is built: the last commit in `dist/<module>`, started on your machine, nothing installed without asking |
-| [Running unattended](docs/headless.md) | rendering \*\*\*plain overnight or in CI: the command, keeping it running, the results, resuming, rebuilding one functionality |
+| [Running unattended](docs/headless.md) | regenerating \*\*\*plain overnight or in CI: the command, keeping it running, the results, resuming, rebuilding one functionality |
 | [Authoring \*\*\*plain](docs/authoring-plain.md) | what \*\*\*plain is made of, the authoring rules, the skills that write and fix it, checking it |
 | [Regenerating](docs/regenerating.md) | what each build does and in which order: functionalities, modules, regeneration, changes to \*\*\*plain, conformance and acceptance tests, working notes, what the code is built from |
 | [The sandbox](docs/sandbox.md) | what agents can reach, the walls every command passes, time limits, the web tools |

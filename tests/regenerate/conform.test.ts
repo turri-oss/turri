@@ -69,7 +69,7 @@ function diffOf(name: string, content: string): string {
 }
 
 beforeEach(() => {
-  dir = realpathSync(mkdtempSync(join(tmpdir(), "turri-spec-diff-conformance-")));
+  dir = realpathSync(mkdtempSync(join(tmpdir(), "turri-change-plain-conformance-")));
   writeFileSync(file("base"), module_(["- Base one.", "- Base two."]));
   writeFileSync(file("top"), module_(["- Top one."], "base"));
   // The project's scripts: every check in the suite, run from the build.

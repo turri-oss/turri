@@ -15,7 +15,7 @@ import { createSpecDiffTools } from "./spec-tools.ts";
 import { createMatureTools, MATURE_TOOLS } from "./mature-tools.ts";
 import type { JobRegistry } from "./regenerate/jobs.ts";
 
-const WRITE_SPEC_DIFF = "write_spec_diff";
+const CHANGE_PLAIN = "change_plain";
 /** The conversation's tools a skill acts on the work loop with - never pi built-ins. */
 const LOOP_TOOLS = ["regenerate", "drift", "halt", "conform"];
 /** How much of what the agent said before a question is shown with it: its end, where the brief is. */
@@ -133,16 +133,16 @@ export async function runSkill(opts: {
     refusal: (confirmsPhase: boolean) =>
       diffPerAnswer() && diffs?.pace.owed() === true
         ? "This question was not asked: the last answer is not in the spec yet. Every answer in this phase is a spec " +
-          "change, built at once - write it with write_spec_diff first, then ask."
+          "change, built at once - write it with change_plain first, then ask."
         : questioning?.refusal(confirmsPhase),
     answered: (confirmsPhase: boolean) => questioning?.answered(confirmsPhase),
     end: () => questioning?.end() ?? "No questioning level was chosen: ask what the phase needs.",
   };
 
-  // A skill whose unit of work is a spec change gets write_spec_diff: the change is applied
+  // A skill whose unit of work is a spec change gets change_plain: the change is applied
   // and its build queued in one step.
   const diffs =
-    opts.renderQueue !== undefined && skill.allowedTools.includes(WRITE_SPEC_DIFF)
+    opts.renderQueue !== undefined && skill.allowedTools.includes(CHANGE_PLAIN)
       ? createSpecDiffTools({
           loop: opts.renderQueue,
           cwd: opts.cwd,
@@ -189,7 +189,7 @@ export async function runSkill(opts: {
   const names = customTools.map((tool) => tool.name);
   // Tools this harness provides are never pi built-ins, even when it did not provide them.
   const builtins = skill.allowedTools.filter(
-    (t) => !names.includes(t) && t !== WRITE_SPEC_DIFF && !MATURE_TOOLS.includes(t) && !LOOP_TOOLS.includes(t),
+    (t) => !names.includes(t) && t !== CHANGE_PLAIN && !MATURE_TOOLS.includes(t) && !LOOP_TOOLS.includes(t),
   );
   const executor = await createExecutor({
     cwd: opts.cwd,

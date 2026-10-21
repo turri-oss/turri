@@ -79,7 +79,7 @@ export interface Skill {
   allowedTools: string[];
   steps: StepSpec[];
   /**
-   * Whether `write_spec_diff` needs an answer from the user between two new changes - one answer,
+   * Whether `change_plain` needs an answer from the user between two new changes - one answer,
    * one change, as an interview writes them. `metadata.paced: false` turns it off, for a skill that
    * writes the specs on its own.
    */
@@ -90,8 +90,8 @@ export interface Skill {
    */
   questioning: string[];
   /**
-   * The steps where each answer is a spec change (`metadata.spec-diff-per-answer`): the next question waits until the
-   * last answer is written with `write_spec_diff`, and changes the agent decides itself need no answer before them.
+   * The steps where each answer is a spec change (`metadata.change-plain-per-answer`): the next question waits until the
+   * last answer is written with `change_plain`, and changes the agent decides itself need no answer before them.
    */
   diffPerAnswer: string[];
   /**
@@ -230,11 +230,11 @@ export function loadSkill(skillDir: string): Skill {
     }
   }
 
-  const perAnswer = (data.metadata as Record<string, unknown> | undefined)?.["spec-diff-per-answer"];
+  const perAnswer = (data.metadata as Record<string, unknown> | undefined)?.["change-plain-per-answer"];
   const diffPerAnswer = Array.isArray(perAnswer) ? perAnswer.map(String) : [];
   for (const stepName of diffPerAnswer) {
     if (!steps.some((s) => s.name === stepName)) {
-      throw new Error(`${name}: 'metadata.spec-diff-per-answer' names unknown step '${stepName}'`);
+      throw new Error(`${name}: 'metadata.change-plain-per-answer' names unknown step '${stepName}'`);
     }
   }
 

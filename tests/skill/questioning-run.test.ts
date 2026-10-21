@@ -64,10 +64,10 @@ async function run(answer: (request: AskUserRequest) => string) {
 }
 
 describe("a phase where each answer is a spec change", () => {
-  it("does not ask the next question until the last answer is written with write_spec_diff", async () => {
+  it("does not ask the next question until the last answer is written with change_plain", async () => {
     writeFileSync(
       join(root, "skill", "SKILL.md"),
-      "---\nname: interview\ndescription: Asks.\nallowed-tools: [read, write_spec_diff]\nmetadata:\n  spec-diff-per-answer: [product]\n---\n\n# Interview\n\n## Steps\n\n### product\n\nAsk about the product.\n",
+      "---\nname: interview\ndescription: Asks.\nallowed-tools: [read, change_plain]\nmetadata:\n  change-plain-per-answer: [product]\n---\n\n# Interview\n\n## Steps\n\n### product\n\nAsk about the product.\n",
     );
     const { runSkill } = await import("../../src/genome.ts");
     const asked: AskUserRequest[] = [];

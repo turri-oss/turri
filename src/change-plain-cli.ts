@@ -5,9 +5,9 @@ import { applySpecDiff, revertSpecDiff } from "./regenerate/regenerate.ts";
 import { parseArgs } from "./cli-options.ts";
 import { headlessOptions, runLoop } from "./loop-cli.ts";
 
-const USAGE = `usage: turri spec-diff <file.plain> <diff-file> [options]
+const USAGE = `usage: turri change-plain <file.plain> <diff-file> [options]
 
-Applies a change to the specs, given as a git diff of the .plain files, and builds it: the headless
+Applies a change to ***plain, given as a git diff of the .plain files, and builds it: the headless
 counterpart of regenerate, given a diff. The diff is applied first, unless it is already in; then, as
 turri regenerate does, what is left to build is planned into jobs and built.
 
@@ -42,7 +42,7 @@ runLoop({
   startOver: options["start-over"] !== undefined,
   ...(buildDir !== undefined ? { buildDir } : {}),
   ...(report !== undefined ? { report } : {}),
-  command: ["spec-diff", ...process.argv.slice(2)],
+  command: ["change-plain", ...process.argv.slice(2)],
   ask: (loop) => loop.bringUp(plainFile),
 }).catch((error) => {
   console.error(error instanceof Error ? error.message : error);

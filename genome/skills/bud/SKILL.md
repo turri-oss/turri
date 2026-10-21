@@ -11,7 +11,7 @@ description: >-
   is left to build is worked out again from the spec. Use when the user wants to add a
   feature to an existing project. Not for starting a new project (use `brood`, or `spawn`
   to start fast) or for editing generated code (the .plain specs are the source of truth).
-allowed-tools: [read, write, edit, bash, ls, grep, find, write_spec_diff]
+allowed-tools: [read, write, edit, bash, ls, grep, find, change_plain]
 metadata:
   # Started only by the person, with its command - /bud - never by the model on its own.
   command-only: true
@@ -24,8 +24,8 @@ metadata:
   # medium 5, thorough 10, best judgement as many as turri judges the phase needs.
   questioning: [product]
   # Every answer in the product phase is a spec change: the next question waits until it is
-  # written with write_spec_diff. Changes turri decides itself need no answer before them.
-  spec-diff-per-answer: [product]
+  # written with change_plain. Changes turri decides itself need no answer before them.
+  change-plain-per-answer: [product]
 ---
 
 # Bud
@@ -34,7 +34,7 @@ Load the `***plain` syntax rules before writing anything - they are in the syste
 
 ## Role
 
-Act as a `***plain` spec writer adding one feature to specs that already exist - and, usually, to code already built from them, or being built. The only output is changes to `.plain` files, and every one of them is a **spec diff**: a git diff of the `.plain` files, written with `write_spec_diff`, which applies it and queues its render spec diff job. Never write code, and never change a `.plain` file by any other means. Frame every message in terms of specs: "I'll add this to the spec."
+Act as a `***plain` spec writer adding one feature to specs that already exist - and, usually, to code already built from them, or being built. The only output is changes to `.plain` files, and every one of them is a **spec diff**: a git diff of the `.plain` files, written with `change_plain`, which applies it and queues its render spec diff job. Never write code, and never change a `.plain` file by any other means. Frame every message in terms of specs: "I'll add this to the spec."
 
 This is `brood`'s product phase, scoped to one feature, on top of what is there: the stack, the testing setup and every earlier feature are settled - read them, build on them, restart none.
 
@@ -51,7 +51,7 @@ The first question of the intent phase is the harness's own, not yours: how many
 
 The intent phase is not capped. Follow-ups count; the closing confirmation - asked with `confirms_phase: true` - does not. Past the cap `ask_user` refuses the question. To stop sooner, or under best judgement once the feature is settled enough to build, call `end_questions`.
 
-The level limits the questions, never the spec changes. **Every answer is a spec change**, whatever the level: written with `write_spec_diff` and built at once, before the next question - `ask_user` refuses the next one until it is. A broad answer that covers several behaviours is several changes, and you write them all. What the questions leave open - the details of a light answer, what is left once they are over - is yours to decide, as a careful engineer would, in the light of the brief: each decision a spec change of its own, written with `write_spec_diff` with no answer needed before it, and said in one line. The closing summary names every decision you made yourself, so the confirmation is where the person can change it.
+The level limits the questions, never the spec changes. **Every answer is a spec change**, whatever the level: written with `change_plain` and built at once, before the next question - `ask_user` refuses the next one until it is. A broad answer that covers several behaviours is several changes, and you write them all. What the questions leave open - the details of a light answer, what is left once they are over - is yours to decide, as a careful engineer would, in the light of the brief: each decision a spec change of its own, written with `change_plain` with no answer needed before it, and said in one line. The closing summary names every decision you made yourself, so the confirmation is where the person can change it.
 
 ## Question style
 
@@ -91,7 +91,7 @@ The feature, walked question by question. Run this loop while the questioning le
    - a policy it states - error handling, a retry, a data format, a library not already in the module or its imports - into `***implementation reqs***`, the way `add-implementation-requirement` says;
    - the functional spec it adds, or the change to one already written, the way `add-functional-spec` says: its wording rules, its complexity check (`analyze-if-func-spec-too-complex` - at most 200 lines of code; a spec too big is split *with the user*, as the next question) and its conflict check (`analyze-func-specs`, over the new spec and every existing one in the chain). Follow those skills for what the text is; the diff is the only thing that writes it.
    - with conformance tests on - test reqs of the module's own or imported, and a conformance testing script turri finds - an acceptance test under its functional spec when the answer states one concrete verification (`add-acceptance-test`), and a test req only when the answer changes how conformance tests run (`add-test-requirement`). With conformance off, none. Write it as a git diff: `diff --git a/<file> b/<file>`, `--- a/<file>`, `+++ b/<file>`, then the hunks with a few lines of unchanged context, paths from the project root. A new functional spec goes where it belongs in build order - after what it builds on, usually at the end.
-4. **Write it with `write_spec_diff` at once**, before anything else. It applies the diff and starts a render spec diff job for it; with conformance on, its conformance tests follow it. An answer that covers several behaviours is a change for each: write them all. Then the changes for what you decide yourself around it, if any. Say in one line what went into the spec - "added `:Note:` and functional spec 7" - and what became of the build, as the tool says, then ask the next question. Never wait for a build, and never ask the user to approve a change.
+4. **Write it with `change_plain` at once**, before anything else. It applies the diff and starts a render spec diff job for it; with conformance on, its conformance tests follow it. An answer that covers several behaviours is a change for each: write them all. Then the changes for what you decide yourself around it, if any. Say in one line what went into the spec - "added `:Note:` and functional spec 7" - and what became of the build, as the tool says, then ask the next question. Never wait for a build, and never ask the user to approve a change.
 
 **One answer, at least one change.** A follow-up about the same behaviour - an edge case, a validation rule - is its own answer and its own change. An answer that describes two behaviours is two changes, both written before the next question. A change never carries both an answer and something you decided: what you decide is a change of its own.
 

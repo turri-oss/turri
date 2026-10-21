@@ -8,8 +8,8 @@ Carry the confirmed intent brief and the settled stack in. Do not restart either
 
 The questioning level caps this phase's questions (light 3, medium 5, thorough 10, or best judgement - `SKILL.md`, "How many questions"), and so sets how broad each is. Every level walks all the topics below: light in a few broad questions - the features and their order in one, what they do end to end in another, with what fits the brief proposed for the person to confirm or correct; thorough in narrow ones, a feature, rule or edge case each. The level limits the questions, never the spec changes:
 
-- **Every answer is a spec change**, at every level: written with `write_spec_diff` and built at once, before the next question - `ask_user` refuses the next question until it is. A broad answer covering several features is a change for each.
-- **What the questions leave open is yours** - the details under a broad answer, and everything still open once the questions are over (the cap reached, or `end_questions` called). Each feature, edge case and rule you decide is its own spec change, written with `write_spec_diff` with no answer needed before it, and said in one line. Write as many as the product needs. Decide from the intent brief and the answers so far; leave out what they do not call for rather than invent scope.
+- **Every answer is a spec change**, at every level: written with `change_plain` and built at once, before the next question - `ask_user` refuses the next question until it is. A broad answer covering several features is a change for each.
+- **What the questions leave open is yours** - the details under a broad answer, and everything still open once the questions are over (the cap reached, or `end_questions` called). Each feature, edge case and rule you decide is its own spec change, written with `change_plain` with no answer needed before it, and said in one line. Write as many as the product needs. Decide from the intent brief and the answers so far; leave out what they do not call for rather than invent scope.
 
 ## One question, one answer, a spec change, a render
 
@@ -20,13 +20,13 @@ Every iteration is exactly this, at every questioning level:
    - a concept the feature introduces, into `***definitions***`, following `add-concept`, defined in the same change as the functional spec that first uses it;
    - a technology-free policy the answer states, into `***implementation reqs***`;
    - the functional spec for the feature, or the change to one already written, following `add-functional-spec`. Write it as a git diff of the `.plain` file(s): `diff --git a/<file> b/<file>`, `--- a/<file>`, `+++ b/<file>`, then the hunks with a few lines of unchanged context. Paths are relative to the project root.
-3. **Write it with `write_spec_diff`.** It applies the diff and starts a render spec diff job for it in the same call - whatever the change touches, a definition alone included. Write every change the answer calls for before the next question - `ask_user` refuses it until then - and any you decide yourself beside them. Move straight on to the next question; never wait for a build.
+3. **Write it with `change_plain`.** It applies the diff and starts a render spec diff job for it in the same call - whatever the change touches, a definition alone included. Write every change the answer calls for before the next question - `ask_user` refuses it until then - and any you decide yourself beside them. Move straight on to the next question; never wait for a build.
 
 **One answer, at least one change.** A follow-up about the same feature - an edge case, a validation rule - is its own answer and its own change to that feature's spec. An answer that describes two features is two changes, both written before the next question. A change never carries both an answer and something you decided: what you decide is a change of its own.
 
 **Fix contradictions in place.** When a later answer refines or contradicts something already written, write the correction as its own diff with `fixes_earlier` set, before the next question. It is rendered like any other change.
 
-**Never edit the `.plain` files with `write` or `edit` in this phase.** A change that does not go through `write_spec_diff` is a change nothing renders.
+**Never edit the `.plain` files with `write` or `edit` in this phase.** A change that does not go through `change_plain` is a change nothing renders.
 
 ## What a change may contain
 

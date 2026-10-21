@@ -4,7 +4,7 @@ import { askedForCommandLine, refusal, selfInvocation } from "../src/self-invoca
 describe("a shell command that runs turri again", () => {
   it("is caught in every form it is written", () => {
     expect(selfInvocation("turri regenerate app.plain --model openai/gpt-5.5")).toBe("regenerate");
-    expect(selfInvocation("cd ~/proj && turri spec-diff app.plain change.diff")).toBe("spec-diff");
+    expect(selfInvocation("cd ~/proj && turri change-plain app.plain change.diff")).toBe("change-plain");
     expect(selfInvocation("nohup turri regenerate app.plain 3 > log 2>&1 &")).toBe("regenerate");
     expect(selfInvocation("npx turri conform app.plain 1")).toBe("conform");
     expect(selfInvocation("node bin/turri.mjs cultivate genome/skills/brood")).toBe("cultivate");
@@ -46,7 +46,7 @@ describe("a shell command that runs turri again", () => {
   });
 
   it("is refused with the tool to use instead", () => {
-    expect(refusal("spec-diff")).toContain("Use regenerate instead.");
+    expect(refusal("change-plain")).toContain("Use regenerate instead.");
     expect(refusal("release")).toContain("Use release instead.");
     expect(refusal("pi")).toContain("Do not start another agent");
   });

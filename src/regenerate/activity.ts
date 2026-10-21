@@ -339,10 +339,10 @@ export function withinModules(text: string): string {
 
 /**
  * What the person is shown a tool as, where that is not the name its agent calls it by. The agent's name says
- * what the call takes - `write_spec_diff` takes a diff of the spec - and the shown one speaks turri's language.
+ * what the call takes - `change_plain` takes a diff of the spec - and the shown one speaks turri's language.
  */
 const SHOWN_AS: Record<string, string> = {
-  write_spec_diff: "mutate",
+  change_plain: "mutate",
 };
 
 /** A tool's name as the person is shown it. */

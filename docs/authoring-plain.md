@@ -1,8 +1,8 @@
 # Authoring \*\*\*plain
 
-A spec is written in [\*\*\*plain](https://plainlang.org/docs/) - its documentation is the language's whole reference. Rendering turns a spec into code; authoring is the half that decides what gets built. The code is only ever as good as the spec - a fact in the wrong section is silently ignored, a functional spec that is too big comes out half-built, two specs that contradict each other break each other's tests. So this repo carries as much for writing specs as for rendering them: the authoring rules, a library of skills that apply them, and independent review of what they write.
+turri builds code from [\*\*\*plain](https://plainlang.org/docs/) - its documentation is the language's whole reference. Regenerating turns \*\*\*plain into code; authoring is the half that decides what gets built. The code is only ever as good as the \*\*\*plain description - a fact in the wrong section is silently ignored, a functional spec that is too big comes out half-built, two functional specs that contradict each other break each other's tests. So this repo carries as much for writing \*\*\*plain as for regenerating it: the authoring rules, a library of skills that apply them, and independent review of what they write.
 
-The rule underneath all of it: **the specs are the source of truth**. The generated code in `plain_modules/` is never edited by hand. A bug is fixed in the spec, and a change that is wanted goes into the spec - that is what persists and what the next render builds from.
+The rule underneath all of it: **\*\*\*plain is the source of truth**. The generated code in `plain_modules/` is never edited by hand. A bug is fixed in \*\*\*plain, and a change that is wanted goes into \*\*\*plain - that is what persists and what the next regeneration builds from.
 
 ## A \*\*\*plain project
 
@@ -39,13 +39,13 @@ The frontmatter connects modules:
 | `exported_concepts` | which concepts a module that `requires` this one may use |
 | `required_concepts` | concepts an import module expects the importing module to define |
 
-Beyond that: a spec links to files under `resources/` with markdown link syntax, and the file's contents go to the renderer with the spec; lines starting with `>` are comments for people; and files are processed with Liquid first, so a template can be included with parameters.
+Beyond that: \*\*\*plain links to files under `resources/` with markdown link syntax, and the file's contents go to the coding agents with the \*\*\*plain description; lines starting with `>` are comments for people; and files are processed with Liquid first, so a template can be included with parameters.
 
-**Section ownership is the rule that bites.** The renderer reads each kind of fact only from the section that owns it. A tech choice written into a functional spec, or a behaviour written into the implementation reqs, is not flagged - it is simply not read.
+**Section ownership is the rule that bites.** turri reads each kind of fact only from the section that owns it. A tech choice written into a functional spec, or a behaviour written into the implementation reqs, is not flagged - it is simply not read.
 
 ## The standard library
 
-turri ships a standard library of import modules in `stdlib/` that settle everything about a generic piece of software on one stack except what it does: its language and framework, layout, configuration, error handling, logging, shutdown, and how it is unit and conformance tested. A spec imports one and writes only its own concepts and functional specs:
+turri ships a standard library of import modules in `stdlib/` that settle everything about a generic piece of software on one stack except what it does: its language and framework, layout, configuration, error handling, logging, shutdown, and how it is unit and conformance tested. A module's \*\*\*plain imports one and writes only its own concepts and functional specs:
 
 ```plain
 ---
@@ -82,19 +82,19 @@ It is built in three layers, and a stack imports the other two:
 
 Each conformance template imports its kind's `conformance/common`: a backend's tests start the built service on a free port and reach it over HTTP only, checking a failure by status and `error.code`; a frontend's run the served build in Chromium through Playwright with the backend stood in; a command-line tool's run the built tool as a process; a library's go through its public entry point.
 
-- **Conformance tests apart.** A spec without the conformance template has no test reqs, so no conformance tests are written or run for it. Turning them on later is adding that one import.
-- **A reserved name.** An import that starts with `stdlib/` is always turri's template, never a file of the project's. A project with a module at such a path - `stdlib/backend/python-fastapi.plain` beside the spec, in its `template/` folder or in `PLAIN_TEMPLATE_DIRS` - gets an error saying the name is reserved, so which one a spec builds on never depends on what is on disk beside it.
-- **No concepts.** Its requirements are on the predefined `:Implementation:`, `:UnitTests:` and `:ConformanceTests:` only, so it never collides with a spec's own definitions.
+- **Conformance tests apart.** \*\*\*plain without the conformance template has no test reqs, so no conformance tests are written or run for it. Turning them on later is adding that one import.
+- **A reserved name.** An import that starts with `stdlib/` is always turri's template, never a file of the project's. A project with a module at such a path - `stdlib/backend/python-fastapi.plain` beside the project's \*\*\*plain, in its `template/` folder or in `PLAIN_TEMPLATE_DIRS` - gets an error saying the name is reserved, so which one the project's \*\*\*plain builds on never depends on what is on disk beside it.
+- **No concepts.** Its requirements are on the predefined `:Implementation:`, `:UnitTests:` and `:ConformanceTests:` only, so it never collides with \*\*\*plain's own definitions.
 - **Pinned to a toolchain.** It names its stack's toolchain - Python 3.12, Node.js 24, Java 21, Go 1.25, Rust - which the agents use from this machine; `turri doctor` says when the machine lacks it.
 - **Not storage, not the testing scripts.** A module with a database says which on top of its stack. It still needs its unit testing script, and a conformance testing script when it has conformance tests.
-- **Known to the agents.** The `stdlib` rule, in every spec-writing agent's system prompt, says when to import which, and lists every template with what it is and the folder it is in, read from `stdlib/` when the rules load. `spawn` and `brood` import a stack when the one chosen is in it, and its conformance template when conformance tests are on.
-- **Only what this machine can build.** The agents use this machine's toolchains and install none, so a Go stack on a laptop without Go stops at its first build. Every spec-writing agent and the conversation are told which of the standard library's languages the machine can build now - Python needs `uv`, TypeScript and every frontend `node` and `npm`, Go `go`, Rust `cargo`, Java a JDK (`src/stack.ts`, `toolchainsBlock`) - and `spawn` and `brood` offer, and choose, only stacks in those. A stack the person names in a language the machine lacks is not refused: they are told what to install first, and that `turri doctor` checks it.
+- **Known to the agents.** The `stdlib` rule, in the system prompt of every agent that writes \*\*\*plain, says when to import which, and lists every template with what it is and the folder it is in, read from `stdlib/` when the rules load. `spawn` and `brood` import a stack when the one chosen is in it, and its conformance template when conformance tests are on.
+- **Only what this machine can build.** The agents use this machine's toolchains and install none, so a Go stack on a laptop without Go stops at its first build. Every agent that writes \*\*\*plain, and the conversation, are told which of the standard library's languages the machine can build now - Python needs `uv`, TypeScript and every frontend `node` and `npm`, Go `go`, Rust `cargo`, Java a JDK (`src/stack.ts`, `toolchainsBlock`) - and `spawn` and `brood` offer, and choose, only stacks in those. A stack the person names in a language the machine lacks is not refused: they are told what to install first, and that `turri doctor` checks it.
 
 A requirement beyond the stack - storage, an outside service - is added on top of it. A module that differs from its stack on something the stack settles - another framework, another layout - writes its own instead: an import cannot be taken back in part.
 
 ## The rules
 
-`genome/rules/` holds the authoring rules. They are in the system prompt of every agent that writes specs - the conversation, the interview skills, the reviewers - so they are not something an agent has to decide to go and read.
+`genome/rules/` holds the authoring rules. They are in the system prompt of every agent that writes \*\*\*plain - the conversation, the interview skills, the reviewers - so they are not something an agent has to decide to go and read.
 
 | rule | covers |
 | --- | --- |
@@ -103,40 +103,40 @@ A requirement beyond the stack - storage, an outside service - is added on top o
 | `func-specs.md` | voice, the complexity limit, chronological order, no conflicts, language agnosticism, testability, acceptance tests |
 | `impl-reqs.md` | HOW not WHAT, unit tests live here, what belongs and what does not |
 | `test-reqs.md` | conformance tests only, what belongs, test types |
-| `concise-specs.md` (+ two example banks) | keeping specs short enough for a person to review: no obvious lines, plain words, no uncheckable adjectives, no hedging |
+| `concise-specs.md` (+ two example banks) | keeping \*\*\*plain short enough for a person to review: no obvious lines, plain words, no uncheckable adjectives, no hedging |
 | `bullet-continuation.md` | bullets and continuation lines in every section |
 | `linked-resources.md` | a linked resource is one text file on disk, or a PNG or JPEG image for a model that reads images; protocol artifacts are linked, never transcribed |
 | `import-modules.md`, `requires-modules.md` | the two ways modules build on each other |
 | `exported-concepts.md`, `required-concepts.md` | which concepts cross module boundaries |
-| `integrations.md` (+ standalone, embedded, embedded testing) | specs for REST API integrations, deployed standalone or embedded in an existing codebase |
-| `turri-regeneration.md` | turri's model of itself: a spec change regenerated as a spec diff, wherever it sits, in the chain's tip; what each kind of change sets off; what a coding agent sees; how bad code is fixed; where the cost is - so a spec is placed by what it means, never to spare regeneration |
+| `integrations.md` (+ standalone, embedded, embedded testing) | \*\*\*plain for REST API integrations, deployed standalone or embedded in an existing codebase |
+| `turri-regeneration.md` | turri's model of itself: a \*\*\*plain change regenerated as a \*\*\*plain diff, wherever it sits, in the chain's tip; what each kind of change sets off; what a coding agent sees; how bad code is fixed; where the cost is - so \*\*\*plain is placed by what it means, never to spare regeneration |
 | `stdlib.md` | the standard library: when to import which template, and every template with what it is and where it is, read from `stdlib/` |
 
-The ones that shape a spec most:
+The ones that shape \*\*\*plain most:
 
 - **One functionality is at most ~200 lines of code.** A bigger one is split before it is written (`analyze-if-func-spec-too-complex`, `break-down-func-spec`).
-- **Functional specs are in build order.** Each is rendered on top of the ones before it - which is what a spec may assume, not what a change costs: a spec inserted anywhere is regenerated alone.
+- **Functional specs are in build order.** Each is regenerated on top of the ones before it - which is what a functional spec may assume, not what a change costs: a functional spec inserted anywhere is regenerated alone.
 - **They state facts, with a concrete subject.** "A :User: can add a :Task:" - not "Implement adding tasks", not "The system should…".
 - **Nothing a test cannot check.** No `robust`, `seamless`, `as appropriate`; state the checkable fact or cut the word.
-- **No two specs contradict each other.** A conflict is found and resolved when a spec is added, not when its tests fail.
+- **No two functional specs contradict each other.** A conflict is found and resolved when a functional spec is added, not when its tests fail.
 
-## Writing specs with turri
+## Writing \*\*\*plain with turri
 
-In a conversation (`turri`), say what you want and the matching skill runs - but the three that start a project or a feature you start yourself, by their commands: `/brood`, `/spawn` or `/bud`, with what you want after it. Two build a project from scratch, and write each spec change as a git diff that is built in the background the moment it is written. `brood` interviews you one question at a time and writes the specs as you answer; `spawn`, its quick twin, gets something running as soon as it can - the smallest thing that runs first, then the product a slice at a time - asking only what your message leaves open:
+In a conversation (`turri`), say what you want and the matching skill runs - but the three that start a project or a feature you start yourself, by their commands: `/brood`, `/spawn` or `/bud`, with what you want after it. Two build a project from scratch, and write each \*\*\*plain change as a git diff that is built in the background the moment it is written. `brood` interviews you one question at a time and writes \*\*\*plain as you answer; `spawn`, its quick twin, gets something running as soon as it can - the smallest thing that runs first, then the product a slice at a time - asking only what your message leaves open:
 
-| skill | phases | how a spec change is written |
+| skill | phases | how a \*\*\*plain change is written |
 | --- | --- | --- |
-| `brood` | intent → stack → testing → product, feature by feature | first, how many questions the stack and product phases may ask - light 3, medium 5, thorough 10 or best judgement, broader with fewer, covering the same ground - and what they leave open turri decides itself, each decision a spec change of its own; every product answer is still a spec change, built before the next question; in testing, whether there are conformance tests, their `***test reqs***` and script - written as files, building nothing; then one spec change per answer, across whatever sections it needs, as a git diff with `write_spec_diff`, rendered as a render spec diff job and conformance tested as it is built |
-| `spawn` | start → skeleton → regenerate | built for the time to first regeneration: what to build is asked only when the message does not say, and the stack only when the user named one this machine cannot build - otherwise turri chooses one; the stack and the unit tests are written as files, with conformance tests off unless the user asks for them; then a spec change for the smallest thing that runs starts the first build - a module's first pulse of one functional spec is not reviewed - and the main slice of what the user described and at most one more follow - none when they described no feature, and never one of turri's own - each a functional spec on its happy path, as git diffs with `write_spec_diff`, one after another with no answer between them. The rest - the next slices, then validation and edge cases as changes to those specs - is asked for in the conversation once the user has tried what landed: `go on` for the next slice it proposed |
+| `brood` | intent → stack → testing → product, feature by feature | first, how many questions the stack and product phases may ask - light 3, medium 5, thorough 10 or best judgement, broader with fewer, covering the same ground - and what they leave open turri decides itself, each decision a \*\*\*plain change of its own; every product answer is still a \*\*\*plain change, built before the next question; in testing, whether there are conformance tests, their `***test reqs***` and script - written as files, building nothing; then one \*\*\*plain change per answer, across whatever sections it needs, as a git diff with `change_plain`, regenerated as a \*\*\*plain diff pulse and conformance tested as it is built |
+| `spawn` | start → skeleton → regenerate | built for the time to first regeneration: what to build is asked only when the message does not say, and the stack only when the user named one this machine cannot build - otherwise turri chooses one; the stack and the unit tests are written as files, with conformance tests off unless the user asks for them; then a \*\*\*plain change for the smallest thing that runs starts the first build - a module's first pulse of one functional spec is not reviewed - and the main slice of what the user described and at most one more follow - none when they described no feature, and never one of turri's own - each a functional spec on its happy path, as git diffs with `change_plain`, one after another with no answer between them. The rest - the next slices, then validation and edge cases as changes to those functional specs - is asked for in the conversation once the user has tried what landed: `go on` for the next slice it proposed |
 
-`mature` starts from a spec you already have, rough or hand-written, and runs on its own until it is fully rendered - every functionality built from the spec as it stands, its tests passing. It renders what is not built and watches the agents building it; when one struggles on something the spec leaves open or unclear - sent back again and again, the judge going back and forth, a spec conflict - it writes what the spec should say as a spec diff, stops that build, and renders it again. What the builds had to decide themselves - their assumptions, pitfalls, a failed build's diagnosis - goes into the spec the same way, when a user, a caller or a test can see it. It never asks: it takes the reading that fits the rest of the spec, and marks each such decision in its report. It leaves code, environment and turri problems to the builds, and stops when a functionality keeps struggling after the spec was clarified, when two cycles change nothing, or after twenty.
+`mature` starts from \*\*\*plain you already have, rough or hand-written, and runs on its own until it is fully regenerated - every functionality built from \*\*\*plain as it stands, its tests passing. It regenerates what is not built and watches the agents building it; when one struggles on something \*\*\*plain leaves open or unclear - sent back again and again, the judge going back and forth, a \*\*\*plain conflict - it writes what \*\*\*plain should say as a \*\*\*plain diff, stops that build, and regenerates it again. What the builds had to decide themselves - their assumptions, pitfalls, a failed build's diagnosis - goes into \*\*\*plain the same way, when a user, a caller or a test can see it. It never asks: it takes the reading that fits the rest of the \*\*\*plain description, and marks each such decision in its report. It leaves code, environment and turri problems to the builds, and stops when a functionality keeps struggling after its \*\*\*plain was clarified, when two cycles change nothing, or after twenty.
 
-For an existing project, `bud` works the same way, scoped to one feature: intent → scope → product. It first asks how many questions the product phase may ask - light, medium, thorough or best judgement, as `brood` does - then a short feature-intent interview, then product questions - a trigger and its outcome, an edge case, a rule - and every answer is a spec change, a git diff written with `write_spec_diff` and built the moment it is written, before the next question. What the questions leave open it decides itself, a spec change each. A change to something already specified, built or still to build, is put to the user first and is a spec diff too: what is left to build is worked out again from the spec. It ends on the person's confirmation of a short summary of the feature's changes.
+For an existing project, `bud` works the same way, scoped to one feature: intent → scope → product. It first asks how many questions the product phase may ask - light, medium, thorough or best judgement, as `brood` does - then a short feature-intent interview, then product questions - a trigger and its outcome, an edge case, a rule - and every answer is a \*\*\*plain change, a git diff written with `change_plain` and built the moment it is written, before the next question. What the questions leave open it decides itself, a \*\*\*plain change each. A change to something already specified, built or still to build, is put to the user first and is a \*\*\*plain diff too: what is left to build is worked out again from \*\*\*plain. It ends on the person's confirmation of a short summary of the feature's changes.
 
 What keeps the interview honest is the harness, not the interviewer:
 
-- **Every question offers choices** (`ask_user` refuses a question without them), and each answer maps to one spec change.
-- **Every answer is written before the next question.** In the product phase of `brood` and `bud`, `ask_user` refuses a new question until the last answer is a spec change - see [skills and gates](skills-and-gates.md).
+- **Every question offers choices** (`ask_user` refuses a question without them), and each answer maps to one \*\*\*plain change.
+- **Every answer is written before the next question.** In the product phase of `brood` and `bud`, `ask_user` refuses a new question until the last answer is a \*\*\*plain change - see [skills and gates](skills-and-gates.md).
 - **Each phase ends on the person's confirmation** of a short summary, not on the interviewer's word.
 
 ## The skills
@@ -146,21 +146,21 @@ Every skill in `genome/skills/` can be run from a conversation; most are also us
 | to… | skills |
 | --- | --- |
 | start a project | `brood`, `spawn`, `init-plain-project` |
-| make a rough spec build | `mature` |
-| add to a spec | `bud`, `add-functional-spec`, `add-functional-specs`, `add-concept`, `add-implementation-requirement`, `add-test-requirement`, `add-acceptance-test`, `add-resource`, `add-template` |
+| make rough \*\*\*plain build | `mature` |
+| add to \*\*\*plain | `bud`, `add-functional-spec`, `add-functional-specs`, `add-concept`, `add-implementation-requirement`, `add-test-requirement`, `add-acceptance-test`, `add-resource`, `add-template` |
 | check what is written | `analyze-if-func-spec-too-complex`, `analyze-2-func-specs`, `analyze-func-specs`, `resolve-section-ownership` |
 | fix what is written | `break-down-func-spec`, `resolve-spec-conflict`, `debug-specs` |
 | restructure modules | `create-import-module`, `create-requires-module`, `refactor-module`, `consolidate-concepts` |
 | set up the project to build | `implement-unit-testing-script`, `implement-conformance-testing-script`, `check-plain-env` |
 
-`debug-specs` is the one for a running application that misbehaves: it reads the generated code to find the cause, traces it back to the spec, and fixes only the `.plain` files.
+`debug-specs` is the one for a running application that misbehaves: it reads the generated code to find the cause, traces it back to \*\*\*plain, and fixes only the `.plain` files.
 
-## Checking a spec
+## Checking \*\*\*plain
 
 ```bash
 turri validate app.plain     # or validate in a conversation
 ```
 
-It parses the spec with this repo's own parser, resolves its imports and required modules, and reports every syntax, concept and structure error with its line - no model, no API key. The interview skills run it before a phase ends, and `write_spec_diff` refuses a change that leaves a file that does not parse. Pass the project directory to check every module at once.
+It parses \*\*\*plain with this repo's own parser, resolves its imports and required modules, and reports every syntax, concept and structure error with its line - no model, no API key. The interview skills run it before a phase ends, and `change_plain` refuses a change that leaves a file that does not parse. Pass the project directory to check every module at once.
 
-What `check` cannot see - a fact in the wrong section, a spec that is too big, two that conflict, wording no test can check - is what the rules, the skills and the reviewers are for.
+What `check` cannot see - a fact in the wrong section, a functional spec that is too big, two that conflict, wording no test can check - is what the rules, the skills and the reviewers are for.
