@@ -49,6 +49,7 @@ import { defaultBuildDir } from "./regenerate/paths.ts";
 import { describeTurnIncident, describeUsage, onModelEvent, type SpecConflict } from "./regenerate/activity.ts";
 import { ledgerWanted, startLedger } from "./regenerate/ledger.ts";
 import { describePastPulse, describeRuns, earlierPulses, ledgerProjects } from "./regenerate/ledger-view.ts";
+import { doctorTool } from "./doctor-tool.ts";
 import { ledgerTool } from "./ledger-tools.ts";
 import { describeSpecConflict } from "./regenerate/stop-report.ts";
 import { inheritProviders, inheritThinkingLevel } from "./pi.ts";
@@ -1704,6 +1705,7 @@ function registerJobTools(pi: ExtensionAPI, jobs: JobRegistry, cwd: string) {
   });
 
   pi.registerTool(ledgerTool({ cwd }));
+  pi.registerTool(doctorTool({ cwd }));
 
   pi.registerTool({
     name: "pulses",
@@ -2185,7 +2187,7 @@ export const JOB_FINISHED_REACTION = [
   "  JavaVirtualMachines, a version manager the person uses - mise, asdf, sdkman, nvm). Then ask the person with ask_user",
   "  to let you put it in place the way this machine installs things - the exact command, `brew install openjdk@21`,",
   "  `mise use -g java@21`, `sdk install maven` - and on yes run it in your shell, check that the command is found now as",
-  "  the testing script would find it (`command -v`, `turri doctor`), and resume. A tool installed where the PATH turri",
+  "  the testing script would find it (`command -v`, then the doctor tool, which looks on turri's own PATH), and resume. A tool installed where the PATH turri",
   "  was started with does not reach needs turri restarted: say so, with the line for the shell profile. On no, or when it",
   "  needs what you cannot do - sudo with a password, a licence, a download behind a login - tell the person exactly what",
   "  to do, and that \"resume\" picks it up once it is in.",

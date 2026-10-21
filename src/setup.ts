@@ -240,6 +240,23 @@ async function allChecks(options: DoctorOptions & CliOptions): Promise<Check[]> 
   return checks;
 }
 
+/** What the checks add up to: whether turri can run here, and a line saying so - with its marks, uncoloured. */
+export function verdictOf(checks: Check[]): { ready: boolean; limited: boolean; text: string } {
+  const missing = checks.filter((check) => check.level === "missing").length;
+  if (missing > 0) return { ready: false, limited: false, text: `Not ready: ${missing} thing${missing === 1 ? "" : "s"} to fix (✗ above).` };
+  return checks.some((check) => check.level === "limited") ? { ready: true, limited: true, text: "Ready, with limits (! above)." } : { ready: true, limited: false, text: "Ready." };
+}
+
+/** The checks as plain text, a line each and what to do under it, and the verdict - for a reader that is not a terminal. */
+export function describeChecks(checks: Check[]): string {
+  const lines = checks.flatMap((check) => [
+    `${MARK[check.level]} ${check.name}: ${check.detail}`,
+    ...(check.more ?? []).map((line) => `    ${line}`),
+    ...(check.fix && check.level !== "ok" ? [`    → ${check.fix}`] : []),
+  ]);
+  return `${lines.join("\n")}\n\n${verdictOf(checks).text}`;
+}
+
 function report(checks: Check[]): number {
   const paint: Record<Level, (text: string) => string> = { ok: brand.success, missing: brand.error, limited: brand.warning, info: brand.muted };
   // The names in one column, however long the longest - `judge-model, models.judge` - is.
@@ -252,15 +269,10 @@ function report(checks: Check[]): number {
     for (const line of check.more ?? []) console.log(`${under}${brand.muted(line)}`);
     if (check.fix && check.level !== "ok") console.log(`${under}${brand.accent(`→ ${check.fix}`)}`);
   }
-  const missing = checks.filter((check) => check.level === "missing");
-  const limited = checks.filter((check) => check.level === "limited");
+  const verdict = verdictOf(checks);
   console.log("");
-  if (missing.length > 0) {
-    console.log(brand.error(`Not ready: ${missing.length} thing${missing.length === 1 ? "" : "s"} to fix (✗ above).`));
-    return 1;
-  }
-  console.log(limited.length > 0 ? brand.warning("Ready, with limits (! above).") : brand.success("Ready."));
-  return 0;
+  console.log((verdict.ready ? (verdict.limited ? brand.warning : brand.success) : brand.error)(verdict.text));
+  return verdict.ready ? 0 : 1;
 }
 
 /**

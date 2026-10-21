@@ -38,6 +38,7 @@ While a skill runs, a line above the input shows its phases, every one by name -
 | `halt` | halt a pulse, a module's planned pulses, or what `activate` started |
 | `diagnose` | why a pulse did not land, from its transcript: how it ended, the stages that went wrong, the last failing test run, the last review, the tool calls that failed - and what the [ledger](#the-ledger) recorded of it |
 | `ledger` | what turri did, from the [ledger](#the-ledger), this session's and every earlier one's: a pulse as facts, by its id - its rounds, test runs, verdicts, healers, refusals and commits; events of some kinds counted and listed, for a module or since a time - `healer.failed`, or `healer` for the group; or the last runs, a line a pulse |
+| `doctor` | turri's self check, as `turri doctor` runs it: Node, bash, git, the OS sandbox, a model provider, and the project's toolchains and testing scripts - against the PATH turri's pulses run with, not the agent's shell's. The project's models are asked for a word only when you ask (a request a model); it changes nothing |
 | `lineage` | a module's lineage: what each regeneration and conformance run changed in it, and what it was regenerated from |
 | `cultivate` | run a gated skill, its steps and review gates enforced |
 | `release`, `activate` | try what is regenerated: release it to `dist/<module>` and activate it on this machine, installing what it needs - see [deploy](deploy.md) |
