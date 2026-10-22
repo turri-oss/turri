@@ -54,7 +54,7 @@ Besides frontmatter `import`, a template can be included with parameters:
 {% include "python-console-app-template.plain", main_executable_file_name: "my_app.py" %}
 ```
 
-Parameters are key-value pairs; the template reads them as `{{ variable_name }}`.
+Parameters are key-value pairs; the template reads them as `{{ variable_name }}`. Templates live in `template/`. One is worth writing only for text more than one `.plain` file repeats, differing only in values the parameters carry; text used once stays inline.
 
 ## When an earlier test fails after a render
 

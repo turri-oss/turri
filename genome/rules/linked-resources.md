@@ -63,6 +63,10 @@ A linked resource **must not** be any of the following:
 - A :User: can edit a :Task: using :TaskModalSpec:.
 ```
 
+## When to link
+- Link content too long or too structured to state inline, or used from more than one place (through a concept, as above); state a short fact in the text instead
+- Never link generated code - it lives in `plain_modules/`, not `resources/`
+
 ## File location and path resolution
 - Paths are resolved relative to the directory where `turri` is run (the current working directory)
 - Relative paths may traverse into parent directories — `[resource](../../resources/resource.md)` is valid — as long as they resolve to a real text file on disk

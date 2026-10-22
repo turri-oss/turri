@@ -13,7 +13,7 @@ import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
  *
  * A skill of one phase, or none, has nothing to be partway through: its line is the spinner and its name alone.
  *
- *   ⠋ add-test-requirement
+ *   ⠋ analyze-func-specs
  */
 
 export interface SkillProgress {

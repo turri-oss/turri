@@ -101,7 +101,7 @@ Capture as a contract-version concept; pin the version in every published schema
 
 ## Testing — live conformance, secrets from env, webhooks
 
-`:ConformanceTests:` for a standalone integration **run against the live provider** (see [`integrations.md`](integrations.md) → *`:ConformanceTests:` always run against the live integration*). The testing strategy is captured as `***test reqs***` entries authored via `add-test-requirement`:
+`:ConformanceTests:` for a standalone integration **run against the live provider** (see [`integrations.md`](integrations.md) → *`:ConformanceTests:` always run against the live integration*). The testing strategy is captured as `***test reqs***` entries (`test-reqs.md`):
 
 - **Conformance is live by default.** No VCR cassettes, no prerecorded responses for the calls under test, no mock servers. A green conformance run that never touched the provider proves nothing. Recorded responses may back unit tests — never conformance
 - **Secrets come from environment variables.** Pin every credential as an env-var name (e.g. `<PROVIDER>_API_KEY`, `<PROVIDER>_CLIENT_ID` + `<PROVIDER>_CLIENT_SECRET`) in `***test reqs***` and in the auth concept. Use the names the provider's docs use so users don't have to translate

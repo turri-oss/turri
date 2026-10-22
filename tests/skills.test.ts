@@ -123,7 +123,7 @@ describe("the skills the person starts themselves", () => {
     const { skills } = discoverSkills(process.cwd(), process.cwd());
     expect(skills.filter((skill) => skill.commandOnly).map((skill) => skill.name).sort()).toEqual(["brood", "bud", "spawn"]);
     expect(catalogueLine(skills.find((skill) => skill.name === "spawn")!)).toContain("Started only by the person, with /spawn");
-    expect(catalogueLine(skills.find((skill) => skill.name === "add-concept")!)).not.toContain("Started only by the person");
+    expect(catalogueLine(skills.find((skill) => skill.name === "analyze-func-specs")!)).not.toContain("Started only by the person");
   });
 
   it("start once their command is typed, and not again until it is typed again", () => {
@@ -137,7 +137,7 @@ describe("the skills the person starts themselves", () => {
   });
 
   it("leave every other skill free for the model to start", () => {
-    expect(createCommandGate().mayStart({ name: "add-concept", commandOnly: false })).toBe(true);
+    expect(createCommandGate().mayStart({ name: "analyze-func-specs", commandOnly: false })).toBe(true);
   });
 
   it("are refused with how the person starts them - their command, or an option picked", () => {
@@ -147,11 +147,11 @@ describe("the skills the person starts themselves", () => {
   it("start from an option the person picked that starts with their command", () => {
     const skills = [
       { name: "brood", commandOnly: true },
-      { name: "add-concept", commandOnly: false },
+      { name: "analyze-func-specs", commandOnly: false },
     ];
     expect(chosenCommand("/brood - an interview: the stack, the testing and every feature", skills)).toBe("brood");
     expect(chosenCommand("Just do it - no skill: I write it here", skills)).toBeUndefined();
-    expect(chosenCommand("/add-concept", skills)).toBeUndefined();
+    expect(chosenCommand("/analyze-func-specs", skills)).toBeUndefined();
     expect(chosenCommand("I would rather /brood later", skills)).toBeUndefined();
   });
 

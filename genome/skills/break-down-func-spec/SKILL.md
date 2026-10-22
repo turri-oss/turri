@@ -160,7 +160,7 @@ If the spec describes a full screen, split into layout + individual interactive 
 
 Sometimes a spec is too complex not because it bundles many behaviors, but because it implies building one substantial technical component inline — an engine, parser, scheduler, layout algorithm, state machine, or sync mechanism. Splitting the behavior sideways does not help when the weight sits in that single component. Instead, pull the component out: define a concept for it, build it in its own dedicated spec placed **earlier** in the chain, then rewrite the original to use the component **by reference**. Because specs render incrementally top-to-bottom, the original now implies far less code — it wires up a component that already exists rather than implementing it from scratch.
 
-Define the component concept in `***definitions***` (via `add-concept`) before the first spec that references it.
+Define the component concept in `***definitions***` (per `definitions.md`) before the first spec that references it.
 
 **Before:**
 ```plain

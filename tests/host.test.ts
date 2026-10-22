@@ -195,7 +195,7 @@ describe("the skills the person starts with a command", () => {
     const { pi, commands, sent } = registeringPi();
     createTurriExtension()(pi);
     for (const name of ["brood", "spawn", "bud"]) expect(commands.has(name), name).toBe(true);
-    expect(commands.has("add-concept")).toBe(false);
+    expect(commands.has("analyze-func-specs")).toBe(false);
     await commands.get("spawn")!.handler("  a small server ", {});
     expect(sent).toEqual(["/spawn a small server"]);
   });

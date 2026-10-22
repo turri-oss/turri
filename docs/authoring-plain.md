@@ -100,7 +100,7 @@ A requirement beyond the stack - storage, an outside service - is added on top o
 | --- | --- |
 | `module-structure.md` | the file skeleton, frontmatter fields, section order, module kinds, section ownership |
 | `definitions.md` | concept syntax, predefined concepts, define before use, no circular definitions, granularity |
-| `func-specs.md` | voice, the complexity limit, chronological order, no conflicts, language agnosticism, testability, acceptance tests |
+| `func-specs.md` | voice, the complexity limit, chronological order, no conflicts, how a functional spec is added - checked for size and conflicts before it is written in - and where it goes, language agnosticism, testability, acceptance tests |
 | `impl-reqs.md` | HOW not WHAT, unit tests live here, what belongs and what does not |
 | `test-reqs.md` | conformance tests only, what belongs, test types |
 | `concise-specs.md` (+ two example banks) | keeping \*\*\*plain short enough for a person to review: no obvious lines, plain words, no uncheckable adjectives, no hedging |
@@ -147,7 +147,7 @@ Every skill in `genome/skills/` can be run from a conversation; most are also us
 | --- | --- |
 | start a project | `brood`, `spawn` - or ask, and choose `Just do it` for no skill |
 | make rough \*\*\*plain build | `mature` |
-| add to \*\*\*plain | `bud`, `add-functional-spec`, `add-functional-specs`, `add-concept`, `add-implementation-requirement`, `add-test-requirement`, `add-acceptance-test`, `add-resource`, `add-template` |
+| add to \*\*\*plain | `bud` - or ask in the conversation: it writes a concept, a functional spec, a req, an acceptance test or a linked resource itself, by the rules in its prompt, as a \*\*\*plain diff |
 | check what is written | `analyze-if-func-spec-too-complex`, `analyze-2-func-specs`, `analyze-func-specs`, `resolve-section-ownership` |
 | fix what is written | `break-down-func-spec`, `resolve-spec-conflict`, `debug-specs` |
 | restructure modules | `refactor-module`, `consolidate-concepts` |

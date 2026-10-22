@@ -115,7 +115,7 @@ describe("an empty skill", () => {
 
 describe("continuous review", () => {
   it("is off unless the gate asks for it", () => {
-    const skill = loadSkill("genome/skills/add-concept");
+    const skill = loadSkill("genome/skills/analyze-func-specs");
     expect(skill.steps.every((s) => s.gate?.continuous === undefined)).toBe(true);
   });
 
@@ -173,7 +173,7 @@ describe("a skill's tools", () => {
     const { mkdtempSync, writeFileSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
     const { join } = await import("node:path");
-    expect(loadSkill("genome/skills/add-implementation-requirement").allowedTools).toEqual(["read", "write", "edit", "bash", "ls", "grep", "find"]);
+    expect(loadSkill("genome/skills/debug-specs").allowedTools).toEqual(["read", "write", "edit", "bash", "ls", "grep", "find"]);
     const dir = mkdtempSync(join(tmpdir(), "turri-skill-"));
     writeFileSync(join(dir, "SKILL.md"), "---\nname: none\ndescription: nothing\n---\n\nDo nothing.\n");
     expect(loadSkill(dir).allowedTools).toEqual([]);

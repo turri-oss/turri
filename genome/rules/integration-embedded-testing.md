@@ -31,7 +31,7 @@ The two scripts are generated from facts in the integration's spec. For an embed
 - **Everything about `:UnitTests:`** — paths, approach, packages, framework, conventions, fixtures, mocking policy — lives in `***implementation reqs***`. Unit tests are part of the generated codebase, so requirements that shape them are implementation reqs (see [`impl-reqs.md`](impl-reqs.md))
 - **Everything about `:ConformanceTests:`** — paths, approach, packages, framework, execution command, pass criteria, mocking policy — lives in `***test reqs***`. Conformance tests are external to the generated codebase, so requirements that shape them are test reqs (see [`test-reqs.md`](test-reqs.md))
 
-Authors use `add-implementation-requirement` for the first group and `add-test-requirement` for the second. The two groups are parallel — each predefined concept owns a complete authoring story in its own section.
+The first group follows `impl-reqs.md`, the second `test-reqs.md`. The two groups are parallel — each predefined concept owns a complete authoring story in its own section.
 
 ### In `***implementation reqs***` — everything about `:UnitTests:`
 

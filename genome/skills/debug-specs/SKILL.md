@@ -70,10 +70,10 @@ Trace the issue from the generated code back to the specs. There are five possib
 | Root Cause | Symptom | Fix |
 |------------|---------|-----|
 | **Ambiguous spec** | The spec is correct in intent, but vague enough that the renderer interpreted it differently than intended. | Add explicit detail to the spec to eliminate the ambiguity. |
-| **Missing spec** | The desired behavior is not covered by any spec. The renderer had no guidance and either did nothing or made an arbitrary choice. | Add a new functional spec using the `add-functional-spec` skill. |
+| **Missing spec** | The desired behavior is not covered by any spec. The renderer had no guidance and either did nothing or made an arbitrary choice. | Add a new functional spec, checked as `func-specs.md` says (*Adding a functional spec*). |
 | **Conflicting specs** | Two specs contradict each other, causing the renderer to produce inconsistent behavior. | Use the `resolve-spec-conflict` skill. |
 | **Incorrect spec** | The spec explicitly describes the wrong behavior. The renderer implemented it faithfully, but the spec itself is wrong. | Rewrite the spec to describe the correct behavior. |
-| **Missing implementation req** | The spec is correct, but the implementation req doesn't provide enough guidance for the renderer to produce the right code (e.g., missing library, missing architectural constraint, missing platform detail). | Add or update the implementation req using the `add-implementation-requirement` skill. |
+| **Missing implementation req** | The spec is correct, but the implementation req doesn't provide enough guidance for the renderer to produce the right code (e.g., missing library, missing architectural constraint, missing platform detail). | Add or update the implementation req, per `impl-reqs.md`. |
 
 ### How to diagnose
 
@@ -90,15 +90,15 @@ Trace the issue from the generated code back to the specs. There are five possib
 
 ## Phase 4 — Fix the Specs
 
-Apply the fix based on the diagnosed root cause. Use the appropriate skill:
+Apply the fix based on the diagnosed root cause:
 
-| Root Cause | Skill to Use |
+| Root Cause | How |
 |------------|-------------|
 | Ambiguous spec | Edit the spec inline — add sub-bullets or reword for clarity |
-| Missing spec | `add-functional-spec` |
+| Missing spec | `func-specs.md`, *Adding a functional spec* |
 | Conflicting specs | `resolve-spec-conflict` |
 | Incorrect spec | Edit the spec inline — rewrite the incorrect part |
-| Missing implementation req | `add-implementation-requirement` |
+| Missing implementation req | `impl-reqs.md` |
 
 ### Fix guidelines
 

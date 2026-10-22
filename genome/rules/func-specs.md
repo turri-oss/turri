@@ -73,6 +73,22 @@ GOOD — statements of fact with concrete subjects:
 - Before adding, review all existing specs and verify compatibility
 - If ambiguity exists, add explicit detail to eliminate any conflicting interpretation
 
+## Adding a functional spec
+Every new functional spec - one or a batch - is checked before it is written into the file:
+1. Draft it, then trim it per `concise-specs.md` to the shortest wording that keeps every fact
+2. Check its size with `analyze-if-func-spec-too-complex`; when it is too complex, split it with `break-down-func-spec` and check each part from step 1
+3. Check it for conflicts with **one** `analyze-func-specs` call over the new spec and every existing functional spec in the file and its `requires` chain - never pair by pair. Resolve each conflicting pair it reports with `resolve-spec-conflict`, then run it again over what changed until it is compatible
+4. Only then write it in, where it belongs (see Placement)
+
+A batch is checked one spec at a time, in order: each spec's conflict check includes the specs of the batch already written in. Never write the whole batch in first and check it afterwards - a bad spec already in the file skews every later check. A few specs are no reason to skip a check.
+
+## Placement
+Put a new spec where it fits the module as it reads, not at the end by default:
+- **Below every spec it builds on** - each one whose behaviour it references or extends, and the first to use each concept it relies on
+- **Above every spec that builds on it** - one that already assumes what it adds
+- **Within those bounds, beside the specs of its feature** - usually straight after the last one it extends
+- **At the end** only when it starts something new or fits nowhere better
+
 ## Language agnosticism
 - Write in terms of behavior, concepts, and domain logic
 - Avoid language-specific terminology: generics syntax, framework annotations, language-specific collection types, decorator syntax, base-class keywords, framings like "POJO" or "dataclass"
@@ -111,6 +127,20 @@ GOOD — statements of fact with concrete subjects:
 - Each acceptance test must be a direct logical consequence of the parent spec — it illustrates, not extends
 - Acceptance tests must describe concrete, verifiable outcomes — not vague qualities
 - Acceptance tests must not contradict, narrow, or extend beyond the parent spec
+
+```plain
+Functional spec:
+- :Resource: items are returned sorted by creation date in descending order.
+
+Good - follows from the spec:
+- After three :Resource: items are created one after another, listing them returns the last one created first.
+
+Bad - contradicts it (the spec says descending):
+- The first :Resource: listed is the oldest.
+
+Bad - extends it (the spec says nothing about a limit):
+- At most 50 :Resource: items are listed.
+```
 
 ## Format
 

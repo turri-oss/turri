@@ -70,7 +70,7 @@ The integration's `.plain` module lives **inside the host codebase** (per the "a
 
 - Every host file the integration touches (base classes, configuration modules, registries, exception classes, lifecycle hooks) is referenced from the relevant spec using `***linked resource***` syntax with the **path as it exists in the host codebase** — e.g. `[base.py](host_project/integrations/base.py)` if the `.plain` module sits next to `host_project/`
 - **Do NOT copy host files into `resources/host/`.** A copy creates a second source of truth that drifts the moment the host file is edited; the rendered code will then disagree with whatever the host actually ships
-- **Do NOT add host files via the `add-resource` skill's default copy behavior** when that behavior would duplicate the file — point at the existing host path directly
+- **Do NOT copy host files into `resources/`** when that would duplicate them — link the existing host path directly
 - **Never inline a host file's contents** into a spec
 - **Never describe a host symbol's shape from memory** — the renderer reads the linked file's bytes at its host path and that is the source of truth
 - This still obeys the broader [`linked-resources.md`](linked-resources.md) rules: a directory is not a valid link, a URL is not a valid link, a binary is not a valid link. Only the *location* changes — host files live where the host put them, not under `resources/`
