@@ -66,7 +66,7 @@ describe("turri init-config", () => {
       maxSpecsPerPulse: DEFAULTS.maxSpecsPerPulse,
       maxLinesPerPulse: DEFAULTS.maxLinesPerPulse,
       ledgerKeep: DEFAULTS.ledgerKeep,
-      rulesOff: [],
+      rulesOff: ["integration-embedded", "integration-embedded-testing", "integration-standalone"],
       toolchains: [],
     });
     // Commented out, the optional ones have no value.
