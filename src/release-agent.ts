@@ -17,8 +17,8 @@ import { ask, BEGIN, createExecutor } from "./pi.ts";
 
 /**
  * The agent that releases a module on its own - `turri release`'s, and a pulse's last stage under
- * `release-after-pulse: true`. It finds the project's release guidance as the chat does - what it was told, the
- * project's AGENTS.md, its skills - passes it to `release`, and does what it says, asking no one.
+ * `release-after-pulse: true`, which is the word to release: the guidance it finds as the chat does - what it was told,
+ * the project's AGENTS.md, its skills - says only how. It passes it to `release`, and does what it says, asking no one.
  */
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -85,7 +85,7 @@ export interface ReleaseAgentInput {
   inModule?: string;
   /** What the person said of how to release it. */
   guidance?: string;
-  /** Released as a pulse's last stage: what the pulse landed. The agent releases only when the guidance says to. */
+  /** Released as a pulse's last stage: what the pulse landed. The setting has said to release it; the guidance says how. */
   afterPulse?: { moduleName: string; subject: string };
   onDelta?: (delta: string) => void;
 }
@@ -120,7 +120,7 @@ export async function runReleaseAgent(input: ReleaseAgentInput): Promise<string>
     ].join("\n"),
     task: [
       input.afterPulse !== undefined
-        ? `A pulse of module ${input.afterPulse.moduleName} just landed: ${input.afterPulse.subject}. You release it now, before the module's next pulse starts - if the project's release guidance says to release after a build or a pulse.`
+        ? `A pulse of module ${input.afterPulse.moduleName} just landed: ${input.afterPulse.subject}. Release it now, before the module's next pulse starts: the project releases after every pulse.`
         : `Release ${shortPath(plainFile)} for the person to try, with the release tool, then do what it says.`,
       "",
       "First ask yourself: is there guidance for how this project releases it - what the person said below, the project's",
@@ -130,8 +130,8 @@ export async function runReleaseAgent(input: ReleaseAgentInput): Promise<string>
       ...(input.afterPulse !== undefined
         ? [
             "",
-            "Released after a pulse: when nothing in the guidance says to release after a build, call nothing and say so in a line.",
-            "When release says it is already released, leave it at that.",
+            "Release it whether or not the guidance speaks of releasing after a build - the project's setting has said to. What",
+            "the guidance says is how. When release says it is already released, leave it at that.",
           ]
         : []),
       ...(input.inModule !== undefined ? ["", `Release the codebase of module ${input.inModule}: pass in_module.`] : []),

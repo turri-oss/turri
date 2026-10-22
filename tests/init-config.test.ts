@@ -58,7 +58,7 @@ describe("turri init-config", () => {
       review: false,
       mutationTesting: true,
       allowToStopJobs: true,
-      releaseAfterPulse: false,
+      releaseAfterPulse: true,
       testingScriptsRunOn: "in-place",
       turnLimit: DEFAULTS.turnLimit,
       parallelJobs: defaultParallelJobs(),

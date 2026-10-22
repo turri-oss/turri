@@ -301,7 +301,7 @@ export const DEFAULTS = {
   review: false,
   mutationTesting: true,
   allowToStopJobs: true,
-  releaseAfterPulse: false,
+  releaseAfterPulse: true,
   testingScriptsRunOn: "in-place",
   turnLimit: 120,
   compactAt: 100000,

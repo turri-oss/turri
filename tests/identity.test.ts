@@ -55,3 +55,11 @@ describe("what the chat is told to do when a pulse stops on its environment", ()
     expect(JOB_FINISHED_REACTION).toContain("never make one up");
   });
 });
+
+describe("what the chat is told to do when a pulse was released after it", () => {
+  it("does not release it again, and then does what it was told to do once something is released", () => {
+    expect(JOB_FINISHED_REACTION).toContain('"Released after the pulse" was released by turri itself');
+    expect(JOB_FINISHED_REACTION).toContain("do not call\nrelease for it");
+    expect(JOB_FINISHED_REACTION).toContain("do what you were\ntold to do once something is released");
+  });
+});
