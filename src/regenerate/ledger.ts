@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { gunzipSync, gzipSync } from "node:zlib";
+import { currentChat } from "../chat-scope.ts";
 import { readProjectConfig } from "../config.ts";
 import { turriIdentity } from "../environment.ts";
 import { currentPlace, onModelEvent, type ModelEvent, type UsageReport } from "./activity.ts";
@@ -50,6 +51,9 @@ export type LedgerEvent =
   // A run: one turri process writing to the project.
   | { kind: "run.started"; mode: string; version: string | null; commit: string | null; dirty: boolean | null; pid: number; platform: string; node: string }
   | { kind: "run.ended"; ms: number }
+  // A chat of the run's, opened - fresh, or a saved one reopened - and closed: its id is the entry's chat.
+  | { kind: "chat.opened"; reopened: boolean }
+  | { kind: "chat.closed" }
   // A pulse, from queued to its end.
   | { kind: "job.queued"; jobKind: string; summary: string; pulse?: number; title?: string; model?: string; stack?: string; waitingOn: string[]; follows?: string }
   | { kind: "job.started"; waitedMs: number; logFile?: string }
@@ -116,6 +120,8 @@ export type LedgerEntry = LedgerEvent & {
   job?: string;
   module?: string;
   agent?: AgentRef;
+  /** The chat the work was asked for in, in a session of several (chat-scope.ts). */
+  chat?: string;
 };
 
 /** Where an event happened, when not where the code recording it runs: a job's own place is found by itself. */
@@ -221,7 +227,13 @@ export function record(event: LedgerEvent, place: LedgerPlace = {}): void {
   if (project === undefined) return;
   const job = place.job ?? here.job;
   const module = place.module ?? here.module;
-  write(run, resolve(project), event, { ...(job !== undefined ? { job } : {}), ...(module !== undefined ? { module } : {}), ...(place.agent !== undefined ? { agent: place.agent } : {}) });
+  const chat = currentChat()?.id;
+  write(run, resolve(project), event, {
+    ...(job !== undefined ? { job } : {}),
+    ...(module !== undefined ? { module } : {}),
+    ...(place.agent !== undefined ? { agent: place.agent } : {}),
+    ...(chat !== undefined ? { chat } : {}),
+  });
 }
 
 /**
@@ -292,7 +304,7 @@ function keepOf(project: string): number {
   }
 }
 
-function write(run: Run, project: string, event: LedgerEvent, where: Omit<LedgerPlace, "project">): void {
+function write(run: Run, project: string, event: LedgerEvent, where: Omit<LedgerPlace, "project"> & { chat?: string }): void {
   let writer = run.writers.get(project);
   if (writer === undefined) {
     writer = openWriter(run, project);

@@ -16,6 +16,7 @@ turri is the first coding agent with the power of regenerative software: [\*\*\*
 | what my machine needs, and why a check failed | [installation](installation.md) |
 | what turri needs of this machine, and what `turri doctor` checks | [installation](installation.md#what-turri-doctor-checks) |
 | how to start a project, or add a feature, in a conversation | [using](using.md#in-a-conversation) |
+| how to have several chats open at once, and reopen them | [chats](chats.md) |
 | which model codes, and how to change it | [using](using.md#choosing-a-model), [the project config](config.md#models) |
 | what `config.turri.yaml` can set, and what happens without it | [the project config](config.md) |
 | how a backend and a frontend on different stacks share one project | [the project config](config.md#stacks) |
@@ -31,7 +32,7 @@ turri is the first coding agent with the power of regenerative software: [\*\*\*
 | what the agents can and cannot reach | [the sandbox](sandbox.md) |
 | how skill review gates and judges work | [skills and gates](skills-and-gates.md) |
 | how the parser matches the reference implementation | [the \*\*\*plain parser](parser.md) |
-| how a desktop app or an editor runs turri's conversation itself | [running turri in a host](hosting.md) |
+| how a desktop app or an editor runs turri's chats itself | [running turri in a host](hosting.md) |
 | where the code for something lives | [development](development.md#layout) |
 
 ## All pages
@@ -40,6 +41,7 @@ turri is the first coding agent with the power of regenerative software: [\*\*\*
 | --- | --- |
 | [Installation](installation.md) | doctor, what turri needs of this machine, turri and `pi`, environment variables |
 | [Using turri](using.md) | the conversation, the tools, background jobs, choosing a model, module history, the command line |
+| [Chats](chats.md) | several chats in one session: what each keeps and what they share, `/chat` and its keys, `turri --continue` and `.turri/chats.json` |
 | [The project config](config.md) | `config.turri.yaml` and each stack's `config.turri.<stack>.yaml`: where they are read from, every key, models and their inheritance, conformance, the testing scripts, stacks and choosing one, the old `config.yaml` |
 | [Deploy](deploy.md) | trying what is built: dist/<module>, the last commit, starting it on your machine, `turri release` |
 | [Running unattended](headless.md) | regenerating overnight or in CI: before you leave it, the command, the results, resuming, rebuilding one functionality |
@@ -49,5 +51,5 @@ turri is the first coding agent with the power of regenerative software: [\*\*\*
 | [Skills and gates](skills-and-gates.md) | the gate syntax, what the harness enforces, what a step can do, the rules, trying the gates |
 | [The \*\*\*plain parser](parser.md) | the TypeScript port, `turri validate`, inheritance, the iterator, fidelity |
 | [Theming](theming.md) | the turri themes, contrast, backgrounds, the font |
-| [Running turri in a host](hosting.md) | `@turri-dev/cli/host`: the conversation in a host's own window - its jobs, its questions - and what a host shows beside it |
+| [Running turri in a host](hosting.md) | `@turri-dev/cli/host`: the session and its chats in a host's own windows - their jobs, their questions - and what a host shows beside them |
 | [Development](development.md) | tests, the source layout, known edges |

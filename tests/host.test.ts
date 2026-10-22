@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { askUserVia, chatAskUserTool, createTurriExtension, type TurriHost } from "../src/extension.ts";
+import { askUserVia, chatAskUserTool, createTurriCore, type TurriHost } from "../src/extension.ts";
 import { sideQuestionPrompt } from "../src/btw.ts";
 import { TURRI_IDENTITY } from "../src/identity.ts";
 import { stopJob } from "../src/loop-tools.ts";
@@ -43,7 +43,7 @@ function handlersPi() {
 /** The system prompt a turn starts with, turri's before_agent_start handlers run over pi's own, in order, as pi chains them. */
 async function systemPromptFor(host?: TurriHost, base = "pi's own prompt"): Promise<string> {
   const { pi, handlers } = handlersPi();
-  createTurriExtension(host)(pi);
+  createTurriCore(host).extension(pi);
   let prompt = base;
   for (const handler of handlers.get("before_agent_start") ?? []) {
     const result = (await handler({ systemPrompt: prompt, systemPromptOptions: { skills: [] } }, { hasUI: false })) as { systemPrompt?: string } | undefined;
@@ -82,12 +82,12 @@ describe("turri for a host that runs it itself", () => {
     expect(result.content[0]!.text).toContain("Yes");
   });
 
-  it("hands the host the conversation's jobs, and tells it of each job as it changes and ends", async () => {
-    let registry: JobRegistry | undefined;
+  it("hands the host the session's jobs, and tells it of each job as it changes and ends", async () => {
     const changes: Array<Pick<Job, "id" | "status">> = [];
-    createTurriExtension({ onJobs: (jobs) => (registry = jobs), onJobChange: (job) => changes.push({ id: job.id, status: job.status }) })(quietPi());
-    expect(registry).toBeDefined();
-    const job = registry!.start({ kind: "test", summary: "a job the host sees", run: async () => ({ report: "done" }) });
+    const session = createTurriCore({ onJobChange: (job) => changes.push({ id: job.id, status: job.status }) });
+    session.extension(quietPi());
+    const registry: JobRegistry = session.jobs;
+    const job = registry.start({ kind: "test", summary: "a job the host sees", run: async () => ({ report: "done" }) });
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(changes.filter((change) => change.id === job.id).map((change) => change.status)).toContain("succeeded");
   });
@@ -154,12 +154,10 @@ describe("what a host says of its own surface", () => {
   });
 
   it("says the host's words deep in the tools and side questions too - a pulse not found, a run refused", () => {
-    let jobs: JobRegistry | undefined;
-    createTurriExtension({ surface: SURFACE, onJobs: (registry) => (jobs = registry) })(quietPi());
-    expect(stopJob(jobs!, "nope")).toBe("No pulse nope. The pulses tool lists them.");
-    let terminalJobs: JobRegistry | undefined;
-    createTurriExtension({ onJobs: (registry) => (terminalJobs = registry) })(quietPi());
-    expect(stopJob(terminalJobs!, "nope")).toBe("No pulse nope. /pulses shows them.");
+    const jobs = createTurriCore({ surface: SURFACE }).jobs;
+    expect(stopJob(jobs, "nope")).toBe("No pulse nope. The pulses tool lists them.");
+    const terminalJobs = createTurriCore({}).jobs;
+    expect(stopJob(terminalJobs, "nope")).toBe("No pulse nope. /pulses shows them.");
 
     expect(refusal("regenerate")).toContain("the panel and /halt");
     expect(refusal("regenerate", SURFACE)).not.toContain("panel");
@@ -193,7 +191,7 @@ describe("the skills the person starts with a command", () => {
 
   it("have a command each, which puts what was typed in the chat as the person's message", async () => {
     const { pi, commands, sent } = registeringPi();
-    createTurriExtension()(pi);
+    createTurriCore().extension(pi);
     for (const name of ["brood", "spawn", "bud"]) expect(commands.has(name), name).toBe(true);
     expect(commands.has("analyze-func-specs")).toBe(false);
     await commands.get("spawn")!.handler("  a small server ", {});
@@ -202,7 +200,7 @@ describe("the skills the person starts with a command", () => {
 
   it("are refused when the model starts one without the person's command", async () => {
     const { pi, tools } = registeringPi();
-    createTurriExtension()(pi);
+    createTurriCore().extension(pi);
     const result = await tools.get("cultivate")!.execute("id", { skill: "spawn" }, undefined, undefined, { hasUI: false });
     expect(result.content[0]!.text).toContain("Not started: spawn is started only by the person, with /spawn");
   });
@@ -217,7 +215,7 @@ describe("the skills the person starts with a command", () => {
     try {
       const { pi, tools } = registeringPi();
       const { dialogs } = hostDialogs((options) => options.find((option) => option.startsWith("/spawn")));
-      createTurriExtension({ dialogs })(pi);
+      createTurriCore({ dialogs }).extension(pi);
       const cultivate = () => tools.get("cultivate")!.execute("id", { skill: "spawn" }, undefined, undefined, { hasUI: false });
       expect((await cultivate()).content[0]!.text).toContain("Not started");
       const picked = await tools.get("ask_user")!.execute("q", { question: "How shall I start it?", options: ["/brood - an interview", "/spawn - something running in minutes", "Just do it - no skill"] }, undefined, undefined, { hasUI: false });

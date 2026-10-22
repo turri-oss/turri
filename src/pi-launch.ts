@@ -4,6 +4,9 @@ import { main, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { ProcessTerminal } from "@earendil-works/pi-tui";
 import "./terminal-images.ts";
 import { resumeLine } from "./resume-line.ts";
+import { lastRun, type RunRecord } from "./chat-records.ts";
+import { driveTerminal } from "./chat-terminal.ts";
+import turri, { createTurriCore, processSession } from "./extension.ts";
 
 /**
  * pi, started the way its own CLI starts it, for `turri`.
@@ -15,6 +18,9 @@ import { resumeLine } from "./resume-line.ts";
  */
 
 const args = process.argv.slice(2);
+
+/** Set by cli.ts when pi loads turri's extension itself - an older turri installed it into every pi. */
+const GLOBAL_EXTENSION = "TURRI_EXTENSION_IN_PI";
 if (!args.includes("--verbose")) {
   SettingsManager.prototype.getQuietStartup = () => true;
 }
@@ -43,4 +49,27 @@ const setup = pathToFileURL(join(dirname(fileURLToPath(import.meta.resolve("@ear
 const { setupCli } = (await import(setup)) as { setupCli: () => void };
 setupCli();
 
-await main(args);
+// turri's session, with its chats: built into pi here, in this process, rather than loaded from a file - one session
+// the terminal's chats share (chats.ts). An older turri installed into every pi loads it itself: cli.ts says so, and
+// it is not built in twice.
+const extensionFactories = process.env[GLOBAL_EXTENSION] === "1" ? [] : [turri];
+
+// pi's terminal - not its print, json or rpc modes, nor a run given its input on stdin - holds several chats, and
+// records them for `turri --continue`, which opens them all again: the first as pi's own session, the rest beside it.
+const interactive =
+  process.stdin.isTTY === true && !args.some((arg) => ["-p", "--print", "--mode", "--help", "-h", "--version", "-v", "--list-models"].includes(arg) || arg.startsWith("--mode="));
+if (interactive) {
+  let restore: RunRecord | undefined;
+  const asked = args.findIndex((arg) => arg === "--continue" || arg === "-c");
+  const saved = asked !== -1 ? lastRun(process.cwd()) : undefined;
+  if (saved !== undefined) {
+    args.splice(asked, 1, "--session", saved.chats[0]!.sessionFile);
+    restore = saved;
+  }
+  driveTerminal(
+    processSession(() => createTurriCore({}, { persist: true })),
+    restore !== undefined ? { restore } : {},
+  );
+}
+
+await main(args, { extensionFactories });

@@ -49,11 +49,9 @@ function chat(args: string[]): never {
   // pi itself, through a launcher that leaves out pi's startup header - see pi-launch.ts.
   const launcher = join(HERE, `pi-launch${OWN_EXTENSION}`);
 
-  // Loading the same extension twice is an error in pi, not a no-op, so the explicit -e is left out while an older
-  // turri's file still loads turri into every pi - turri doctor offers to remove it.
-  const extension = extensionInstalledGlobally()
-    ? []
-    : ["-e", join(HERE, `extension${OWN_EXTENSION}`)];
+  // turri is built into pi by the launcher - unless an older turri's file still loads it into every pi, which builds it
+  // in as well: pi-launch.ts is told, and leaves it to that. turri doctor offers to remove the file.
+  const inPi = extensionInstalledGlobally();
   const themes = themesInstalledGlobally() ? [] : ["--theme", join(PACKAGE_ROOT, ".pi", "themes")];
   // turri's own theme, unless this run names another. For this run only: pi's settings
   // are left as they are, so a plain `pi` keeps its theme.
@@ -66,10 +64,10 @@ function chat(args: string[]): never {
   // jobs redraw - in the terminal's own scrollback, every redraw pulls it back to the bottom.
   const tuiMode = args.some((arg) => arg === "--tui-mode" || arg.startsWith("--tui-mode=")) ? [] : ["--tui-mode", "fullscreen"];
 
-  const result = spawnSync(process.execPath, [launcher, ...extension, ...themes, ...useTheme, ...tuiMode, ...piArgs], {
+  const result = spawnSync(process.execPath, [launcher, ...themes, ...useTheme, ...tuiMode, ...piArgs], {
     stdio: "inherit",
     cwd: process.cwd(),
-    env: codingModel ? { ...process.env, [CODING_MODEL_ENV]: codingModel } : process.env,
+    env: { ...process.env, ...(codingModel ? { [CODING_MODEL_ENV]: codingModel } : {}), ...(inPi ? { TURRI_EXTENSION_IN_PI: "1" } : {}) },
   });
   process.exit(result.status ?? 1);
 }

@@ -1,7 +1,8 @@
 /**
  * Choosing a stack: `config.turri.<stack>.yaml` laid over `config.turri.yaml` for everything built from then on - a
  * backend's testing scripts, then a frontend's. `/stack` and the `stack` tool in the chat, `--stack <name>` on the
- * command line (cli.ts). The choice itself is kept in config.ts (`chooseStack`), for the session only.
+ * command line (cli.ts). The choice itself is kept in config.ts (`chooseStack`): in the chat it is made in, for that chat
+ * alone (chat-scope.ts), each new chat starting from `--stack`.
  */
 
 import { readdirSync } from "node:fs";
@@ -80,10 +81,10 @@ export function registerStacks(pi: ExtensionAPI, cwd: string): void {
       description:
         "Choose the stack everything is built with from now on - the project's config.turri.yaml with the stack's " +
         "config.turri.<stack>.yaml over it: its testing scripts, toolchains, models - or none, the project's file alone. " +
-        "For the session; a pulse already running keeps the stack it started with. Without a name, says the stacks and the one chosen.",
+        "For this chat alone - each chat chooses its own; a pulse already running keeps the stack it started with. Without a name, says the stacks and the one chosen.",
       promptSnippet: "choose the stack - its testing scripts and settings - that everything is built with",
       promptGuidelines: [
-        "Switch the stack only when the user asks for it, and say which you chose. A module is built with the stack named after it by itself; to build one whose stack has another name, pass that stack as stack to regenerate, conform, glimpse or change_plain instead: it is pinned to that module's pulses, and the session's choice stays as it is.",
+        "Switch the stack only when the user asks for it, and say which you chose. A module is built with the stack named after it by itself; to build one whose stack has another name, pass that stack as stack to regenerate, conform, glimpse or change_plain instead: it is pinned to that module's pulses, and this chat's choice stays as it is.",
       ],
       parameters: Type.Object({
         name: Type.Optional(Type.String({ description: "The stack to choose, or none. Omitted: the stacks there are, and the one chosen" })),

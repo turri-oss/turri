@@ -241,11 +241,11 @@ coding-model:
 
 Which stack builds a module, first match wins:
 
-- **The one a call names.** `regenerate`, `conform`, `glimpse` and `change_plain` take a `stack`; the chat's model passes it for a module whose stack has a name of its own, leaving the session's choice as it is.
+- **The one a call names.** `regenerate`, `conform`, `glimpse` and `change_plain` take a `stack`; the chat's model passes it for a module whose stack has a name of its own, leaving the chat's choice as it is.
 - **The stack named after the module** - `config.turri.backend.yaml` builds `backend.plain` - with nothing to choose or pass. Name each stack after the module it builds, and a backend and a frontend are each built with their own, side by side - in the chat, in a brood as each change is written, and on the command line.
-- **The one chosen for the session** - in the chat, with `/stack` - a list of the project's stacks and none - or `/stack backend`, `/stack none`. The chat's model has a `stack` tool too, and switches the stack when you ask it to. `/stack` alone says which is chosen now. On the command line, with `--stack <name>` on any command - `turri regenerate`, `conform`, `change-plain`, `glimpse`, `release`, `cultivate` - and on `turri --stack backend` for the chat; or with `TURRI_STACK` in the environment.
+- **The one chosen in the chat** - each [chat](chats.md) its own - with `/stack` - a list of the project's stacks and none - or `/stack backend`, `/stack none`. The chat's model has a `stack` tool too, and switches the stack when you ask it to. `/stack` alone says which is chosen now. On the command line, with `--stack <name>` on any command - `turri regenerate`, `conform`, `change-plain`, `glimpse`, `release`, `cultivate` - and on `turri --stack backend` for the chat; or with `TURRI_STACK` in the environment.
 
-The choice lasts for the session only: nothing remembers it, and turri started again has none chosen. A stack the project has no file for is refused, with the stacks it has. With none chosen, `config.turri.yaml` alone is used.
+A chat's choice is its own, and lasts while it is open: a new chat starts with `--stack`'s, or none, and nothing remembers it - turri started again has none chosen. A stack the project has no file for is refused, with the stacks it has. With none chosen, `config.turri.yaml` alone is used.
 
 How a stack's config is made:
 

@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { copyFileSync, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { load as loadYaml } from "js-yaml";
+import { currentChat } from "./chat-scope.ts";
 import { projectDirOf } from "./regenerate/paths.ts";
 
 /**
@@ -149,17 +150,28 @@ export function adoptLegacyConfig(root: string, options: { projectFile?: boolean
 /** The stack a pulse runs with: the one chosen as it started, whatever is chosen since. */
 const pinnedStack = new AsyncLocalStorage<{ stack: string | undefined }>();
 
-/** The stack chosen now - `/stack`, `--stack`, `TURRI_STACK` - or, inside a pulse, the one it started with. */
+/**
+ * The stack chosen now - the chat's own (`/stack` in it), else `--stack` or `TURRI_STACK` - or, inside a pulse, the one
+ * it started with.
+ */
 export function chosenStack(): string | undefined {
   const pinned = pinnedStack.getStore();
   if (pinned !== undefined) return pinned.stack;
+  const chat = currentChat();
+  if (chat !== undefined) return chat.stack;
   return text(process.env.TURRI_STACK);
 }
 
-/** Choose the stack everything is built with from now on - or none, the project's config alone. Kept in TURRI_STACK. */
+/**
+ * Choose the stack everything is built with from now on - or none, the project's config alone. In a chat, for that
+ * chat alone; outside one, kept in TURRI_STACK.
+ */
 export function chooseStack(stack: string | undefined): void {
-  if (stack === undefined || stack.trim() === "") delete process.env.TURRI_STACK;
-  else process.env.TURRI_STACK = stack.trim();
+  const chosen = stack === undefined || stack.trim() === "" ? undefined : stack.trim();
+  const chat = currentChat();
+  if (chat !== undefined) chat.stack = chosen;
+  else if (chosen === undefined) delete process.env.TURRI_STACK;
+  else process.env.TURRI_STACK = chosen;
 }
 
 /** Run `work` with `stack` as the one chosen, whatever is chosen meanwhile: a pulse keeps the stack it started with. */

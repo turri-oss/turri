@@ -1,14 +1,15 @@
 /**
- * turri for a host that runs it itself - a desktop app, an editor - imported as `@turri-dev/cli/host`: the
- * conversation as pi's extension, with the host told of its jobs and asking its questions (createTurriExtension), and
+ * turri for a host that runs it itself - a desktop app, an editor - imported as `@turri-dev/cli/host`: the session and
+ * its chats, with the host told of its jobs and asking its questions (createTurri), and
  * what a host shows beside it - a spec parsed, checked and coloured, its concepts and links, the standard library, how
  * far each functional spec is built, the work a spec change would plan. It is turri's own code, as the terminal runs it; a 0.x release may change any of it.
  */
 
-// The conversation.
-export { createTurriExtension, type TurriHost } from "./extension.ts";
+// The session and its chats.
+export { createTurri, type Turri, type TurriOptions } from "./host-session.ts";
+export { MAX_CHATS, type ChatInfo, type ChatStatus, type TurriHost } from "./chats.ts";
 export type { AskUserIO } from "./ask.ts";
-/** pi itself, as turri's extension is built against it: a host makes its session with this one, not another copy. */
+/** pi itself, as turri is built against it: a host's own extensions and UI are made with this one, not another copy. */
 export * as pi from "@earendil-works/pi-coding-agent";
 
 // The project and its settings.

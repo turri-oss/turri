@@ -5,7 +5,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { conversationCommand, conversationSettled, conversationWriting } from "./regenerate/conversation-writes.ts";
 import { fileURLToPath } from "node:url";
-import type { ExtensionAPI, ExtensionContext, ModelRegistry } from "@earendil-works/pi-coding-agent";
+import type { AgentSession, ExtensionAPI, ExtensionContext, ExtensionFactory, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import type { OverlayHandle, TUI } from "@earendil-works/pi-tui";
 import { allocateImageId, Box, type Component, getCapabilities, getPngDimensions, type ImageDimensions, isKeyRelease, isKeyRepeat, matchesKey, renderImage, Text, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { defineTool } from "@earendil-works/pi-coding-agent";
@@ -65,6 +65,8 @@ import { catalogueLine, chosenCommand, createCommandGate, startPicked, discoverS
 import { supersededByTurri } from "./chat-skills.ts";
 import { conversationIdentity } from "./identity.ts";
 import { setSurface, surfaceOf } from "./surface.ts";
+import { createChats, scopedToChat, type ChatLink, type TurriCore, type TurriHost } from "./chats.ts";
+import { registerChats } from "./chat-commands.ts";
 import { turriIdentity } from "./environment.ts";
 import { conformanceChooser } from "./regenerate/choose-conformance.ts";
 import { answerSideQuestion, askWithAsides, BTW_HOW, runningSkill, skillRunStarted, skillSessionText, transcriptOf } from "./btw.ts";
@@ -236,34 +238,7 @@ export function chatAskUserTool(dialogs?: AskUserIO, afterAnswer?: (answer: stri
   };
 }
 
-/**
- * What a host that runs turri's conversation itself - a desktop app, an editor - is told and asked, where the terminal
- * would draw: the conversation's jobs and its work loop as they are made and as they change, and the dialogs its
- * questions are put to the person in. A host gives the extension `createTurriExtension(host)`; `turri` gives it none.
- */
-export interface TurriHost {
-  /** The conversation's job registry, as the extension makes it: every pulse the conversation starts is in it. */
-  onJobs?(jobs: JobRegistry): void;
-  /** The conversation's work loop, once work is first asked for: what each codebase has planned, and why. */
-  onWorkLoop?(loop: WorkLoop): void;
-  /** A job started, moved to another stage, did something, or ended. */
-  onJobChange?(job: Job): void;
-  /** What is planned changed with no job - a module being planned, or planned. */
-  onPlanChange?(): void;
-  /** The dialogs ask_user puts its questions in - the conversation's and a skill's interview - instead of the terminal's. */
-  dialogs?: AskUserIO;
-  /**
-   * The host's own UI, in its own words: the views it has in place of the terminal's, what its marks and buttons mean,
-   * where questions appear. Given, turri tells the model none of the terminal's - its keys, the side panel, regen,
-   * /pulses - and gives it this instead, as a `<surface>` block in turri's identity. Absent, the terminal is the surface.
-   */
-  surface?: string;
-  /**
-   * The last word on the whole system prompt, as turri has built it for this turn - after its own before_agent_start
-   * work: what it returns is what is sent. For a host that needs to change anything else.
-   */
-  systemPrompt?(prompt: string): string;
-}
+export type { TurriHost } from "./chats.ts";
 
 /**
  * The conversation's system prompt for a turn: pi's, turri's identity - with the host's surface in place of the
@@ -274,38 +249,27 @@ function conversationSystemPrompt(base: string, host: TurriHost, blocks: string[
   return host.systemPrompt !== undefined ? host.systemPrompt(prompt) : prompt;
 }
 
-/** The host each conversation's jobs report to, for the work loop made for them later. */
+/** Whether the person has been told which of pi's skills turri left out: once a session, not once a chat. */
+let leftOutSaid = false;
+
+/** The host each session's jobs report to. */
 const hosts = new WeakMap<JobRegistry, TurriHost>();
 
-/** turri's conversation as an extension of pi's, for a host that runs it itself: see TurriHost. */
-export function createTurriExtension(host: TurriHost = {}): (pi: ExtensionAPI) => void {
-  return (pi) => turriExtension(pi, host);
-}
-
-export default createTurriExtension();
-
-function turriExtension(pi: ExtensionAPI, host: TurriHost) {
+/**
+ * A turri session: its job registry and work loop, the ledger, and its chats, each with turri's extension in it
+ * (chats.ts). The terminal makes one as it starts (pi-launch.ts), a host with `createTurri` (host.ts); `persist`
+ * records the open chats for `turri --continue`.
+ */
+export function createTurriCore(host: TurriHost = {}, options: { persist?: boolean; dialogs?: (chat: string) => AskUserIO | undefined } = {}): TurriCore {
   dropNoise();
   const cwd = process.cwd();
-  // turri's own skills, and the project's - .turri/skills, .agents/skills (skills.ts).
-  const discoveredSkills = discoverSkills(PACKAGE_ROOT, cwd);
-
-  // What the background work is doing right now, drawn above the editor while it runs.
-  const panel = createJobPanel(() => shownJobs(jobs));
-
-  // Finished work is announced twice, to two audiences, because pi treats them differently.
-  // An entry is drawn the moment it is appended: the person sees the job end, now. The agent
-  // gets the full report as a hidden message that starts a turn of its own - at once when it is
-  // idle, else as soon as the turn it is in ends (a follow-up, never cutting into a reply or an
-  // interview) - so it reacts to every job that ends without waiting for the person to speak:
-  // does what the project's guidance says to do then (release what was built, say), or says
-  // what finished.
-  // What release has shipped, module by module: release does nothing for a module whose last commit it already shipped.
-  const deployState = createDeployState();
+  let core: TurriCore | undefined;
+  // Finished work is announced twice, to two audiences, because pi treats them differently - see ChatInstance.announce:
+  // in the chat that asked for it, or the one shown when that is closed.
   const jobs: JobRegistry = createJobRegistry({
     // The loop's plan changed - a module being planned, or planned: the live panel shows it at once.
     onNotify: () => {
-      panel.refresh();
+      core?.jobsChanged();
       host.onPlanChange?.();
     },
     // A job that fails is run once more; failing again, it and every job behind it fail, and the
@@ -327,47 +291,154 @@ function turriExtension(pi: ExtensionAPI, host: TurriHost) {
       return diagnosis !== undefined ? describeDiagnosis(diagnosis) : undefined;
     },
     onChange: (job) => {
-      panel.refresh();
+      core?.jobsChanged();
       host.onJobChange?.(job);
     },
     onFinish: (job) => {
-      panel.refresh();
+      core?.jobsChanged();
       host.onJobChange?.(job);
       // Queued again as another job: that one says how it went.
       if (job.replacedBy !== undefined) return;
-      announceJob(pi, job);
       // Gone wrong: the next ctrl+h opens on it - the live panel that showed it is gone with the last pulse.
       if (job.status === "failed" || job.status === "stopped" || didNotPass(job)) needsLooking.set(jobs, job.id);
-      // A spec that contradicts itself is the person's to settle, now: the agent is started on it.
-      if (job.specConflict !== undefined) {
-        void pi.sendMessage(
-          { customType: "turri_spec_conflict", content: specConflictTask(job.specConflict), display: false, details: { jobId: job.id } },
-          { triggerTurn: true },
-        );
-        return;
-      }
-      void pi.sendMessage(
-        {
-          customType: "turri_job",
-          content:
-            (job.status === "succeeded"
-              ? `Pulse ${job.id} (${job.kind}) finished after ${formatDuration(job)}.\n\n${job.report ?? ""}`
-              : job.status === "stopped"
-                ? `Pulse ${job.id} (${job.kind}) was stopped after ${formatDuration(job)}. ${job.error ?? STOPPED_ON_REQUEST}${job.error === undefined || job.error === STOPPED_ON_REQUEST ? " The person stopped it; what it was building counts as not built." : ""}`
-                : `Pulse ${job.id} (${job.kind}) failed after ${formatDuration(job)}.\n\n${job.error ?? ""}`) +
-            `\n\n${JOB_FINISHED_REACTION}`,
-          display: false,
-          details: { jobId: job.id, status: job.status },
-        },
-        { triggerTurn: true, deliverAs: "followUp" },
-      );
+      core?.jobFinished(job);
     },
   });
-
+  core = createChats({
+    cwd,
+    host,
+    jobs,
+    extension: (pi, link) => turriExtension(pi, core!, link),
+    ...(options.persist !== undefined ? { persist: options.persist } : {}),
+    ...(options.dialogs !== undefined ? { dialogs: options.dialogs } : {}),
+  });
+  const session = core;
   hosts.set(jobs, host);
   // What the model is told of where the person watches the work, deep in the tools too: the host's surface, or the terminal.
   setSurface(jobs, host.surface);
-  host.onJobs?.(jobs);
+  // What release has shipped, module by module: release does nothing for a module whose last commit it already shipped.
+  deployStates.set(jobs, createDeployState());
+
+  // What this session does, as facts, in the project's .turri/ledger - a pulse's own in its project. Said once, in the
+  // chat shown, when it cannot be written.
+  if (ledgerWanted()) {
+    startLedger({
+      mode: Object.keys(host).length > 0 ? "host" : "chat",
+      project: cwd,
+      warn: (message) => session.notify(message, "warning"),
+    });
+  }
+  // What a turri that was killed left running - its commands' process groups - stopped as this one starts.
+  const orphans = sweepOrphanedGroups();
+  if (orphans > 0) session.notify(`Stopped ${orphans} process group${orphans === 1 ? "" : "s"} a turri that was killed left running.`, "info");
+  // A pulse's provider failing and waited out, or a turn turri ended itself: said in the chat shown as it happens - the
+  // job panel's activity holds it too, but scrolls by.
+  onModelEvent((event) => {
+    const line = describeTurnIncident(event);
+    if (line !== undefined) session.notify(event.job !== undefined ? `${event.job}: ${line}` : line, "warning");
+  });
+  // Sub-agents think as hard as the chat that started them, not pi's default - and reach the providers its extensions
+  // registered - a company's own gateway - which they load none of.
+  inheritThinkingLevel(() => session.instanceInScope()?.thinkingLevel() as never);
+  inheritProviders(() => session.instanceInScope()?.context()?.modelRegistry);
+  return core;
+}
+
+/** The session pi builds turri's extension into when it is given turri's file rather than a session's factory. */
+const SESSION = Symbol.for("turri.session");
+
+/** The session of this process: pi-launch.ts's, or one made as pi first builds the extension (`pi -e src/extension.ts`). */
+export function processSession(make: () => TurriCore = () => createTurriCore()): TurriCore {
+  const global = globalThis as Record<symbol, TurriCore | undefined>;
+  return (global[SESSION] ??= make());
+}
+
+const extension: ExtensionFactory = (pi) => processSession().extension(pi);
+export default extension;
+
+/**
+ * The session's work loop, for a host to read: made with the first chat's context - the models it plans with - when no
+ * chat has asked for work yet.
+ */
+export function sessionLoop(session: TurriCore): WorkLoop {
+  const known = workLoops.get(session.jobs)?.loop;
+  if (known !== undefined) return known;
+  const live: AgentSession | undefined = session.shownChat()?.session ?? session.chats().map((info) => session.session(info.id)).find((found) => found !== undefined);
+  if (live === undefined) throw new Error("No chat is open yet: the work loop plans with a chat's models.");
+  return workLoopFor(session.jobs, session.cwd, live.extensionRunner.createContext());
+}
+
+/**
+ * turri's extension, built into one chat of the session: its tools, commands and handlers run in the chat's scope -
+ * its stack, its id on the pulses it asks for - on the session's job registry and work loop.
+ */
+function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
+  const pi = scopedToChat(api, link.scope);
+  const { cwd, host, jobs } = session;
+  const dialogs = link.dialogs ?? host.dialogs;
+  // turri's own skills, and the project's - .turri/skills, .agents/skills (skills.ts).
+  const discoveredSkills = discoverSkills(PACKAGE_ROOT, cwd);
+
+  // What the background work is doing right now, drawn above the editor while it runs.
+  const panel = createJobPanel(() => shownJobs(jobs));
+
+  // The chat's context, as its tools and handlers were last given it: for its model and its providers.
+  let lastContext: ExtensionContext | undefined;
+  const contextNow = (): ExtensionContext | undefined => {
+    try {
+      void lastContext?.model;
+      return lastContext;
+    } catch {
+      // Rebuilt by pi since - a /reload, a /fork: its new extension has the context now.
+      return undefined;
+    }
+  };
+
+  // Finished work is announced twice, to two audiences, because pi treats them differently.
+  // An entry is drawn the moment it is appended: the person sees the job end, now. The agent
+  // gets the full report as a hidden message that starts a turn of its own - at once when it is
+  // idle, else as soon as the turn it is in ends (a follow-up, never cutting into a reply or an
+  // interview) - so it reacts to every job that ends without waiting for the person to speak:
+  // does what the project's guidance says to do then (release what was built, say), or says
+  // what finished. In the chat that asked for the pulse, shown or not.
+  const announce = (job: Job) => {
+    announceJob(pi, job);
+    // A spec that contradicts itself is the person's to settle, now: the agent is started on it.
+    if (job.specConflict !== undefined) {
+      void pi.sendMessage(
+        { customType: "turri_spec_conflict", content: specConflictTask(job.specConflict), display: false, details: { jobId: job.id } },
+        { triggerTurn: true },
+      );
+      return;
+    }
+    void pi.sendMessage(
+      {
+        customType: "turri_job",
+        content:
+          (job.status === "succeeded"
+            ? `Pulse ${job.id} (${job.kind}) finished after ${formatDuration(job)}.\n\n${job.report ?? ""}`
+            : job.status === "stopped"
+              ? `Pulse ${job.id} (${job.kind}) was stopped after ${formatDuration(job)}. ${job.error ?? STOPPED_ON_REQUEST}${job.error === undefined || job.error === STOPPED_ON_REQUEST ? " The person stopped it; what it was building counts as not built." : ""}`
+              : `Pulse ${job.id} (${job.kind}) failed after ${formatDuration(job)}.\n\n${job.error ?? ""}`) +
+          `\n\n${JOB_FINISHED_REACTION}`,
+        display: false,
+        details: { jobId: job.id, status: job.status },
+      },
+      { triggerTurn: true, deliverAs: "followUp" },
+    );
+  };
+  link.live({
+    announce,
+    jobsChanged: () => panel.refresh(),
+    thinkingLevel: () => pi.getThinkingLevel(),
+    context: contextNow,
+  });
+  pi.on("session_start", (_event, ctx) => {
+    lastContext = ctx;
+  });
+  pi.on("before_agent_start", (_event, ctx) => {
+    lastContext = ctx;
+  });
 
   // The ***plain rules go into the system prompt in full, every turn. The block is
   // identical each time, so it sits inside the cached prefix rather than invalidating it.
@@ -391,7 +462,6 @@ function turriExtension(pi: ExtensionAPI, host: TurriHost) {
   const machine = machineNeeds(cwd);
   pi.on("session_start", () => machine.refreshSoon());
   pi.on("agent_settled", () => machine.refreshSoon());
-  let leftOutSaid = false;
   pi.on("before_agent_start", (event, ctx) => {
     const offered = event.systemPromptOptions.skills;
     const leftOut = offered.filter((skill) => supersededByTurri(skill, turriRuns));
@@ -463,66 +533,28 @@ function turriExtension(pi: ExtensionAPI, host: TurriHost) {
   pi.on("agent_end", endTurnCapture);
   pi.on("agent_settled", endTurnCapture);
 
-  // A pulse's provider failing and waited out, or a turn turri ended itself: said in the chat as it happens - the job
-  // panel's activity holds it too, but scrolls by.
-  let stopTurnIncidents: (() => void) | undefined;
-  pi.on("session_start", (_event, ctx) => {
-    stopTurnIncidents?.();
-    if (!ctx.hasUI) return;
-    stopTurnIncidents = onModelEvent((event) => {
-      const line = describeTurnIncident(event);
-      if (line !== undefined) ctx.ui.notify(event.job !== undefined ? `${event.job}: ${line}` : line, "warning");
-    });
-  });
-
-  // What this session does, as facts, in the project's .turri/ledger - a pulse's own in its project. Said once, in the
-  // chat, when it cannot be written.
-  const ledgerTrouble: string[] = [];
-  let tellLedgerTrouble: ((message: string) => void) | undefined;
-  if (ledgerWanted()) {
-    startLedger({
-      mode: Object.keys(host).length > 0 ? "host" : "chat",
-      project: cwd,
-      warn: (message) => (tellLedgerTrouble !== undefined ? tellLedgerTrouble(message) : ledgerTrouble.push(message)),
-    });
-  }
   pi.on("session_start", (_event, ctx) => {
     if (!ctx.hasUI) return;
-    tellLedgerTrouble = (message) => ctx.ui.notify(message, "warning");
-    for (const message of ledgerTrouble.splice(0)) tellLedgerTrouble(message);
-  });
-
-  // What a turri that was killed left running - its commands' process groups - stopped as this one starts.
-  const orphans = sweepOrphanedGroups();
-  let orphansSaid = orphans === 0;
-  pi.on("session_start", (_event, ctx) => {
-    if (orphansSaid || !ctx.hasUI) return;
-    orphansSaid = true;
-    ctx.ui.notify(`Stopped ${orphans} process group${orphans === 1 ? "" : "s"} a turri that was killed left running.`, "info");
-  });
-
-  pi.on("session_start", (_event, ctx) => {
-    if (!ctx.hasUI) return;
-    const ui = ctx.ui;
-    // setWidget is overloaded - lines or a component - and the panel is always a component.
-    type ComponentWidget = Extract<Parameters<typeof ui.setWidget>[1], (...args: never[]) => unknown>;
+    // setWidget is overloaded - lines or a component - and the panel is always a component. Through the chat's ui as it
+    // is when the panel draws - pi's screen, or what stands in for it while another chat is shown.
+    type ComponentWidget = Extract<Parameters<typeof ctx.ui.setWidget>[1], (...args: never[]) => unknown>;
     panel.attach({
-      setWidget: (key, content, options) => ui.setWidget(key, content as ComponentWidget | undefined, options),
-      getToolsExpanded: () => ui.getToolsExpanded(),
+      setWidget: (key, content, options) => {
+        try {
+          ctx.ui.setWidget(key, content as ComponentWidget | undefined, options);
+        } catch {
+          /* rebuilt by pi since: its new extension draws the panel */
+        }
+      },
+      getToolsExpanded: () => {
+        try {
+          return ctx.ui.getToolsExpanded();
+        } catch {
+          return false;
+        }
+      },
     });
   });
-
-  // Sub-agents think as hard as the conversation that started them, not pi's default.
-  inheritThinkingLevel(() => pi.getThinkingLevel());
-  // And reach the providers its extensions registered - a company's own gateway - which they load none of.
-  let conversationModels: ModelRegistry | undefined;
-  pi.on("session_start", (_event, ctx) => {
-    conversationModels = ctx.modelRegistry;
-  });
-  pi.on("before_agent_start", (_event, ctx) => {
-    conversationModels = ctx.modelRegistry;
-  });
-  inheritProviders(() => conversationModels);
 
   registerBranding(pi, discoveredSkills);
   registerInterviewLog(pi);
@@ -531,7 +563,7 @@ function turriExtension(pi: ExtensionAPI, host: TurriHost) {
   // once its command is typed, or picked among the options the conversation offers with ask_user.
   const gate = createCommandGate();
   // A skill picked is started at once, with what the person asked for: they never type its command after picking it.
-  registerCheckPlain(pi, cwd, host.dialogs, (answer) => {
+  registerCheckPlain(pi, cwd, dialogs, (answer) => {
     const chosen = chosenCommand(answer, discoveredSkills.skills);
     if (chosen === undefined) return undefined;
     gate.typed(chosen);
@@ -542,11 +574,12 @@ function turriExtension(pi: ExtensionAPI, host: TurriHost) {
   registerGlimpse(pi, cwd, jobs);
   registerBind(pi, cwd, jobs);
   registerRenderModels(pi);
-  deployStates.set(jobs, deployState);
-  registerDeploy(pi, cwd, jobs, deployState);
+  registerDeploy(pi, cwd, jobs, deployStates.get(jobs) ?? createDeployState());
   registerSteering(pi, cwd);
   registerSideQuestions(pi, cwd, jobs);
   registerStacks(pi, cwd);
+  // More chats beside this one, in the terminal: /chat, alt+n, alt+1…9 (chat-commands.ts).
+  if (session.terminal) registerChats(pi, session);
 
   const { skills } = discoveredSkills;
   if (skills.length === 0) return;
@@ -748,7 +781,7 @@ function turriExtension(pi: ExtensionAPI, host: TurriHost) {
           push(`  Q: ${question}`);
           push(`  A: ${answer}`);
           recordExchange(pi, { skill: skill.name, question, answer, ...(said !== undefined && said.trim() !== "" ? { said: said.trim() } : {}) });
-        }, (question) => askOnTheSide(pi, ctx, cwd, jobs, question), host.dialogs),
+        }, (question) => askOnTheSide(pi, ctx, cwd, jobs, question), dialogs),
         model: conversationModel(ctx),
         // Renders queued by a step land in the same registry as everything else, so
         // pulses sees them without knowing a skill started them.
@@ -766,9 +799,14 @@ function turriExtension(pi: ExtensionAPI, host: TurriHost) {
           haltTool({ jobs, workLoop: () => workLoops.get(jobs)?.loop }),
           conformTool({ cwd, loop: () => workLoopFor(jobs, cwd, ctx), model: (_skill, plainFile, named) => jobModel(ctx, "spec_changes", named, plainFile), wait: () => false }),
         ],
-        // The escalation becomes a real dialog in the TUI. Without dialog-capable
-        // UI there is nobody to ask, so the gate stands.
+        // The escalation becomes a real dialog - the host's own, when it has them. Without one there is nobody to ask,
+        // so the gate stands.
         escalate: async ({ question, critique }) => {
+          if (dialogs !== undefined) {
+            const through = "Let it through";
+            const answer = await dialogs.select(`Review gate: ${skill.name} - ${question}`, [through, "Keep the gate"], critique);
+            return answer === through;
+          }
           if (!ctx.hasUI) {
             push("  no UI available for human review - gate stands");
             return false;
@@ -908,23 +946,30 @@ function registerRegenerate(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
         "info",
       );
       await nextFrame();
-      try {
-        // Built with the stack chosen now - pinned to its pulses - or refused, a project of stacks built with none.
-        const statuses = await withCallStack(plainFile, undefined, () =>
-          scratch
-            ? loop.fromScratch(plainFile, { ...request, chain })
-            : again.length > 0
-              ? loop.regenerateAgain(plainFile, again, request)
-              : loop.bringUp(plainFile, request),
-        );
-        // Nothing to do: say how to build it again anyway.
-        const hint = statuses.length > 0 && statuses.every(isUpToDate)
-          ? `\nTo regenerate parts of it anyway, name their functionalities - /regenerate ${basename(plainFile)} 2.1 - or start over with /regenerate ${basename(plainFile)} from scratch.`
-          : "";
-        say(describeModules(statuses) + hint, "info");
-      } catch (error) {
-        say(error instanceof Error ? error.message : String(error), "error");
-      }
+      // Planned in the background: pi reads what is typed next only once a command returns, and planning takes the
+      // planner's time - the chat, and switching to another, stay free meanwhile. The plan is said once it is made.
+      const target = plainFile;
+      void (async () => {
+        try {
+          // Built with the stack chosen now - pinned to its pulses - or refused, a project of stacks built with none.
+          const statuses = await withCallStack(target, undefined, () =>
+            scratch
+              ? loop.fromScratch(target, { ...request, chain })
+              : again.length > 0
+                ? loop.regenerateAgain(target, again, request)
+                : loop.bringUp(target, request),
+          );
+          // Nothing to do: say how to build it again anyway.
+          const hint = statuses.length > 0 && statuses.every(isUpToDate)
+            ? `\nTo regenerate parts of it anyway, name their functionalities - /regenerate ${basename(target)} 2.1 - or start over with /regenerate ${basename(target)} from scratch.`
+            : "";
+          say(describeModules(statuses) + hint, "info");
+        } catch (error) {
+          say(error instanceof Error ? error.message : String(error), "error");
+        }
+      })().catch(() => {
+        // The chat let go while it planned - closed, or rebuilt: there is nobody to say it to.
+      });
     },
   });
 }
@@ -1300,7 +1345,7 @@ export function projectConfigBlock(root: string): string {
         stacks.length > 0 ? "project of stacks" : "project",
       ),
       ...(stacks.length > 0
-        ? ["", `Stacks: ${stacks.join(", ")} - chosen now: ${chosen ?? "none, so the project's file alone"}. Each module is built with the stack of its part, pinned to its pulses whatever is chosen after: a stack named after the module is its own - backend.plain is built with config.turri.backend.yaml - with nothing to choose. For a module whose stack has another name, pass it as stack to regenerate, conform, glimpse and change_plain. Choose one for the whole session with the stack tool only when the user asks.`]
+        ? ["", `Stacks: ${stacks.join(", ")} - chosen now: ${chosen ?? "none, so the project's file alone"}. Each module is built with the stack of its part, pinned to its pulses whatever is chosen after: a stack named after the module is its own - backend.plain is built with config.turri.backend.yaml - with nothing to choose. For a module whose stack has another name, pass it as stack to regenerate, conform, glimpse and change_plain. Choose one for this chat with the stack tool only when the user asks.`]
         : []),
       // A stack: its file over the project's, for everything built while it is chosen.
       ...stacks.flatMap((stack) => [
@@ -1375,7 +1420,7 @@ export function projectConfigBlock(root: string): string {
     `<project config>`,
     `A project's ${CONFIG_FILE} sets how its specs are built - and a stack's config.turri.<stack>.yaml, over it, how everything is built`,
     "while that stack is chosen: its testing scripts, toolchains, models and conformance - a backend and a frontend each with their own scripts.",
-    "One stack is chosen at a time, for the session: the render tools follow the project's file with the chosen stack's over it;",
+    "One stack is chosen at a time, in each chat for that chat: the render tools follow the project's file with the chosen stack's over it;",
     `a project with no ${CONFIG_FILE} yet is read from its ${LEGACY_CONFIG_FILE} (and config.<stack>.yaml): to change a setting there, copy`,
     `${LEGACY_CONFIG_FILE} to ${CONFIG_FILE} - and each config.<stack>.yaml to config.turri.<stack>.yaml - first, then edit the copy; never edit ${LEGACY_CONFIG_FILE}.`,
     "answer questions about the project's settings from it, and say when a render will differ from it because the user",
@@ -1412,8 +1457,10 @@ function chatModelOf(ctx: ExtensionContext): string | undefined {
 }
 let lastChatModel: string | undefined;
 
-/** The models chosen in this session, by kind of work. Saved in the session, so a resume keeps them. */
+/** The models chosen in this session, by kind of work - for every chat. Saved in the chat they were chosen in, so reopening it keeps them. */
 const chosenModels: ModelChoices = {};
+/** When they were last chosen: a chat reopened with older choices of its own leaves them be. */
+let chosenModelsAt = 0;
 const MODEL_CHOICE_ENTRY = "turri_render_models";
 
 /**
@@ -1529,6 +1576,7 @@ function setRenderModelTool(pi: ExtensionAPI, conversation?: ExtensionContext) {
         }
         chosenModels[params.work] = resolved.model;
       }
+      chosenModelsAt = Date.now();
       pi.appendEntry(MODEL_CHOICE_ENTRY, { ...chosenModels });
       const text = `The engine now:\n${describeChoices(chosenModels, chatModelOf(ctx), projectModelLabel(ctx))}`;
       return { content: [{ type: "text" as const, text }], details: { ...chosenModels } };
@@ -1538,13 +1586,21 @@ function setRenderModelTool(pi: ExtensionAPI, conversation?: ExtensionContext) {
 
 /** Choosing which model renders what, for the rest of the session. */
 function registerRenderModels(pi: ExtensionAPI) {
+  // The session's choices, every chat's: a chat reopened brings back what it chose, when that is newer than what the
+  // session has - and a fresh chat starts with the session's.
+  let started = false;
   pi.on("session_start", (_event, ctx) => {
-    for (const key of Object.keys(chosenModels)) delete chosenModels[key as keyof ModelChoices];
+    if (started) return;
+    started = true;
     const saved = ctx.sessionManager
       .getBranch()
       .filter((entry) => entry.type === "custom" && (entry as { customType?: string }).customType === MODEL_CHOICE_ENTRY)
-      .at(-1) as { data?: ModelChoices } | undefined;
-    Object.assign(chosenModels, saved?.data ?? {});
+      .at(-1) as { data?: ModelChoices; timestamp?: string } | undefined;
+    const at = Date.parse(saved?.timestamp ?? "") || 1;
+    if (saved === undefined || at <= chosenModelsAt) return;
+    chosenModelsAt = at;
+    for (const key of Object.keys(chosenModels)) delete chosenModels[key as keyof ModelChoices];
+    Object.assign(chosenModels, saved.data ?? {});
   });
 
   pi.registerTool(setRenderModelTool(pi));
@@ -1605,7 +1661,6 @@ function workLoopFor(jobs: JobRegistry, cwd: string, ctx: ExtensionContext): Wor
     });
     shared = { loop, from };
     workLoops.set(jobs, shared);
-    hosts.get(jobs)?.onWorkLoop?.(loop);
   }
   shared.from.ctx = ctx;
   return shared.loop;
@@ -1853,6 +1908,143 @@ function registerJobTools(pi: ExtensionAPI, jobs: JobRegistry, cwd: string) {
   // screen - beside the chat, the key switches sides, giving the keys to the chat or the panel, as esc gives them to the
   // chat, the panel staying; ctrl+c closes it.
   // While the panel has the keys, every key is its own.
+  // The side panel is the session's, one for every chat: it stays on the screen - beside the chat or over it - as
+  // another chat is shown, and what it says to a chat it says to the one shown.
+  const sidePanel = sidePanelOf(jobs, cwd);
+  const openPanel = sidePanel.open;
+  pi.on("session_start", () => {
+    sidePanel.say = (text) => pi.sendUserMessage(text, { deliverAs: "followUp" });
+  });
+
+  // /pulses opens the side panel on every pulse, regenerating, planned and finished, and what each regenerates; regen -
+  // the spec, with how far the code has been regenerated into it - is PANEL_KEY's, no command of its own beside
+  // /regenerate. What the agents did is in each pulse's log.
+  pi.registerCommand("pulses", {
+    description: `The pulses, in the side panel: every pulse, regenerating, planned and finished, and what each regenerates. ${PANEL_KEY} opens the panel too.`,
+    handler: async (_args, ctx) => {
+      if (!ctx.hasUI) return;
+      openPanel(ctx, "pulses");
+    },
+  });
+
+  panelOpeners.set(jobs, (ctx) => openPanel(ctx));
+  // A question open in the chat on the screen peeks at this chat's panel.
+  const peek = {
+    open: (ctx: ExtensionContext) => openPanel(ctx),
+    shown: () => sidePanel.shown(),
+  };
+  questionPeek = peek;
+  pi.on("session_start", () => {
+    questionPeek = peek;
+  });
+
+  pi.registerShortcut(PANEL_KEY, {
+    description: "Peek at regen and the pulses - a question waiting in the chat waits for you - or go back to it",
+    handler: async (ctx) => {
+      if (!ctx.hasUI) return;
+      openPanel(ctx);
+    },
+  });
+
+  // /turri-config: every setting of config.turri.yaml from the chat, each taking effect as it says - what turri fixed at its
+  // start changed here, as it runs.
+  registerTurriConfig(pi, {
+    cwd,
+    rules: () => loadRules(join(PACKAGE_ROOT, "genome", "rules")).map((rule) => rule.name),
+    chatSpec: () => modelSpec(projectModels(readProjectConfig(cwd)).harness),
+    live: {
+      chatModel: async (spec, ctx) => {
+        if (spec === undefined) return "The conversation keeps the model it runs on now; turri starts on pi's own choice next time.";
+        const { model, thinking } = splitModelSpec(spec);
+        if (model !== undefined) {
+          const resolved = resolveModel(model, ctx.modelRegistry);
+          if (!resolved.ok) return `The conversation keeps its model: ${model} cannot be used here.\n${describeResolution(resolved)}`;
+          const slash = resolved.model.indexOf("/");
+          const found = ctx.modelRegistry.find(resolved.model.slice(0, slash), resolved.model.slice(slash + 1));
+          if (found === undefined || !(await pi.setModel(found))) return `The conversation keeps its model: ${resolved.model} could not be switched to.`;
+        }
+        if (thinking !== undefined) pi.setThinkingLevel(thinking);
+        return `The conversation runs on ${spec} now.`;
+      },
+      codingModel: () => {
+        const dropped: string[] = [];
+        // What the session chose wins over the file; changed in the file, the file's holds from now on.
+        if (process.env[CODING_MODEL_ENV] !== undefined) {
+          dropped.push(`--coding-model ${process.env[CODING_MODEL_ENV]}`);
+          delete process.env[CODING_MODEL_ENV];
+        }
+        chosenModelsAt = Date.now();
+        for (const work of Object.keys(chosenModels) as Array<keyof ModelChoices>) {
+          dropped.push(`the engine's ${work === "all" ? "" : `${work.replace(/_/g, " ")} `}model ${chosenModels[work]}`);
+          delete chosenModels[work];
+        }
+        return dropped.length === 0 ? undefined : `Chosen this session, and given way to the config: ${dropped.join("; ")}.`;
+      },
+      parallelJobs: (count) => {
+        const limit = count ?? parallelJobs(cwd);
+        jobs.setMaxRunning(limit);
+        return `Up to ${limit} pulse${limit === 1 ? "" : "s"} run at once now.`;
+      },
+    },
+  });
+}
+
+export { fromWorkingDir };
+
+const WATCH_REDRAW_MS = 500;
+/**
+ * What the agent is to do with a job that just ended, unasked: what the project's guidance says to do then, or else say
+ * in a line or two what ended - the person saw it end already, in the transcript.
+ */
+export const JOB_FINISHED_REACTION = [
+  "React to this now - the person has not asked, and need not. If guidance for this project - its AGENTS.md, a skill,",
+  "what the person said earlier - says what to do when a pulse finishes (release what was built, run something, tell",
+  "someone), do that, as it says. Otherwise say in a line or two what finished and what it means for the person - the",
+  "report is theirs to read in full; do not repeat it - and, when it failed, what they can do. Start no other work.",
+  "A report that says \"Released after the pulse\" was released by turri itself, as the pulse's last stage: do not call",
+  "release for it. Say in a line what was released, or why nothing was - then, when it was released, do what you were",
+  "told to do once something is released (opening it where the person can watch it, saying what to test), if anything.",
+  "A pulse that stopped on its environment - \"stopped: turri's sandbox kept its agents from…\" or \"stopped: the",
+  "environment lacks…\" - stops the same way again until that is fixed: never regenerate it before. Heal it, then regenerate the",
+  "module to resume:",
+  "- turri's sandbox kept the agents from reading a folder on this machine: nothing is missing. Add the folder its report",
+  "  names to `toolchains:` in config.turri.yaml - a list, keeping what is there - say so in a line, and resume.",
+  "- turri's sandbox kept the agents from writing a file - a lock a build tool takes, say: no setting lets them, and",
+  "  `toolchains:` does not - never add it there, and never resume before the fix. Do what the report says if it is the",
+  "  project's to change - a tool told to use `$HOME` in the build's own files - say so, and resume; otherwise tell the",
+  "  person, in a line or two, what the report says and that \"resume\" picks it up once it is done.",
+  "- the machine lacks a toolchain or a tool - a JDK, Maven, Gradle, Go, uv, Node, a system library: first find out, in your",
+  "  shell, whether it is installed somewhere off the PATH (`command -v`, Homebrew's opt folders, /Library/Java/",
+  "  JavaVirtualMachines, a version manager the person uses - mise, asdf, sdkman, nvm). Then ask the person with ask_user",
+  "  to let you put it in place the way this machine installs things - the exact command, `brew install openjdk@21`,",
+  "  `mise use -g java@21`, `sdk install maven` - and on yes run it in your shell, check that the command is found now as",
+  "  the testing script would find it (`command -v`, then the doctor tool, which looks on turri's own PATH), and resume. A tool installed where the PATH turri",
+  "  was started with does not reach needs turri restarted: say so, with the line for the shell profile. On no, or when it",
+  "  needs what you cannot do - sudo with a password, a licence, a download behind a login - tell the person exactly what",
+  "  to do, and that \"resume\" picks it up once it is in.",
+  "- a credential `agent-env:` names that is not there: never make one up - tell the person where it is read from.",
+].join("\n");
+
+/** The session's side panel: opened from any chat, and the same panel whichever chat is shown. */
+interface SidePanelHost {
+  open(ctx: ExtensionContext, view?: "map" | "pulses"): void;
+  /** It shows now, with the keys. */
+  shown(): boolean;
+  /** What it says to the chat - a module that needs the person: the chat shown says it. */
+  say?: (text: string) => void;
+}
+
+const sidePanels = new WeakMap<JobRegistry, SidePanelHost>();
+
+/** The side panel of the session these jobs are, made as a chat first asks for it. */
+function sidePanelOf(jobs: JobRegistry, cwd: string): SidePanelHost {
+  const known = sidePanels.get(jobs);
+  if (known !== undefined) return known;
+  const self: SidePanelHost = {
+    open: (ctx, view) => openPanel(ctx, view),
+    shown: () => panel !== undefined && panel.keys,
+  };
+  sidePanels.set(jobs, self);
   let panel: { handle?: OverlayHandle; view: ReturnType<typeof createSidePanel>; close: () => void; keepChatFocus: () => void; keys: boolean } | undefined;
   // Beside the chat or over it: as the person last left it, for the conversation.
   let panelDocked = false;
@@ -2001,9 +2193,8 @@ function registerJobTools(pi: ExtensionAPI, jobs: JobRegistry, cwd: string) {
           discuss: (page) => {
             back();
             const why = page.codebase?.stuck?.why;
-            pi.sendUserMessage(
+            self.say?.(
               `regen says ${page.module} needs me: ${page.status}. What went wrong, and what do we do about it?${why !== undefined ? `\n\n(turri's reason: ${why})` : ""}`,
-              { deliverAs: "followUp" },
             );
           },
           // Something took the keys' focus while the panel showed - a question in the chat - and waits there.
@@ -2107,108 +2298,8 @@ function registerJobTools(pi: ExtensionAPI, jobs: JobRegistry, cwd: string) {
     );
   };
 
-  // /pulses opens the side panel on every pulse, regenerating, planned and finished, and what each regenerates; regen -
-  // the spec, with how far the code has been regenerated into it - is PANEL_KEY's, no command of its own beside
-  // /regenerate. What the agents did is in each pulse's log.
-  pi.registerCommand("pulses", {
-    description: `The pulses, in the side panel: every pulse, regenerating, planned and finished, and what each regenerates. ${PANEL_KEY} opens the panel too.`,
-    handler: async (_args, ctx) => {
-      if (!ctx.hasUI) return;
-      openPanel(ctx, "pulses");
-    },
-  });
-
-  panelOpeners.set(jobs, (ctx) => openPanel(ctx));
-  questionPeek = {
-    open: (ctx) => openPanel(ctx),
-    shown: () => panel !== undefined && panel.keys,
-  };
-
-  pi.registerShortcut(PANEL_KEY, {
-    description: "Peek at regen and the pulses - a question waiting in the chat waits for you - or go back to it",
-    handler: async (ctx) => {
-      if (!ctx.hasUI) return;
-      openPanel(ctx);
-    },
-  });
-
-  // /turri-config: every setting of config.turri.yaml from the chat, each taking effect as it says - what turri fixed at its
-  // start changed here, as it runs.
-  registerTurriConfig(pi, {
-    cwd,
-    rules: () => loadRules(join(PACKAGE_ROOT, "genome", "rules")).map((rule) => rule.name),
-    chatSpec: () => modelSpec(projectModels(readProjectConfig(cwd)).harness),
-    live: {
-      chatModel: async (spec, ctx) => {
-        if (spec === undefined) return "The conversation keeps the model it runs on now; turri starts on pi's own choice next time.";
-        const { model, thinking } = splitModelSpec(spec);
-        if (model !== undefined) {
-          const resolved = resolveModel(model, ctx.modelRegistry);
-          if (!resolved.ok) return `The conversation keeps its model: ${model} cannot be used here.\n${describeResolution(resolved)}`;
-          const slash = resolved.model.indexOf("/");
-          const found = ctx.modelRegistry.find(resolved.model.slice(0, slash), resolved.model.slice(slash + 1));
-          if (found === undefined || !(await pi.setModel(found))) return `The conversation keeps its model: ${resolved.model} could not be switched to.`;
-        }
-        if (thinking !== undefined) pi.setThinkingLevel(thinking);
-        return `The conversation runs on ${spec} now.`;
-      },
-      codingModel: () => {
-        const dropped: string[] = [];
-        // What the session chose wins over the file; changed in the file, the file's holds from now on.
-        if (process.env[CODING_MODEL_ENV] !== undefined) {
-          dropped.push(`--coding-model ${process.env[CODING_MODEL_ENV]}`);
-          delete process.env[CODING_MODEL_ENV];
-        }
-        for (const work of Object.keys(chosenModels) as Array<keyof ModelChoices>) {
-          dropped.push(`the engine's ${work === "all" ? "" : `${work.replace(/_/g, " ")} `}model ${chosenModels[work]}`);
-          delete chosenModels[work];
-        }
-        return dropped.length === 0 ? undefined : `Chosen this session, and given way to the config: ${dropped.join("; ")}.`;
-      },
-      parallelJobs: (count) => {
-        const limit = count ?? parallelJobs(cwd);
-        jobs.setMaxRunning(limit);
-        return `Up to ${limit} pulse${limit === 1 ? "" : "s"} run at once now.`;
-      },
-    },
-  });
+  return self;
 }
-
-export { fromWorkingDir };
-
-const WATCH_REDRAW_MS = 500;
-/**
- * What the agent is to do with a job that just ended, unasked: what the project's guidance says to do then, or else say
- * in a line or two what ended - the person saw it end already, in the transcript.
- */
-export const JOB_FINISHED_REACTION = [
-  "React to this now - the person has not asked, and need not. If guidance for this project - its AGENTS.md, a skill,",
-  "what the person said earlier - says what to do when a pulse finishes (release what was built, run something, tell",
-  "someone), do that, as it says. Otherwise say in a line or two what finished and what it means for the person - the",
-  "report is theirs to read in full; do not repeat it - and, when it failed, what they can do. Start no other work.",
-  "A report that says \"Released after the pulse\" was released by turri itself, as the pulse's last stage: do not call",
-  "release for it. Say in a line what was released, or why nothing was - then, when it was released, do what you were",
-  "told to do once something is released (opening it where the person can watch it, saying what to test), if anything.",
-  "A pulse that stopped on its environment - \"stopped: turri's sandbox kept its agents from…\" or \"stopped: the",
-  "environment lacks…\" - stops the same way again until that is fixed: never regenerate it before. Heal it, then regenerate the",
-  "module to resume:",
-  "- turri's sandbox kept the agents from reading a folder on this machine: nothing is missing. Add the folder its report",
-  "  names to `toolchains:` in config.turri.yaml - a list, keeping what is there - say so in a line, and resume.",
-  "- turri's sandbox kept the agents from writing a file - a lock a build tool takes, say: no setting lets them, and",
-  "  `toolchains:` does not - never add it there, and never resume before the fix. Do what the report says if it is the",
-  "  project's to change - a tool told to use `$HOME` in the build's own files - say so, and resume; otherwise tell the",
-  "  person, in a line or two, what the report says and that \"resume\" picks it up once it is done.",
-  "- the machine lacks a toolchain or a tool - a JDK, Maven, Gradle, Go, uv, Node, a system library: first find out, in your",
-  "  shell, whether it is installed somewhere off the PATH (`command -v`, Homebrew's opt folders, /Library/Java/",
-  "  JavaVirtualMachines, a version manager the person uses - mise, asdf, sdkman, nvm). Then ask the person with ask_user",
-  "  to let you put it in place the way this machine installs things - the exact command, `brew install openjdk@21`,",
-  "  `mise use -g java@21`, `sdk install maven` - and on yes run it in your shell, check that the command is found now as",
-  "  the testing script would find it (`command -v`, then the doctor tool, which looks on turri's own PATH), and resume. A tool installed where the PATH turri",
-  "  was started with does not reach needs turri restarted: say so, with the line for the shell profile. On no, or when it",
-  "  needs what you cannot do - sudo with a password, a licence, a download behind a login - tell the person exactly what",
-  "  to do, and that \"resume\" picks it up once it is in.",
-  "- a credential `agent-env:` names that is not there: never make one up - tell the person where it is read from.",
-].join("\n");
 
 /** Opens the side panel, and goes back to it from the conversation. */
 
@@ -2425,8 +2516,9 @@ function registerDeploy(pi: ExtensionAPI, cwd: string, jobs: JobRegistry, state:
     defaultPlainFile: () => readProjectConfig(cwd).module,
   });
   for (const tool of tools) pi.registerTool(tool);
-  pi.on("session_shutdown", async () => {
-    await stopDeployed();
+  // What activate started runs until turri ends - not when a chat is opened, closed, forked or reloaded.
+  pi.on("session_shutdown", async (event) => {
+    if (event.reason === "quit") await stopDeployed();
   });
 }
 
@@ -2737,11 +2829,15 @@ function registerBranding(pi: ExtensionAPI, skills: SkillCatalogue) {
     return new Banner(lines, (rule) => theme.fg("borderMuted", rule), jellyfishArt(theme.appearance, (theme.getColorMode?.() ?? "truecolor") === "truecolor"));
   });
 
+  let bannered = false;
   pi.on("session_start", (_event, ctx) => {
     if (ctx.hasUI) {
       padTheScreen(ctx);
       animateJellyfish(ctx);
     }
+    // Once a chat: it starts again each time it is shown.
+    if (bannered) return;
+    bannered = true;
     try {
       const identity = turriIdentity();
       pi.appendEntry(BANNER_ENTRY, {

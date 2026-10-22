@@ -33,7 +33,10 @@ The workflow signs in to npm with npm's trusted publishing (OIDC), not a token: 
 | `bin/turri.mjs` | the launcher: checks the Node version, then loads `src/cli.ts` |
 | `src/cli.ts` | the `turri` command and its subcommands |
 | `src/setup.ts`, `src/doctor-tool.ts`, `src/environment.ts`, `src/stack.ts` | `turri doctor` and the chat's `doctor` tool, and what they check - this machine, and in a project what its modules need of it |
-| `src/extension.ts` | the [pi](https://pi.dev) extension: every tool and command the conversation has |
+| `src/extension.ts` | the [pi](https://pi.dev) extension: every tool and command the conversation has - and `createTurriCore`, the session it is built into |
+| `src/chats.ts`, `src/chat-scope.ts`, `src/chat-records.ts` | the session's [chats](chats.md): which chat a pulse is told to, each chat's scope - its id and stack - and `.turri/chats.json` |
+| `src/chat-terminal.ts`, `src/chat-ui.ts`, `src/chat-commands.ts` | the terminal's chats: [pi](https://pi.dev)'s screen switched between live sessions, a hidden chat's stand-in for it, `/chat` and its keys |
+| `src/host-session.ts` | `createTurri`, the session for a host |
 | `src/skill.ts` | parses `SKILL.md` into steps and gates |
 | `src/graph.ts` | compiles a skill into a LangGraph `StateGraph`: step -> gate -> route |
 | `src/judge.ts` | runs independent judges, applies the quorum, builds the critique |

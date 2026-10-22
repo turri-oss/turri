@@ -6,6 +6,7 @@ import { addAgentReport, describeAgents, JobStoppedError, withActivity, type Age
 import { projectOfLanes, startJobLog, type JobLog } from "./job-log.ts";
 import { firstLine, healing, record, type LedgerPlace } from "./ledger.ts";
 import { chosenStack, debugMode, withStack } from "../config.ts";
+import { currentChat } from "../chat-scope.ts";
 import { pulseEnded, pulseWrote } from "./pulse-files.ts";
 
 /**
@@ -42,6 +43,8 @@ export interface Job {
   model?: string;
   /** The stack it is built with - its config.turri.<stack>.yaml over config.turri.yaml - as chosen when it was queued. */
   stack?: string;
+  /** The chat it was asked for in (chat-scope.ts): the one told how it went. */
+  chat?: string;
   status: JobStatus;
   /** Monotonic start order. Two jobs can share a millisecond, so ordering uses this. */
   sequence: number;
@@ -225,6 +228,7 @@ export function createJobRegistry(options?: {
       // The stack chosen as it is queued - or pinned for the work that queues it - not as it starts: a job that waits
       // for a slot is built with the stack it was asked for, whatever is chosen meanwhile.
       const stack = chosenStack();
+      const chat = currentChat()?.id;
       const claimed = [...new Set(input.lanes ?? [])];
       const blockers = [
         ...new Set(
@@ -246,6 +250,7 @@ export function createJobRegistry(options?: {
         diff: input.diff,
         model: input.model,
         ...(stack !== undefined ? { stack } : {}),
+        ...(chat !== undefined ? { chat } : {}),
         ...(input.follows !== undefined ? { follows: input.follows } : {}),
         status: blockers.length > 0 || (limit !== undefined && active >= limit) ? "queued" : "running",
         sequence: (sequence += 1),

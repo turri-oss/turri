@@ -1,6 +1,6 @@
 # Running turri in a host
 
-`turri` runs its conversation in a terminal. A host - a desktop app, an editor - can run the same conversation itself, in its own window, and show what turri's terminal would draw in its own way: the jobs, the questions, the \*\*\*plain description. It imports turri from npm as `@turri-dev/cli/host`.
+`turri` runs its chats in a terminal. A host - a desktop app, an editor - can run the same session itself, its chats in its own windows, and show what turri's terminal would draw in its own way: the jobs, the questions, the \*\*\*plain description. It imports turri from npm as `@turri-dev/cli/host`.
 
 ## What the host entry gives
 
@@ -8,8 +8,9 @@
 
 | export | what it is |
 | --- | --- |
-| `createTurriExtension(host)` | turri's conversation as an extension of [pi](https://pi.dev)'s: every tool, slash command, rule and skill the terminal has. The host is told of its jobs and asks its questions - see below. |
-| `pi` | [pi](https://pi.dev) itself, as turri's extension is built against it. Make the session with this one - `pi.createAgentSession`, `pi.DefaultResourceLoader` - not another copy. |
+| `createTurri(options)` | a turri session: its [chats](chats.md), each a [pi](https://pi.dev) session with every tool, slash command, rule and skill the terminal has, on one job registry and work loop. The host opens, closes and shows them, is told of their jobs and asks their questions - see [the session in a host](#the-session-in-a-host). |
+| `MAX_CHATS`, `ChatInfo`, `ChatStatus` | the most chats a session has open - nine - and what the host is told of each. |
+| `pi` | [pi](https://pi.dev) itself, as turri is built against it. Make the host's own extensions and UI with this one, not another copy. |
 | `readProjectConfig`, `projectModels`, `modelSpec`, `configForSpec`, `hasProjectConfig`, `stacksOf` | the project's settings, as [config.turri.yaml](config.md) has them. |
 | `configSettings`, `currentValue`, `readConfigText`, `overriddenBy`, `EFFECT_TEXT` | every setting of config.turri.yaml as [/turri-config](config.md#changing-it-from-the-chat) knows it - its key, what it does, its kind (a yes or no, one of a few words, a number, a model, a list, a path, a budget), its words or the values offered first, what it is unset and when a change takes effect - and what the file has now (`currentValue(readConfigText(dir), key)`), and what wins over it. Change one as the person would, by sending `/turri-config <key> <value>` to the chat: turri checks it and writes it with the file's comments kept. |
 | `debugMode` | whether turri keeps, in a project, what it writes only for debugging it - `debug:`, or `TURRI_DEBUG` over it (see [debug mode](config.md#debug-mode)). |
@@ -67,36 +68,42 @@ const checks = await doctor({ dir: project, env: engineEnv });
 
 What matters only in a terminal - `turri` on the PATH, a plain `pi` an older turri made load turri - is left to `turri doctor`.
 
-## The conversation in a host
+## The session in a host
 
 ```js
-import { createTurriExtension, pi } from "@turri-dev/cli/host";
+import { createTurri, pi } from "@turri-dev/cli/host";
 
-const loader = new pi.DefaultResourceLoader({
-  cwd,
-  agentDir: pi.getAgentDir(),
-  extensionFactories: [
-    createTurriExtension({
-      onJobs: (jobs) => {},        // the conversation's job registry: every pulse it starts
-      onWorkLoop: (loop) => {},    // its work loop, once work is first asked for
-      onJobChange: (job) => {},    // a job started, moved on, did something, or ended
-      onPlanChange: () => {},      // what is planned changed with no job
-      dialogs: { select, input },  // ask_user's questions, put in the host's own dialogs
-      surface: SURFACE,            // the host's UI, in its own words, told to the model in place of the terminal's
-      systemPrompt: (prompt) => prompt, // the last word on the whole system prompt, each turn
-    }),
-  ],
+process.chdir(project);                // the session is the project's in the process's working folder
+const turri = await createTurri({
+  onJobChange: (job) => {},            // a job started, moved on, did something, or ended - any chat's
+  onPlanChange: () => {},              // what is planned changed with no job
+  dialogs: (chat) => ({ select, input }), // a chat's questions, put in the host's own dialogs
+  uiContext: (chat) => uiContext,      // a chat's other UI calls - notices, the working line
+  surface: SURFACE,                    // the host's UI, in its own words, told to the model in place of the terminal's
+  systemPrompt: (prompt) => prompt,    // the last word on the whole system prompt, each turn
+  extensions: [browser, terminal],     // the host's own extensions, built into every chat after turri's
+  restore: true,                       // reopen the last session's chats here, as `turri --continue` does
 });
-await loader.reload();
-const { session } = await pi.createAgentSession({ cwd, resourceLoader: loader });
-await session.bindExtensions({ uiContext, mode: "tui" });
+
+const chat = await turri.openChat();   // { id, title, status, shown, session }: a fresh chat, shown
+chat.session.subscribe((event) => {}); // pi's session: its events, prompt(), abort()
+await chat.session.prompt("add a cart to the shop");
+turri.focus(other.id);                 // the chat the person looks at now
+turri.chats();                         // [{ id, title, status: "idle" | "working" | "question" | "unread", shown }]
+turri.onChats((chats) => {});          // a chat opened, closed, renamed, working or done
+await turri.closeChat(chat.id);        // its turn stopped, its conversation deleted - its pulses run on
+turri.jobs;                            // the session's job registry: every pulse any chat started
+turri.loop;                            // its work loop, once a chat is open
+await turri.dispose();                 // every chat let go, what activate started stopped
 ```
 
-- **The jobs.** The pulses the conversation starts - its tools, `/regenerate`, a \*\*\*plain change - run in its own job registry and work loop, the project's one. The host is handed both as they are made, and told of each job as it changes, so it shows the very jobs the conversation runs. Its buttons are best the conversation's commands - `session.prompt("/regenerate app.plain")` - so there is never a second loop on the same project.
-- **The questions.** `dialogs` is `ask_user`'s two dialogs: `select(title, options, context, at)` and `input(title, context)`, each resolving with the answer, or undefined when the person dismissed it. Given, the conversation's questions and a skill's interview are put in them; without it, in the terminal's own dialog.
+- **The chats.** Up to nine, each its own history, model, thinking level and stack, all on the session's one job registry and work loop - see [chats](chats.md). `openChat({ sessionFile })` reopens a saved one. A pulse's end is told to the chat that asked for it, its agent reacting there; to the chat `focus` last named when that one is closed. A chat is never hidden from turri's side: what the host does not show, it still runs, and its questions go to the host's dialogs at once - the host decides where they wait. `status` says a turn is running (`working`) or that it said something since it was last focused (`unread`).
+- **The record.** The chats are recorded in `.turri/chats.json` as the terminal records them, and `restore: true` reopens the last ended session's - without it, a host starts with none and deletes nothing. A chat closed is deleted; a session's chats are kept until five newer sessions have recorded theirs.
+- **The jobs.** The host is told of each job as it changes, and has the registry and the loop themselves, so it shows the very jobs the chats run. Its buttons are best a chat's commands - `session.prompt("/regenerate app.plain")` - so the plan is the chats'.
+- **The questions.** `dialogs(chat)` gives a chat's two dialogs: `select(title, options, context, at)` and `input(title, context)`, each resolving with the answer, or undefined when the person dismissed it. The chat's questions, a skill's interview and a review gate's escalation are put in them; without them, in the `uiContext`'s own dialogs.
 - **The surface.** What turri tells the model of where the person watches the work is the terminal's by default: regen, the side panel on `ctrl+h`, `/pulses`. In a host none of that is there, and the model would send the person to keys and panels that do not exist. `surface` is the host's own description of its UI - the views it has in place of the terminal's, what its marks and buttons mean, where questions appear - in its own words. Given, turri leaves every terminal instruction out of what the model is told and puts the surface in turri's identity, as a `<surface>` block, where the identity speaks of regen. It reaches the side questions and the tools' own words too: a pulse not found says the `pulses` tool lists them, not `/pulses`. Text only the person sees in the terminal - the job panel, the side panel - is the terminal's and stays as it is. Without `surface`, the prompt is the terminal's, byte for byte. What the conversation is to do once something is released belongs there too - open it in the host's preview, say what to test: after a pulse released under `release-after-pulse`, the conversation does what it was told to do once something is released.
 - **The system prompt.** `systemPrompt(prompt)` gets the whole system prompt for the turn - [pi](https://pi.dev)'s, turri's identity and blocks, the rules - after turri's own `before_agent_start` work, and returns what is sent. It is for what `surface` does not cover; to describe the UI, use `surface`, rather than words appended after turri's that contradict them.
-- **The mode.** `mode: "tui"` runs the work in the background and keeps the conversation free, as the terminal does; `rpc`, `json` and `print` wait for each job. The extension's other UI calls - its notices, its working line, a confirm - come to the host's `uiContext`, as [pi](https://pi.dev)'s [SDK](https://github.com/earendil-works/pi) describes it.
+- **The mode.** Each chat is bound in [pi](https://pi.dev)'s `tui` mode: the work runs in the background and keeps the chat free, as the terminal does. Its other UI calls - its notices, its working line, a confirm - come to `uiContext(chat)`, as [pi](https://pi.dev)'s [SDK](https://github.com/earendil-works/pi) describes it.
 
 A surface for a desktop app might read:
 
@@ -135,7 +142,7 @@ concepts.find((concept) => concept.definition === "/…/base.plain:8");
 
 ## The ledger in a host
 
-The conversation's extension starts the ledger itself, in the folder the host made the session in - so a host that runs it there, the project's, needs nothing to have one: its pulses are recorded as `host` runs, and the conversation's `pulses` and `diagnose` already tell the model of earlier sessions' pulses. What the host can do with it is show it.
+`createTurri` starts the ledger itself, in the process's working folder - the project's - so a host needs nothing to have one: its pulses are recorded as `host` runs, each event with the chat its work was asked for in, and the chats' `pulses` and `diagnose` already tell the model of earlier sessions' pulses. What the host can do with it is show it.
 
 ```js
 import { onLedgerEvent, pulseView, readLedger, runViews } from "@turri-dev/cli/host";
@@ -153,7 +160,7 @@ const runs = runViews(projectDir);
 const view = pulseView("646d", readLedger(projectDir, { job: "646d" }));
 
 // Earlier sessions' pulses as jobs, to list beside this session's - none this session's registry knows.
-const { jobs, more } = earlierPulses(ledgerProjects(projectDir), new Set(registry.list().map((job) => job.id)));
+const { jobs, more } = earlierPulses(ledgerProjects(projectDir), new Set(turri.jobs.list().map((job) => job.id)));
 ```
 
 - **Live.** `onLedgerEvent(listener)` is told every event as turri records it, with the project it is about, until what it returns is called; a listener that throws misses that event and nothing else. It is the pulse's own detail - its stages, test runs, verdicts, refusals - where `onJobChange` is the job as a whole.
