@@ -115,7 +115,7 @@ describe("an empty skill", () => {
 
 describe("continuous review", () => {
   it("is off unless the gate asks for it", () => {
-    const skill = loadSkill("genome/skills/check-plain-env");
+    const skill = loadSkill("genome/skills/add-concept");
     expect(skill.steps.every((s) => s.gate?.continuous === undefined)).toBe(true);
   });
 
@@ -186,7 +186,7 @@ describe("a skill's tools", () => {
       const tools = loadSkill(`genome/skills/${name}`).allowedTools;
       expect(tools, name).toContain("read");
       if (name.startsWith("analyze-")) expect(tools, name).not.toContain("write");
-      else if (name !== "check-plain-env") expect(tools, name).toEqual(expect.arrayContaining(["write", "edit"]));
+      else expect(tools, name).toEqual(expect.arrayContaining(["write", "edit"]));
     }
   });
 });

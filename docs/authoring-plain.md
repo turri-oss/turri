@@ -151,7 +151,7 @@ Every skill in `genome/skills/` can be run from a conversation; most are also us
 | check what is written | `analyze-if-func-spec-too-complex`, `analyze-2-func-specs`, `analyze-func-specs`, `resolve-section-ownership` |
 | fix what is written | `break-down-func-spec`, `resolve-spec-conflict`, `debug-specs` |
 | restructure modules | `refactor-module`, `consolidate-concepts` |
-| set up the project to build | `implement-unit-testing-script`, `implement-conformance-testing-script`, `check-plain-env` |
+| set up the project to build | `implement-unit-testing-script`, `implement-conformance-testing-script` |
 
 `debug-specs` is the one for a running application that misbehaves: it reads the generated code to find the cause, traces it back to \*\*\*plain, and fixes only the `.plain` files.
 
