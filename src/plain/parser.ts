@@ -16,9 +16,9 @@ import {
   PlainSyntaxError,
   UnsupportedBase64Content,
 } from "./errors.ts";
-import { findLargeBase64Blob, getLoadedTemplates, openFrom } from "./files.ts";
+import { findIn, findLargeBase64Blob, getLoadedTemplates, openFrom } from "./files.ts";
 import { renderPlainSource } from "./liquid.ts";
-import { isStdlibModule, readStdlibModule } from "./stdlib.ts";
+import { isStdlibModule, readStdlibModule, stdlibModuleFile } from "./stdlib.ts";
 import {
   getRawText,
   lineNumber,
@@ -74,6 +74,8 @@ export interface PlainFileParseResult {
   plainSourceObj: FrontmatterPost;
   requiredModules: string[];
   requiredConcepts: string[];
+  /** The items its imports brought into its sections, each with the module it is written in. turri's: the Python parser does not keep it. */
+  importedFrom: Map<AnyNode, string>;
 }
 
 export function getFilenameFromModuleName(moduleName: string): string {
@@ -484,6 +486,7 @@ function processImports(
   templateDirs: string[],
   importedModules: string[],
   modulesTrace: string[],
+  importedFrom: Map<AnyNode, string>,
 ): string[] {
   const requiredConcepts: string[] = [];
 
@@ -501,6 +504,10 @@ function processImports(
           "Imported modules may only provide definitions, implementation reqs, and test reqs — " +
           "use 'requires' instead of 'import' if this module's functionalities should be built on.",
       );
+    }
+
+    for (const section of Object.values(result.plainSource)) {
+      for (const item of section?.children ?? []) importedFrom.set(item, result.importedFrom.get(item) ?? moduleName);
     }
 
     for (const heading of Object.keys(result.plainSource)) {
@@ -548,6 +555,7 @@ export function parsePlainSource(
   const plainSource = newPlainSource();
 
   let requiredConcepts: string[] = [];
+  const importedFrom = new Map<AnyNode, string>();
   if (IMPORT_DIRECTIVE in plainSourceObj.metadata) {
     requiredConcepts = processImports(
       plainSource,
@@ -556,6 +564,7 @@ export function parsePlainSource(
       templateDirs,
       importedModules,
       modulesTrace,
+      importedFrom,
     );
   }
 
@@ -669,7 +678,15 @@ export function parsePlainSource(
 
   const requiredModules = (plainSourceObj.metadata[REQUIRES_DIRECTIVE] as string[] | undefined) ?? [];
 
-  return { plainSource, plainSourceObj, requiredModules, requiredConcepts };
+  return { plainSource, plainSourceObj, requiredModules, requiredConcepts, importedFrom };
+}
+
+/**
+ * The file a module name is read from, as `readModulePlainSource` reads it - a standard library module's in turri's
+ * `stdlib/`, any other's in the first template folder that has it - or null when there is none.
+ */
+export function modulePlainFile(moduleName: string, templateDirs: string[]): string | null {
+  return isStdlibModule(moduleName) ? stdlibModuleFile(moduleName) : findIn(templateDirs, moduleName + PLAIN_SOURCE_FILE_EXTENSION);
 }
 
 export function readModulePlainSource(moduleName: string, templateDirs: string[]): string {
@@ -740,32 +757,34 @@ export function processRequiredModules(
       ]);
     }
 
-    if (EXPORTED_CONCEPTS_DIRECTIVE in result.plainSourceObj.metadata) {
-      const exportedConcepts: string[] = [];
-      for (const concept of result.plainSourceObj.metadata[EXPORTED_CONCEPTS_DIRECTIVE] as unknown[]) {
-        if (typeof concept === "string" && DEFAULT_CONCEPTS.has(concept)) {
-          throw new PlainSyntaxError(
-            `Plain syntax error: Default concept cannot be exported: ${concept}. Only user-defined concepts can be exported.`,
-          );
-        }
-        if (typeof concept === "string") {
-          exportedConcepts.push(...extractConceptsFromDefinition(concept)[0]);
-        } else {
-          throw new PlainSyntaxError(`Plain syntax error: Invalid exported concept: ${concept}.`);
-        }
-      }
-
-      for (const exportedConcept of exportedConcepts) {
-        exportedDefinitions.push(
-          ...findConceptDefinitionsInPlainSource(exportedConcept, result.plainSource[DEFINITIONS] ?? null),
-        );
-      }
-    }
+    exportedDefinitions.push(...exportedDefinitionsOf(result));
 
     allRequiredModules.push(moduleName);
   }
 
   return exportedDefinitions;
+}
+
+/** The definitions a required module exports: those of its `exported_concepts`, with the definitions they use. */
+export function exportedDefinitionsOf(result: PlainFileParseResult): AnyNode[] {
+  if (!(EXPORTED_CONCEPTS_DIRECTIVE in result.plainSourceObj.metadata)) return [];
+  const exportedConcepts: string[] = [];
+  for (const concept of result.plainSourceObj.metadata[EXPORTED_CONCEPTS_DIRECTIVE] as unknown[]) {
+    if (typeof concept === "string" && DEFAULT_CONCEPTS.has(concept)) {
+      throw new PlainSyntaxError(
+        `Plain syntax error: Default concept cannot be exported: ${concept}. Only user-defined concepts can be exported.`,
+      );
+    }
+    if (typeof concept === "string") {
+      exportedConcepts.push(...extractConceptsFromDefinition(concept)[0]);
+    } else {
+      throw new PlainSyntaxError(`Plain syntax error: Invalid exported concept: ${concept}.`);
+    }
+  }
+
+  return exportedConcepts.flatMap((exportedConcept) =>
+    findConceptDefinitionsInPlainSource(exportedConcept, result.plainSource[DEFINITIONS] ?? null),
+  );
 }
 
 export function processExportedDefinitions(

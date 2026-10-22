@@ -18,6 +18,9 @@
 | `bedrockAwsRegion`, `bedrockNeedsAwsRegion` | the AWS region to set `AWS_REGION` to for a Bedrock geography, and whether it has to be set. |
 | `checkPlainFile`, `plainFileParser`, `resolveTemplateDirs`, `iterateFunctionalSpecs`, `FUNCTIONAL_REQUIREMENTS` | \*\*\*plain checked and parsed, its functional specs one by one - as `turri validate` reads it. |
 | `highlightLines`, `roleOf` | \*\*\*plain's lines coloured by turri's own [\*\*\*plain](https://plainlang.org/docs/) grammar. |
+| `plainGraph(projectDir)` | a project's \*\*\*plain as a graph to move around in: its modules with what each imports and requires and what imports and requires it, each item of their sections with its line, and the concepts - an item linked to those it names and to where each is defined - see [\*\*\*plain for a host](#plain-for-a-host). |
+| `conceptsOf(plainFile)`, `findConcepts(text)`, `conceptBeingTyped(text)` | the concepts a module can name, with what each is and the module that defines it; the concepts written in a piece of text; the one being typed at its end. |
+| `stdlibTemplates()`, `isStack`, `STDLIB_KINDS` | turri's standard library: every template with its kind, file, text, imports and its conformance template or the stack it tests, and the kinds in order with their titles. |
 | `functionalityCompletion`, `createWorkLoop`, `createJobRegistry`, `promptOf`, `describeModules` | how far each functional spec is built, and - on a loop of the host's own with `dryRun` - the work a \*\*\*plain change would plan, as `turri glimpse` does. |
 | `onModelEvent`, `describeTurnIncident` | a provider failing and waited out, a turn turri ended itself. |
 | `onLedgerEvent`, `readLedger`, `ledgerDir`, `runViews`, `pulseView`, `describePulseView`, `describeRuns`, `ledgerProjects`, `earlierPulses`, `asJob` | what turri did, as facts - the [ledger](using.md#the-ledger): each event heard as it is recorded, and every run and pulse read back, earlier sessions' too - see [the ledger in a host](#the-ledger-in-a-host). |
@@ -107,6 +110,27 @@ the chat, and the toolbar's buttons send them too.
 - Your questions appear as cards above the message box: the person picks an option or types an answer there.
 - The Run button releases what is built and opens it.`;
 ```
+
+## \*\*\*plain for a host
+
+```js
+import { conceptBeingTyped, conceptsOf, findConcepts, plainGraph, stdlibTemplates, STDLIB_KINDS } from "@turri-dev/cli/host";
+
+const { modules, items, concepts } = plainGraph(projectDir);
+const app = modules.find((module) => module.module === "app");
+app.requires;      // [{ name: "base", file: "/…/base.plain" }] - and imports, importedBy, requiredBy, the same way
+app.items;         // ["/…/app.plain:11", "/…/app.plain:15"] - its own items, in order
+items.find((item) => item.id === app.items[1]);
+// { id, file, module: "app", section: "functional specs", line: 15, frid: "1", text: "- :User: can fill :Cart:.",
+//   defines: [], uses: [{ concept: ":User:", definition: "/…/base.plain:8" }, { concept: ":Cart:", definition: "/…/app.plain:11" }] }
+concepts.find((concept) => concept.definition === "/…/base.plain:8");
+// { concept: ":User:", definition: "/…/base.plain:8", module: "base", text: "is a person who signs up.", usedBy: [...] }
+```
+
+- **The graph.** `plainGraph` reads every .plain file in the project's folder and its `template/` folder, and every module they import or require, wherever the parser finds it - the standard library's templates too. A **module** is a file: its imports, resolved as the parser reads an import (a `stdlib/` module from turri's own folder), its required modules, resolved as the requires chain finds them - `file: null` when one is not found - and the reverse of both, `importedBy` and `requiredBy`, so a host goes up and down the requires chain without inverting anything. An **item** is one item of a section - a definition, an implementation req, a test req, a functional spec with its acceptance tests - with its file, the line it starts on, its text, a functional spec's `frid`, the concepts a definition defines, and each concept it names with the item that defines it: its own module's definitions, its imports', and those its required modules export, as the parser sees them from that module. `definition` is null for \*\*\*plain's own concepts, and for one defined nowhere the module can see. A **concept** is one definition of it - or \*\*\*plain's own, `definition: null` - with every item that names it there. An item's id is `<file>:<line>`: the file to open and the line to go to.
+- **What does not parse.** Nothing throws. A file that does not parse has `error`, the parser's message; its links are what its front matter says, and its items what of its own text reads without its imports. A file whose items Liquid moves keeps the lines of its own text.
+- **Concepts.** `conceptsOf(plainFile)` is what one module can name - `{ concept, definition, module }`, `definition` the text after its concepts, `module` null for \*\*\*plain's own - for suggestions as the person types. `findConcepts(text)` is every concept written in a piece of text, `{ concept, start, end }`, and `conceptBeingTyped(text)` the one at its end still open - `{ typed: ":Us", start }`, or undefined - both with the parser's own pattern.
+- **The standard library.** `stdlibTemplates()` is every template in turri's `stdlib/`, sorted: `name` - what a module imports it as - `file`, `kind` (`backend`, `frontend`, `cli`, `library` or `lang`), `description`, `text`, `imports` as the parser reads its front matter, a stack's `conformance` template when it has one, and a conformance template's stack as `tests`. `isStack(template)` says whether it is a stack to import; `STDLIB_KINDS` is the kinds in order, each with its title.
 
 ## The ledger in a host
 

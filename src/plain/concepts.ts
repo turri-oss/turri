@@ -13,24 +13,54 @@ import {
 
 /** Port of concept_utils.py. */
 
+/**
+ * ***plain's own concepts, each with what it means, in a line: every module can name them, and none may define them.
+ * turri's, not the reference parser's - it has only the names.
+ */
+export const DEFAULT_CONCEPT_DEFINITIONS: Readonly<Record<string, string>> = {
+  ":ConformanceTests:": "the tests, written apart from the code, that check it conforms to the functional specs",
+  ":UnitTests:": "the unit tests written with the code of each functional spec",
+  ":AcceptanceTest:": "a test that checks one functional spec does what its acceptance tests say",
+  ":AcceptanceTests:": "the tests that check a functional spec does what its acceptance tests say",
+  ":Implementation:": "the software that implements the module's functional specs",
+  ":plainDefinitions:": "the content of the module's ***definitions*** section",
+  ":plainImplementationReqs:": "the content of the module's ***implementation reqs*** section",
+  ":plainFunctionality:": "the content of the module's ***functional specs*** section",
+  ":plainTestReqs:": "the content of the module's ***test reqs*** section",
+  ":plainImplementationCode:": "the code generated from the module",
+};
+
 /** Reserved concept names that must not be redefined in the definitions section. */
-export const DEFAULT_CONCEPTS = new Set([
-  ":ConformanceTests:",
-  ":UnitTests:",
-  ":AcceptanceTest:",
-  ":AcceptanceTests:",
-  ":Implementation:",
-  ":plainDefinitions:",
-  ":plainImplementationReqs:",
-  ":plainFunctionality:",
-  ":plainTestReqs:",
-  ":plainImplementationCode:",
-]);
+export const DEFAULT_CONCEPTS = new Set(Object.keys(DEFAULT_CONCEPT_DEFINITIONS));
+
+/** What a concept's name is made of, between its two colons. */
+const CONCEPT_CHARACTERS = "+\\-.0-9A-Z_a-z";
 
 const DEFINITION_PATTERN = /-\s(:[^:]+:)(?:,\s*:[^:]+:)*/;
 const CONCEPT_CANDIDATE_PATTERN = /:[^:]+:/g;
-const VALID_CONCEPT_PATTERN = /^:[+\-.0-9A-Z_a-z]+:/;
-const SPEC_CONCEPT_PATTERN = /:[+\-.0-9A-Z_a-z]+:/g;
+const VALID_CONCEPT_PATTERN = new RegExp(`^:[${CONCEPT_CHARACTERS}]+:`);
+const SPEC_CONCEPT_PATTERN = new RegExp(`:[${CONCEPT_CHARACTERS}]+:`, "g");
+const TYPED_CONCEPT_PATTERN = new RegExp(`:[${CONCEPT_CHARACTERS}]*$`);
+
+/** Every concept written in a piece of text - `:User:` - with where it is, as the parser reads concepts in a spec. */
+export function findConcepts(text: string): Array<{ concept: string; start: number; end: number }> {
+  return [...text.matchAll(SPEC_CONCEPT_PATTERN)].map((match) => ({ concept: match[0], start: match.index, end: match.index + match[0].length }));
+}
+
+/** The concept being typed at the end of a piece of text - `:Us` - with where it starts, or undefined when there is none. */
+export function conceptBeingTyped(text: string): { typed: string; start: number } | undefined {
+  const match = TYPED_CONCEPT_PATTERN.exec(text);
+  if (match === null) return undefined;
+  // A colon that closes a concept is not one that opens the next.
+  if (findConcepts(text).some(({ end }) => end - 1 === match.index)) return undefined;
+  return { typed: match[0], start: match.index };
+}
+
+/** A definition's text after the concepts it defines: `is a person who signs up` of `- :User: is a person who signs up`. */
+export function definitionText(text: string): string {
+  const match = DEFINITION_PATTERN.exec(text);
+  return (match === null ? text : text.slice(match.index + match[0].length)).trim();
+}
 
 export function extractConceptsFromDefinition(text: string): [string[], string[]] {
   const match = DEFINITION_PATTERN.exec(text);

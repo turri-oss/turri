@@ -2,7 +2,7 @@ import { existsSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ModuleDoesNotExistError, PlainSyntaxError } from "./errors.ts";
-import { openFrom } from "./files.ts";
+import { findIn, openFrom } from "./files.ts";
 
 /**
  * The ***plain standard library's names. `stdlib/` is a reserved prefix: `stdlib/backend/python-fastapi`
@@ -28,6 +28,11 @@ function sameFile(a: string, b: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** A standard library module's file, or null when the standard library has no such module. */
+export function stdlibModuleFile(moduleName: string): string | null {
+  return findIn([STDLIB_ROOT], `${moduleName.replace(/^\.\//, "")}.plain`);
 }
 
 /** A standard library module's text - refused when a folder the spec is resolved from has a module of that name too. */

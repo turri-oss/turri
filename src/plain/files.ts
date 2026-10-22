@@ -5,14 +5,19 @@ import { createEnvironment } from "./liquid.ts";
 /** Ports of the Python reference implementation's file helpers this parser needs. */
 
 export function openFrom(dirs: string[], fileName: string): string | null {
+  const path = findIn(dirs, fileName);
+  return path === null ? null : readFileSync(path, "utf8");
+}
+
+/** The file `openFrom` reads: the first of the folders that has it. */
+export function findIn(dirs: string[], fileName: string): string | null {
   for (const dir of dirs) {
     const fullPath = join(dir, fileName);
     try {
-      if (!statSync(fullPath).isFile()) continue;
+      if (statSync(fullPath).isFile()) return fullPath;
     } catch {
       continue;
     }
-    return readFileSync(fullPath, "utf8");
   }
   return null;
 }

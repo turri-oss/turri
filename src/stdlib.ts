@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
+import { IMPORT_DIRECTIVE, readPlainSourceMetadata } from "./plain/parser.ts";
 import { STDLIB_DIR } from "./regenerate/paths.ts";
 
 /**
@@ -12,9 +13,21 @@ import { STDLIB_DIR } from "./regenerate/paths.ts";
 export interface StdlibTemplate {
   /** What a spec imports it as: `stdlib/backend/python-fastapi`. */
   name: string;
+  /** Where it is: turri's `stdlib/backend/python-fastapi.plain`. */
+  file: string;
+  /** The kind of software it is for - `backend`, `frontend`, `cli`, `library` - or `lang`, a language's. */
+  kind: StdlibKind;
   description: string;
   text: string;
+  /** The modules its front matter imports, as the parser reads it. */
+  imports: string[];
+  /** A stack's conformance template, when it has one: `stdlib/backend/conformance/python-fastapi`. */
+  conformance?: string;
+  /** A conformance template's stack, when it is one's: `stdlib/backend/python-fastapi`. */
+  tests?: string;
 }
+
+export type StdlibKind = "backend" | "frontend" | "cli" | "library" | "lang";
 
 export function stdlibTemplates(dir: string = STDLIB_DIR): StdlibTemplate[] {
   const found: string[] = [];
@@ -31,16 +44,29 @@ export function stdlibTemplates(dir: string = STDLIB_DIR): StdlibTemplate[] {
     }
   };
   walk(dir);
-  return found
+  const templates: StdlibTemplate[] = found
     .map((file) => {
       const text = readFileSync(file, "utf8").trim();
-      return {
-        name: `stdlib/${relative(dir, file).split(sep).join("/").replace(/\.plain$/, "")}`,
-        description: /^description:\s*(.+)$/m.exec(text)?.[1]?.trim() ?? "",
-        text,
-      };
+      const name = `stdlib/${relative(dir, file).split(sep).join("/").replace(/\.plain$/, "")}`;
+      return { name, file, kind: name.split("/")[1] as StdlibKind, description: /^description:\s*(.+)$/m.exec(text)?.[1]?.trim() ?? "", text, imports: importsOf(text) };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
+  const names = new Set(templates.map((template) => template.name));
+  for (const template of templates) {
+    if (isStack(template) && names.has(conformanceOf(template.name))) template.conformance = conformanceOf(template.name);
+    const stack = template.name.replace("/conformance/", "/");
+    if (template.name.includes("/conformance/") && templates.some((other) => other.name === stack && isStack(other))) template.tests = stack;
+  }
+  return templates;
+}
+
+function importsOf(text: string): string[] {
+  try {
+    const imports = readPlainSourceMetadata(text).metadata[IMPORT_DIRECTIVE];
+    return Array.isArray(imports) ? imports.filter((name): name is string => typeof name === "string") : [];
+  } catch {
+    return [];
+  }
 }
 
 /** A stack to import - not a kind's `common`, not a conformance template, and not a language's. */
@@ -54,11 +80,13 @@ export function conformanceOf(stack: string): string {
   return `${stack.slice(0, slash)}/conformance/${stack.slice(slash + 1)}`;
 }
 
-const KINDS: Array<{ kind: string; title: string }> = [
+/** The standard library's kinds, in the order they are listed, each with its title. Only the first four have stacks. */
+export const STDLIB_KINDS: ReadonlyArray<{ kind: StdlibKind; title: string }> = [
   { kind: "backend", title: "Backends" },
   { kind: "frontend", title: "Frontends" },
   { kind: "cli", title: "Command-line tools" },
   { kind: "library", title: "Libraries" },
+  { kind: "lang", title: "Languages" },
 ];
 
 /**
@@ -77,7 +105,7 @@ export function stdlibCatalogue(templates: StdlibTemplate[] = stdlibTemplates(),
     "",
     `Every template is a file in ${dir}: \`stdlib/backend/python-fastapi\` is \`${dir}/backend/python-fastapi.plain\`. Read the ones a module imports - the stack, its language, its kind's \`common\`, and their conformance templates - before writing its specs.`,
     "",
-    ...KINDS.flatMap(({ kind, title }) => {
+    ...STDLIB_KINDS.flatMap(({ kind, title }) => {
       const stacks = templates.filter((template) => isStack(template) && template.name.startsWith(`stdlib/${kind}/`));
       return stacks.length === 0 ? [] : [`### ${title}`, "", "| import | its conformance tests | what it is |", "| --- | --- | --- |", ...stacks.map(row), ""];
     }),
@@ -102,7 +130,7 @@ export function describeStdlib(templates: StdlibTemplate[] = stdlibTemplates(), 
   const width = Math.max(...templates.filter(isStack).map((template) => template.name.length));
   return [
     `The ***plain standard library - ${stdlibStackCount(templates)} stacks a spec can import instead of writing its implementation reqs:`,
-    ...KINDS.flatMap(({ kind, title }) => {
+    ...STDLIB_KINDS.flatMap(({ kind, title }) => {
       const stacks = templates.filter((template) => isStack(template) && template.name.startsWith(`stdlib/${kind}/`));
       return stacks.length === 0 ? [] : ["", `${title}:`, ...stacks.map((template) => `  ${template.name.padEnd(width)}  ${template.description}`)];
     }),

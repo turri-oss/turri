@@ -30,7 +30,8 @@ export interface ChainEntry {
   frids: string[];
 }
 
-function locateModule(moduleName: string, templateDirs: string[]): string {
+/** A required module's file: the first template folder that has it. */
+export function locateModule(moduleName: string, templateDirs: string[]): string {
   for (const dir of templateDirs) {
     const candidate = join(dir, moduleName + PLAIN_SOURCE_FILE_EXTENSION);
     if (existsSync(candidate)) return candidate;

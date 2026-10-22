@@ -1,8 +1,8 @@
 /**
  * turri for a host that runs it itself - a desktop app, an editor - imported as `@turri-dev/cli/host`: the
  * conversation as pi's extension, with the host told of its jobs and asking its questions (createTurriExtension), and
- * what a host shows beside it - a spec parsed, checked and coloured, how far each functional spec is built, the work a
- * spec change would plan. It is turri's own code, as the terminal runs it; a 0.x release may change any of it.
+ * what a host shows beside it - a spec parsed, checked and coloured, its concepts and links, the standard library, how
+ * far each functional spec is built, the work a spec change would plan. It is turri's own code, as the terminal runs it; a 0.x release may change any of it.
  */
 
 // The conversation.
@@ -52,6 +52,14 @@ export { checkPlainFile, type CheckResult } from "./plain/check.ts";
 export { plainFileParser } from "./plain/parser.ts";
 export { FUNCTIONAL_REQUIREMENTS, iterateFunctionalSpecs } from "./plain/spec.ts";
 export { highlightLines, roleOf, type PlainRole } from "./plain/highlight.ts";
+// Its concepts: those a module can name, with what each is and where it is defined, and those written in a piece of text.
+export { conceptsOf, type ModuleConcept } from "./plain/module-concepts.ts";
+export { conceptBeingTyped, findConcepts } from "./plain/concepts.ts";
+// A project's ***plain as a graph: its modules and their links both ways, each item of their sections, the concepts
+// each names and where each is defined.
+export { plainGraph, type PlainConceptNode, type PlainGraph, type PlainItemNode, type PlainLink, type PlainModuleNode, type PlainSection } from "./plain/graph.ts";
+// The standard library: every template, what it is, what it imports, and its conformance template or stack.
+export { isStack, STDLIB_KINDS, stdlibTemplates, type StdlibKind, type StdlibTemplate } from "./stdlib.ts";
 
 // The work: what is built, what is left, and the jobs that build it.
 export { createWorkLoop, describeModules, functionalityCompletion, promptOf, type DriftReport, type ModuleStatus, type WorkLoop } from "./regenerate/loop.ts";
