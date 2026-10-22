@@ -14,6 +14,26 @@ beforeEach(() => {
   write("template/shared.plain", "***definitions***\n\n- :Money: is an amount in euros.\n");
   write("app.plain", "---\nimport:\n  - shared\n  - stdlib/backend/python-flask\nrequires:\n  - base\n---\n\n***definitions***\n\n- :Cart: is the :Order: a :User: is making, priced in :Money:.\n\n***functional specs***\n\n- :User: can fill :Cart:.\n");
   write("broken.plain", "---\nimport:\n  - missing\n  - shared\nrequires:\n  - base\n  - nowhere\n---\n\n***definitions***\n\n- :Thing: is something.\n\n***functional specs***\n\n- :Thing: exists.\n");
+  for (const dir of ["docs", "data"]) mkdirSync(join(project, dir));
+  for (const file of ["docs/style.md", "schema.json", "docs/api.md", "notes.txt", "data/sample.csv"]) write(file, "x\n");
+  write(
+    "linked.plain",
+    [
+      "***implementation reqs***",
+      "",
+      "- :Implementation: follows [the style](docs/style.md) and [the old guide](gone.md).",
+      "",
+      "***functional specs***",
+      "",
+      "- Export the data as [the schema](schema.json) says and [the API](docs/api.md) shows,",
+      "  in the format [the notes](notes.txt) give.",
+      "",
+      "    ***acceptance tests***",
+      "",
+      "    - The export matches [the sample](data/sample.csv).",
+      "",
+    ].join("\n"),
+  );
   write("garbled.plain", "---\nimport: [shared\n---\n\n***functional specs***\n\n- It works.\n");
 });
 afterEach(() => rmSync(project, { recursive: true, force: true }));
@@ -117,6 +137,39 @@ describe("a project's .plain files and their links", () => {
     const items = entry(graph, "broken").items.map((id) => graph.items.find((item) => item.id === id)!);
     expect(items.map((item) => item.text)).toEqual(["- :Thing: is something.", "- :Thing: exists."]);
     expect(items[1]!.uses).toEqual([{ concept: ":Thing:", definition: at("broken.plain", 12) }]);
+  });
+});
+
+describe("the linked resources an item names", () => {
+  const itemAt = (graph: ReturnType<typeof plainGraph>, file: string, line: number) => graph.items.find((item) => item.id === `${join(project, file)}:${line}`)!;
+
+  it("gives each link with its text, its target, the file regenerating reads, and its line - two on one line, one on the next", () => {
+    const spec = itemAt(plainGraph(project), "linked.plain", 7);
+    expect(spec.resources.slice(0, 3)).toEqual([
+      { text: "the schema", target: "schema.json", file: join(project, "schema.json"), line: 7 },
+      { text: "the API", target: "docs/api.md", file: join(project, "docs/api.md"), line: 7 },
+      { text: "the notes", target: "notes.txt", file: join(project, "notes.txt"), line: 8 },
+    ]);
+  });
+
+  it("gives a functional spec its acceptance tests' links", () => {
+    const spec = itemAt(plainGraph(project), "linked.plain", 7);
+    expect(spec.resources[3]).toEqual({ text: "the sample", target: "data/sample.csv", file: join(project, "data/sample.csv"), line: 12 });
+  });
+
+  it("gives a link to a file that is not there no file, the module the parser's error", () => {
+    const graph = plainGraph(project);
+    expect(itemAt(graph, "linked.plain", 3).resources).toEqual([
+      { text: "the style", target: "docs/style.md", file: join(project, "docs/style.md"), line: 3 },
+      { text: "the old guide", target: "gone.md", file: null, line: 3 },
+    ]);
+    expect(graph.modules.find((module) => module.module === "linked")!.error).toMatch(/gone\.md does not exist/);
+  });
+
+  it("gives every item its resources, none when it names none", () => {
+    const graph = plainGraph(project);
+    for (const item of graph.items) expect(Array.isArray(item.resources), item.id).toBe(true);
+    expect(itemAt(graph, "app.plain", 15).resources).toEqual([]);
   });
 });
 

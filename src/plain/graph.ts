@@ -2,11 +2,13 @@ import { readdirSync, readFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { resolveTemplateDirs } from "../regenerate/paths.ts";
 import { locateModule } from "../regenerate/requires.ts";
+import { resourceFile } from "../regenerate/resources.ts";
 import { DEFAULT_CONCEPT_DEFINITIONS, DEFAULT_CONCEPTS, definitionText, extractConceptsFromDefinition, findConcepts } from "./concepts.ts";
 import { lineNumber, renderToMarkdown, type AnyNode } from "./markdown.ts";
 import { attempt, namesIn, readModule } from "./module-concepts.ts";
 import {
   IMPORT_DIRECTIVE,
+  linksIn,
   modulePlainFile,
   parsePlainFile,
   PLAIN_SOURCE_FILE_EXTENSION,
@@ -69,6 +71,11 @@ export interface PlainItemNode {
   defines: string[];
   /** The concepts it names, each with the definition it is - an item's id - or null for ***plain's own and one defined nowhere it can see. */
   uses: Array<{ concept: string; definition: string | null }>;
+  /**
+   * The linked resources it names, a functional spec's acceptance tests' too - `[text](target)` as the parser reads
+   * them - with the file each is read from when regenerating, null when it is not there, and the line the link is on.
+   */
+  resources: Array<{ text: string; target: string; file: string | null; line: number }>;
 }
 
 /** A concept as defined in one place - or ***plain's own - and every item that names it there. */
@@ -154,9 +161,17 @@ export function plainGraph(projectDir: string): PlainGraph {
           const defines = section === DEFINITIONS ? extractConceptsFromDefinition(text)[0] : [];
           const named = [...new Set(findConcepts(text).map((found) => found.concept))].filter((concept) => !defines.includes(concept));
           const id = idOf(item, node.file);
+          const line = lineOf(item, node.file, lines);
+          // A link is on the line the parser has it on, moved as Liquid moved its item.
+          const resources = linksIn(item).map(({ text, target, node: link }) => ({
+            text,
+            target,
+            file: resourceFile(target, dirs),
+            line: lineOf(link, node.file, lines, { at: lineNumber(link) + line - lineNumber(item), needle: `](${target})`, from: line }),
+          }));
           const uses = named.map((concept) => ({ concept, definition: DEFAULT_CONCEPTS.has(concept) ? null : (visible.get(concept) ?? null) }));
           for (const use of uses) concepts.get(`${use.concept}\0${use.definition ?? ""}`)?.usedBy.push(id);
-          items.push({ id, file: node.file, module: node.module, section, line: lineOf(item, node.file, lines), text, ...(section === FUNCTIONAL_REQUIREMENTS ? { frid: String(index + 1) } : {}), defines, uses });
+          items.push({ id, file: node.file, module: node.module, section, line, text, ...(section === FUNCTIONAL_REQUIREMENTS ? { frid: String(index + 1) } : {}), defines, uses, resources });
           node.items.push(id);
         });
       }
@@ -180,18 +195,19 @@ function parseError(node: PlainModuleNode, dirs: string[]): string | undefined {
 /**
  * The line an item starts on in its file. The parser's is a line of the text after Liquid has run, which is the file's
  * own unless an include or a tag changed the lines above it: then the first line of the file that has the item's
- * first line is taken.
+ * first line is taken. A link is looked for so too - by its `](target)`, from its item's line on.
  */
-function lineOf(node: AnyNode, file: string, cache: Map<string, string[]>): number {
+function lineOf(node: AnyNode, file: string, cache: Map<string, string[]>, look: { at?: number; needle?: string; from?: number } = {}): number {
   let lines = cache.get(file);
   if (lines === undefined) {
     lines = (attempt(() => readFileSync(file, "utf8")) ?? "").split(/\r?\n/);
     cache.set(file, lines);
   }
-  const at = lineNumber(node);
-  const first = renderToMarkdown(node).trim().split("\n")[0]!.replace(/^[-*+]\s+/, "").trim();
-  if (first === "" || lines[at - 1]?.includes(first)) return at;
-  const found = lines.findIndex((line) => line.includes(first));
+  const at = look.at ?? lineNumber(node);
+  const needle = look.needle ?? renderToMarkdown(node).trim().split("\n")[0]!.replace(/^[-*+]\s+/, "").trim();
+  if (needle === "" || lines[at - 1]?.includes(needle)) return at;
+  const from = Math.max(0, (look.from ?? 1) - 1);
+  const found = lines.findIndex((line, index) => index >= from && line.includes(needle));
   return found === -1 ? at : found + 1;
 }
 

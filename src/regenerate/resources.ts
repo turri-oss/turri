@@ -69,8 +69,8 @@ export function loadLinkedResources(
       loaded.push({ text: resource.text, target: resource.target, content: `[an image: attached to your first message, image ${number}]`, image });
       continue;
     }
-    const source = [...templateDirs.map((dir) => join(dir, resource.target)), resource.target].find((path) => isFileAt(path));
-    if (source === undefined) continue;
+    const source = resourceFile(resource.target, templateDirs);
+    if (source === null) continue;
     let content = readFileSync(source, "utf8");
     const whole = content.length;
     if (whole > MAX_RESOURCE_CHARS) {
@@ -78,9 +78,15 @@ export function loadLinkedResources(
         ? `${content.slice(0, MAX_RESOURCE_CHARS)}\n... [cut here: ${whole} characters whole - code that lives outside your codebase: build on it as the specification says, never copy it]`
         : `${content.slice(0, MAX_RESOURCE_CHARS)}\n... [cut here: ${whole} characters whole - copy_resource puts the whole file at its code-copy path, to read it there]`;
     }
-    loaded.push({ text: resource.text, target: resource.target, content, source: resolve(source), ...(whole > MAX_RESOURCE_CHARS ? { cutFrom: whole } : {}) });
+    loaded.push({ text: resource.text, target: resource.target, content, source, ...(whole > MAX_RESOURCE_CHARS ? { cutFrom: whole } : {}) });
   }
   return loaded;
+}
+
+/** The file a linked resource is read from: the first template folder that has it, else the current folder - or null. */
+export function resourceFile(target: string, templateDirs: string[]): string | null {
+  const found = [...templateDirs.map((dir) => join(dir, target)), target].find((path) => isFileAt(path));
+  return found === undefined ? null : resolve(found);
 }
 
 function isFileAt(path: string): boolean {
@@ -180,14 +186,9 @@ export function resourceImages(resources: LoadedResource[]): ResourceImage[] {
 
 /** A linked image's bytes, found as a text resource is: the template folders first, then the current directory. */
 function loadImage(templateDirs: string[], target: string, mimeType: string): ResourceImage | undefined {
-  for (const path of [...templateDirs.map((dir) => join(dir, target)), target]) {
-    let size: number;
-    try {
-      if (!statSync(path).isFile()) continue;
-      size = statSync(path).size;
-    } catch {
-      continue;
-    }
+  const path = resourceFile(target, templateDirs);
+  if (path !== null) {
+    const size = statSync(path).size;
     if (size > MAX_IMAGE_BYTES) {
       throw new LinkedImageError(
         `The linked image ${target} is ${(size / 1024 / 1024).toFixed(1)} MB - a model takes images up to ${MAX_IMAGE_BYTES / 1024 / 1024} MB. Make it smaller, or link a smaller one.`,

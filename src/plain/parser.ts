@@ -147,15 +147,18 @@ function stillHolds(kept: KeptParse | undefined, fingerprint: string | undefined
   return kept !== undefined && fingerprint !== undefined && kept.fingerprint === fingerprint && linkedStamp(kept.linked) === kept.linkedStamp;
 }
 
+/** The links written in an item - what each says and where it points - as the parser reads them, checked or not. */
+export function linksIn(section: AnyNode): Array<{ text: string; target: string; node: AnyNode }> {
+  return [...traverse(section, "link")].map((link) => ({ text: String(link.children?.[0]?.value ?? ""), target: String(link.url ?? ""), node: link }));
+}
+
 export function checkSectionForLinkedResources(section: AnyNode, dirs: string[] = []): void {
   const linkedResources: LinkedResource[] = [];
 
-  for (const link of traverse(section, "link")) {
-    const target = String(link.url ?? "");
+  for (const { text, target, node: link } of linksIn(section)) {
     const children = link.children ?? [];
 
     if (hasScheme(target) || isAbsolute(target)) {
-      const text = (children[0]?.value as string) ?? "";
       throw new PlainSyntaxError(
         `Plain syntax error: Only relative links are allowed (text: ${text}, target: ${target}).`,
       );
@@ -184,7 +187,7 @@ export function checkSectionForLinkedResources(section: AnyNode, dirs: string[] 
       );
     }
 
-    linkedResources.push({ text: String(children[0]!.value ?? ""), target });
+    linkedResources.push({ text, target });
   }
 
   if (linkedResources.length > 0) section.linked_resources = linkedResources;
