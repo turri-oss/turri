@@ -27,6 +27,16 @@ function dialog(options: { context?: string; options?: string[]; rows?: number; 
 const LONG = Array.from({ length: 60 }, (_, index) => `- Feature ${index + 1}: what it does.`).join("\n");
 
 describe("the question dialog", () => {
+  it("is dismissed by ctrl+c, or hands it to the asker that takes it", () => {
+    const { shown, answers } = dialog({ options: ["Yes"] });
+    shown.handleInput("\x03");
+    expect(answers).toEqual([undefined]);
+    let interrupted = 0;
+    const taken = new QuestionDialog({ question: "Typed?", rows: () => 30, style: plain, done: () => {}, requestRender: () => {}, interrupt: () => (interrupted += 1) });
+    taken.handleInput("\x03");
+    expect(interrupted).toBe(1);
+  });
+
   it("shows a long brief in a window, with the question and every option below it - all within the screen", () => {
     const { lines } = dialog({ context: LONG, options: ["Build it", "Change something"], rows: 30 });
     const shown = lines();

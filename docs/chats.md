@@ -33,6 +33,7 @@ A pulse's end is told to the chat that asked for it, shown or not - its agent re
 | `/chat` | a list of the chats, to pick one - or a new one |
 | `/new` | the same as `/chat new` |
 | `/resume` | a saved chat, opened as a chat of its own beside the others - or shown, when it is open |
+| `ctrl+c` | what the chat shown is doing, stopped - its turn, a skill or a tool in it, a `!` command, a compaction; in a chat doing nothing, a draft in the editor cleared, else turri left, every chat with it |
 
 A line above the editor names each chat once there are two, a `│` between them: its number, its title - "new chat" until something is said in it, then its first message, until `/name` gives it one - and, after it, what it is doing: a spinner while it works, `?` while a question waits in it, `•` when it said something since you last looked. The chat shown is in the accent colour.
 
@@ -41,6 +42,7 @@ On macOS, `alt` is Option (⌥), and reaches turri only when the terminal sends 
 - **A hidden chat's questions** wait until you show it, then come up one after another. What it says in passing is said as you show it; what it keeps on the screen - a skill's progress, the job panel - is put back each time; what you had typed in its editor and not sent is still there.
 - **The side panel** (`ctrl+h`) is the session's, not a chat's: docked beside the chat or over it, it stays as another chat is shown, and opening it from any chat finds it as it was left.
 - **A long command** - `/regenerate`, planning a module from scratch - does its work in the background once it is under way: the chat, and switching to another, stay free while the planner plans.
+- **`ctrl+c`** reaches the chat shown and nothing else: another chat's turn and skill go on, and so do the pulses - `/halt` stops one. A skill stopped keeps its run, for the model to continue with `resume`. At a question - the chat's `ask_user`, a skill's interview - `ctrl+c` declines it, and the asker is told so and goes on - each question it is pressed at, however many in a row. A skill is stopped by `ctrl+c` with no question open. A second press straight after one that stopped something does nothing, so pressing twice to be sure does not leave turri; once the chat is doing nothing, the next one does - with what every other chat is doing. A host has the same as `interrupt(id)` ([hosting](hosting.md)).
 - **The last chat** is not closed: `/quit` leaves turri.
 - **`/fork`** and **`/reload`** work on the chat shown, as [pi](https://pi.dev)'s do: the chat's history forked, or turri's extension rebuilt in it.
 - **A chat shown mid-turn** draws its reply as far as it is written, and follows it from there.

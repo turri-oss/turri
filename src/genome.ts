@@ -5,11 +5,11 @@ import { compileSkill, type Reporter } from "./graph.ts";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { createExecutor } from "./pi.ts";
 import { toolchainsBlock } from "./stack.ts";
-import { describeToolCall, describeToolResult } from "./regenerate/activity.ts";
+import { clearOfStop, describeToolCall, describeToolResult, withStopSignal } from "./regenerate/activity.ts";
 import { createLiveReviewer, type LiveReviewer } from "./review/live.ts";
 import { loadSkill, readRubric, type Skill } from "./skill.ts";
 import { createAskUserTool, createEndQuestionsTool, createReviewTools, createWriteArtifactTool, withReviewNote, type AskUser } from "./tools.ts";
-import { DISMISSED } from "./ask.ts";
+import { DECLINED, DISMISSED } from "./ask.ts";
 import { createQuestioning, levelOf, questioningQuestion, type Questioning, type QuestioningState } from "./questioning.ts";
 import { createSpecDiffTools } from "./spec-tools.ts";
 import { createMatureTools, MATURE_TOOLS } from "./mature-tools.ts";
@@ -37,12 +37,7 @@ export interface RunSkillResult {
   output: string;
 }
 
-/**
- * Run one skill to completion. The only entry point: the CLI and the Pi extension
- * both go through here, so a skill behaves identically whether a human launched it
- * or a conversational agent decided to.
- */
-export async function runSkill(opts: {
+export interface RunSkillOptions {
   skillDir: string;
   cwd: string;
   runDir: string;
@@ -71,7 +66,31 @@ export async function runSkill(opts: {
   loopTools?: ToolDefinition[];
   /** The jobs the render queue runs, for a skill that waits for its builds and reads what they recorded. */
   jobs?: JobRegistry;
-}): Promise<RunSkillResult> {
+  /**
+   * Stops the run: its agents end their turns and it throws JobStoppedError, its manifest left as it was - an
+   * interrupted run, for `resume` to pick up. What it started on the work loop goes on.
+   */
+  signal?: AbortSignal;
+}
+
+/**
+ * Run one skill to completion. The only entry point: the CLI and the Pi extension
+ * both go through here, so a skill behaves identically whether a human launched it
+ * or a conversational agent decided to.
+ */
+export async function runSkill(opts: RunSkillOptions): Promise<RunSkillResult> {
+  if (opts.signal === undefined) return runStoppable(opts);
+  return withStopSignal(opts.signal, () =>
+    runStoppable({
+      ...opts,
+      ...(opts.renderQueue !== undefined ? { renderQueue: clearOfStop(opts.renderQueue) } : {}),
+      ...(opts.jobs !== undefined ? { jobs: clearOfStop(opts.jobs) } : {}),
+      ...(opts.loopTools !== undefined ? { loopTools: opts.loopTools.map(clearOfStop) } : {}),
+    }),
+  );
+}
+
+async function runStoppable(opts: RunSkillOptions): Promise<RunSkillResult> {
   const skill = loadSkill(opts.skillDir);
   const runDir = resolve(opts.runDir);
 
@@ -164,7 +183,7 @@ export async function runSkill(opts: {
         (answer, confirmsPhase) => {
           said = "";
           // A phase's confirmation, or a question dismissed, owes the spec nothing.
-          diffs?.pace.answered(!confirmsPhase && answer !== DISMISSED);
+          diffs?.pace.answered(!confirmsPhase && answer !== DISMISSED && answer !== DECLINED);
         },
         () => said,
         holdsQuestions ? questions : undefined,

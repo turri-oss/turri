@@ -175,6 +175,29 @@ export interface CoreOptions {
   dialogs?: (chat: string) => AskUserIO | undefined;
 }
 
+/** A chat's session, as stopping what it does reaches it. */
+export type Stoppable = Pick<AgentSession, "isStreaming" | "isCompacting" | "isRetrying" | "isBashRunning" | "abort" | "abortBash">;
+
+/** A second interrupt this soon after one that stopped something stops nothing more and ends nothing: one pressed twice to be sure. */
+export const INTERRUPT_SETTLE_MS = 500;
+
+/**
+ * ctrl+c in a chat, the terminal's or a host's: what the chat is doing stopped - its turn, a skill or a tool in it, a
+ * `!` command, a compaction, a retry - and nothing in the other chats. `stopTurn` ends its turn: pi's own esc in the
+ * terminal. A chat doing nothing gets `idle`'s answer - the session ended - unless the last interrupt, at `lastStop`,
+ * stopped something a moment ago: then it is `ignored`.
+ */
+export function interruptChat<R>(session: Stoppable, asked: { lastStop: number; now?: number; stopTurn?: () => void; idle: () => R }): "stopped" | "ignored" | R {
+  if (session.isBashRunning || session.isStreaming || session.isCompacting || session.isRetrying) {
+    if (session.isBashRunning) session.abortBash();
+    if (session.isStreaming) (asked.stopTurn ?? (() => void session.abort()))();
+    else if (session.isCompacting || session.isRetrying) void session.abort();
+    return "stopped";
+  }
+  if ((asked.now ?? Date.now()) - asked.lastStop < INTERRUPT_SETTLE_MS) return "ignored";
+  return asked.idle();
+}
+
 /** A chat's title from what it says: its name, else its first message, short. */
 function titleOf(session: AgentSession | undefined): string | undefined {
   if (session === undefined) return undefined;

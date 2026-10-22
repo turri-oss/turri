@@ -53,6 +53,8 @@ export const DONE_OPTION = "Done — that's all of them";
 export const TICKED = "☑";
 export const UNTICKED = "☐";
 export const DISMISSED = "The user dismissed the question without answering.";
+/** ctrl+c at a question: the person would not answer it - or stopped the turn that asked it. */
+export const DECLINED = "The user declined to answer the question.";
 
 /** How an answer that is no answer starts: the person chose to talk about the question first. */
 export const CHAT_PREFIX = "The user has not answered this question yet: they chose to talk about it first.";

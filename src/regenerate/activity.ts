@@ -89,9 +89,32 @@ export class JobStoppedError extends Error {
   }
 }
 
-/** The stop signal of the job this code is running for, if it is running for one. */
+/** What stops work that runs for no job - a skill run, stopped with the chat's turn that runs it (withStopSignal). */
+const stops = new AsyncLocalStorage<AbortSignal | undefined>();
+
+/** The stop signal of the job this code is running for - else of the work outside a job it runs for - if there is one. */
 export function currentStopSignal(): AbortSignal | undefined {
-  return store.getStore()?.signal;
+  const sink = store.getStore();
+  return sink !== undefined ? sink.signal : stops.getStore();
+}
+
+/** Run work for no job that `signal` stops: every agent under it ends its turn, and the work unwinds with JobStoppedError. */
+export function withStopSignal<T>(signal: AbortSignal | undefined, run: () => Promise<T>): Promise<T> {
+  return stops.run(signal, run);
+}
+
+/**
+ * What work under withStopSignal hands on to the session - the work loop, the job registry - with each of its methods
+ * run clear of that signal: a pulse or a plan started from a skill outlives the skill being stopped.
+ */
+export function clearOfStop<T extends object>(given: T): T {
+  return new Proxy(given, {
+    get(target, key, receiver) {
+      const value = Reflect.get(target, key, receiver) as unknown;
+      if (typeof value !== "function") return value;
+      return (...args: unknown[]) => stops.run(undefined, () => (value as (...args: unknown[]) => unknown).apply(target, args));
+    },
+  });
 }
 
 /** The job this code is running for, if it is running for one. */

@@ -1,6 +1,6 @@
 import { AgentSessionRuntime, InteractiveMode, SessionManager, type AgentSession, type ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import type { RunRecord } from "./chat-records.ts";
-import { terminalUi, type ChatState, type TurriCore } from "./chats.ts";
+import { interruptChat, terminalUi, type ChatState, type Stoppable, type TurriCore } from "./chats.ts";
 
 /**
  * The terminal's chats: pi's screen, showing one chat while the others go on working.
@@ -9,7 +9,8 @@ import { terminalUi, type ChatState, type TurriCore } from "./chats.ts";
  * the old one - on /new, /resume and /fork. Here a chat is shown by putting its live session in the runtime and having
  * the screen drawn from it again, nothing disposed: a chat hidden keeps its turn, its tools and its questions, drawing
  * on a stand-in of the screen meanwhile (chat-ui.ts). /new opens a chat beside the others, /resume opens a saved one as
- * a chat of its own; /fork and /reload still rebuild the chat shown, as pi does. Leaving turri lets every chat go.
+ * a chat of its own; /fork and /reload still rebuild the chat shown, as pi does. ctrl+c stops what the chat shown is
+ * doing, and nothing in the others; in a chat doing nothing it leaves turri. Leaving turri lets every chat go.
  *
  * pi has no hooks for any of this: its classes are patched, as pi-launch.ts patches others. A pi update that changes
  * them shows here first - `npm test` runs tests/chat-terminal.test.ts against the pi installed.
@@ -36,6 +37,37 @@ interface Runtime {
 
 interface Patched {
   rebindCurrentSession(...args: unknown[]): Promise<void>;
+  handleCtrlC(): void;
+}
+
+/** What ctrl+c reaches of pi's screen: the chat shown, its editor, and leaving. */
+export interface CtrlCScreen {
+  session: Stoppable;
+  editor: { getText(): string };
+  clearEditor(): void;
+  /** Its queued messages back in the editor - and, with `abort`, the turn stopped: pi's own esc. */
+  restoreQueuedMessagesToEditor(options?: { abort?: boolean }): number;
+  shutdown(): Promise<void>;
+}
+
+/**
+ * ctrl+c, in the chat shown: what it is doing stopped, the other chats left as they are (`interruptChat`). In a chat
+ * doing nothing it clears a draft in the editor, and with none leaves turri, every chat with it.
+ */
+export function pressCtrlC(screen: CtrlCScreen, lastStop: number, now = Date.now()): "stopped" | "ignored" | "cleared" | "left" {
+  return interruptChat(screen.session, {
+    lastStop,
+    now,
+    stopTurn: () => void screen.restoreQueuedMessagesToEditor({ abort: true }),
+    idle: () => {
+      if (screen.editor.getText().trim() !== "") {
+        screen.clearEditor();
+        return "cleared" as const;
+      }
+      void screen.shutdown();
+      return "left" as const;
+    },
+  });
 }
 
 export function driveTerminal(core: TurriCore, options: { restore?: RunRecord } = {}): void {
@@ -96,6 +128,14 @@ export function driveTerminal(core: TurriCore, options: { restore?: RunRecord } 
       core.notify(error instanceof Error ? error.message : String(error), "warning");
       return { cancelled: true };
     }
+  };
+
+  // ctrl+c: pi's clears the editor and leaves on a second press; here it stops what the chat shown is doing, and leaves
+  // when it is doing nothing.
+  let lastStop = 0;
+  prototype.handleCtrlC = function (this: Patched) {
+    const did = pressCtrlC(this as unknown as CtrlCScreen, lastStop);
+    if (did === "stopped") lastStop = Date.now();
   };
 
   // /new: a fresh chat beside the others.

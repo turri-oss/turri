@@ -28,6 +28,8 @@ export interface QuestionDialogOptions {
   style: DialogStyle;
   /** The answer - an option, or what was typed - or undefined, dismissed. */
   done: (answer: string | undefined) => void;
+  /** ctrl+c: the question declined, the asker deciding what that stops (askUserVia). Without it, dismissed as esc is. */
+  interrupt?: () => void;
   /** Draw again: a key changed what shows. */
   requestRender: () => void;
 }
@@ -73,6 +75,11 @@ export class QuestionDialog implements Component, Focusable {
     if (this.input !== undefined) this.input.focused = value;
   }
 
+  /** Closed, no answer given: the question declined from outside - its turn stopped. */
+  dismiss(): void {
+    this.finish(undefined);
+  }
+
   private finish(answer: string | undefined): void {
     if (this.answered) return;
     this.answered = true;
@@ -106,8 +113,8 @@ export class QuestionDialog implements Component, Focusable {
           );
     const hint =
       this.input !== undefined
-        ? "enter answers · esc dismisses"
-        : "↑↓ choose · enter picks · esc dismisses";
+        ? "enter answers · esc dismisses · ctrl+c declines"
+        : "↑↓ choose · enter picks · esc dismisses · ctrl+c declines";
 
     // The brief gets what the question, the options and the hints leave of the screen.
     const fixed = question.length + body.length + 5;
@@ -133,6 +140,11 @@ export class QuestionDialog implements Component, Focusable {
   }
 
   handleInput(data: string): void {
+    if (matchesKey(data, "ctrl+c")) {
+      if (this.options.interrupt !== undefined) this.options.interrupt();
+      else this.finish(undefined);
+      return;
+    }
     // The brief scrolls whatever has the keys.
     if (matchesKey(data, "pageDown")) return this.scrollBy(Math.max(1, this.window - 1));
     if (matchesKey(data, "pageUp")) return this.scrollBy(-Math.max(1, this.window - 1));

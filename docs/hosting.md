@@ -89,6 +89,7 @@ const chat = await turri.openChat();   // { id, title, status, shown, session }:
 chat.session.subscribe((event) => {}); // pi's session: its events, prompt(), abort()
 await chat.session.prompt("add a cart to the shop");
 turri.focus(other.id);                 // the chat the person looks at now
+await turri.interrupt(chat.id);        // ctrl+c: "stopped" what it was doing, else "ended" the session - "ignored", "missing"
 turri.chats();                         // [{ id, title, status: "idle" | "working" | "question" | "unread", shown }]
 turri.onChats((chats) => {});          // a chat opened, closed, renamed, working or done
 await turri.closeChat(chat.id);        // its turn stopped, its conversation deleted - its pulses run on
@@ -98,6 +99,7 @@ await turri.dispose();                 // every chat let go, what activate start
 ```
 
 - **The chats.** Up to nine, each its own history, model, thinking level and stack, all on the session's one job registry and work loop - see [chats](chats.md). `openChat({ sessionFile })` reopens a saved one. A pulse's end is told to the chat that asked for it, its agent reacting there; to the chat `focus` last named when that one is closed. A chat is never hidden from turri's side: what the host does not show, it still runs, and its questions go to the host's dialogs at once - the host decides where they wait. `status` says a turn is running (`working`) or that it said something since it was last focused (`unread`).
+- **Interrupting.** `interrupt(id)` is the terminal's ctrl+c for a host's key or button: it stops what that chat is doing - its turn, a skill or a tool in it, a `!` command, a compaction - and nothing in the other chats (`stopped`). A skill stopped keeps its run, to be continued. A question of the chat's open in the host's dialogs when its turn is stopped is over - declined - though its dialog is the host's to close. A chat doing nothing ends the session, every chat with it, as `dispose` does (`ended`): turri never exits the host's process, so the host closes what showed it. An interrupt straight after one that stopped something is `ignored`, so pressing twice to be sure ends nothing. `session.abort()` is the chat's turn alone, and never ends the session.
 - **The record.** The chats are recorded in `.turri/chats.json` as the terminal records them, and `restore: true` reopens the last ended session's - without it, a host starts with none and deletes nothing. A chat closed is deleted; a session's chats are kept until five newer sessions have recorded theirs.
 - **The jobs.** The host is told of each job as it changes, and has the registry and the loop themselves, so it shows the very jobs the chats run. Its buttons are best a chat's commands - `session.prompt("/regenerate app.plain")` - so the plan is the chats'.
 - **The questions.** `dialogs(chat)` gives a chat's two dialogs: `select(title, options, context, at)` and `input(title, context)`, each resolving with the answer, or undefined when the person dismissed it. The chat's questions, a skill's interview and a review gate's escalation are put in them; without them, in the `uiContext`'s own dialogs.

@@ -1,7 +1,7 @@
 import { createAgentSession, DefaultResourceLoader, getAgentDir, SessionManager, type AgentSession, type ExtensionFactory, type ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import type { AskUserIO } from "./ask.ts";
 import { lastRun } from "./chat-records.ts";
-import type { ChatInfo, TurriHost } from "./chats.ts";
+import { interruptChat, type ChatInfo, type TurriHost } from "./chats.ts";
 import { createTurriCore, sessionLoop } from "./extension.ts";
 import { stopDeployed } from "./regenerate/release.ts";
 import type { JobRegistry } from "./regenerate/jobs.ts";
@@ -44,6 +44,13 @@ export interface Turri {
   closeChat(id: string): Promise<void>;
   /** The chat the person looks at now. */
   focus(id: string): void;
+  /**
+   * ctrl+c in a chat, as the terminal has it: what the chat is doing stopped - its turn, a skill or a tool in it, a `!`
+   * command, a compaction - and nothing in the others (`stopped`). In a chat doing nothing the session ends - every
+   * chat let go and what activate started stopped, as `dispose` does - for the host to close what showed it (`ended`).
+   * A second interrupt straight after one that stopped something does nothing (`ignored`); `missing` for a chat not open.
+   */
+  interrupt(id: string): Promise<"stopped" | "ignored" | "ended" | "missing">;
   /** Told when a chat is opened, closed, renamed, or starts or stops working. */
   onChats(listener: (chats: ChatInfo[]) => void): () => void;
   /** Every chat let go, and what activate started stopped. */
@@ -80,6 +87,11 @@ export async function createTurri(options: TurriOptions = {}): Promise<Turri> {
     const first = core.chats()[0];
     if (first !== undefined) await core.show(first.id);
   }
+  let lastStop = 0;
+  const dispose = async () => {
+    await core.dispose();
+    await stopDeployed();
+  };
   return {
     jobs: core.jobs,
     get loop() {
@@ -93,10 +105,15 @@ export async function createTurri(options: TurriOptions = {}): Promise<Turri> {
     },
     closeChat: (id) => core.close(id),
     focus: (id) => void core.show(id),
-    onChats: (listener) => core.onChats(() => listener(core.chats())),
-    async dispose() {
-      await core.dispose();
-      await stopDeployed();
+    async interrupt(id) {
+      const session = core.session(id);
+      if (session === undefined) return "missing";
+      const did = interruptChat(session, { lastStop, idle: () => "ended" as const });
+      if (did === "stopped") lastStop = Date.now();
+      if (did === "ended") await dispose();
+      return did;
     },
+    onChats: (listener) => core.onChats(() => listener(core.chats())),
+    dispose,
   };
 }

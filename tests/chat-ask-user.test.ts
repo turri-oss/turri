@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { stripTerminalSequences } from "@earendil-works/pi-tui";
+import { DECLINED } from "../src/ask.ts";
 import { askUserVia, chatAskUserTool } from "../src/extension.ts";
 
 type Shown = { render(width: number): string[]; handleInput?(data: string): void };
@@ -70,5 +71,53 @@ describe("ask_user in the conversation", () => {
     });
     expect(shown[0]!.slice(1, 5)).toEqual(["  - Problem: invoices get lost.", "  - Primary user: a freelancer.", "", "  Is this the right brief?"]);
     expect(kept).toEqual([`${brief}\n\nHere is what I have.`]);
+  });
+});
+
+describe("ctrl+c at a question", () => {
+  const CTRL_C = "\x03";
+  /** A chat's context mid-turn: its turn's signal, and whether it was stopped. */
+  const inTurn = (press: (lines: string[]) => string[]) => {
+    const { ctx, shown } = fakeUi(press);
+    const turn = new AbortController();
+    let stopped = 0;
+    const context = { ...ctx, signal: turn.signal, abort: () => ((stopped += 1), turn.abort()) };
+    return { ctx: context, shown, turn, stopped: () => stopped };
+  };
+
+  it("declines the question - no other dialog for it - and leaves the turn running", async () => {
+    const { ctx, shown, stopped } = inTurn(() => [CTRL_C]);
+    const kept: string[] = [];
+    const answer = await askUserVia(ctx as never, (_question, answered) => kept.push(answered))({ question: "Which stack?", options: ["Flask", "Django"], multiSelect: true });
+    expect(answer).toBe(DECLINED);
+    expect(shown).toHaveLength(1);
+    expect(kept).toEqual([DECLINED]);
+    expect(stopped()).toBe(0);
+  });
+
+  it("declines every question it is pressed at, however many in a row, the turn going on", async () => {
+    const { ctx, stopped } = inTurn(() => [CTRL_C]);
+    const ask = askUserVia(ctx as never, () => {});
+    for (const question of ["Which stack?", "Which database?", "Which host?", "Which auth?", "Which CI?"]) {
+      expect(await ask({ question, options: ["The first"] })).toBe(DECLINED);
+    }
+    expect(stopped()).toBe(0);
+  });
+
+  it("closes the question open when its turn is stopped", async () => {
+    const { ctx, turn } = inTurn(() => []);
+    const asked = askUserVia(ctx as never, () => {})({ question: "Which stack?", options: ["Flask"] });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    turn.abort();
+    expect(await asked).toBe(DECLINED);
+  });
+
+  it("ends a question in a host's dialog when its turn is stopped", async () => {
+    const turn = new AbortController();
+    const never = () => new Promise<undefined>(() => {});
+    const asked = askUserVia({ hasUI: false, signal: turn.signal } as never, () => {}, undefined, { select: never, input: never })({ question: "Ship it?", options: ["Yes"] });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    turn.abort();
+    expect(await asked).toBe(DECLINED);
   });
 });

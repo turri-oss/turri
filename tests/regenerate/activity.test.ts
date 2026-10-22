@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeToolCall, describeToolResult, reportActivity, reportNow, reportStage } from "../../src/regenerate/activity.ts";
+import { clearOfStop, currentStopSignal, describeToolCall, describeToolResult, reportActivity, reportNow, reportStage, withStopSignal } from "../../src/regenerate/activity.ts";
 import { createJobRegistry, type Job } from "../../src/regenerate/jobs.ts";
 import { jobPanelLines } from "../../src/regenerate/job-panel.ts";
 
@@ -57,6 +57,36 @@ describe("what a background job is doing", () => {
 
   it("is a no-op outside a job", () => {
     expect(() => reportActivity("nobody listening")).not.toThrow();
+  });
+});
+
+describe("work stopped outside a job", () => {
+  it("is stopped by the signal it runs under, and a job started from it by its own", async () => {
+    const stop = new AbortController();
+    const jobs = createJobRegistry();
+    let inJob: AbortSignal | undefined;
+    await withStopSignal(stop.signal, async () => {
+      expect(currentStopSignal()).toBe(stop.signal);
+      const job = jobs.start({
+        kind: "render",
+        summary: "a",
+        run: async () => {
+          inJob = currentStopSignal();
+          return { report: "done" };
+        },
+      });
+      await jobs.wait(job.id);
+    });
+    expect(inJob).toBeDefined();
+    expect(inJob).not.toBe(stop.signal);
+    expect(currentStopSignal()).toBeUndefined();
+  });
+
+  it("hands on what it is given clear of its signal", async () => {
+    const stop = new AbortController();
+    const loop = { seen: undefined as AbortSignal | undefined, bringUp() { this.seen = currentStopSignal(); } };
+    await withStopSignal(stop.signal, async () => clearOfStop(loop).bringUp());
+    expect(loop.seen).toBeUndefined();
   });
 });
 

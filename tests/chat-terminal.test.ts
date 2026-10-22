@@ -3,8 +3,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AgentSessionRuntime, InteractiveMode, type AgentSession, type ExtensionAPI, type ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import { createChats } from "../src/chats.ts";
+import { createChats, INTERRUPT_SETTLE_MS } from "../src/chats.ts";
 import { chatStrip } from "../src/chat-commands.ts";
+import { pressCtrlC, type CtrlCScreen } from "../src/chat-terminal.ts";
 import { createJobRegistry } from "../src/regenerate/jobs.ts";
 
 const PI = dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent")));
@@ -15,7 +16,7 @@ describe("what the terminal's chats reach of pi", () => {
   // fields. A pi that changes them fails here, before a person finds it.
   it("finds the methods it patches and calls", () => {
     const screen = InteractiveMode.prototype as unknown as Record<string, unknown>;
-    for (const name of ["rebindCurrentSession", "handleEvent", "resetExtensionUI"]) expect(typeof screen[name], name).toBe("function");
+    for (const name of ["rebindCurrentSession", "handleEvent", "resetExtensionUI", "handleCtrlC", "clearEditor", "restoreQueuedMessagesToEditor", "shutdown"]) expect(typeof screen[name], name).toBe("function");
     const runtime = AgentSessionRuntime.prototype as unknown as Record<string, unknown>;
     for (const name of ["newSession", "switchSession", "dispose", "setRebindSession", "setBeforeSessionInvalidate"]) expect(typeof runtime[name], name).toBe("function");
   });
@@ -28,7 +29,7 @@ describe("what the terminal's chats reach of pi", () => {
     const runner = piFile("core/extensions/runner.js");
     for (const method of ["setUIContext(uiContext, mode", "getUIContext()", "this.mode = mode"]) expect(runner, method).toContain(method);
     const screen = piFile("modes/interactive/interactive-mode.js");
-    for (const call of ["this.ui.hideOverlay();", "this.runtimeHost.setRebindSession(", "await this.rebindCurrentSession({ renderBeforeBind: true })", "await this.runtimeHost.newSession()", "await this.runtimeHost.switchSession(sessionPath"]) {
+    for (const call of ['onAction("app.clear", () => this.handleCtrlC())', "this.ui.hideOverlay();", "this.runtimeHost.setRebindSession(", "await this.rebindCurrentSession({ renderBeforeBind: true })", "await this.runtimeHost.newSession()", "await this.runtimeHost.switchSession(sessionPath"]) {
       expect(screen, call).toContain(call);
     }
   });
@@ -173,5 +174,62 @@ describe("the strip of chats above the editor", () => {
 
   it("is not drawn for a single chat", () => {
     expect(chatStrip([{ id: "a", title: "only", status: "idle", shown: true }], 80, style)).toEqual([]);
+  });
+});
+
+describe("ctrl+c in the chat shown", () => {
+  /** pi's screen as ctrl+c reaches it, the chat shown doing `doing`, and what was done to it. */
+  const screenDoing = (doing: { streaming?: boolean; bash?: boolean; compacting?: boolean; draft?: string } = {}) => {
+    const did: string[] = [];
+    const screen: CtrlCScreen = {
+      session: {
+        isStreaming: doing.streaming === true,
+        isBashRunning: doing.bash === true,
+        isCompacting: doing.compacting === true,
+        isRetrying: false,
+        abort: async () => void did.push("abort"),
+        abortBash: () => void did.push("abortBash"),
+      },
+      editor: { getText: () => doing.draft ?? "" },
+      clearEditor: () => void did.push("clear"),
+      restoreQueuedMessagesToEditor: (options) => (did.push(options?.abort === true ? "stop turn" : "restore"), 0),
+      shutdown: async () => void did.push("leave"),
+    };
+    return { screen, did };
+  };
+
+  it("stops the turn it is in - a skill, a tool - keeping the draft and turri", () => {
+    const { screen, did } = screenDoing({ streaming: true, draft: "half a thought" });
+    expect(pressCtrlC(screen, 0)).toBe("stopped");
+    expect(did).toEqual(["stop turn"]);
+  });
+
+  it("stops a ! command and a compaction", () => {
+    const bash = screenDoing({ bash: true });
+    pressCtrlC(bash.screen, 0);
+    expect(bash.did).toEqual(["abortBash"]);
+    const compacting = screenDoing({ compacting: true });
+    pressCtrlC(compacting.screen, 0);
+    expect(compacting.did).toEqual(["abort"]);
+  });
+
+  it("leaves turri when the chat is doing nothing", () => {
+    const { screen, did } = screenDoing();
+    expect(pressCtrlC(screen, 0)).toBe("left");
+    expect(did).toEqual(["leave"]);
+  });
+
+  it("clears a draft before it leaves", () => {
+    const { screen, did } = screenDoing({ draft: "not sent" });
+    expect(pressCtrlC(screen, 0)).toBe("cleared");
+    expect(did).toEqual(["clear"]);
+  });
+
+  it("does not leave on a press straight after one that stopped something", () => {
+    const now = 10_000;
+    const { screen, did } = screenDoing();
+    expect(pressCtrlC(screen, now - 100, now)).toBe("ignored");
+    expect(pressCtrlC(screen, now - INTERRUPT_SETTLE_MS, now)).toBe("left");
+    expect(did).toEqual(["leave"]);
   });
 });

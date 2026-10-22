@@ -47,7 +47,7 @@ import { createJobsTreeState, selectJob } from "./regenerate/jobs-tree.ts";
 import { describeDiagnosis, diagnoseFailure } from "./regenerate/diagnose.ts";
 import { HISTORY_DIR, historyLog, historyShow } from "./regenerate/lineage.ts";
 import { defaultBuildDir } from "./regenerate/paths.ts";
-import { describeTurnIncident, describeUsage, onModelEvent, type SpecConflict } from "./regenerate/activity.ts";
+import { describeTurnIncident, describeUsage, JobStoppedError, onModelEvent, type SpecConflict } from "./regenerate/activity.ts";
 import { ledgerWanted, startLedger } from "./regenerate/ledger.ts";
 import { describePastPulse, describeRuns, earlierPulses, ledgerProjects } from "./regenerate/ledger-view.ts";
 import { doctorTool } from "./doctor-tool.ts";
@@ -58,7 +58,7 @@ import { beginCapture, captureConsole, describeCaptured, dropNoise } from "./qui
 import { loadRules, renderRulesBlock } from "./rules.ts";
 import { registerTurriConfig } from "./config-command.ts";
 import { describeStdlib } from "./stdlib.ts";
-import { peekKeyListener, runAsk, type AskUser, type AskUserIO, type AskUserRequest } from "./ask.ts";
+import { DECLINED, peekKeyListener, runAsk, type AskUser, type AskUserIO, type AskUserRequest } from "./ask.ts";
 import { QuestionDialog } from "./question-dialog.ts";
 import { registerStacks } from "./stacks.ts";
 import { catalogueLine, chosenCommand, createCommandGate, startPicked, discoverSkills, leftOutNote, startedByCommandOnly, type SkillCatalogue } from "./skills.ts";
@@ -113,26 +113,64 @@ export function askUserVia(
   dialogs?: AskUserIO,
 ): AskUser {
   return async (request) => {
-    if (dialogs !== undefined) {
-      const asking: AskUser = (asked) => runAsk(asked, dialogs);
-      const bare: AskUserRequest = { ...request, said: undefined };
-      const answer = aside !== undefined ? await askWithAsides(bare, asking, aside) : await asking(bare);
-      onExchange(request.question, answer, [request.context, request.said].map((part) => part?.trim() ?? "").filter((part) => part !== "").join("\n\n") || undefined);
-      return answer;
-    }
-    if (!ctx.hasUI) {
+    if (dialogs === undefined && !ctx.hasUI) {
       return "No user is available to answer. Decide yourself, and say in your report what you assumed.";
     }
-
-    ctx.ui.setWorkingMessage("waiting for your answer");
+    // Declined - ctrl+c at it, or the turn that asked it stopped: the dialog open is closed, no other is opened, and it
+    // comes back as DECLINED.
+    const turn = ctx.signal;
+    const declining: Declining = { declined: turn?.aborted === true, close: undefined };
+    const decline = () => {
+      declining.declined = true;
+      declining.close?.();
+    };
+    turn?.addEventListener("abort", decline, { once: true });
     // The question has the keys: ctrl+h is caught here, or it would never reach the shortcut, which only the chat's editor sees.
-    const unhook = hookPeekKey(ctx);
+    const unhook = dialogs === undefined ? hookPeekKey(ctx) : () => {};
+    if (dialogs === undefined) ctx.ui.setWorkingMessage("waiting for your answer");
     try {
-      // The question, with what the asker gives to read for it - a brief to confirm - above it; what it said of its work
-      // before asking is kept in its record, never put in the dialog.
-      // A dialog of turri's own: a long brief scrolls above the question, and the options always show (question-dialog.ts).
-      const dialog = (question: string, context: string | undefined, options?: string[], selected?: number) =>
-        ctx.ui.custom<string | undefined>((tui, theme, _keybindings, done) => {
+      const io = dialogs !== undefined ? hostDialogs(dialogs, declining) : terminalDialogs(ctx, declining, decline);
+      const asking: AskUser = (asked) => runAsk(asked, io);
+      const bare: AskUserRequest = { ...request, said: undefined };
+      const given = declining.declined ? DECLINED : aside !== undefined ? await askWithAsides(bare, asking, aside) : await asking(bare);
+      const answer = declining.declined ? DECLINED : given;
+      // Kept: what was shown with it, and what it said before it.
+      onExchange(request.question, answer, [request.context, request.said].map((part) => part?.trim() ?? "").filter((part) => part !== "").join("\n\n") || undefined);
+      return answer;
+    } finally {
+      turn?.removeEventListener("abort", decline);
+      unhook();
+      if (dialogs === undefined) ctx.ui.setWorkingMessage();
+    }
+  };
+}
+
+/** A question being asked: declined yet, and how to close the dialog open for it. */
+interface Declining {
+  declined: boolean;
+  close: (() => void) | undefined;
+}
+
+/** A host's dialogs, for a question that can be declined: its dialog stays the host's to close, the question over all the same. */
+function hostDialogs(dialogs: AskUserIO, declining: Declining): AskUserIO {
+  const until = (asked: () => Promise<string | undefined>) =>
+    declining.declined ? Promise.resolve(undefined) : Promise.race([asked(), new Promise<undefined>((resolve) => (declining.close = () => resolve(undefined)))]);
+  return {
+    select: (...args) => until(() => dialogs.select(...args)),
+    input: (...args) => until(() => dialogs.input(...args)),
+  };
+}
+
+/**
+ * The terminal's dialogs: turri's own, a long brief scrolling above the question and the options always showing
+ * (question-dialog.ts). ctrl+c declines the question - each one it is pressed at, however many in a row; what asked
+ * goes on. The turn, and a skill asking in it, is stopped by ctrl+c with no question open.
+ */
+function terminalDialogs(ctx: ExtensionContext, declining: Declining, decline: () => void): AskUserIO {
+  const dialog = (question: string, context: string | undefined, options?: string[], selected?: number) =>
+    declining.declined
+      ? Promise.resolve(undefined)
+      : ctx.ui.custom<string | undefined>((tui, theme, _keybindings, done) => {
           const shown: QuestionDialog = new QuestionDialog({
             question,
             ...(context !== undefined ? { context } : {}),
@@ -145,24 +183,15 @@ export function askUserVia(
               done(answer);
             },
             requestRender: () => tui.requestRender(),
+            interrupt: decline,
           });
+          declining.close = () => shown.dismiss();
           questionShown = shown;
           return shown;
         });
-      const asking: AskUser = (asked) =>
-        runAsk(asked, {
-          select: (title, options, context, at) => dialog(title, context, options, at),
-          input: (title, context) => dialog(title, context),
-        });
-      const bare: AskUserRequest = { ...request, said: undefined };
-      const answer = aside !== undefined ? await askWithAsides(bare, asking, aside) : await asking(bare);
-      // Kept: what was shown with it, and what it said before it.
-      onExchange(request.question, answer, [request.context, request.said].map((part) => part?.trim() ?? "").filter((part) => part !== "").join("\n\n") || undefined);
-      return answer;
-    } finally {
-      unhook();
-      ctx.ui.setWorkingMessage();
-    }
+  return {
+    select: (title, options, context, at) => dialog(title, context, options, at),
+    input: (title, context) => dialog(title, context),
   };
 }
 
@@ -643,7 +672,7 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
         }),
       ),
     }),
-    async execute(_id, params, _signal, onUpdate, ctx) {
+    async execute(_id, params, signal, onUpdate, ctx) {
       const skill = skills.find((s) => s.name === params.skill);
       if (!skill) {
         return {
@@ -767,9 +796,11 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
       const ended = skillRunStarted({ skill: skill.name, dir: skill.dir, step: () => live.step, trace: () => [...trace], runDir });
       // From here the time to first regeneration is counted, for a skill that writes spec diffs: its first pulse started.
       const began = Date.now();
-      const { result, output: captured } = await captureConsole(() =>
+      const ran = await captureConsole(() =>
         runSkill({
         skillDir: skill.dir,
+        // The chat's turn stopped - ctrl+c, esc - stops the run with it.
+        signal,
         cwd,
         runDir,
         resume: params.resume === true && interrupted !== undefined,
@@ -814,11 +845,21 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
           return ctx.ui.confirm(`Review gate: ${skill.name}`, `${critique}\n\n${question}`);
         },
         }),
-      ).finally(() => {
-        ended();
-        clearInterval(ticker);
-        if (ctx.hasUI) ctx.ui.setWidget("turri-skill", undefined);
-      });
+      )
+        .catch((error: unknown) => {
+          if (!(error instanceof JobStoppedError)) throw error;
+          return undefined;
+        })
+        .finally(() => {
+          ended();
+          clearInterval(ticker);
+          if (ctx.hasUI) ctx.ui.setWidget("turri-skill", undefined);
+        });
+      if (ran === undefined) {
+        const text = [`${skill.name}: stopped by the person, in its ${live.step || "first"} step. It can be continued with resume: true.`, "", "<trace>", ...trace, "</trace>"].join("\n");
+        return { content: [{ type: "text" as const, text }], details: { stopped: true } };
+      }
+      const { result, output: captured } = ran;
       const noise = describeCaptured(captured);
       if (noise !== null) push(noise);
 
