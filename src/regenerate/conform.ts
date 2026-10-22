@@ -193,9 +193,7 @@ export function describeSpecDiffConformance(result: RenderSpecDiffConformanceRes
       : "",
     ...specGapsText(result.specGaps),
     "",
-    "<agent report>",
     result.conformance.response,
-    "</agent report>",
   ]
     .filter((line) => line !== "")
     .join("\n");

@@ -148,7 +148,7 @@ Every time a review sends tests back, the agent that fixes them also leaves the 
 
 ### Then
 
-Once the unit tests pass and are reviewed, the job lands: the code record becomes the \*\*\*plain description the job ends on, and a commit is made to the module's history. The conformance tests are not run here: they are the conformance track's, and its job for what this one built runs next, before anything is built on it (see [conformance tests in the work loop](#conformance-tests-in-the-work-loop)). A job that does not pass is undone instead - see [below](#what-the-code-is-built-from). A job that lands ends its report with the offer to try it - "Want to try it? Just ask me" in the chat, `turri release <spec>` on the command line - and trying it is [deploy](deploy.md)'s, not the job's. Conformance jobs that land make the same offer.
+Once the unit tests pass and are reviewed, the job lands: the code record becomes the \*\*\*plain description the job ends on, and a commit is made to the module's history. The conformance tests are not run here: they are the conformance track's, and its job for what this one built runs next, before anything is built on it (see [conformance tests in the work loop](#conformance-tests-in-the-work-loop)). A job that does not pass is undone instead - see [below](#what-the-code-is-built-from). Trying what it built is [deploy](deploy.md)'s, not the job's: on the command line, a run that landed ends with `turri release <spec>`.
 
 ## A whole module
 

@@ -2,8 +2,6 @@
 
 Ask to try it - "let me try it", "run the app" - at any time, even while a regeneration is running. The chat calls `deploy`: it puts the module's code, as it was last built, in `dist/<module>` in the project, and starts it on your machine. An app with a backend and a frontend is started whole, and you are told where to open your browser. For a command-line tool or a library you get a few commands to paste, run from `dist/<module>`, and what they print.
 
-Every pulse that lands code - a regeneration, a \*\*\*plain diff, a conformance run, a functionality regenerated - ends with "Want to try it? Just ask me - I'll set it up from what's built so far." When a regeneration's conformance tests follow as a pulse of their own, the conformance pulse says it, once they pass too.
-
 ## When the project says how it is released
 
 Every release starts the same way: the module's last commit - what last landed whole - goes in `dist/<module>`, as below. Not everything is tried from there, though. An integration that a host application loads goes on into the host's own tree, with the host's own scripts, and then the host is started. So the model asks itself whether there is guidance for how this project is released - in what you said, the project's AGENTS.md, a skill, anything it was given - and passes it to `release` whole:

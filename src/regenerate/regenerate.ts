@@ -732,9 +732,7 @@ export function describeSpecDiff(result: RenderSpecDiffResult): string {
     ...(result.steered !== undefined ? [`Steered while it ran - the spec changed inside what it was regenerating, and its agent was told: ${result.steered.join("; ")}.`] : []),
     ...specGapsText(result.specGaps),
     "",
-    "<agent report>",
     result.response,
-    "</agent report>",
   ]
     .filter((line) => line !== "")
     .join("\n");

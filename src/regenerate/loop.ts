@@ -34,7 +34,6 @@ import { budgetFor, choosingWhen, configForSpec, conformanceSwitchedOn, stackFor
 import { describeSpecChange } from "./prompt.ts";
 import { resolveTemplateDirs } from "./paths.ts";
 import { builtTips, copyRequiredCode, importingModules, isImportModule, newlyRequired, resolveRequiresChain, startFromScratch, type ChainEntry } from "./requires.ts";
-import { withTryItLine } from "./delivery.ts";
 import { describeSpecDiff, renderSpecDiff, specFilesOf, type SpecSnapshot } from "./regenerate.ts";
 import { locateDiffLines, type DiffWhere } from "./diff-view.ts";
 import { agentChanges, changeDiffInFiles } from "./change-view.ts";
@@ -2018,7 +2017,7 @@ const defaultRunner: JobRunner = async (job, onDelta) => {
     onDelta,
   });
   // Landed code can be tried.
-  return { landed: result.passed, report: withTryItLine(describeSpecDiff(result), result.passed && result.restructured !== true), story: codeStory(result),
+  return { landed: result.passed, report: describeSpecDiff(result), story: codeStory(result),
     ...(result.specGaps !== undefined ? { specGaps: result.specGaps } : {}),
   };
 };

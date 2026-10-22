@@ -640,17 +640,20 @@ describe("the work loop rendering spec diffs", () => {
     expect(tasks[0]).toContain("Do not build it again from scratch.");
     expect(tasks[1]).toContain("New - build each, and write its unit tests: fs 2 of module `app` (Two.)");
     expect(tasks[2]).toContain("New - build each, and write its unit tests: fs 3 of module `app` (Three.)");
-    // Each job that landed code says it can be tried.
-    const { TRY_IT_LINE } = await import("../../src/regenerate/delivery.ts");
+    // Each job's report is what it did, the agent's own account as it wrote it - no offer to try it, no tags around it.
     const reports = registry.list().map((job) => job.report ?? "");
     expect(reports).toHaveLength(4);
-    expect(reports.every((report) => report.endsWith(TRY_IT_LINE))).toBe(true);
+    for (const report of reports) {
+      expect(report).not.toContain("Want to try it?");
+      expect(report).not.toContain("agent report>");
+      // The tags are gone, not what the agent said: its last answer ends the report.
+      expect(report.endsWith("\nDone.")).toBe(true);
+    }
   });
 
-  it("offers nothing to try when a job does not land", async () => {
+  it("says a job that does not land did not", async () => {
     const { createWorkLoop } = await import("../../src/regenerate/loop.ts");
     const { createJobRegistry } = await import("../../src/regenerate/jobs.ts");
-    const { TRY_IT_LINE } = await import("../../src/regenerate/delivery.ts");
     const { ask } = await import("../../src/pi.ts");
     // An agent that writes nothing, so the unit tests never pass.
     vi.mocked(ask).mockImplementation((async () => "Done.") as never);
@@ -661,7 +664,6 @@ describe("the work loop rendering spec diffs", () => {
     await loop.drain();
     const [job] = registry.list();
     expect(job!.details).toMatchObject({ landed: false });
-    expect(job!.report ?? "").not.toContain(TRY_IT_LINE);
     expect(loop.status()[0]!.why).toMatch(/did not land/);
   });
 
