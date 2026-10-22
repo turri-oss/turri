@@ -75,11 +75,20 @@ export function projectImplementationReqs(project: string): Array<{ module: stri
 /** Whether a command is on this machine's PATH. */
 const onPath = (command: string) => onThisMachine(command) !== undefined;
 
-/** What a project's modules need of this machine, and which of it the machine lacks. */
-export function stackOnMachine(project: string, has: (command: string) => boolean = onPath): Array<{ module: string; needs: StackNeed[]; missing: StackNeed[] }> {
+/**
+ * What a project's modules need of this machine, and which of it the machine lacks - `has` finding a command, and on
+ * macOS a JDK behind `java` (`toolchainCheck`), asked at most once.
+ */
+export function stackOnMachine(
+  project: string,
+  has: (command: string) => boolean = onPath,
+  jdk: () => boolean = jdkHere,
+): Array<{ module: string; needs: StackNeed[]; missing: StackNeed[] }> {
+  let found: boolean | undefined;
+  const here = toolchainCheck(has, () => (found ??= jdk()));
   return projectImplementationReqs(project).map(({ module, reqs }) => {
     const needs = stackOf(reqs.join("\n"));
-    return { module, needs, missing: needs.filter((need) => !need.commands.some(has)) };
+    return { module, needs, missing: needs.filter((need) => !need.commands.some(here)) };
   });
 }
 
@@ -96,15 +105,20 @@ export const STDLIB_LANGUAGES: Array<{ language: string; commands: string[] }> =
   { language: "Java", commands: ["java"] },
 ];
 
-/**
- * Whether a toolchain's command is really there: on the PATH - and Java on macOS, which keeps a `/usr/bin/java` that only
- * asks to install a JDK, by `java_home` finding one.
- */
-function toolchainHere(command: string): boolean {
-  if (!onPath(command)) return false;
-  if (command === "java" && process.platform === "darwin") return spawnSync("/usr/libexec/java_home", [], { stdio: "ignore" }).status === 0;
-  return true;
+/** Whether this machine has a JDK behind `java`: anywhere but macOS, java found says so; on macOS, `java_home` finding one. */
+function jdkHere(): boolean {
+  return process.platform !== "darwin" || spawnSync("/usr/libexec/java_home", [], { stdio: "ignore" }).status === 0;
 }
+
+/**
+ * Whether a toolchain's command is really there: `has` finds it - and Java has a JDK behind it as well, for macOS keeps a
+ * `/usr/bin/java` that only asks to install one.
+ */
+export function toolchainCheck(has: (command: string) => boolean, jdk: () => boolean = jdkHere): (command: string) => boolean {
+  return (command) => has(command) && (command !== "java" || jdk());
+}
+
+const toolchainHere = toolchainCheck(onPath);
 
 /** Which of the standard library's languages this machine can build and test now, and which it lacks a command of. */
 export function languagesOnMachine(has: (command: string) => boolean = toolchainHere): { ready: typeof STDLIB_LANGUAGES; missing: typeof STDLIB_LANGUAGES } {

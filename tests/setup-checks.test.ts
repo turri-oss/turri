@@ -53,6 +53,15 @@ describe("a project, against this machine", () => {
     ]);
   });
 
+  it("counts Java as missing when java is found with no JDK behind it - macOS's stub that only asks to install one", () => {
+    writeFileSync(join(project, "server.plain"), "***implementation reqs***\n\n- :Implementation: is written in Java 21 with Spring Boot.\n\n***functional specs***\n\n- Serve.\n");
+    const has = (command: string) => command === "java";
+    expect(checkProject(project, { has, jdk: () => false })).toEqual([
+      { level: "missing", name: "server", detail: "its implementation reqs need Java (java, spring boot), which this machine lacks", fix: expect.stringContaining("install Java") },
+    ]);
+    expect(checkProject(project, { has, jdk: () => true })).toEqual([{ level: "ok", name: "server", detail: "has Java" }]);
+  });
+
   it("says what in its testing scripts this machine does not have", () => {
     mkdirSync(join(project, "test_scripts"));
     writeFileSync(join(project, "test_scripts", "run_unittests_java.sh"), "#!/bin/bash\nexport JAVA_HOME=$(/usr/libexec/java_home -v 21)\nmvn -q test\n");
@@ -104,5 +113,13 @@ describe("the toolchains a stack can be chosen from", () => {
     expect(block).toContain("offer only those in a language it can build now, and choose only among them");
     // Node without npm builds no TypeScript stack.
     expect(languagesOnMachine((command) => command === "node").ready).toEqual([]);
+  });
+
+  it("counts Java only with a JDK behind it, as a project's modules are checked", async () => {
+    const { toolchainCheck } = await import("../src/stack.ts");
+    const has = (command: string) => command === "java" || command === "go";
+    expect(toolchainCheck(has, () => false)("java")).toBe(false);
+    expect(toolchainCheck(has, () => true)("java")).toBe(true);
+    expect(toolchainCheck(has, () => false)("go")).toBe(true);
   });
 });

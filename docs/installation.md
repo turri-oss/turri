@@ -54,7 +54,7 @@ In a project - a folder with `config.turri.yaml` (or the old `config.yaml`) or `
 
 | what | |
 | --- | --- |
-| each module's toolchains | what its implementation reqs name - Python, Node, Java, Go, Rust, C/C++, Zig, ... - against this machine's PATH: the agents use this machine's toolchains and install none, so a missing one is yours to install |
+| each module's toolchains | what its implementation reqs name - Python, Node, Java, Go, Rust, C/C++, Zig, ... - against this machine's PATH - and Java against a JDK, for macOS keeps a `/usr/bin/java` that only asks to install one: the agents use this machine's toolchains and install none, so a missing one is yours to install |
 | the testing scripts | what in them this machine does not have: a program named by its whole path that is not here (a macOS-only `/usr/libexec/java_home` on Linux), a toolchain they run that is not on the PATH |
 | the models | each model `config.turri.yaml` names - `harness-model`, `coding-model`, `judge-model`, every role under `models:` - sent one short request through [pi](https://pi.dev), with the credentials turri's agents will use, for any provider [pi](https://pi.dev) supports. One that answers is ready; for one that does not, it says what the provider said and what to do: the credentials [pi](https://pi.dev) reads for that provider (`AWS_PROFILE` and `AWS_REGION` for Amazon Bedrock, `OPENAI_API_KEY`, `/login`, ...), model access in the Bedrock console, the closest model ids [pi](https://pi.dev) knows for one it does not. `--harness-model`, `--coding-model` (`--model`) and `--judge-model` name models as the config's keys, as `turri regenerate` reads them - checked in a project or not. `--no-models` skips it |
 

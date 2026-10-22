@@ -91,9 +91,12 @@ export function checkSandbox(wall: Wall = sandboxAvailable(), platform: NodeJS.P
  * testing script against this machine - a program it names that is not here, a toolchain it runs that is not on the
  * PATH. Nothing outside a project.
  */
-export function checkProject(project: string, machine: { has?: (command: string) => boolean; exists?: (path: string) => boolean } = {}): Check[] {
+export function checkProject(
+  project: string,
+  machine: { has?: (command: string) => boolean; exists?: (path: string) => boolean; jdk?: () => boolean } = {},
+): Check[] {
   const checks: Check[] = [];
-  for (const { module, needs, missing } of stackOnMachine(project, machine.has)) {
+  for (const { module, needs, missing } of stackOnMachine(project, machine.has, machine.jdk)) {
     if (needs.length === 0) continue;
     checks.push(
       missing.length === 0
