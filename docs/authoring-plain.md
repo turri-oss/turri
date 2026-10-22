@@ -150,7 +150,7 @@ Every skill in `genome/skills/` can be run from a conversation; most are also us
 | add to \*\*\*plain | `bud`, `add-functional-spec`, `add-functional-specs`, `add-concept`, `add-implementation-requirement`, `add-test-requirement`, `add-acceptance-test`, `add-resource`, `add-template` |
 | check what is written | `analyze-if-func-spec-too-complex`, `analyze-2-func-specs`, `analyze-func-specs`, `resolve-section-ownership` |
 | fix what is written | `break-down-func-spec`, `resolve-spec-conflict`, `debug-specs` |
-| restructure modules | `create-import-module`, `create-requires-module`, `refactor-module`, `consolidate-concepts` |
+| restructure modules | `refactor-module`, `consolidate-concepts` |
 | set up the project to build | `implement-unit-testing-script`, `implement-conformance-testing-script`, `check-plain-env` |
 
 `debug-specs` is the one for a running application that misbehaves: it reads the generated code to find the cause, traces it back to \*\*\*plain, and fixes only the `.plain` files.

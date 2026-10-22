@@ -180,7 +180,7 @@ Define the component concept in `***definitions***` (via `add-concept`) before t
 - A :Report: is exported to PDF using :PdfRenderer:, embedding charts rendered from :Report: data.
 ```
 
-The extracted component spec and the rewritten original must together still cover 100% of the original functionality (step 6): the original must **reference** the component, never re-describe it. Keep the component's technology and architecture choices in `***implementation reqs***`, not in the functional spec. If the component is a self-contained subsystem or will be reused across modules, promote it to its own module with `create-requires-module` / `refactor-module` instead of a sibling spec.
+The extracted component spec and the rewritten original must together still cover 100% of the original functionality (step 6): the original must **reference** the component, never re-describe it. Keep the component's technology and architecture choices in `***implementation reqs***`, not in the functional spec. If the component is a self-contained subsystem or will be reused across modules, promote it to its own module - one that `requires` it, following `requires-modules.md`, or with `refactor-module` - instead of a sibling spec.
 
 ## Preserving Chronological Order
 

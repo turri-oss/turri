@@ -11,6 +11,7 @@ When creating or editing a `.plain` file that uses `import` or is intended to be
 - It must **not** contain `***functional specs***`
 - It must **not** use `requires` in its frontmatter
 - It may optionally `import` other import modules for layered reuse
+- A project's import modules live in `template/`, which imports resolve from: `import: [shared_api]` is `template/shared_api.plain`, the `template/` prefix left out
 
 ## What import does
 - `import` pulls in `***definitions***`, `***implementation reqs***`, and `***test reqs***` from the target module

@@ -46,7 +46,7 @@ This keeps the integration self-contained in one directory the user can `cd` int
 
 Run host discovery **before** the first interview question. Treat the results as ground truth for everything that follows.
 
-1. **Locate the host's `.plain` setup (if any).** Look for an existing `.plain` file or directory, a `plain_modules/`, a `resources/`, and a `test_scripts/`. If the host already has a `.plain` setup, **adopt it verbatim**: the new integration module lands inside the existing `plain_source_dir` and `requires` the relevant base module (use `create-requires-module`). Do not create a parallel layout.
+1. **Locate the host's `.plain` setup (if any).** Look for an existing `.plain` file or directory, a `plain_modules/`, a `resources/`, and a `test_scripts/`. If the host already has a `.plain` setup, **adopt it verbatim**: the new integration module lands inside the existing `plain_source_dir` and `requires` the relevant base module (following `requires-modules.md`). Do not create a parallel layout.
 2. **Read every existing integration in the host.** For each one, extract: intent and scope, host base class / interface / protocol the integration subclasses or implements, package path and naming convention, configuration pattern (env vars, settings module, secret manager), error / exception hierarchy, logging / metrics / tracing conventions, testing pattern (live vs recorded vs mocked, fixture location, conformance-test layout). The new integration must follow the same patterns unless the user explicitly opts out.
 3. **Capture findings in the `host-codebase` concept.** Cite the existing integration by file path so the reasoning is auditable. The concept holds, as facts:
    - Host codebase root (absolute or project-relative path)

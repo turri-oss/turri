@@ -75,7 +75,7 @@ For each concept, determine where it belongs:
 | Used across multiple modules in the chain | Define in the first module that uses it, and add to that module's `exported_concepts` |
 | Already defined in an import template | Leave in the import — no change needed |
 
-If many concepts are shared across all modules, consider creating a new import module (template) to hold them. This avoids long `exported_concepts` lists and keeps definitions centralized. Use the `create-import-module` skill for this.
+If many concepts are shared across all modules, consider creating a new import module (template) to hold them. This avoids long `exported_concepts` lists and keeps definitions centralized. Write it following `import-modules.md`.
 
 ### 2d. Assign implementation reqs and test reqs
 
@@ -102,7 +102,7 @@ Create the new modules in order, from the base of the chain upward.
 
 ### 3a. Create or update the import template (if needed)
 
-If shared definitions or reqs are being moved to a new import template, create it first using the `create-import-module` skill.
+If shared definitions or reqs are being moved to a new import template, create it first, following `import-modules.md`.
 
 ### 3b. Create the base module
 
