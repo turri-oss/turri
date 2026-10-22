@@ -122,7 +122,7 @@ The ones that shape \*\*\*plain most:
 
 ## Writing \*\*\*plain with turri
 
-In a conversation (`turri`), say what you want and the matching skill runs - but the three that start a project or a feature you start yourself, by their commands: `/brood`, `/spawn` or `/bud`, with what you want after it. Two build a project from scratch, and write each \*\*\*plain change as a git diff that is built in the background the moment it is written. `brood` interviews you one question at a time and writes \*\*\*plain as you answer; `spawn`, its quick twin, gets something running as soon as it can - the smallest thing that runs first, then the product a slice at a time - asking only what your message leaves open:
+In a conversation (`turri`), say what you want and the matching skill runs - but the three that start a project or a feature you start yourself, by their commands: `/brood`, `/spawn` or `/bud`, with what you want after it. Asked for new software without one - `create a small server in Java Spring Boot` - turri offers `/brood`, `/spawn` or `Just do it`, with no skill; a skill picked there starts at once with what you asked for, and Just do it starts the project in the conversation as `spawn` would, writing the module, its config and its unit testing script, then the smallest thing that runs, regenerated at once, and the first slices of what you described (see [using turri](using.md)). Two build a project from scratch, and write each \*\*\*plain change as a git diff that is built in the background the moment it is written. `brood` interviews you one question at a time and writes \*\*\*plain as you answer; `spawn`, its quick twin, gets something running as soon as it can - the smallest thing that runs first, then the product a slice at a time - asking only what your message leaves open:
 
 | skill | phases | how a \*\*\*plain change is written |
 | --- | --- | --- |
@@ -145,7 +145,7 @@ Every skill in `genome/skills/` can be run from a conversation; most are also us
 
 | to… | skills |
 | --- | --- |
-| start a project | `brood`, `spawn` |
+| start a project | `brood`, `spawn` - or ask, and choose `Just do it` for no skill |
 | make rough \*\*\*plain build | `mature` |
 | add to \*\*\*plain | `bud`, `add-functional-spec`, `add-functional-specs`, `add-concept`, `add-implementation-requirement`, `add-test-requirement`, `add-acceptance-test`, `add-resource`, `add-template` |
 | check what is written | `analyze-if-func-spec-too-complex`, `analyze-2-func-specs`, `analyze-func-specs`, `resolve-section-ownership` |

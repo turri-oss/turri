@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ensureInScratch } from "../src/regenerate/paths.ts";
-import { catalogueLine, createCommandGate, discoverSkills, leftOutNote, startedByCommandOnly } from "../src/skills.ts";
+import { catalogueLine, chosenCommand, createCommandGate, startPicked, discoverSkills, leftOutNote, startedByCommandOnly } from "../src/skills.ts";
 
 let root: string;
 let harness: string;
@@ -140,7 +140,25 @@ describe("the skills the person starts themselves", () => {
     expect(createCommandGate().mayStart({ name: "add-concept", commandOnly: false })).toBe(true);
   });
 
-  it("are refused with the command the person types", () => {
-    expect(startedByCommandOnly("brood")).toContain("tell them to type /brood");
+  it("are refused with how the person starts them - their command, or an option picked", () => {
+    expect(startedByCommandOnly("brood")).toContain("with /brood or by picking an option starting /brood");
+  });
+
+  it("start from an option the person picked that starts with their command", () => {
+    const skills = [
+      { name: "brood", commandOnly: true },
+      { name: "add-concept", commandOnly: false },
+    ];
+    expect(chosenCommand("/brood - an interview: the stack, the testing and every feature", skills)).toBe("brood");
+    expect(chosenCommand("Just do it - no skill: I write it here", skills)).toBeUndefined();
+    expect(chosenCommand("/add-concept", skills)).toBeUndefined();
+    expect(chosenCommand("I would rather /brood later", skills)).toBeUndefined();
+  });
+
+  it("are started at once once picked, with what the person asked for word for word", () => {
+    const told = startPicked("spawn", " create a small server in java springboot ");
+    expect(told).toContain('call cultivate with skill "spawn" at once');
+    expect(told).toContain('word for word: "create a small server in java springboot"');
+    expect(told).toContain("never ask them to type /spawn");
   });
 });

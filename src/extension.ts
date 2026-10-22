@@ -28,6 +28,7 @@ import { createDeployState, createDeployTools, type DeployState } from "./releas
 import { runReleaseAgent } from "./release-agent.ts";
 import { createSteeringStore, EVERY_MODULE, moduleNameOf, queueSectionOf, steeringFor } from "./regenerate/steer.ts";
 import { askedForCommandLine, refusal, selfInvocation, TOOLS_NOT_CLI } from "./self-invocation.ts";
+import { NEW_PROJECT } from "./new-project.ts";
 import { describeChoices, describeResolution, type ModelChoices, modelFor, type RenderWork, resolveModel } from "./regenerate/engine.ts";
 import { checkPlainFile, checkPlainTargets, formatCheckResults } from "./plain/check.ts";
 import { whyFailed } from "./regenerate/diagnose-job.ts";
@@ -60,7 +61,7 @@ import { describeStdlib } from "./stdlib.ts";
 import { peekKeyListener, runAsk, type AskUser, type AskUserIO, type AskUserRequest } from "./ask.ts";
 import { QuestionDialog } from "./question-dialog.ts";
 import { registerStacks } from "./stacks.ts";
-import { catalogueLine, createCommandGate, discoverSkills, leftOutNote, startedByCommandOnly, type SkillCatalogue } from "./skills.ts";
+import { catalogueLine, chosenCommand, createCommandGate, startPicked, discoverSkills, leftOutNote, startedByCommandOnly, type SkillCatalogue } from "./skills.ts";
 import { supersededByTurri } from "./chat-skills.ts";
 import { conversationIdentity } from "./identity.ts";
 import { setSurface, surfaceOf } from "./surface.ts";
@@ -206,7 +207,11 @@ function hookPeekKey(ctx: ExtensionContext): () => void {
  * pick from, several at once, "Something else…" to type instead, "Chat about this" to talk it over in
  * the chat first - so a question with a handful of answers is picked, not typed.
  */
-export function chatAskUserTool(dialogs?: AskUserIO): ReturnType<typeof createAskUserTool> {
+/**
+ * ask_user, for the conversation. `afterAnswer` may add to what an answer tells the model - a skill the person picked,
+ * to start at once.
+ */
+export function chatAskUserTool(dialogs?: AskUserIO, afterAnswer?: (answer: string) => string | undefined): ReturnType<typeof createAskUserTool> {
   let conversation: ExtensionContext | undefined;
   const tool = createAskUserTool(
     (request) => (conversation !== undefined ? askUserVia(conversation, () => {}, undefined, dialogs)(request) : Promise.resolve("No user is available to answer.")),
@@ -223,7 +228,10 @@ export function chatAskUserTool(dialogs?: AskUserIO): ReturnType<typeof createAs
     ],
     async execute(...args: Parameters<typeof tool.execute>) {
       conversation = args[4] as ExtensionContext;
-      return tool.execute(...args);
+      const result = await tool.execute(...args);
+      const answer = (result.details as { answer?: string } | undefined)?.answer;
+      const note = answer !== undefined && answer !== "" ? afterAnswer?.(answer) : undefined;
+      return note !== undefined ? { ...result, content: [...result.content, { type: "text" as const, text: note }] } : result;
     },
   };
 }
@@ -400,7 +408,7 @@ function turriExtension(pi: ExtensionAPI, host: TurriHost) {
       }
     }
     return {
-      systemPrompt: conversationSystemPrompt(event.systemPrompt, host, [TOOLS_NOT_CLI, projectConfigBlock(cwd), machineBlock(cwd, machine.now()), rulesBlock()]),
+      systemPrompt: conversationSystemPrompt(event.systemPrompt, host, [TOOLS_NOT_CLI, NEW_PROJECT, projectConfigBlock(cwd), machineBlock(cwd, machine.now()), rulesBlock()]),
     };
   });
 
@@ -519,7 +527,16 @@ function turriExtension(pi: ExtensionAPI, host: TurriHost) {
   registerBranding(pi, discoveredSkills);
   registerInterviewLog(pi);
   registerJobTools(pi, jobs, cwd);
-  registerCheckPlain(pi, cwd, host.dialogs);
+  // The skills the person starts themselves - brood, spawn, bud: each has its command, and cultivate starts it only
+  // once its command is typed, or picked among the options the conversation offers with ask_user.
+  const gate = createCommandGate();
+  // A skill picked is started at once, with what the person asked for: they never type its command after picking it.
+  registerCheckPlain(pi, cwd, host.dialogs, (answer) => {
+    const chosen = chosenCommand(answer, discoveredSkills.skills);
+    if (chosen === undefined) return undefined;
+    gate.typed(chosen);
+    return startPicked(chosen, lastUserMessage);
+  });
   registerRegenerate(pi, cwd, jobs);
   registerDrift(pi, cwd, jobs);
   registerGlimpse(pi, cwd, jobs);
@@ -537,10 +554,8 @@ function turriExtension(pi: ExtensionAPI, host: TurriHost) {
   const catalogue = skills.map(catalogueLine).join("\n");
   const pendingNote = leftOutNote(discoveredSkills);
 
-  // The skills the person starts themselves - brood, spawn, bud: each has its command, and cultivate starts it only
-  // once its command is typed. The command puts what was typed in the chat, as the person's message, for the model to
-  // run it with what follows as its context.
-  const gate = createCommandGate();
+  // The command puts what was typed in the chat, as the person's message, for the model to run it with what follows as
+  // its context.
   for (const skill of skills.filter((s) => s.commandOnly)) {
     pi.registerCommand(skill.name, {
       description: `Start ${skill.name}${skill.steps.length > 1 ? ` - ${skill.steps.map((step) => step.name).join(" → ")}` : ""}: /${skill.name} [what you want]`,
@@ -562,7 +577,7 @@ function turriExtension(pi: ExtensionAPI, host: TurriHost) {
     promptSnippet: "cultivate: run a gated skill - its steps and review gates enforced by turri",
     promptGuidelines: [
       "When a request matches a skill listed in cultivate's description, call cultivate instead of doing the work yourself. Doing it by hand skips the review gates.",
-      "A skill marked as started only by the person runs only from its command: a message that is its command - /spawn a small server - is the person starting it, so call cultivate for it at once, with what follows the command as context. Never call cultivate for one otherwise; tell them to type its command.",
+      "A skill marked as started only by the person runs only from its command: a message that is its command - /spawn a small server - is the person starting it, and so is an option starting with it that they picked in your ask_user - /brood - an interview. Call cultivate for it at once, with what they said as context. Never call cultivate for one otherwise; for a new project, offer the choice as <new-project> says.",
       // pi lists .agents/skills among its own skills too: read and followed by hand, a skill's gates would be skipped.
       "A skill cultivate lists may also be among your own skills, from the project's .agents/skills: run it with cultivate all the same, never by reading its SKILL.md and following it.",
       "cultivate returns the reviewed artifact and a trace of every gate decision. Report the artifact to the user; do not rewrite it.",
@@ -2262,9 +2277,9 @@ function jobLines(all: Job[]): string {
  * so it needs no external tool, no API key and no credits - and it is the only honest way
  * to answer "is this spec valid?" without generating anything.
  */
-function registerCheckPlain(pi: ExtensionAPI, cwd: string, dialogs?: AskUserIO) {
+function registerCheckPlain(pi: ExtensionAPI, cwd: string, dialogs?: AskUserIO, afterAnswer?: (answer: string) => string | undefined) {
   pi.registerTool(checkPlainTool(cwd));
-  pi.registerTool(chatAskUserTool(dialogs));
+  pi.registerTool(chatAskUserTool(dialogs, afterAnswer));
   // The web, for the conversation too - a library's documentation, an API, an error; curl is its
   // bash. Run here, like the rendering agents' (see render/web.ts).
   for (const tool of createWebTools()) pi.registerTool(tool);

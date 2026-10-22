@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -7,6 +7,7 @@ import { sideQuestionPrompt } from "../src/btw.ts";
 import { TURRI_IDENTITY } from "../src/identity.ts";
 import { stopJob } from "../src/loop-tools.ts";
 import { refusal, TOOLS_NOT_CLI } from "../src/self-invocation.ts";
+import { NEW_PROJECT } from "../src/new-project.ts";
 import type { AskUserIO } from "../src/ask.ts";
 import type { Job, JobRegistry } from "../src/regenerate/jobs.ts";
 
@@ -123,6 +124,14 @@ describe("what a host says of its own surface", () => {
     expect(prompt).not.toContain("<surface>");
   });
 
+  it("tells the conversation to offer brood, spawn or starting a new project itself", async () => {
+    const prompt = await systemPromptFor();
+    expect(prompt).toContain(`${TOOLS_NOT_CLI}\n\n${NEW_PROJECT}`);
+    expect(NEW_PROJECT).toContain('"/brood - ');
+    expect(NEW_PROJECT).toContain('"/spawn - ');
+    expect(NEW_PROJECT).toContain('"Just do it - no skill');
+  });
+
   it("tells the model the host's surface in place of the terminal's keys, side panel, regen and /pulses", async () => {
     const prompt = await systemPromptFor({ surface: SURFACE });
     expect(prompt).toContain(`<surface>\n${SURFACE}\n</surface>\n</turri>`);
@@ -196,6 +205,27 @@ describe("the skills the person starts with a command", () => {
     createTurriExtension()(pi);
     const result = await tools.get("cultivate")!.execute("id", { skill: "spawn" }, undefined, undefined, { hasUI: false });
     expect(result.content[0]!.text).toContain("Not started: spawn is started only by the person, with /spawn");
+  });
+
+  it("start from an option starting with their command, picked in the conversation's question", async () => {
+    // An interrupted run of spawn here: cultivate, let through, stops at it instead of running the skill.
+    const project = mkdtempSync(join(tmpdir(), "turri-picked-"));
+    mkdirSync(join(project, ".turri", "runs", "spawn"), { recursive: true });
+    writeFileSync(join(project, ".turri", "runs", "spawn", "run.json"), JSON.stringify({ skill: "spawn", status: "running", updatedAt: "now" }));
+    const before = process.cwd();
+    process.chdir(project);
+    try {
+      const { pi, tools } = registeringPi();
+      const { dialogs } = hostDialogs((options) => options.find((option) => option.startsWith("/spawn")));
+      createTurriExtension({ dialogs })(pi);
+      const cultivate = () => tools.get("cultivate")!.execute("id", { skill: "spawn" }, undefined, undefined, { hasUI: false });
+      expect((await cultivate()).content[0]!.text).toContain("Not started");
+      const picked = await tools.get("ask_user")!.execute("q", { question: "How shall I start it?", options: ["/brood - an interview", "/spawn - something running in minutes", "Just do it - no skill"] }, undefined, undefined, { hasUI: false });
+      expect(picked.content.map((part) => part.text).join("\n")).toContain('call cultivate with skill "spawn" at once');
+      expect((await cultivate()).content[0]!.text).toContain("There is an interrupted run of spawn here");
+    } finally {
+      process.chdir(before);
+    }
   });
 });
 

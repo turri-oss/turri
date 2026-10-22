@@ -76,8 +76,8 @@ export function discoverSkills(packageRoot: string, projectDir: string | undefin
 /** A skill's line in cultivate's list: a project's says so, and where it is. */
 export function catalogueLine(skill: FoundSkill): string {
   const whose = skill.origin === "turri" ? "" : ` (this project's, ${skill.origin.project})`;
-  // One the person starts themselves: the model points them to its command rather than running it.
-  const byCommand = skill.commandOnly ? ` Started only by the person, with /${skill.name}: never run it unasked - when it fits, tell them to type /${skill.name}.` : "";
+  // One the person starts themselves - typed, or picked among the options the model offers: never run unasked.
+  const byCommand = skill.commandOnly ? ` Started only by the person, with /${skill.name} or by picking it when you offer it with ask_user: never run it unasked.` : "";
   return `- ${skill.name}${whose}: ${skill.description}${byCommand}`;
 }
 
@@ -113,5 +113,26 @@ export function createCommandGate(): {
 
 /** What cultivate says of a command-only skill the person did not start. */
 export function startedByCommandOnly(name: string): string {
-  return `Not started: ${name} is started only by the person, with /${name}. If it fits what they want, tell them to type /${name} - with what they want after it, if they like.`;
+  return `Not started: ${name} is started only by the person, with /${name} or by picking an option starting /${name} that you offer them with ask_user. For a new project, ask them as <new-project> says; otherwise do what they asked yourself, in the conversation.`;
+}
+
+/**
+ * What the model is told when the person picked a skill: start it now, with what they asked for - word for word, as the
+ * message that set off the question - so they never type its command after picking it.
+ */
+export function startPicked(name: string, request: string): string {
+  const asked = request.trim();
+  return (
+    `They picked ${name}, and it may start now: call cultivate with skill "${name}" at once, before anything else, and never ask them to type /${name}. ` +
+    `Pass as its context everything they have told you${asked !== "" ? `, starting with what they asked for, word for word: ${JSON.stringify(asked)}` : ""}.`
+  );
+}
+
+/**
+ * The command-only skill an answer picks: an option offered to the person that starts with its command - `/brood - an
+ * interview` - is the person starting it, as if they typed it.
+ */
+export function chosenCommand(answer: string, skills: ReadonlyArray<Pick<FoundSkill, "name" | "commandOnly">>): string | undefined {
+  const typed = /^\s*\/([\w-]+)/.exec(answer)?.[1];
+  return skills.find((skill) => skill.commandOnly && skill.name === typed)?.name;
 }
