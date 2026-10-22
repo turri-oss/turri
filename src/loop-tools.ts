@@ -216,7 +216,7 @@ export function regenerateTool(options: LoopToolsOptions & { loop: (ctx: Extensi
       "editor. It takes no diff: what is left to regenerate - from what each module's code was regenerated from to its spec now - is " +
       "worked out and planned into pulses, and a pulse running that regenerates something the spec no longer wants is stopped and " +
       "rolled back. Nothing to do where the code is regenerated from the spec as it is. With functionalities named, those are " +
-      "regenerated though their spec did not change - rewritten or started over, better made, what they replace taken out - " +
+      "regenerated though their spec did not change - their code taken out and built anew, better made, never left as it was - " +
       "planned into pulses as any change is, the ones next to each other together; their conformance tests stay as they are.",
     promptSnippet: "regenerate a module's code from its spec as it is now - after any change to the spec",
     promptGuidelines: [

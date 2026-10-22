@@ -26,7 +26,7 @@ The other rules say what a spec means. This one says what turri does with a chan
 - A definition changed patches every functional spec that uses its concept, directly or through other definitions. So does a change to a linked resource: the spec or definition linking it is changed though its text is not. A widely used definition is the costly edit - not a spec's position
 - Implementation reqs alone, or definitions no functional spec uses, are a mechanical change: the code adapts, and no test is written or changes what it asserts
 - Test reqs and acceptance tests reach the conformance tests only, never the code
-- A functional spec regenerated again by name has its conformance tests written again once its new code lands: what they check that the spec leaves open - a path, a field, a message the old code chose - goes by the new code
+- A functional spec regenerated again by name has its code taken out and built anew - never left as it was, even where it already does what the spec says; a pulse that changes nothing does not land. Its conformance tests are written again once its new code lands: what they check that the spec leaves open - a path, a field, a message the old code chose - goes by the new code
 - Definitions moved to a common module and reqs reordered are recorded, not rendered
 - A functional spec written on its happy path and hardened later - its validation, edge cases and errors added to it - is patched in place each time: growing a spec a step at a time costs no more than writing it whole up front
 - A module's first pulse, when it builds one functional spec - the project set up and the smallest thing that runs - lands on its unit tests with no review

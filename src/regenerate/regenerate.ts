@@ -63,6 +63,8 @@ import {
   removalChallengePrompt,
   type TestRemoval,
   type TestRun,
+  AGAIN_ASKS,
+  againPrompt,
   draftPrompt,
   DRAFT_ASKS,
   type MissingToolchain,
@@ -451,6 +453,10 @@ export async function renderSpecDiff(options: RenderSpecDiffOptions): Promise<Re
   let attempts = 0;
   /** How many times the agent, having written nothing, was asked for a draft. */
   let draftAsks = 0;
+  /** The functional specs this job regenerates again: their code is to be built anew, never left as it was. */
+  const again = options.cases?.again ?? [];
+  /** Regenerating again, the agent wrote nothing however it was asked. */
+  let unchanged = false;
   /** What the unit testing script needs and does not find, last run. */
   let missing: MissingToolchain | undefined;
   /** The unit testing script needs more time than a test run may take - the debugger's finding: the pulse stops on it. */
@@ -509,6 +515,19 @@ export async function renderSpecDiff(options: RenderSpecDiffOptions): Promise<Re
         if (misplaced.length > 0) {
           stage(`conformance tests in the code folder - sending ${misplaced.length === 1 ? "it" : "them"} back`);
           response = await ask(executor, misplacedTestsPrompt(misplaced, buildDir), options.onDelta);
+          continue;
+        }
+        // Regenerating functional specs again, nothing written is never the answer: sent back to build them anew, and
+        // still nothing, the work does not land.
+        if (again.length > 0 && wroteNothing(buildDir, digestsBefore)) {
+          if (draftAsks >= AGAIN_ASKS) {
+            unchanged = true;
+            stage("the coding agent regenerated nothing again - undoing the change");
+            return false;
+          }
+          draftAsks += 1;
+          stage("the coding agent has changed nothing yet - sending it back to build what it regenerates again anew");
+          response = await ask(executor, againPrompt(again), options.onDelta);
           continue;
         }
         // Nothing written - a turn spent planning - leaves nothing to test or review: ask for a best-guess draft, or why none.
@@ -672,13 +691,15 @@ export async function renderSpecDiff(options: RenderSpecDiffOptions): Promise<Re
   };
 
   if (!unitPassed) {
-    stage(unitReviewStopped ? "the unit tests pass but still leave the change untested - undoing the change" : "unit tests NOT passing - undoing the change");
+    if (!unchanged) stage(unitReviewStopped ? "the unit tests pass but still leave the change untested - undoing the change" : "unit tests NOT passing - undoing the change");
     abandonWork(
       unit,
       moduleName,
       missing !== undefined
         ? "the unit testing script could not run"
-        : slow !== undefined
+        : unchanged
+          ? "regenerating again, the coding agent built nothing anew"
+          : slow !== undefined
           ? "the unit testing script needs more time than a test run may take"
           : staticOnly
           ? "the spec change did not pass its static checks"

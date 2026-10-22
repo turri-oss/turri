@@ -334,6 +334,22 @@ export function draftPrompt(): string {
   ].join("\n");
 }
 
+/** How many times a coding agent regenerating functional specs again, having written nothing, is sent back to build them anew. */
+export const AGAIN_ASKS = 2;
+
+/** For a coding agent regenerating functional specs again that has written nothing: no change is no answer. */
+export function againPrompt(again: Array<{ frid: string; module?: string }>): string {
+  const named = again.map((spec) => `fs ${spec.frid}${spec.module !== undefined ? ` of module \`${spec.module}\`` : ""}`).join(", ");
+  return [
+    "You have not written anything yet: the code folder is as it was when you started.",
+    "",
+    `${named} ${again.length === 1 ? "is" : "are"} to be regenerated again: the person asked for ${again.length === 1 ? "its" : "their"} code to be built anew. That the`,
+    "text did not change, or that the old code already does what it says, is no reason to leave it: take its",
+    "implementation and its unit tests out and build them anew from the specification, then run the unit tests.",
+    "Work that changes nothing does not land.",
+  ].join("\n");
+}
+
 export type UnitVerdict =
   | { ok: true; command: string }
   | { ok: false; command?: string; prompt: string; missing?: MissingToolchain; run?: ScriptRun };

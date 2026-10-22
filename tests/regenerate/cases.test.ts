@@ -50,13 +50,15 @@ describe("what a job's agents are told, by its cases", () => {
     expect(mixed).not.toContain("No functional spec is touched");
   });
 
-  it("tells the coding agent to regenerate again what is built - its implementation replaced, not a second one beside it - and its reviewer to hold it to that", () => {
+  it("tells the coding agent to build again what is built - its implementation taken out and built anew, even where the old code already does what the spec says - and its reviewer to hold it to that", () => {
     const again = text(codeCasesBlock({ ...none, again: [{ frid: "2", text: "Users sign in." }] }));
     expect(again).toContain("Regenerated again - its code and unit tests are built, and are to be regenerated again: fs 2 (Users sign in.)");
+    expect(again).toContain("Take its implementation out and build it anew from the specification");
+    expect(again).toContain("the old code already doing what it says, is no reason\n  to keep it");
     expect(again).toContain("no second implementation beside the old one");
     expect(again).not.toContain("New - build each");
     const review = text(codeReviewCasesBlock({ ...none, again: [{ frid: "2", text: "Users sign in." }] }));
-    expect(review).toContain("Regenerated again: fs 2 (Users sign in.) - its implementation replaced, not patched beside the old one");
+    expect(review).toContain("Regenerated again: fs 2 (Users sign in.) - its implementation built anew, not kept or patched beside the old one");
   });
 
   it("sets a fresh project up first, with its unit tests where the unit testing script runs them - no word of conformance", () => {

@@ -30,10 +30,12 @@ export function codeCasesBlock(cases: JobCases): string[] {
   if (cases.again.length > 0) {
     lines.push(
       `- Regenerated again - its code and unit tests are built, and are to be regenerated again: ${named(cases.again)}.`,
-      "  Replace its implementation: rewrite it, or take it out and build it anew - made better, and doing exactly what",
-      "  the specification says now. Take out what the new code replaces: no second implementation beside the old one,",
-      "  nothing of the old left unused. What the rest of the code uses from it keeps working. Its unit tests may be",
-      "  rewritten, to test what the specification says.",
+      "  Take its implementation out and build it anew from the specification - made better, and doing exactly what",
+      "  the specification says now. Its text being unchanged, or the old code already doing what it says, is no reason",
+      "  to keep it: the person asked for it to be built again, and work that leaves it as it was has not done that.",
+      "  Take out what the new code replaces: no second implementation beside the old one, nothing of the old left",
+      "  unused. What the rest of the code uses from it keeps working. Write its unit tests anew too, to test what the",
+      "  specification says.",
     );
   }
   if (cases.delete.length > 0) {
@@ -65,7 +67,7 @@ export function codeReviewCasesBlock(cases: JobCases): string[] {
     ...(cases.patch.length > 0 ? [`- Changed: ${named(cases.patch)} - the code and its tests changed to match it now, not left as they were.`] : []),
     ...(cases.again.length > 0
       ? [
-          `- Regenerated again: ${named(cases.again)} - its implementation replaced, not patched beside the old one: nothing of what it`,
+          `- Regenerated again: ${named(cases.again)} - its implementation built anew, not kept or patched beside the old one: nothing of what it`,
           "  replaced left behind or duplicated, it does what the specification says, what the rest of the code uses from it",
           "  still works, and its unit tests test the specification.",
         ]
