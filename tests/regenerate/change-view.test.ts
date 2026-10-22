@@ -66,6 +66,12 @@ describe("a job's change as its agent is given it", () => {
     expect(diff).toContain(" ***functional specs***\n-- One.\n+- One, loudly.\n+\n+    ***acceptance tests***\n+\n+    - It is loud.");
   });
 
+  it("shows a required module's functional spec under the functional specs heading its file has, never the parser's key for it", () => {
+    const diff = changeDiff([add("required functional specs", 1, "- The :Engine: starts.")], "app.plain");
+    expect(diff).toContain(" ***functional specs***\n+- The :Engine: starts.");
+    expect(diff).not.toContain("required functional specs");
+  });
+
   it("leaves the test reqs out of a code job's change, and keeps them in a conformance job's", () => {
     const changes = [add("test reqs", 1, "- Use pytest."), add("functional specs", 1, "- One.")];
     expect(agentChanges(changes, "code").map((change) => change.section)).toEqual(["functional specs"]);

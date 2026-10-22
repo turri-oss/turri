@@ -1,4 +1,4 @@
-import { ACCEPTANCE_TESTS, DEFINITIONS, FUNCTIONAL_REQUIREMENTS, NON_FUNCTIONAL_REQUIREMENTS, TEST_REQUIREMENTS } from "../plain/spec.ts";
+import { ACCEPTANCE_TESTS, DEFINITIONS, FUNCTIONAL_REQUIREMENTS, NON_FUNCTIONAL_REQUIREMENTS, REQUIRED_FUNCTIONAL_SPECS, TEST_REQUIREMENTS } from "../plain/spec.ts";
 import type { DiffWhere } from "./diff-view.ts";
 import { resourceDiff, type SpecChange } from "./spec-steps.ts";
 
@@ -13,7 +13,10 @@ import { resourceDiff, type SpecChange } from "./spec-steps.ts";
  */
 
 /** The sections in the order the agent is given them, then any other. */
-const ORDER = [DEFINITIONS, NON_FUNCTIONAL_REQUIREMENTS, TEST_REQUIREMENTS, FUNCTIONAL_REQUIREMENTS];
+const ORDER = [DEFINITIONS, NON_FUNCTIONAL_REQUIREMENTS, TEST_REQUIREMENTS, REQUIRED_FUNCTIONAL_SPECS, FUNCTIONAL_REQUIREMENTS];
+
+/** A section's header as a .plain file writes it: a required module's functional specs are under its own `***functional specs***`. */
+const heading = (section: string) => `***${section === REQUIRED_FUNCTIONAL_SPECS ? FUNCTIONAL_REQUIREMENTS : section}***`;
 
 /** An item's lines as a .plain file writes them: its markdown, then its acceptance tests indented under it. */
 function itemLines(serialized: string | undefined): string[] {
@@ -94,7 +97,7 @@ function laidOut(changes: SpecChange[], file: string, asGiven = false): { diff: 
       body.push(...before.map((line) => `-${line}`), ...after.map((line) => `+${line}`));
     }
     if (body.length === 0) continue;
-    lines.push("@@ @@", ` ***${section}***`, ...body);
+    lines.push("@@ @@", ` ${heading(section)}`, ...body);
   }
   return { diff: `${lines.join("\n")}\n${resourceDiff(changes, file)}`, starts };
 }
