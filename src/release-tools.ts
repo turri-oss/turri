@@ -178,7 +178,7 @@ export function createDeployTools(options: {
       name: Type.String({ description: "A short name for it: backend, frontend, app" }),
       command: Type.String({ description: "The command that starts it, as run from its folder" }),
       url: Type.Optional(Type.String({ description: "Where it serves, e.g. http://localhost:5173 - it is ready once this answers" })),
-      dir: Type.Optional(Type.String({ description: "A folder inside the deployed one to run it in, e.g. frontend. Default: the deployed folder." })),
+      dir: Type.Optional(Type.String({ description: "The folder to run it in, relative to the deployed folder - e.g. frontend - never the project's path to the deployed folder (dist/<module>). Default: the deployed folder itself." })),
     }),
     async execute(_id, params) {
       const current = needsDeploy();
@@ -186,6 +186,7 @@ export function createDeployTools(options: {
         name: params.name,
         command: params.command,
         dir: inside(current, params.dir),
+        root: current.hostDir ?? current.dir,
         moduleName: current.moduleName,
         logDir: deployLogDir(projectDirOf(current.plainFile)),
         ...(params.url !== undefined ? { url: params.url } : {}),

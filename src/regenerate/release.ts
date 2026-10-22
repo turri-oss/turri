@@ -1,5 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { connect } from "node:net";
 import { basename, dirname, join, relative } from "node:path";
 import { HISTORY_DIR } from "./lineage.ts";
@@ -286,7 +286,38 @@ export interface StartResult {
  * nothing is started: an app moved to a port of the harness's choosing would not be the one the
  * person was told about. With no URL, it only has to still be running a few seconds on.
  */
-export async function startDeployed(input: { name: string; command: string; dir: string; moduleName: string; logDir: string; url?: string }): Promise<StartResult> {
+/** A folder's entries as a listing says them - folders with a slash - or that it is empty. */
+function listing(dir: string): string {
+  try {
+    const entries = readdirSync(dir, { withFileTypes: true }).map((entry) => (entry.isDirectory() ? `${entry.name}/` : entry.name)).sort();
+    if (entries.length === 0) return "nothing";
+    return entries.length > 40 ? `${entries.slice(0, 40).join(", ")} and ${entries.length - 40} more` : entries.join(", ");
+  } catch {
+    return "nothing turri can read";
+  }
+}
+
+/**
+ * Start what keeps running, in `dir` - the deployed folder `root`, or one inside it. A folder that is not there starts
+ * nothing: said, with what the deployed folder holds, so the agent can name the right one.
+ */
+export async function startDeployed(input: { name: string; command: string; dir: string; moduleName: string; logDir: string; url?: string; root?: string }): Promise<StartResult> {
+  let isFolder = false;
+  try {
+    isFolder = statSync(input.dir).isDirectory();
+  } catch {
+    /* not there */
+  }
+  if (!isFolder) {
+    const why = existsSync(input.dir) ? "is not a folder" : "does not exist";
+    return {
+      ok: false,
+      text:
+        input.root !== undefined
+          ? `${input.name} was not started: ${shortPath(input.dir)} ${why}. \`dir\` is relative to the deployed folder, ${shortPath(input.root)} - a folder inside it, e.g. frontend, or none for the deployed folder itself; never the project's path to it. ${shortPath(input.root)} holds: ${listing(input.root)}.`
+          : `${input.name} was not started: ${shortPath(input.dir)} ${why}.`,
+    };
+  }
   await stopDeployed({ name: input.name });
   let url: URL | undefined;
   if (input.url !== undefined) {
@@ -309,33 +340,45 @@ export async function startDeployed(input: { name: string; command: string; dir:
   const log = join(input.logDir, `${input.moduleName}-${input.name.replace(/[^\w.-]+/g, "-")}.log`);
   const fd = openSync(log, "w");
   const child = spawn("bash", ["-c", input.command], { cwd: input.dir, detached: true, stdio: ["ignore", fd, fd], env: process.env });
+  // Listened to at once: a child's 'error' with no listener is thrown, and takes the whole process down with it.
+  let info: DeployedProcess | undefined;
+  let spawnError: Error | undefined;
+  const spawned = new Promise<void>((done) => {
+    child.once("spawn", () => done());
+    child.once("error", () => done());
+  });
+  child.on("error", (error) => {
+    spawnError ??= error;
+    if (info !== undefined) info.exited ??= { code: null, signal: null };
+  });
   closeSync(fd);
-  if (child.pid === undefined) return { ok: false, text: `${input.name} could not be started.` };
-  const info: DeployedProcess = { name: input.name, moduleName: input.moduleName, command: input.command, dir: input.dir, log, pid: child.pid, startedAt: Date.now(), ...(input.url !== undefined ? { url: input.url } : {}) };
+  if (child.pid === undefined) {
+    await spawned;
+    return { ok: false, text: `${input.name} could not be started in ${shortPath(input.dir)}: ${spawnError?.message ?? "no process was made"}.` };
+  }
+  const started: DeployedProcess = { name: input.name, moduleName: input.moduleName, command: input.command, dir: input.dir, log, pid: child.pid, startedAt: Date.now(), ...(input.url !== undefined ? { url: input.url } : {}) };
+  info = started;
   child.on("exit", (code, signal) => {
-    info.exited = { code, signal };
+    started.exited = { code, signal };
   });
-  child.on("error", () => {
-    info.exited ??= { code: null, signal: null };
-  });
-  processes.set(input.name, { info, child });
+  processes.set(input.name, { info: started, child });
   stopOnExit();
 
   const failed = (why: string): StartResult => {
     const tail = logTail(log);
-    return { ok: false, text: `${input.name} ${why}.${tail !== "" ? `\nThe end of its output (${shortPath(log)}):\n${tail}` : ""}`, process: info };
+    return { ok: false, text: `${input.name} ${why}.${tail !== "" ? `\nThe end of its output (${shortPath(log)}):\n${tail}` : ""}`, process: started };
   };
-  const ended = () => `exited${info.exited?.code !== null && info.exited?.code !== undefined ? ` with ${info.exited.code}` : ""} before it was ready`;
+  const ended = () => `exited${started.exited?.code !== null && started.exited?.code !== undefined ? ` with ${started.exited.code}` : ""} before it was ready`;
 
   if (url === undefined) {
     await sleep(ALIVE_AFTER_MS);
-    if (info.exited !== undefined) return failed(ended());
-    return { ok: true, text: `${input.name} is running (pid ${info.pid}); its output is in ${shortPath(log)}.`, process: info };
+    if (started.exited !== undefined) return failed(ended());
+    return { ok: true, text: `${input.name} is running (pid ${started.pid}); its output is in ${shortPath(log)}.`, process: started };
   }
   const deadline = Date.now() + READY_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    if (info.exited !== undefined) return failed(ended());
-    if (await answers(url.href)) return { ok: true, text: `${input.name} is up at ${url.href} (pid ${info.pid}); its output is in ${shortPath(log)}.`, process: info };
+    if (started.exited !== undefined) return failed(ended());
+    if (await answers(url.href)) return { ok: true, text: `${input.name} is up at ${url.href} (pid ${started.pid}); its output is in ${shortPath(log)}.`, process: started };
     await sleep(1000);
   }
   return failed(`is running, but nothing answered at ${url.href} in ${Math.round(READY_TIMEOUT_MS / 1000)}s`);

@@ -151,6 +151,27 @@ describe("what deploy starts", () => {
     expect(listDeployed().map((item) => item.name)).not.toContain("two");
   }, 30_000);
 
+  it("starts nothing in a folder that is not there - saying so, and what the deployed folder holds - and the process lives on", async () => {
+    mkdirSync(join(dir, "site"));
+    writeFileSync(join(dir, "site", "app.py"), "print('hello')\n");
+    const crashes: unknown[] = [];
+    const onCrash = (error: unknown) => crashes.push(error);
+    process.on("uncaughtException", onCrash);
+    try {
+      const started = await startDeployed({ name: "web", command: "sleep 30", dir: join(dir, "site", "frontend"), root: join(dir, "site"), moduleName: "app", logDir: join(dir, "logs") });
+      await new Promise((done) => setTimeout(done, 200));
+      expect(started.ok).toBe(false);
+      expect(started.text).toContain("web was not started:");
+      expect(started.text).toContain(`${join("site", "frontend")} does not exist`);
+      expect(started.text).toContain("`dir` is relative to the deployed folder");
+      expect(started.text).toContain("holds: app.py.");
+      expect(runningDeployed()).toEqual([]);
+      expect(crashes).toEqual([]);
+    } finally {
+      process.off("uncaughtException", onCrash);
+    }
+  });
+
   it("shows the end of its output when it exits before it is ready", async () => {
     mkdirSync(join(dir, "site"));
     const started = await startDeployed({ name: "broken", command: "echo 'ModuleNotFoundError: flask'; exit 3", dir: join(dir, "site"), moduleName: "app", logDir: join(dir, "logs") });
@@ -222,6 +243,29 @@ describe("the deploy tools", () => {
     const text = await call(start, { name: "app", command: "npx --version >/dev/null 2>&1; sleep 30" });
     expect(text).toContain("app is running");
   }, 30_000);
+
+  it("starts nothing when dir is the project's path to the deployed folder, and says dir is relative to it - the process living on", async () => {
+    built("app", { "app.py": "print('hello')\n" });
+    spec("app");
+    const { deploy, start } = tools();
+    await call(deploy, {});
+    const crashes: unknown[] = [];
+    const onCrash = (error: unknown) => crashes.push(error);
+    process.on("uncaughtException", onCrash);
+    try {
+      const text = await call(start, { name: "app", command: "sleep 30", dir: join("dist", "app") });
+      await new Promise((done) => setTimeout(done, 200));
+      expect(text).toContain("app was not started:");
+      expect(text).toContain(`${join("dist", "app", "dist", "app")} does not exist`);
+      expect(text).toContain("`dir` is relative to the deployed folder");
+      expect(text).toContain("never the project's path to it");
+      expect(text).toContain("app.py");
+      expect(runningDeployed()).toEqual([]);
+      expect(crashes).toEqual([]);
+    } finally {
+      process.off("uncaughtException", onCrash);
+    }
+  });
 
   it("does nothing for a module whose last commit it already shipped - leaving what runs running - and releases again once a pulse lands", async () => {
     const code = built("app", { "app.py": "print('hello')\n" });
