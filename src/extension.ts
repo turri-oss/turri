@@ -66,6 +66,7 @@ import { supersededByTurri } from "./chat-skills.ts";
 import { conversationIdentity } from "./identity.ts";
 import { setSurface, surfaceOf } from "./surface.ts";
 import { createChats, scopedToChat, type ChatLink, type TurriCore, type TurriHost } from "./chats.ts";
+import { currentChat } from "./chat-scope.ts";
 import { registerChats } from "./chat-commands.ts";
 import { turriIdentity } from "./environment.ts";
 import { conformanceChooser } from "./regenerate/choose-conformance.ts";
@@ -116,15 +117,9 @@ export function askUserVia(
     if (dialogs === undefined && !ctx.hasUI) {
       return "No user is available to answer. Decide yourself, and say in your report what you assumed.";
     }
-    // Declined - ctrl+c at it, or the turn that asked it stopped: the dialog open is closed, no other is opened, and it
-    // comes back as DECLINED.
-    const turn = ctx.signal;
-    const declining: Declining = { declined: turn?.aborted === true, close: undefined };
-    const decline = () => {
-      declining.declined = true;
-      declining.close?.();
-    };
-    turn?.addEventListener("abort", decline, { once: true });
+    // Declined - ctrl+c at it, the host's decline, or the turn that asked it stopped: the dialog open is closed, no other is
+    // opened, and it comes back as DECLINED.
+    const { declining, decline, done } = asking(ctx.signal);
     // The question has the keys: ctrl+h is caught here, or it would never reach the shortcut, which only the chat's editor sees.
     const unhook = dialogs === undefined ? hookPeekKey(ctx) : () => {};
     if (dialogs === undefined) ctx.ui.setWorkingMessage("waiting for your answer");
@@ -138,7 +133,7 @@ export function askUserVia(
       onExchange(request.question, answer, [request.context, request.said].map((part) => part?.trim() ?? "").filter((part) => part !== "").join("\n\n") || undefined);
       return answer;
     } finally {
-      turn?.removeEventListener("abort", decline);
+      done();
       unhook();
       if (dialogs === undefined) ctx.ui.setWorkingMessage();
     }
@@ -151,13 +146,51 @@ interface Declining {
   close: (() => void) | undefined;
 }
 
-/** A host's dialogs, for a question that can be declined: its dialog stays the host's to close, the question over all the same. */
-function hostDialogs(dialogs: AskUserIO, declining: Declining): AskUserIO {
-  const until = (asked: () => Promise<string | undefined>) =>
-    declining.declined ? Promise.resolve(undefined) : Promise.race([asked(), new Promise<undefined>((resolve) => (declining.close = () => resolve(undefined)))]);
+/**
+ * A question being asked, until `done`: declined by `decline` - ctrl+c at it - by the host (`Turri.decline`, through the
+ * chat's `asking`) or by `turn` being stopped.
+ */
+function asking(turn: AbortSignal | undefined): { declining: Declining; decline: () => void; done: () => void } {
+  const declining: Declining = { declined: turn?.aborted === true, close: undefined };
+  const decline = () => {
+    declining.declined = true;
+    declining.close?.();
+  };
+  turn?.addEventListener("abort", decline, { once: true });
+  const open = currentChat()?.asking;
+  open?.add(decline);
   return {
-    select: (...args) => until(() => dialogs.select(...args)),
-    input: (...args) => until(() => dialogs.input(...args)),
+    declining,
+    decline,
+    done: () => {
+      turn?.removeEventListener("abort", decline);
+      open?.delete(decline);
+    },
+  };
+}
+
+/**
+ * A host's dialogs, for a question that can be declined: the question over at once, its dialog told through its
+ * `signal` - the host's to close.
+ */
+function hostDialogs(dialogs: AskUserIO, declining: Declining): AskUserIO {
+  const until = (asked: (signal: AbortSignal) => Promise<string | undefined>) => {
+    if (declining.declined) return Promise.resolve(undefined);
+    const over = new AbortController();
+    return Promise.race([
+      asked(over.signal),
+      new Promise<undefined>(
+        (resolve) =>
+          (declining.close = () => {
+            over.abort();
+            resolve(undefined);
+          }),
+      ),
+    ]);
+  };
+  return {
+    select: (title, options, context, at) => until((signal) => dialogs.select(title, options, context, at, { signal })),
+    input: (title, context) => until((signal) => dialogs.input(title, context, { signal })),
   };
 }
 
@@ -835,8 +868,14 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
         escalate: async ({ question, critique }) => {
           if (dialogs !== undefined) {
             const through = "Let it through";
-            const answer = await dialogs.select(`Review gate: ${skill.name} - ${question}`, [through, "Keep the gate"], critique);
-            return answer === through;
+            // Declined, as any question in the host's dialogs can be: the gate stands.
+            const asked = asking(signal);
+            try {
+              const answer = await hostDialogs(dialogs, asked.declining).select(`Review gate: ${skill.name} - ${question}`, [through, "Keep the gate"], critique);
+              return !asked.declining.declined && answer === through;
+            } finally {
+              asked.done();
+            }
           }
           if (!ctx.hasUI) {
             push("  no UI available for human review - gate stands");

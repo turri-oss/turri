@@ -128,6 +128,8 @@ export interface TurriCore {
   chats(): ChatInfo[];
   /** The chat's pi session. */
   session(id: string): AgentSession | undefined;
+  /** The questions the chat asks now declined, as ctrl+c at one declines it - `none` when it asks nothing. */
+  decline(id: string): "declined" | "none" | "missing";
   /** The chat shown now. */
   shown(): string | undefined;
   /** Open a chat - fresh, or the saved one `sessionFile` is - shown at once unless `hidden`. */
@@ -262,7 +264,7 @@ export function createChats(options: CoreOptions): TurriCore {
     const id = randomUUID().slice(0, 8);
     const chat: ChatState = {
       id,
-      scope: { id, stack: process.env.TURRI_STACK?.trim() || undefined },
+      scope: { id, stack: process.env.TURRI_STACK?.trim() || undefined, asking: new Set() },
       ...(title !== undefined ? { recordedTitle: title } : {}),
       working: false,
       unread: false,
@@ -306,6 +308,13 @@ export function createChats(options: CoreOptions): TurriCore {
     },
     chats: () => chats.map((chat) => ({ id: chat.id, title: titleFor(chat), status: statusOf(chat), shown: chat.id === shownId })),
     session: (id) => chats.find((chat) => chat.id === id)?.session,
+    decline(id) {
+      const chat = chats.find((candidate) => candidate.id === id);
+      if (chat === undefined) return "missing";
+      const asking = [...chat.scope.asking];
+      for (const decline of asking) decline();
+      return asking.length > 0 ? "declined" : "none";
+    },
     shown: () => shownId,
     shownChat: () => chats.find((chat) => chat.id === shownId),
     chatOfSession: (session) => chats.find((chat) => chat.session === session),

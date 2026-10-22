@@ -21,7 +21,11 @@ export interface TurriOptions extends Omit<TurriHost, "dialogs"> {
   sessionDir?: string;
   /** The host's own extensions, built into every chat after turri's. */
   extensions?: ExtensionFactory[];
-  /** The dialogs a chat's questions are put in - ask_user's, a skill's interview, a review gate's - by the chat's id. */
+  /**
+   * The dialogs a chat's questions are put in - ask_user's, a skill's interview, a review gate's - by the chat's id. Each
+   * is given a `signal`, aborted when its question is over without its answer - declined, or its turn stopped - for the
+   * host to close it.
+   */
   dialogs?: (chat: string) => AskUserIO | undefined;
   /** What a chat's other UI calls - its notices, its working line - come to, by the chat's id. */
   uiContext?: (chat: string) => ExtensionUIContext | undefined;
@@ -51,6 +55,13 @@ export interface Turri {
    * A second interrupt straight after one that stopped something does nothing (`ignored`); `missing` for a chat not open.
    */
   interrupt(id: string): Promise<"stopped" | "ignored" | "ended" | "missing">;
+  /**
+   * ctrl+c at a question, as the terminal has it: the question the chat asks now - its ask_user, a skill's interview, a
+   * review gate's escalation - declined. The asker is told the person declined to answer and the turn goes on; the
+   * host's dialog for it is told through its `signal`. Each question it is called at, however many in a row - it never
+   * stops the turn. `none` when the chat asks nothing now, `missing` for a chat not open.
+   */
+  decline(id: string): Promise<"declined" | "none" | "missing">;
   /** Told when a chat is opened, closed, renamed, or starts or stops working. */
   onChats(listener: (chats: ChatInfo[]) => void): () => void;
   /** Every chat let go, and what activate started stopped. */
@@ -113,6 +124,7 @@ export async function createTurri(options: TurriOptions = {}): Promise<Turri> {
       if (did === "ended") await dispose();
       return did;
     },
+    decline: async (id) => core.decline(id),
     onChats: (listener) => core.onChats(() => listener(core.chats())),
     dispose,
   };

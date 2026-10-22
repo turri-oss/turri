@@ -9,6 +9,8 @@ export interface ChatScope {
   id: string;
   /** The stack this chat chose with /stack or the stack tool - none: the project's config alone. */
   stack: string | undefined;
+  /** The questions it asks now, each with what declines it: a host declines them with `Turri.decline`. */
+  readonly asking: Set<() => void>;
 }
 
 /**

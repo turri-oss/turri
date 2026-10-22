@@ -42,8 +42,14 @@ export type AskUser = (request: AskUserRequest) => Promise<string>;
  */
 export interface AskUserIO {
   /** `at`: the option the cursor starts on - the one just ticked, in a question of several. */
-  select(title: string, options: string[], context?: string, at?: number): Promise<string | undefined>;
-  input(title: string, context?: string): Promise<string | undefined>;
+  select(title: string, options: string[], context?: string, at?: number, asked?: DialogAsked): Promise<string | undefined>;
+  input(title: string, context?: string, asked?: DialogAsked): Promise<string | undefined>;
+}
+
+/** What a host's dialog is told beside its question. */
+export interface DialogAsked {
+  /** Aborted when the question is over without the dialog's answer - declined, or its turn stopped: the dialog is closed. */
+  signal: AbortSignal;
 }
 
 export const OTHER_OPTION = "Something else…";
