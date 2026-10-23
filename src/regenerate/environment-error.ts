@@ -286,6 +286,58 @@ export function timeLimitError(
   });
 }
 
+/**
+ * A testing script that fails whatever the code and its tests are - judged so by the debugger or the conformance judge,
+ * from the script's own lines and the run: `script`, the script itself is wrong - it overwrites the tests' exit code, runs
+ * the wrong folder, calls a tool wrongly; `machine`, this machine lacks what it runs - an interpreter, a toolchain - and
+ * the harness's own check (`missingToolchain`) did not see it in the output. No agent may change a testing script or
+ * install a toolchain, so no round would pass it: the pulse stops, rolled back, no retry, and the person is told.
+ */
+export function scriptFaultError(
+  at: "script" | "machine",
+  details: { moduleName: string; script: string; kind: "unit" | "conformance"; reason: string; fix?: string },
+): EnvironmentError {
+  const what = `${details.kind} testing script`;
+  const name = `\`${basename(details.script)}\``;
+  const reason = details.reason.replace(/\s+/g, " ").trim().slice(0, 600);
+  const fix = details.fix?.replace(/\s+/g, " ").trim().slice(0, 600);
+  return at === "script"
+    ? new EnvironmentError({
+        moduleName: details.moduleName,
+        missing: `a ${what} that can pass - ${name} fails whatever the code and its tests are`,
+        neededBy: `every pulse of ${details.moduleName}: the ${what} decides whether its work passes`,
+        shownBy: reason,
+        fix: `change the ${what}, \`${details.script}\`${fix !== undefined && fix !== "" ? ` - ${fix}` : ""}. turri's agents may not change the testing scripts.`,
+        source: "agent",
+      })
+    : new EnvironmentError({
+        moduleName: details.moduleName,
+        missing: `what the ${what}, ${name}, runs on this machine`,
+        neededBy: `the ${what}, ${name}`,
+        shownBy: reason,
+        fix: `${fix !== undefined && fix !== "" ? `${fix} - ` : ""}install it on this machine, where the testing scripts run, so the script finds it on its PATH.`,
+        source: "agent",
+      });
+}
+
+/**
+ * What the conformance tests' run is given is what is wrong - a credential missing or rejected, an account or a quota a
+ * service refuses - judged so by the conformance judge `times` times in a row, the tests checked in between. Only the
+ * person can fix it: the pulse stops, rolled back, no retry.
+ */
+export function runEnvironmentError(details: { moduleName: string; script: string; reason: string; times: number }): EnvironmentError {
+  return new EnvironmentError({
+    moduleName: details.moduleName,
+    missing: "what the conformance tests' run needs - a valid credential, an account, a service it can reach",
+    neededBy: `the conformance testing script, \`${basename(details.script)}\``,
+    shownBy: `judged so ${details.times} times in a row: ${details.reason.replace(/\s+/g, " ").trim().slice(0, 600)}`,
+    fix:
+      "provide what the run is missing where the conformance testing script reads it. The testing scripts run on this machine " +
+      "in your own environment: a credential they need is read from there - your shell's variables, or a .env the script loads.",
+    source: "agent",
+  });
+}
+
 /** The harness's run of a testing script, when it could not find its toolchain: the error that stops the pulse. */
 export function missingToolchainError(
   run: { exitCode: number; output: string },

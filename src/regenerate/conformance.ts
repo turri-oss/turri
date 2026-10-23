@@ -40,7 +40,7 @@ import {
 import { createWebTools, WEB_TOOLS } from "./web.ts";
 import { createMyDiffTool } from "./self-check.ts";
 import { createServiceTools } from "./services.ts";
-import { missingToolchainError, timeLimitError, toolchainError } from "./environment-error.ts";
+import { missingToolchainError, runEnvironmentError, scriptFaultError, timeLimitError, toolchainError } from "./environment-error.ts";
 import { workspaceBlock } from "./workspace.ts";
 import type { AgentSession, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import {
@@ -169,11 +169,6 @@ export interface RenderConformanceTestsResult {
    * explorer was asked what the tests lacked. It stopped rather than spend its attempts on it.
    */
   stuck?: { failure: string; rounds: number; error: string; times: number; changedNothing?: boolean };
-  /**
-   * The run's environment is what is wrong - a credential missing or rejected, say - judged so ENVIRONMENT_RAISES
-   * times in a row: only the person can fix it, so the run stopped.
-   */
-  environment?: { reason: string; times: number };
   /**
    * The tests' fix for a failure did not make it go away, the judge found it the code's and escalated it to the coding
    * agent - and the run still failed the same way after the code's fix too: why the judge found it the code's, on what
@@ -355,8 +350,7 @@ export async function renderConformanceTests(
   const reviewOn = configForSpec(options.plainFile).review === true;
   const reviewHistory: ReviewProblem[][] = [];
   let specConflict: RenderConformanceTestsResult["specConflict"];
-  let environment: RenderConformanceTestsResult["environment"];
-  /** How many times in a row the run's environment was judged what is wrong. */
+  /** How many times in a row the run's environment, or the testing script, was judged what is wrong: the person's to fix. */
   let environmentRaises = 0;
   /** How many fixes in a row - the code's or the tests' - changed no file: an agent that will not, or cannot, act on the verdict. */
   let idleFixes = 0;
@@ -732,20 +726,24 @@ export async function renderConformanceTests(
           if (start !== undefined) abandonWork(start, moduleName, "the conformance testing script needs more time than a test run may take");
           throw timeLimitError(recheck, { moduleName, script: scripts.conformance!, kind: "conformance", reason: verdict.reason });
         }
-        // The environment - what the run is given - is the person's to fix: once judged so twice in a row, the run stops.
-        if (verdict.culprit === "environment") {
+        // The environment - what the run is given - or the testing script itself is the person's to fix: once judged so
+        // twice in a row, the pulse stops - rolled back, no retry - and the person is told what to fix.
+        if (verdict.culprit === "environment" || verdict.culprit === "script") {
+          const culprit = verdict.culprit;
+          const what = culprit === "script" ? "the conformance testing script itself" : "the run's environment";
           environmentRaises += 1;
-          reportActivity(`  the environment (judged ${environmentRaises} of ${ENVIRONMENT_RAISES} in a row): ${reason}`);
+          reportActivity(`  ${what} (judged ${environmentRaises} of ${ENVIRONMENT_RAISES} in a row): ${reason}`);
           if (environmentRaises >= ENVIRONMENT_RAISES) {
-            stage("the run's environment is what is wrong, and only the person can fix it - stopping");
-            environment = { reason: verdict.reason, times: environmentRaises };
-            recordNote(conformanceDir, "pitfalls", `the conformance run's environment is wrong, for the person to fix: ${verdict.reason.replace(/\s+/g, " ").slice(0, 300)}`, `${label} conformance`);
-            break;
+            stage(`${what} is what is wrong, and only the person can fix it - stopping`);
+            if (start !== undefined) abandonWork(start, moduleName, `${what} is what is wrong`);
+            throw culprit === "script"
+              ? scriptFaultError("script", { moduleName, script: scripts.conformance!, kind: "conformance", reason: `judged so ${environmentRaises} times in a row: ${verdict.reason}` })
+              : runEnvironmentError({ moduleName, script: scripts.conformance!, reason: verdict.reason, times: environmentRaises });
           }
-          stage(`the run's environment is judged wrong (${environmentRaises} of ${ENVIRONMENT_RAISES}) - the conformance agent checks the tests do not cause it`);
-          const fixed = await changing(() => askConformance(environmentCheckPrompt({ run: recheck, reason: verdict.reason }), options.onDelta));
+          stage(`${what} is judged wrong (${environmentRaises} of ${ENVIRONMENT_RAISES}) - the conformance agent checks the tests do not cause it`);
+          const fixed = await changing(() => askConformance(environmentCheckPrompt({ run: recheck, reason: verdict.reason, culprit }), options.onDelta));
           response = fixed.result;
-          recordAttempt(rounds, recheck, `the environment: ${verdict.reason}`, { who: "conformance agent", files: fixed.files });
+          recordAttempt(rounds, recheck, `${what}: ${verdict.reason}`, { who: "conformance agent", files: fixed.files });
           continue;
         }
         environmentRaises = 0;
@@ -1016,7 +1014,6 @@ export async function renderConformanceTests(
       testRemovals,
       ...(specConflict !== undefined ? { specConflict } : {}),
       ...(stuck !== undefined ? { stuck } : {}),
-      ...(environment !== undefined ? { environment } : {}),
       ...(escalation !== undefined ? { escalation } : {}),
       ...(unlabelled !== undefined ? { unlabelled } : {}),
       ...(reviewWaived !== undefined ? { reviewWaived } : {}),

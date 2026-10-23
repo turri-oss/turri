@@ -789,7 +789,7 @@ export function reviewFeedbackPrompt(problems: ReviewProblem[]): string {
   ].join("\n");
 }
 
-export type Culprit = "code" | "tests" | "spec" | "environment";
+export type Culprit = "code" | "tests" | "spec" | "environment" | "script";
 
 /** One thing the judge found, and where: a file it opened, `testing script`, or `failing run`. */
 export interface Evidence {
@@ -1008,11 +1008,11 @@ export async function judgeFailure(options: {
   const submit = defineTool({
     name: "submit_verdict",
     label: "Submit verdict",
-    description: "Say what is wrong - the code, the tests, the specification itself, or the run's environment - and why. Call this exactly once.",
+    description: "Say what is wrong - the code, the tests, the specification itself, the run's environment or the testing script - and why. Call this exactly once.",
     parameters: Type.Object({
-      culprit: Type.Union([Type.Literal("code"), Type.Literal("tests"), Type.Literal("spec"), Type.Literal("environment")], {
+      culprit: Type.Union([Type.Literal("code"), Type.Literal("tests"), Type.Literal("spec"), Type.Literal("environment"), Type.Literal("script")], {
         description:
-          "What has to change to meet the specification - or spec, when the specification cannot be met at all, or environment, when only the person can fix what the run is given",
+          "What has to change to meet the specification - or spec, when the specification cannot be met at all, environment, when only the person can fix what the run is given, or script, when the testing script itself fails whatever the code and the tests are",
       }),
       reason: Type.String({ description: "Why, against the specification: which test, which behaviour, what the spec says" }),
       spec_says: Type.Optional(
@@ -1105,7 +1105,7 @@ export async function judgeFailure(options: {
     await ask(session, BEGIN, options.onDelta);
     for (let again = 0; again < 2; again += 1) {
       if (verdict === undefined) {
-        await ask(session, "You have not called submit_verdict. Call it now: code, tests, spec or environment, and why.", options.onDelta);
+        await ask(session, "You have not called submit_verdict. Call it now: code, tests, spec, environment or script, and why.", options.onDelta);
         continue;
       }
       // Asked to weigh an escalation, a verdict of code or tests rests on what it found itself.
@@ -1171,7 +1171,7 @@ export function judgePrompt(options: {
   const scripts = options.testingScripts ?? [];
   return [
     specPrimer({ testReqs: true }),
-    `The conformance tests of the \`${options.spec.moduleName}\` specification failed. Decide what is wrong: the code, the tests, the specification itself, or the run's environment.`,
+    `The conformance tests of the \`${options.spec.moduleName}\` specification failed. Decide what is wrong: the code, the tests, the specification itself, the run's environment, or the testing script.`,
     "",
     `The code is in ${options.buildDir}; the conformance tests are in ${options.conformanceDir}. Read both.`,
     "",
@@ -1199,10 +1199,17 @@ export function judgePrompt(options: {
     "  make up), an account, plan or quota a service refuses, a service the specification names that cannot be reached",
     "  at all. Say what the person has to provide, and where the run read it from - the file, the variable. Not for what",
     "  the tests set up themselves - a credential, a variable or a fixture a test sets, overrides or names wrong: that is",
-    "  tests; nor for a toolchain or package missing where the tests run: the agents install those. The run stops on it",
-    `  once it has been judged so ${ENVIRONMENT_RAISES} times in a row; until then the tests are checked for whether they cause it.`,
+    "  tests; nor for a package the code or the tests can declare: the agents add those. An interpreter or a toolchain",
+    "  this machine lacks - `python`, `node` - is environment: the testing scripts run on this machine, and only the",
+    `  person installs on it. The run stops on it once it has been judged so ${ENVIRONMENT_RAISES} times in a row; until then`,
+    "  the tests are checked for whether they cause it.",
     "  A run the time limit stopped is environment only when nothing hangs and it needs more time than a test run may",
     "  take - and then it stops at once.",
+    "- script: the conformance testing script, or the prepare script, is itself wrong - it fails whatever the code and the",
+    "  tests are: it overwrites the tests' exit code, runs the wrong folder, calls a tool wrongly. Neither agent may change",
+    "  it - only the person can. Only when no code and no tests could pass it: what the script needs of the build is code,",
+    "  and how the tests are reached is tests. Quote its lines in evidence and say what to change in it. It counts as",
+    `  environment does: once judged so ${ENVIRONMENT_RAISES} times in a row, the run stops.`,
     "",
     "When the output does not show why the software failed - it answered with an error that names no cause, and",
     "logged nothing about it - the code is what is wrong first: it hides the cause, and nobody can fix what they",
@@ -1456,12 +1463,22 @@ export function escalatedFixPrompt(options: { run: ScriptRun; reason: string; ev
   ].join("\n");
 }
 
-/** The run's environment judged what is wrong: the conformance agent checks the tests do not cause it, and changes nothing when they do not. */
-export function environmentCheckPrompt(options: { run: ScriptRun; reason: string }): string {
+/**
+ * The run's environment, or the testing script itself, judged what is wrong: the conformance agent checks the tests do
+ * not cause it, and changes nothing when they do not.
+ */
+export function environmentCheckPrompt(options: { run: ScriptRun; reason: string; culprit?: "environment" | "script" }): string {
   return [
     `The harness ran the conformance testing script, \`${options.run.command}\`, on the whole suite, and it failed (exit ${options.run.exitCode}).`,
-    "It was checked against the specification, and what is wrong is judged to be the run's environment - something only",
-    "the person can fix, such as a credential the run is given:",
+    ...(options.culprit === "script"
+      ? [
+          "It was checked against the specification, and what is wrong is judged to be the conformance testing script itself -",
+          "it fails whatever the code and the tests are, and only the person can change it:",
+        ]
+      : [
+          "It was checked against the specification, and what is wrong is judged to be the run's environment - something only",
+          "the person can fix, such as a credential the run is given:",
+        ]),
     "",
     `<why the environment>\n${options.reason.trim()}\n</why the environment>`,
     "",
@@ -1469,10 +1486,19 @@ export function environmentCheckPrompt(options: { run: ScriptRun; reason: string
     options.run.output.trimEnd().slice(-6000),
     "</failing run>",
     "",
-    "Before that is taken as the answer, check that the tests do not cause it themselves: a credential, an environment",
-    "variable or a fixture a test sets, overrides, leaves behind for the next test, or reads under the wrong name. If",
-    "they do, fix the tests and run them. If they do not, change nothing - never make up a credential, write a .env",
-    "file, or weaken a test so it passes without what it needs - and say so in submit_work.",
+    ...(options.culprit === "script"
+      ? [
+          "Before that is taken as the answer, check that the tests do not cause it themselves: tests in a folder, under a",
+          "name or for a runner the script does not take, a test that fails for its own reasons. If they do, fix the tests",
+          "and run them. If they do not, change nothing - never weaken a test, or work around the script - and say so in",
+          "submit_work.",
+        ]
+      : [
+          "Before that is taken as the answer, check that the tests do not cause it themselves: a credential, an environment",
+          "variable or a fixture a test sets, overrides, leaves behind for the next test, or reads under the wrong name. If",
+          "they do, fix the tests and run them. If they do not, change nothing - never make up a credential, write a .env",
+          "file, or weaken a test so it passes without what it needs - and say so in submit_work.",
+        ]),
   ].join("\n");
 }
 

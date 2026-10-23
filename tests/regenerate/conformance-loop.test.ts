@@ -214,7 +214,7 @@ describe("the conformance step", { timeout: 180_000 }, () => {
     expect(writer!.prompt).toContain(`You have read access to the code, in ${codeDir}, with your file tools - read, grep, find, ls - but`);
     expect(writer!.prompt).toContain("not write access: you write tests, never code.");
     expect(writer!.prompt).toContain("acceptance test 1 of functionality 1: Running the app prints hello and exits 0.");
-    expect(judge!.prompt).toContain("Decide what is wrong: the code, the tests, the specification itself, or the run's environment");
+    expect(judge!.prompt).toContain("Decide what is wrong: the code, the tests, the specification itself, the run's environment, or the testing script.");
     expect(judge!.prompt).toContain("<how to read the specification>");
     expect(judge!.prompt).toMatch(/<failing run exit="1"/);
     // How long the run took against its limit: it ended on its own, and the limit had no part in it.
@@ -422,19 +422,47 @@ describe("the conformance step", { timeout: 180_000 }, () => {
     expect(describeStop({ moduleName: "app", frid: "1", at: "conformance", conformance: result })).toMatch(/the last 2 fixes - in 2 attempts - changed nothing/);
   });
 
-  it("stops once the run's environment is judged what is wrong twice in a row - the tests checked in between - and tells the person what to provide", async () => {
+  it("stops the pulse, rolled back and not retried, once the run's environment is judged what is wrong twice in a row - the tests checked in between - and tells the person what to provide", async () => {
     judgeSays = () => ({ culprit: "environment", reason: "HUBSPOT_ACCESS_TOKEN, read from plain_modules/.turri/.env, is rejected with 401." });
-    const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), frid: "1", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") });
-    expect(result.passed).toBe(false);
-    expect(result.environment).toEqual({ reason: "HUBSPOT_ACCESS_TOKEN, read from plain_modules/.turri/.env, is rejected with 401.", times: 2 });
-    expect(result.rounds).toBe(2);
+    const { EnvironmentError, describeEnvironmentError } = await import("../../src/regenerate/environment-error.ts");
+    const stopped = await renderConformanceTests({ plainFile: join(root, "app.plain"), frid: "1", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(stopped).toBeInstanceOf(EnvironmentError);
+    expect(asked.filter((turn) => turn.role === "judge")).toHaveLength(2);
     // In between, the conformance agent checked the tests do not cause it - and nobody touched the code.
     expect(asked.filter((turn) => turn.prompt.includes("<why the environment>"))).toHaveLength(1);
     expect(asked.filter((turn) => turn.role === "coding agent")).toHaveLength(0);
-    const { describeStop } = await import("../../src/regenerate/stop-report.ts");
-    const stop = describeStop({ moduleName: "app", frid: "1", at: "conformance", conformance: result });
-    expect(stop).toContain("cannot pass with what their run is given - judged so 2 times in a row");
-    expect(stop).toContain("The testing scripts run on this machine in your own environment");
+    const said = describeEnvironmentError(stopped as InstanceType<typeof EnvironmentError>);
+    expect(said).toContain("judged so 2 times in a row: HUBSPOT_ACCESS_TOKEN, read from plain_modules/.turri/.env, is rejected with 401.");
+    expect(said).toContain("The testing scripts run on this machine in your own environment");
+    expect(existsSync(join(root, "plain_modules", "app", "tests", "test_conformance_hello.py"))).toBe(false);
+  });
+
+  it("stops the pulse, rolled back, once the conformance testing script itself is judged what is wrong twice in a row - saying what to change in it", async () => {
+    judgeSays = () => ({ culprit: "script", reason: "The script sets TESTS=1 after the run, so it fails whatever the tests do." });
+    const { EnvironmentError, describeEnvironmentError } = await import("../../src/regenerate/environment-error.ts");
+    const stopped = await renderConformanceTests({ plainFile: join(root, "app.plain"), frid: "1", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(stopped).toBeInstanceOf(EnvironmentError);
+    const judges = asked.filter((turn) => turn.role === "judge");
+    expect(judges).toHaveLength(2);
+    // The judge is told what counts as the script's, and that an interpreter this machine lacks is the person's too.
+    expect(judges[0]!.prompt).toContain("- script: the conformance testing script, or the prepare script, is itself wrong");
+    expect(judges[0]!.prompt).toContain("An interpreter or a toolchain");
+    // In between, the conformance agent checked the tests do not cause it, told it is the script.
+    const checks = asked.filter((turn) => turn.prompt.includes("<why the environment>"));
+    expect(checks).toHaveLength(1);
+    expect(checks[0]!.prompt).toContain("judged to be the conformance testing script itself");
+    expect(asked.filter((turn) => turn.role === "coding agent")).toHaveLength(0);
+    const said = describeEnvironmentError(stopped as InstanceType<typeof EnvironmentError>);
+    expect(said).toContain("a conformance testing script that can pass - `run_conformance_tests_python.sh` fails whatever the code and its tests are");
+    expect(said).toContain("judged so 2 times in a row: The script sets TESTS=1 after the run");
+    expect(said).toContain("turri's agents may not change the testing scripts");
+    expect(existsSync(join(root, "plain_modules", "app", "tests", "test_conformance_hello.py"))).toBe(false);
   });
 
   it("counts a failure that comes back after another as stuck too - a run swinging between two - and journals cause and effect", async () => {

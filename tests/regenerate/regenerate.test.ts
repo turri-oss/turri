@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
@@ -245,6 +245,70 @@ describe("rendering a spec diff", () => {
       expect(said).toContain("TURRI_COMMAND_TIMEOUT");
       // Rolled back: the change's test is gone.
       expect(readFileSync(join(dir, "plain_modules", "app", "code", "test_app.py"), "utf8")).not.toContain("HANG");
+    });
+  });
+
+  describe("a unit testing script no code could pass", () => {
+    /** A script that runs the tests, then throws their exit code away. */
+    const BROKEN_SCRIPT = "#!/bin/bash\ncd \"$1\" || exit 2\npython3 -m unittest discover\nTESTS=1\nexit $TESTS\n";
+    const passing = "import unittest\n\nclass AppTest(unittest.TestCase):\n    def test_two(self):\n        self.assertEqual(2, 1 + 1)\n";
+    const setUp = async (diagnosis: Record<string, unknown>) => {
+      writeFileSync(join(dir, "config.yaml"), "review: false\n");
+      writeFileSync(join(dir, "app.plain"), plain(["- One."]));
+      await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["- One."]), plain(["- One."])), cwd: dir, applied: "already applied" });
+      writeTestScripts(dir, { unit: BROKEN_SCRIPT });
+      const seen = { debugger: [] as string[], coderTurns: 0 };
+      const { ask } = await import("../../src/pi.ts");
+      vi.mocked(ask).mockImplementation((async (session: StubSession, prompt: string) => {
+        const own = (name: string) => session.tools.find((tool) => tool.name === name);
+        if (own("submit_diagnosis")) {
+          seen.debugger.push(session.task ?? "");
+          await own("submit_diagnosis")!.execute("id", diagnosis);
+          return "Done.";
+        }
+        if (prompt.includes("Before you finish: call update_notes")) return agentRunning("", session, prompt);
+        seen.coderTurns += 1;
+        await own("write")!.execute("id", { path: "test_app.py", content: passing });
+        return agentRunning("python3 -m unittest discover", session, prompt);
+      }) as never);
+      return seen;
+    };
+    const stop = () =>
+      renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["- One."]), plain(["- One.", "- Two."])), cwd: dir }).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+
+    it("stops the pulse at the debugger's first look, rolled back, when it finds the testing script itself is wrong - saying what to change in it", async () => {
+      const seen = await setUp({ root_cause: "the script sets TESTS=1 after the run, throwing the tests' exit code away", fix: "remove the line TESTS=1", at_fault: "script" });
+      const { EnvironmentError, describeEnvironmentError } = await import("../../src/regenerate/environment-error.ts");
+      const testFile = join(dir, "plain_modules", "app", "code", "test_app.py");
+      const before = existsSync(testFile) ? readFileSync(testFile, "utf8") : undefined;
+      expect(before).not.toBe(passing);
+      const stopped = await stop();
+      expect(stopped).toBeInstanceOf(EnvironmentError);
+      // The third failure alike brings the debugger, and its verdict ends the rounds: no fourth turn, no twenty.
+      expect(seen.debugger).toHaveLength(1);
+      expect(seen.debugger[0]).toContain("Set\nat_fault when no code and no tests could pass it");
+      expect(seen.coderTurns).toBe(3);
+      const said = describeEnvironmentError(stopped as InstanceType<typeof EnvironmentError>);
+      expect(said).toContain("the environment lacks a unit testing script that can pass - `run_unittests_python.sh` fails whatever the code and its tests are");
+      expect(said).toContain("the script sets TESTS=1 after the run");
+      expect(said).toContain("remove the line TESTS=1");
+      expect(said).toContain("turri's agents may not change the testing scripts");
+      // Rolled back: the code is as it was before the change.
+      expect(existsSync(testFile) ? readFileSync(testFile, "utf8") : undefined).toBe(before);
+    });
+
+    it("stops the pulse when the debugger finds this machine lacks what the script runs", async () => {
+      const seen = await setUp({ root_cause: "`python: command not found` - this machine has no python", fix: "install Python 3.12", at_fault: "machine" });
+      const { EnvironmentError, describeEnvironmentError } = await import("../../src/regenerate/environment-error.ts");
+      const stopped = await stop();
+      expect(stopped).toBeInstanceOf(EnvironmentError);
+      expect(seen.debugger).toHaveLength(1);
+      const said = describeEnvironmentError(stopped as InstanceType<typeof EnvironmentError>);
+      expect(said).toContain("the environment lacks what the unit testing script, `run_unittests_python.sh`, runs on this machine");
+      expect(said).toContain("install Python 3.12 - install it on this machine");
     });
   });
 

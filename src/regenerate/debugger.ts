@@ -16,7 +16,8 @@ import { runTiming, type ScriptRun } from "./test-scripts.ts";
  * this agent: a session of its own - on the `debugger` role's model, else a stronger one than the coding agent's, the
  * judge model or the harness model - that reads the code, the tests, the build files and the
  * failing run - and the web - and says what the cause is and what change fixes it. It changes nothing; the coding
- * agent is given what it found, and goes on.
+ * agent is given what it found, and goes on - unless what it found is no change the coding agent may make: the testing
+ * script itself is wrong, or this machine lacks what it runs. Then the work stops, and the person is told.
  */
 
 /** How many tool calls the debugger has before it must hand over what it found. */
@@ -48,6 +49,11 @@ export interface Diagnosis {
    * test run may take - which no agent can give it. Taken only of a run the limit stopped.
    */
   tooSlow?: boolean;
+  /**
+   * Not the code's: the testing script itself is wrong, or this machine lacks what it runs - it fails whatever the code
+   * and its tests are, and the coding agent may change neither. The pulse stops on it.
+   */
+  atFault?: "script" | "machine";
 }
 
 /** The debugger's account, as the coding agent is given it. */
@@ -73,6 +79,16 @@ function debugPrompt(input: DebugInput): string {
     "",
     "You change nothing - you only read. When you know, call submit_diagnosis: the root cause, with the evidence for it,",
     "and the fix - which files, and exactly what to change in them.",
+    "",
+    "The coding agent changes the code and its unit tests, nothing else: never the testing script, never this machine. The",
+    "script decides, and the code fits what it needs - a folder, a test runner, a tool in the build's dependencies. Set",
+    "at_fault when no code and no tests could pass it, and the work stops for the person to fix it:",
+    "- script: the testing script itself is wrong - it overwrites the tests' exit code, checks the wrong folder, calls a",
+    "  tool wrongly. Quote its lines in root_cause, and say in fix what to change in it.",
+    "- machine: this machine lacks what the script runs - an interpreter (`python`), a toolchain, a system library - not",
+    "  a package the build can declare, which is the coding agent's. Say in root_cause what is missing, and the output",
+    "  that shows it.",
+    "Leave it out when the code or its tests are what is wrong.",
     ...(timedOut
       ? [
           "",
@@ -117,11 +133,22 @@ export async function debugFailure(input: DebugInput): Promise<Diagnosis | undef
             "Only for a run the time limit stopped: true when nothing hangs - it was making progress up to the limit and needs more time than a test run may take",
         }),
       ),
+      at_fault: Type.Optional(
+        Type.Union([Type.Literal("script"), Type.Literal("machine")], {
+          description:
+            "Only when no code and no tests could pass the script: script - the testing script itself is wrong; machine - this machine lacks what it runs. Left out, the code or its tests are what is wrong",
+        }),
+      ),
     }),
     async execute(_id, params) {
-      const given = params as { root_cause: string; fix: string; too_slow?: boolean };
+      const given = params as { root_cause: string; fix: string; too_slow?: boolean; at_fault?: "script" | "machine" };
       // Too slow is a verdict on a run the limit stopped, and on no other.
-      found = { rootCause: given.root_cause, fix: given.fix, ...(given.too_slow === true && input.run?.timedOut === true ? { tooSlow: true } : {}) };
+      found = {
+        rootCause: given.root_cause,
+        fix: given.fix,
+        ...(given.too_slow === true && input.run?.timedOut === true ? { tooSlow: true } : {}),
+        ...(given.at_fault === "script" || given.at_fault === "machine" ? { atFault: given.at_fault } : {}),
+      };
       return { content: [{ type: "text" as const, text: "Recorded." }], details: {}, terminate: true };
     },
   }) as ToolDefinition;

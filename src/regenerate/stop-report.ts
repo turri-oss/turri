@@ -28,7 +28,7 @@ export interface StopFacts {
   at: StopPoint;
   /** The unit test runs, the last of which is the failing one. */
   runs?: TestRun[];
-  conformance?: Pick<RenderConformanceTestsResult, "runs" | "rounds" | "specConflict" | "stuck" | "environment" | "escalation" | "review" | "unlabelled">;
+  conformance?: Pick<RenderConformanceTestsResult, "runs" | "rounds" | "specConflict" | "stuck" | "escalation" | "review" | "unlabelled">;
   /** Repairs made to earlier functionalities' code before it gave up. */
   repairs?: number;
   /** How many times the harness judged it before it stopped - the unit tests' attempts. */
@@ -52,22 +52,7 @@ export function describeStop(facts: StopFacts): string {
   let why: string;
   let todo: string[];
 
-  // Not the spec's: what the tests are given to run with - only the person can fix it, and nothing in the spec changes.
-  if (facts.at === "conformance" && facts.conformance?.environment !== undefined) {
-    return [
-      `Stopped at ${what}: its conformance tests cannot pass with what their run is given - judged so ${facts.conformance.environment.times} times in a row:`,
-      facts.conformance.environment.reason.trim(),
-      "",
-      "What to do:",
-      "- Provide what the run is missing - a valid credential, an account, a service it can reach - where the conformance testing script reads it.",
-      "- The testing scripts run on this machine in your own environment: a credential they need is read from there - your shell's " +
-        "variables, or a .env the script loads.",
-      "",
-      "Then build again: it picks up here, and what is built stays built.",
-    ].join("\n");
-  }
-
-  // Not the spec's either: the script cannot run at all, so no code would pass it.
+  // Not the spec's: the script cannot run at all, so no code would pass it.
   if (facts.at === "unit tests" && facts.missingToolchain !== undefined) {
     const { command } = facts.missingToolchain;
     const needs = command !== undefined ? `\`${command}\`` : "a toolchain it needs";

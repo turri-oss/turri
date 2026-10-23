@@ -41,7 +41,7 @@ import { createWebTools, WEB_TOOLS } from "./web.ts";
 import { createCanItFailTool, createMyDiffTool, selfCheckNote } from "./self-check.ts";
 import { createServiceTools } from "./services.ts";
 import { createUnitGate } from "./unit-gate.ts";
-import { timeLimitError, toolchainError, type EnvironmentError } from "./environment-error.ts";
+import { scriptFaultError, timeLimitError, toolchainError, type EnvironmentError } from "./environment-error.ts";
 import { workspaceBlock } from "./workspace.ts";
 import { ATTEMPTS, describeStop } from "./stop-report.ts";
 import { summarizeDiff } from "./job-panel.ts";
@@ -459,8 +459,11 @@ export async function renderSpecDiff(options: RenderSpecDiffOptions): Promise<Re
   let unchanged = false;
   /** What the unit testing script needs and does not find, last run. */
   let missing: MissingToolchain | undefined;
-  /** The unit testing script needs more time than a test run may take - the debugger's finding: the pulse stops on it. */
-  let slow: EnvironmentError | undefined;
+  /**
+   * What no round could change, as the debugger found it - the unit testing script needs more time than a test run may
+   * take, the script itself is wrong, this machine lacks what it runs: the pulse stops on it.
+   */
+  let blocked: { error: EnvironmentError; why: string } | undefined;
   /** The last round failed on the script's static checks alone: the unit tests passed. */
   let staticOnly = false;
   const testRemovals: TestRemoval[] = [];
@@ -587,7 +590,18 @@ export async function renderSpecDiff(options: RenderSpecDiffOptions): Promise<Re
             // Nothing hangs: the suite needs more time than a test run may take, and no agent can give it that.
             if (found?.tooSlow === true) {
               stage(`the unit testing script needs more than the ${Math.round(verdict.run.timeoutMs / 1000)}s a test run may take - stopping`);
-              slow = timeLimitError(verdict.run, { moduleName, script: verdict.script, kind: "unit", reason: found.rootCause });
+              blocked = { error: timeLimitError(verdict.run, { moduleName, script: verdict.script, kind: "unit", reason: found.rootCause }), why: "the unit testing script needs more time than a test run may take" };
+              return false;
+            }
+            // Not the code's: no round would pass the script, the coding agent may change neither it nor this machine.
+            if (found?.atFault !== undefined) {
+              stage(
+                found.atFault === "script"
+                  ? "the debugger finds the unit testing script itself is wrong - no change to the code would pass it - stopping"
+                  : "the debugger finds this machine lacks what the unit testing script runs - stopping",
+              );
+              const error = scriptFaultError(found.atFault, { moduleName, script: verdict.script, kind: "unit", reason: found.rootCause, fix: found.fix });
+              blocked = { error, why: found.atFault === "script" ? "the unit testing script itself is wrong" : "this machine lacks what the unit testing script runs" };
               return false;
             }
             if (found !== undefined) {
@@ -699,8 +713,8 @@ export async function renderSpecDiff(options: RenderSpecDiffOptions): Promise<Re
         ? "the unit testing script could not run"
         : unchanged
           ? "regenerating again, the coding agent built nothing anew"
-          : slow !== undefined
-          ? "the unit testing script needs more time than a test run may take"
+          : blocked !== undefined
+          ? blocked.why
           : staticOnly
           ? "the spec change did not pass its static checks"
           : "the spec change did not pass its unit tests",
@@ -709,7 +723,7 @@ export async function renderSpecDiff(options: RenderSpecDiffOptions): Promise<Re
     if (missing !== undefined) {
       throw toolchainError(missing, { moduleName, script: scripts.unit, kind: "unit" });
     }
-    if (slow !== undefined) throw slow;
+    if (blocked !== undefined) throw blocked.error;
     return { ...base, passed: false, stoppedAt: "unit tests", ...(staticOnly && !unitReviewStopped ? { staticChecks: true } : {}) };
   }
 
