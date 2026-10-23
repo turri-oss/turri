@@ -86,7 +86,7 @@ export function getModuleNameFromFilename(filename: string): string {
   return filename.split(PLAIN_SOURCE_FILE_EXTENSION).join("");
 }
 
-function hasScheme(target: string): boolean {
+export function hasScheme(target: string): boolean {
   return /^[A-Za-z][A-Za-z0-9+.-]*:/.test(target);
 }
 

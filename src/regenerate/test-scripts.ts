@@ -79,7 +79,7 @@ export function scriptKind(name: string): ScriptKind | undefined {
 }
 
 /** The name the prepare script has: `prepare_environment_<lang>.sh`. */
-const PREPARE_NAME = /^prepare_environment[^/]*\.sh$/i;
+export const PREPARE_NAME = /^prepare_environment[^/]*\.sh$/i;
 
 function isFile(path: string): boolean {
   try {

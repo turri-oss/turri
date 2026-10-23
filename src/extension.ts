@@ -32,6 +32,7 @@ import { askedForCommandLine, refusal, selfInvocation, TOOLS_NOT_CLI } from "./s
 import { NEW_PROJECT } from "./new-project.ts";
 import { describeChoices, describeResolution, type ModelChoices, modelFor, type RenderWork, resolveModel } from "./regenerate/engine.ts";
 import { checkPlainFile, checkPlainTargets, formatCheckResults } from "./plain/check.ts";
+import { changedFiles, projectFiles } from "./plain-files.ts";
 import { whyFailed } from "./regenerate/diagnose-job.ts";
 import { createWorkLoop, describeModules, isUpToDate, previewJobs, type WorkLoop } from "./regenerate/loop.ts";
 import { brandNeon, brandPink, plainPaint } from "./regenerate/plain-palette.ts";
@@ -901,8 +902,9 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
         },
       };
 
-      // What the run changes in the project - its specs, resources, scripts - is said with its result: a skill that
-      // writes nothing is not taken for one that did its work.
+      // What the run changes in the project's ***plain - its specs, resources, scripts - is said with its result: a skill
+      // that writes nothing is not taken for one that did its work. Only those: a release or a running app changes other
+      // files while it runs, and they are not its doing.
       const filesBefore = projectFiles(cwd);
       // A side question asked while it runs is told what it has done so far.
       const ended = skillRunStarted({ skill: skill.name, dir: skill.dir, step: () => live.step, trace: () => [...trace], runDir });
@@ -980,7 +982,9 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
       const noise = describeCaptured(captured);
       if (noise !== null) push(noise);
 
-      const changes = changedFiles(filesBefore, projectFiles(cwd));
+      const changes = changedFiles(filesBefore, projectFiles(cwd, filesBefore.keys()));
+      // A skill that only reads and reports - an analysis - changes nothing, and its result is its verdict.
+      const writes = ["write", "edit", "bash", "change_plain"].some((tool) => skill.allowedTools.includes(tool));
       const changed =
         changes.length > 0
           ? `It changed ${changes.length} file${changes.length === 1 ? "" : "s"} in the project: ${changes.join(", ")}.`
@@ -1363,41 +1367,6 @@ function configOf(plainFile?: string) {
  */
 export function parallelJobs(cwd: string): number {
   return readProjectConfig(cwd).parallelJobs ?? defaultParallelJobs();
-}
-
-/** The project's own files and a digest of each - not plain_modules, dependencies, or turri's and git's folders. */
-export function projectFiles(root: string): Map<string, string> {
-  const files = new Map<string, string>();
-  const walk = (dir: string, depth: number) => {
-    if (depth > 8) return;
-    let entries;
-    try {
-      entries = readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      if (entry.name.startsWith(".") || entry.name === "plain_modules" || entry.name === "node_modules" || entry.name === "__pycache__") continue;
-      const path = join(dir, entry.name);
-      if (entry.isDirectory()) walk(path, depth + 1);
-      else if (entry.isFile()) {
-        try {
-          files.set(relative(root, path), createHash("sha1").update(readFileSync(path)).digest("hex"));
-        } catch {
-          // A file that cannot be read is left out.
-        }
-      }
-    }
-  };
-  walk(root, 0);
-  return files;
-}
-
-/** The files added, changed or removed between two digests of the project. */
-export function changedFiles(before: Map<string, string>, after: Map<string, string>): string[] {
-  const changed = [...after].filter(([path, digest]) => before.get(path) !== digest).map(([path]) => path);
-  const removed = [...before.keys()].filter((path) => !after.has(path)).map((path) => `${path} (removed)`);
-  return [...changed, ...removed].sort();
 }
 
 /**

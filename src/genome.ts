@@ -4,6 +4,7 @@ import { Command, MemorySaver } from "@langchain/langgraph";
 import { compileSkill, type Reporter } from "./graph.ts";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { createExecutor } from "./pi.ts";
+import { plainWriteTools } from "./plain-files.ts";
 import { toolchainsBlock } from "./stack.ts";
 import { clearOfStop, describeToolCall, describeToolResult, withStopSignal } from "./regenerate/activity.ts";
 import { createLiveReviewer, type LiveReviewer } from "./review/live.ts";
@@ -208,6 +209,8 @@ async function runStoppable(opts: RunSkillOptions): Promise<RunSkillResult> {
   }
   if (diffs !== undefined) customTools.push(...diffs.tools);
   customTools.push(...(opts.sharedTools ?? []));
+  // Its write and edit reach the project's ***plain only - not the code, a release, or what an app it started writes.
+  customTools.push(...plainWriteTools(opts.cwd).filter((tool) => skill.allowedTools.includes(tool.name)));
 
   const names = customTools.map((tool) => tool.name);
   // Tools this harness provides are never pi built-ins, even when it did not provide them.
