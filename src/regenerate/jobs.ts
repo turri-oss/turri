@@ -121,6 +121,8 @@ export interface StartJobInput {
   title?: string;
   /** For a render spec diff job: the diff, to show in the panel and the transcript. */
   diff?: string;
+  /** Where the diff's lines are in the .plain files, when they could be placed. */
+  diffWhere?: import("./diff-view.ts").DiffWhere;
   /** "provider/model-id" its agents run on, to show where the job is shown. */
   model?: string;
   /** For a conformance job: the render it is the conformance of. */
@@ -152,6 +154,8 @@ export interface JobRegistry {
   notify?(): void;
   /** Resolves when the job settles. Used by callers that asked to wait. */
   wait(id: string): Promise<Job>;
+  /** A job's ***plain diff, moved - its pulse steered: shown and recorded in the ledger as it is now. */
+  setDiff(id: string, diff: string, where?: import("./diff-view.ts").DiffWhere): void;
 }
 
 const DEFAULT_TAIL_CHARS = 4000;
@@ -215,6 +219,8 @@ export function createJobRegistry(options?: {
    * settles - and whatever queues behind it has to wait that long too.
    */
   const done = new Set<string>();
+  /** Where each job's events are recorded: its id, project and module. */
+  const places = new Map<string, LedgerPlace>();
   let sequence = 0;
 
   return {
@@ -248,6 +254,7 @@ export function createJobRegistry(options?: {
         ...(input.pulse !== undefined ? { pulse: input.pulse } : {}),
         ...(input.title !== undefined ? { title: input.title } : {}),
         diff: input.diff,
+        ...(input.diffWhere !== undefined ? { diffWhere: input.diffWhere } : {}),
         model: input.model,
         ...(stack !== undefined ? { stack } : {}),
         ...(chat !== undefined ? { chat } : {}),
@@ -282,6 +289,9 @@ export function createJobRegistry(options?: {
         },
         place,
       );
+      // Its ***plain diff, whole: what an earlier session's pulse regenerated is read back from the ledger.
+      if (input.diff !== undefined && input.diff.trim() !== "") record({ kind: "job.diff", diff: input.diff, ...(input.diffWhere !== undefined ? { where: input.diffWhere } : {}) }, place);
+      places.set(id, place);
 
       const changed = () => {
         // Like onFinish: a display that throws must not take the job down.
@@ -558,6 +568,20 @@ export function createJobRegistry(options?: {
 
     get(id) {
       return jobs.get(id);
+    },
+
+    setDiff(id, diff, where) {
+      const job = jobs.get(id);
+      if (job === undefined) return;
+      job.diff = diff;
+      if (where !== undefined) job.diffWhere = where;
+      else delete job.diffWhere;
+      record({ kind: "job.diff", diff, ...(where !== undefined ? { where } : {}) }, places.get(id) ?? { job: id });
+      try {
+        options?.onChange?.(job);
+      } catch {
+        /* a display that throws must not take the job down */
+      }
     },
 
     stop(id, reason) {

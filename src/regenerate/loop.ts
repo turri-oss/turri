@@ -790,8 +790,7 @@ export function createWorkLoop(options: {
         relative(projectDirOf(tip.plainFile), tip.plainFile) || basename(tip.plainFile),
         (diff) => whereInFiles(diff, state.chain),
       );
-      job.diff = shown.diff;
-      job.diffWhere = shown.where;
+      options.registry.setDiff(job.id, shown.diff, shown.where);
     }
     reportActivity(`  ⇢ steered pulse ${running.jobId} (${steering.steers} of ${MAX_STEERS}): ${why}`);
     return true;
@@ -883,6 +882,8 @@ export function createWorkLoop(options: {
       pulse: (state.pulses ?? 0) + 1,
       title: planned.title,
       diff: shown.diff,
+      // Its lines where they are written: the module's .plain file, those it imports, and those of the modules below it.
+      diffWhere: shown.where,
       ...(state.model !== undefined ? { model: state.model } : {}),
       lanes: [...moduleLanes(tip.plainFile)],
       rerun: `turri regenerate ${relative(options.cwd, tip.plainFile) || basename(tip.plainFile)}`,
@@ -978,8 +979,6 @@ export function createWorkLoop(options: {
         };
       },
     });
-    // Its lines where they are written: the module's .plain file, those it imports, and those of the modules below it.
-    job.diffWhere = shown.where;
     state.pulses = (state.pulses ?? 0) + 1;
     state.running = { jobId: job.id, number: state.pulses, planned, from, after: planned.step.tree, ...(steering !== undefined ? { steering } : {}) };
     void options.registry.wait(job.id).then(

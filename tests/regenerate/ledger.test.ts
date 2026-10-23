@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { reportStage } from "../../src/regenerate/activity.ts";
 import { createJobRegistry } from "../../src/regenerate/jobs.ts";
 import { healing, ledgerDir, onLedgerEvent, readLedger, record, startLedger, stopLedger, tidy, type LedgerEntry } from "../../src/regenerate/ledger.ts";
-import { describePulseView, earlierPulses, pulseView, runViews } from "../../src/regenerate/ledger-view.ts";
+import { asJob, describePulseView, earlierPulses, pulseView, runViews } from "../../src/regenerate/ledger-view.ts";
 import { landWork, startWork } from "../../src/regenerate/lineage.ts";
 import { forgetSecretsForTests, registerSecrets } from "../../src/regenerate/masking.ts";
 
@@ -74,6 +74,35 @@ describe("the ledger", () => {
     expect(kinds(own)).toEqual(["job.queued", "job.started", "job.stage", "script.run", "job.finished"]);
     expect(own.every((entry) => entry.module === "app")).toBe(true);
     expect(own.at(-1)).toMatchObject({ kind: "job.finished", status: "succeeded", landed: true });
+  });
+
+  it("records a pulse's ***plain diff as it is queued, and again as steering moves it", async () => {
+    startLedger({ mode: "test" });
+    const registry = createJobRegistry();
+    let steer = () => {};
+    const steered = new Promise<void>((resolve) => (steer = resolve));
+    const job = registry.start({
+      kind: "regenerate",
+      summary: "app.plain",
+      module: "app",
+      pulse: 1,
+      diff: "+- :User: can sign in.",
+      diffWhere: { 0: { file: "app.plain", line: 7 } },
+      lanes: [join(project, "plain_modules", "app", "code")],
+      run: async () => (await steered, { report: "done" }),
+    });
+    registry.setDiff(job.id, "+- :User: can sign in with a password.");
+    steer();
+    await registry.wait(job.id);
+
+    const diffs = readLedger(project, { job: job.id, kinds: ["job.diff"] });
+    expect(diffs).toEqual([
+      expect.objectContaining({ module: "app", diff: "+- :User: can sign in.", where: { 0: { file: "app.plain", line: 7 } } }),
+      expect.objectContaining({ module: "app", diff: "+- :User: can sign in with a password." }),
+    ]);
+    expect(diffs[1]).not.toHaveProperty("where");
+    expect(registry.get(job.id)).toMatchObject({ diff: "+- :User: can sign in with a password." });
+    expect(registry.get(job.id)).not.toHaveProperty("diffWhere");
   });
 
   it("records a healer that fails, instead of letting it go unsaid", async () => {
@@ -208,6 +237,26 @@ describe("a pulse read back from the ledger", () => {
     expect(text).toContain("turri refused calls: repeat 1x");
     expect(text).toContain("ExpiredTokenException");
     expect(text).toContain("log: /p/.turri/jobs/x.log");
+  });
+
+  it("says the ***plain diff it regenerated, as last steered - and gives it to an earlier session's pulse to show a file at a time", () => {
+    const at = (seq: number, entry: object) => ({ v: 1, ts: "2026-10-19T22:00:00.000Z", seq, run: "r1", job: "a1b2c3d4", module: "backend", ...entry }) as LedgerEntry;
+    const entries: LedgerEntry[] = [
+      at(1, { kind: "job.queued", jobKind: "regenerate", summary: "backend.plain", pulse: 4, waitingOn: [] }),
+      at(2, { kind: "job.diff", diff: "+- :User: can sign in." }),
+      at(3, { kind: "job.diff", diff: "+- :User: can sign in with a password.", where: { "0": { file: "backend.plain", line: 12 } } }),
+      at(4, { kind: "job.finished", status: "succeeded", landed: true, ms: 1000, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 } }),
+    ];
+    const view = pulseView("a1b2", entries)!;
+    const text = describePulseView(view);
+    expect(text).toContain("steered 1 time");
+    expect(text).toContain("its ***plain diff, as last steered:\n    +- :User: can sign in with a password.");
+    expect(text).not.toContain("can sign in.\n");
+
+    const job = asJob(view);
+    expect(job).toMatchObject({ diff: "+- :User: can sign in with a password.", diffWhere: { 0: { file: "backend.plain", line: 12 } } });
+    // Its files are rows of their own under it: what the ledger says of it leaves the diff out.
+    expect(job.earlier!.lines.join("\n")).not.toContain("can sign in");
   });
 
   it("lists the project's runs the most recent first, each with its pulses", async () => {

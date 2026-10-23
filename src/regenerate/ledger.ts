@@ -5,6 +5,7 @@ import { gunzipSync, gzipSync } from "node:zlib";
 import { currentChat } from "../chat-scope.ts";
 import { readProjectConfig } from "../config.ts";
 import { turriIdentity } from "../environment.ts";
+import type { DiffWhere } from "./diff-view.ts";
 import { currentPlace, onModelEvent, type ModelEvent, type UsageReport } from "./activity.ts";
 import { maskSecrets } from "./masking.ts";
 import { ensureInScratch } from "./paths.ts";
@@ -18,9 +19,10 @@ import { ensureInScratch } from "./paths.ts";
  * was queued, started, went through its stages and ended, and how; what each agent's model calls and
  * turns cost; each tool call and test run, how long it took and how it ended; the gates' rounds and
  * verdicts; what turri refused or stopped; what its healers did; the history's commits. What a pulse
- * from an earlier session did is looked up here (`pulses`, `diagnose`, `turri ledger`). Never stored:
- * prompts, replies, thinking, tool arguments and results, file contents - and what strings an event
- * carries are masked as the logs are.
+ * from an earlier session did is looked up here (`pulses`, `diagnose`, `turri ledger`) - and what it
+ * regenerated, its ***plain diff, kept whole as the one body the ledger has. Never stored: prompts,
+ * replies, thinking, tool arguments and results, file contents - and what strings an event carries are
+ * masked as the logs are.
  *
  * A host hears each event as it is recorded (`onLedgerEvent`), with the project it is about, rather than reading the
  * file again - written or not, so a project that keeps no ledger is heard all the same.
@@ -57,6 +59,8 @@ export type LedgerEvent =
   // A pulse, from queued to its end.
   | { kind: "job.queued"; jobKind: string; summary: string; pulse?: number; title?: string; model?: string; stack?: string; waitingOn: string[]; follows?: string }
   | { kind: "job.started"; waitedMs: number; logFile?: string }
+  // Its ***plain diff, whole, as its agent is given it - again each time steering moves it - and where its lines are written.
+  | { kind: "job.diff"; diff: string; where?: DiffWhere }
   | { kind: "job.stage"; label: string }
   | { kind: "job.retried"; attempt: number; of: number; failure: string }
   | {

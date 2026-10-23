@@ -41,6 +41,9 @@ export interface PulseView {
   queued?: Of<"job.queued"> & { module?: string };
   started?: Of<"job.started">;
   finished?: Of<"job.finished">;
+  /** Its ***plain diff as it last was, and how many times steering moved it. */
+  diff?: Of<"job.diff">;
+  steered: number;
   stages: string[];
   retried: Array<Of<"job.retried">>;
   rounds: Map<string, { round: number; of: number }>;
@@ -64,6 +67,7 @@ export function pulseView(id: string, entries: LedgerEntry[]): PulseView | undef
   const view: PulseView = {
     id: fullId,
     run: own[0]!.run,
+    steered: 0,
     stages: [],
     retried: [],
     rounds: new Map(),
@@ -90,6 +94,10 @@ export function pulseView(id: string, entries: LedgerEntry[]): PulseView | undef
       case "job.finished":
         view.finished = entry;
         view.usage = entry.usage;
+        break;
+      case "job.diff":
+        if (view.diff !== undefined) view.steered += 1;
+        view.diff = entry;
         break;
       case "job.stage":
         view.stages.push(entry.label);
@@ -161,8 +169,11 @@ function outcomeOf(view: PulseView): string {
   return `${finished.status}${stopped}${landed}, after ${formatElapsed(finished.ms)}`;
 }
 
-/** A pulse from the ledger, for the chat and `turri ledger <pulse>`: what happened in it, as facts. */
-export function describePulseView(view: PulseView): string {
+/**
+ * A pulse from the ledger, for the chat and `turri ledger <pulse>`: what happened in it, as facts - and, last, the
+ * ***plain diff it regenerated, unless `diff` is false.
+ */
+export function describePulseView(view: PulseView, options: { diff?: boolean } = {}): string {
   const lines = [`${view.id} · ${nameOf(view)}${view.queued?.title !== undefined ? ` - ${view.queued.title}` : ""}`];
   lines.push(`  run ${view.run}${view.runMode !== undefined ? ` (${view.runMode})` : ""}`);
   lines.push(`  ${outcomeOf(view)}${view.usage !== undefined && describeUsage(view.usage) !== "" ? ` · ${describeUsage(view.usage)}` : ""}${view.queued?.model !== undefined ? ` · ${view.queued.model}` : ""}`);
@@ -210,9 +221,11 @@ export function describePulseView(view: PulseView): string {
     else if (event.kind === "history.reset") lines.push(`  put back to the last commit: ${event.undone} change${event.undone === 1 ? "" : "s"} undone`);
     else lines.push(`  rolled back: ${event.why}`);
   }
+  if (view.steered > 0) lines.push(`  steered ${view.steered} time${view.steered === 1 ? "" : "s"}: its ***plain diff moved with ***plain`);
   if (view.stages.length > 0) lines.push("  last stages:", ...view.stages.slice(-8).map((stage) => `    ${stage}`));
   const log = view.finished?.logFile ?? view.started?.logFile;
   if (log !== undefined) lines.push(`  log: ${log}`);
+  if (options.diff !== false && view.diff !== undefined) lines.push(`  its ***plain diff${view.steered > 0 ? ", as last steered" : ""}:`, ...view.diff.diff.trimEnd().split("\n").map((line) => `    ${line}`));
   return lines.join("\n");
 }
 
@@ -295,6 +308,8 @@ export function asJob(view: PulseView): Job {
     ...(view.queued?.pulse !== undefined ? { pulse: view.queued.pulse } : {}),
     ...(view.queued?.title !== undefined ? { title: view.queued.title } : {}),
     ...(view.queued?.model !== undefined ? { model: view.queued.model } : {}),
+    // Its ***plain diff, shown a file at a time as this session's pulses' are.
+    ...(view.diff !== undefined ? { diff: view.diff.diff, ...(view.diff.where !== undefined ? { diffWhere: view.diff.where } : {}) } : {}),
     status,
     sequence: 0,
     queuedAt,
@@ -309,7 +324,7 @@ export function asJob(view: PulseView): Job {
     ...(logFile !== undefined ? { logFile } : {}),
     ...(finished?.error !== undefined ? { error: finished.error } : {}),
     details: { ...(finished?.landed !== undefined ? { landed: finished.landed } : {}), ...(finished?.passed !== undefined ? { passed: finished.passed } : {}) },
-    earlier: { run: view.run, ...(view.runMode !== undefined ? { runMode: view.runMode } : {}), lines: describePulseView(view).split("\n").slice(1).map((line) => line.replace(/^  /, "")) },
+    earlier: { run: view.run, ...(view.runMode !== undefined ? { runMode: view.runMode } : {}), lines: describePulseView(view, { diff: false }).split("\n").slice(1).map((line) => line.replace(/^  /, "")) },
   };
 }
 
@@ -332,7 +347,9 @@ export function eventLine(entry: LedgerEntry): string {
   const fields = Object.entries(entry)
     .filter(([key]) => !ENVELOPE.has(key))
     .map(([key, value]) => {
-      const text = typeof value === "string" ? JSON.stringify(value.length > 160 ? `${value.slice(0, 159)}…` : value) : JSON.stringify(value);
+      // A long value - a ***plain diff, where its lines are - cut to the start of it: the line is a glance.
+      const whole = typeof value === "string" ? value : JSON.stringify(value);
+      const text = typeof value === "string" ? JSON.stringify(value.length > 160 ? `${value.slice(0, 159)}…` : value) : whole.length > 160 ? `${whole.slice(0, 159)}…` : whole;
       return `${key}=${text}`;
     });
   const where = [entry.job, entry.module, entry.agent?.role ?? entry.agent?.label].filter((part): part is string => part !== undefined);
