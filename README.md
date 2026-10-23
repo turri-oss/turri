@@ -4,6 +4,7 @@
   <a href="https://www.npmjs.com/package/@turri-dev/cli"><img src="https://img.shields.io/npm/v/@turri-dev/cli?label=npm" alt="npm version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/npm/l/@turri-dev/cli" alt="MIT licence"></a>
   <a href="https://nodejs.org/en/download"><img src="https://img.shields.io/node/v/@turri-dev/cli" alt="Node version"></a>
+  <a href="https://discord.com/invite/REJzFmVQfC"><img src="https://img.shields.io/badge/Discord-join%20the%20community-5865F2?logo=discord&logoColor=white" alt="Join the turri Discord"></a>
 </p>
 
 **turri** builds regenerative software: what lasts is the system's intent, and the code is derived from it - cheap to throw away and build again. You tell **turri** what the system should do; **turri** writes that down as durable intent, with the tests that say when it is met, and builds the code from it. From then on the durable intent is the source of truth: as it changes, the code is regenerated from it rather than patched in place, and never left to drift from it.
