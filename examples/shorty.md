@@ -6,7 +6,7 @@ It takes an hour or so. [guestbook](guestbook.md) is the quicker start. This exa
 
 ## 1. The project
 
-Build it on any backend stack your machine can build - Python, TypeScript, Go, Rust or Java. The agents use the toolchains on your machine and install none, so the interview offers only the stacks it can build; `turri doctor` lists what is there.
+Build it on any backend stack your machine can build - Python, TypeScript, Go, Rust or Java. The agents use the toolchains on your machine and install none, so the interview offers only the stacks it can build.
 
 ```bash
 mkdir ~/shorty && cd ~/shorty
@@ -19,19 +19,11 @@ turri init-config
 turri
 ```
 
-> /brood Let's build shorty - a URL shortener API. You post a long URL and get back a short
+> Let's build shorty - a URL shortener API. You post a long URL and get back a short
 > code; opening `/<code>` redirects to the URL and counts the click. Codes are 7 characters, letters and digits,
 > or a custom alias of my choice if it's free. A link can expire at a given time; after that, the code returns
 > 410. I can list my links with their click counts, and delete one. Keep the data in SQLite. Requests are
 > authenticated with an API key per user.
-
-`/brood` starts the interview, which asks one question at a time:
-
-- **How many questions** the stack and product phases may ask: light, medium or thorough - at most 3, 5 or 10 a phase - or best judgement, fewer questions being broader ones. Choose **medium**: a question a feature, its main rules with it, and **turri** decides the edge cases.
-- **Intent**, read back for you to confirm.
-- **Stack.** The standard library's backend stacks your machine can build - FastAPI, Flask or Django in Python; Express, Fastify or NestJS in TypeScript; Gin or net/http in Go; Axum in Rust; Spring Boot in Java - or one of your own. A stack from it is one import, `stdlib/backend/<stack>`; then it asks only what that leaves open: SQLite through which library, how API keys are stored (hashed), what a redirect returns (`302`).
-- **Testing.** Whether there are conformance tests. Say **yes** - for every functional spec. It records your answer as `conformance-tests: true` in `config.turri.yaml`, then writes their test reqs (`***test reqs***`) and the conformance testing script, `run_conformance_tests_<language>.sh`, from the stack's template, `stdlib/backend/conformance/<stack>`. (`conformance-tests: chosen` has them only for the functional specs you pick - [the project config](../docs/config.md) has the details.)
-- **Product**, feature by feature: API keys, creating a link, the redirect, custom aliases, expiry, listing, deleting. Each answer is a spec change that starts regenerating at once.
 
 ## 3. Two tracks
 

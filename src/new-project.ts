@@ -10,7 +10,7 @@ export const NEW_PROJECT = [
   "and there is no ***plain module for it yet, or they ask for a new project, ask them first how to start it, with",
   "ask_user: one question, these three options, word for word, so they know the skills are there:",
   `- "${"/brood - an interview: the stack, the testing and every feature settled with you, each answer regenerated"}"`,
-  `- "${"/spawn - something running in minutes: the quick start, asking only what your message leaves open"}"`,
+  `- "${"/spawn - something running in minutes: the quick start, asking the stack in one question unless your message names it"}"`,
   `- "${"Just do it - no skill: I write it here and start regenerating"}"`,
   "Picked /brood or /spawn: the answer starts it - call cultivate for it at once, with what they said as its context,",
   "never asking them to type its command. Do not ask when their",

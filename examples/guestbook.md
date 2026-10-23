@@ -14,7 +14,7 @@ turri
 
 ## 2. Say what you want
 
-> /brood Let's build guestbook: a backend API and a web app, both at once. The backend keeps messages in memory:
+> Let's build guestbook: a backend API and a web app, both at once. The backend keeps messages in memory:
 > `POST /messages` with `{"name", "text"}` adds one - both required, `text` at most 280 characters - and
 > `GET /messages` lists them, newest first. The web app is one page that lists the messages, newest first, with
 > a form to sign the guestbook.

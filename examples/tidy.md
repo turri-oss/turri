@@ -16,7 +16,7 @@ turri
 
 ## 2. Say what you want
 
-> /brood Let's build tidy - a command-line tool that sorts the files of a folder into subfolders by kind: images, documents, archives, audio, video, code and other. `tidy plan <folder>` prints what it would
+> Let's build tidy - a command-line tool that sorts the files of a folder into subfolders by kind: images, documents, archives, audio, video, code and other. `tidy plan <folder>` prints what it would
 > move, one line a file, and moves nothing. `tidy apply <folder>` moves them, never overwriting a file: a name
 > that is taken gets ` (2)`, ` (3)` and so on. Hidden files and subfolders are left alone. `--by-date` sorts into
 > `YYYY/MM` folders by modified time instead.

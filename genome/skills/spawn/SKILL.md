@@ -1,25 +1,15 @@
 ---
 name: spawn
-description: >-
-  The quick twin of `brood`, built for the shortest time to first regeneration: something running
-  in minutes, then grown a step at a time, the way a developer starts - the smallest thing that runs first, then the
-  main thing half-built, run and tried, then the next. Asks what the user wants to build only when
-  their message does not say, and the stack only when it cannot choose one this machine builds;
-  sets up the module, writes a first spec - the smallest thing that runs - that starts the first build at once, then the
-  first slices of the product on their happy path, and hands over: the user tries each slice as it
-  lands and says what next. Conformance tests are off unless the user asks for them. No gates. Use
-  when the user wants to start a new project fast, or says to just build it. For a full interview
-  that settles the stack, the testing and every feature with the user, use `brood`. Not for adding a
-  feature to an existing project (use `bud`).
+description: "start a new project fast: running in minutes, then grown a step at a time."
 allowed-tools: [read, write, edit, bash, ls, grep, find, change_plain]
 metadata:
   # Started only by the person, with its command - /spawn - never by the model on its own.
   command-only: true
   # What each phase does, in a line - shown under the skill's progress while it runs.
   phases:
-    start: "what you want to build, and the stack - asked only when it is not clear"
-    skeleton: "sets up the project and writes the smallest spec that runs, so the first build can start"
-    regenerate: "writes the first features, simplest version first - each starts a build"
+    start: "what to build, and on which stack"
+    skeleton: "the smallest project that runs"
+    regenerate: "the first features, a build each"
   # It writes its spec changes one after another on its own: no answer between them.
   paced: false
 ---
@@ -49,10 +39,15 @@ Read what is already there first: an existing `.plain` file, `config.turri.yaml`
 
 ### start
 
-Find out what to build and on which stack - asking as little as the user's message allows, ideally nothing.
+Find out what to build and on which stack, each asked only when the user's message does not say - the stack in exactly one question.
 
 - **What to build.** When the user's message says what kind of software it is - a web app, an API, a CLI - ask nothing: that is enough to start. Otherwise ask one open question with `ask_user` and `free_form: true`: what should it do? Ask no follow-ups. An answer that names only the kind of software is enough too: the first spec is built, and what it does comes later, from the user.
-- **The stack.** It has to be one this machine can build: the agents use its toolchains and install none. `<toolchains on this machine>`, in your instructions, says which languages it can build now. When the user named a stack, take it. When they did not, choose one yourself from the standard library's stacks for the kind of software it is (the stdlib rule, in `<plain-rules>`), in a language the machine can build now - ask nothing. Ask only when the user named a stack in a language the machine lacks: say what to install first and that `turri doctor` checks it, and ask one `ask_user` question - wait for that, or let you choose another.
+- **The stack named.** When the user's message names the stack - a language, a framework or both: `/spawn a small python fast api server` - take it and ask nothing about technology; what it leaves open, choose yourself within it. Only a named stack in a language the machine lacks is asked about, as below.
+- **A stack the project already settled** - its config, its template, its imports - is kept: no question about it either.
+- **The stack - exactly one question**, when neither the message nor the project names one. Ask one `ask_user` question about the stack, and no other about technology: the framework, the storage, the libraries, the tests, the layout are yours to choose from the stack picked, as a careful engineer would. The stack has to be one this machine can build: the agents use its toolchains and install none. `<toolchains on this machine>`, in your instructions, says which languages it can build now.
+  - **The options**, three or four, each the stack and what it is in a few words: the standard library's stacks for the kind of software it is (the stdlib rule, in `<plain-rules>`), in languages the machine can build now. First the one you would choose, marked `(recommended)`. In the question's `context`, in a line, what you will build first.
+  - **A stack the user named in a language the machine lacks** is asked about in the same one question, as an option after the recommended one: `<stack> - once <toolchain> is installed`. Say in the `context` what to install and that `turri doctor` checks it.
+  - **The answer is the stack** - an option, or what they typed under "Something else…" - and nothing about it is asked again. A stack in a language the machine lacks: say what to install, that `turri doctor` checks it and that `/spawn` starts again once it is there, and stop - write nothing.
 
 Then say in three lines what you will build first and on which stack, and carry on. Ask for no confirmation, and write nothing to disk in this step.
 
