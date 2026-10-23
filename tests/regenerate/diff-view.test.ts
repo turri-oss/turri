@@ -112,10 +112,10 @@ describe("line numbers in a spec diff", () => {
     const lines = spec.split("\n");
     const at = (text: string) => where[lines.indexOf(text)];
     // Each with the section it is in, in its file.
-    expect(at(" ***definitions***")).toEqual({ file: "template/common.plain", line: 1, section: "***definitions***" });
-    expect(at("+- :User: is a person.")).toEqual({ file: "template/common.plain", line: 3, section: "***definitions***" });
-    expect(at(" ***functional specs***")).toEqual({ file: "app.plain", line: 6, section: "***functional specs***" });
-    expect(at("+- A :User: signs in.")).toEqual({ file: "app.plain", line: 8, section: "***functional specs***" });
+    expect(at(" ***definitions***")).toEqual({ file: "template/common.plain", line: 1, section: "***definitions***", written: "***definitions***" });
+    expect(at("+- :User: is a person.")).toEqual({ file: "template/common.plain", line: 3, section: "***definitions***", written: "- :User: is a person." });
+    expect(at(" ***functional specs***")).toEqual({ file: "app.plain", line: 6, section: "***functional specs***", written: "***functional specs***" });
+    expect(at("+- A :User: signs in.")).toEqual({ file: "app.plain", line: 8, section: "***functional specs***", written: "- A :User: signs in." });
     expect(at("-- :User: is someone.")).toBeUndefined();
   });
 
@@ -159,9 +159,30 @@ describe("placing a spec diff's lines in their files", () => {
 
   it("finds a line with a link in the file it is written in - the link as the parser renders it - never in the template beside it", () => {
     const where = locateDiffLines(spec, [own, common]);
-    expect(where[5]).toEqual({ file: "hubspot.plain", line: 3, section: "***definitions***" });
+    expect(where[5]).toEqual({ file: "hubspot.plain", line: 3, section: "***definitions***", written: "- :HubSpotMapping: is described in [resources/mapping.md](resources/mapping.md)." });
     const files = diffFiles(spec, 60, undefined, where);
     expect(files.map((file) => [file.file, file.added])).toEqual([["hubspot.plain", 1]]);
+  });
+
+  it("says how a nested line with a link is written in its file - the link as written, not as the diff reads it - so a host finds it again", () => {
+    const nested = {
+      name: "tasks.plain",
+      text: "***definitions***\n\n- :TaskList: is the page of tasks.\n  - It is described in [resources/task list ui.yaml](resources/task list ui.yaml).\n  - It looks as [resources/shot.png](resources/shot.png) shows.\n",
+    };
+    const diff = [
+      "--- a/tasks.plain",
+      "+++ b/tasks.plain",
+      "@@ -1,2 +1,5 @@",
+      " ***definitions***",
+      " ",
+      "+- :TaskList: is the page of tasks.",
+      "+  - It is described in `[resource]resources/task list ui.yaml`.",
+      "+  - It looks as `[resource]resources/shot.png` shows.",
+      "",
+    ].join("\n");
+    const where = locateDiffLines(diff, [nested]);
+    expect(where[6]).toEqual({ file: "tasks.plain", line: 4, section: "***definitions***", written: "  - It is described in [resources/task list ui.yaml](resources/task list ui.yaml)." });
+    expect(where[7]).toEqual({ file: "tasks.plain", line: 5, section: "***definitions***", written: "  - It looks as [resources/shot.png](resources/shot.png) shows." });
   });
 
   it("shows a linked resource whose content changed as a file of its own, under its name - not with the lines found in no file", async () => {

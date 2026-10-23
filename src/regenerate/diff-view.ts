@@ -34,9 +34,11 @@ export const PLAIN_PAINT: DiffPaint = {
 
 /**
  * Where the lines of a diff are in the .plain files: by a line's place in the diff, the file it is in and its
- * line there. Only lines that are in a file - added and unchanged ones; a removed line is in none now.
+ * line there. Only lines that are in a file - added and unchanged ones; a removed line is in none now. `written`
+ * is the line as the file has it - its links as written, not as the diff reads them - so a host can find it
+ * again in the file's text once it is edited; absent in a ledger written before it.
  */
-export type DiffWhere = Record<number, { file: string; line: number; section?: string }>;
+export type DiffWhere = Record<number, { file: string; line: number; section?: string; written?: string }>;
 
 /** A section's header: `***functional specs***`. */
 const SECTION = /^\*\*\*[^*].*\*\*\*$/;
@@ -55,7 +57,10 @@ function asRead(line: string): string {
 export function locateDiffLines(diff: string, files: Array<{ name: string; text: string }>): DiffWhere {
   const where: DiffWhere = {};
   // Each line as the parser renders it: a link `[text](path)` is the span `` `[resource]text` `` in the spec as read.
-  const texts = files.map((file) => ({ name: file.name, lines: file.text.split("\n").map((line) => asRead(line.trimEnd())) }));
+  const texts = files.map((file) => {
+    const written = file.text.split("\n").map((line) => line.trimEnd());
+    return { name: file.name, written, lines: written.map(asRead) };
+  });
   // The section each line of a file is in: the nearest `***...***` header above it, or on it.
   const sections = texts.map((file) => {
     let current: string | undefined;
@@ -66,7 +71,7 @@ export function locateDiffLines(diff: string, files: Array<{ name: string; text:
   const take = (file: number, line: number, index: number) => {
     used.add(`${file}:${line}`);
     const section = sections[file]![line];
-    where[index] = { file: texts[file]!.name, line: line + 1, ...(section !== undefined ? { section } : {}) };
+    where[index] = { file: texts[file]!.name, line: line + 1, ...(section !== undefined ? { section } : {}), written: texts[file]!.written[line]! };
     last = { file, line };
   };
   diff
@@ -82,7 +87,7 @@ export function locateDiffLines(diff: string, files: Array<{ name: string; text:
         if (file !== -1) {
           const at = texts[file]!.lines.indexOf(removed);
           const section = sections[file]![at];
-          where[index] = { file: texts[file]!.name, line: at + 1, ...(section !== undefined ? { section } : {}) };
+          where[index] = { file: texts[file]!.name, line: at + 1, ...(section !== undefined ? { section } : {}), written: texts[file]!.written[at]! };
         }
         return;
       }
