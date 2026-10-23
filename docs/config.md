@@ -47,7 +47,7 @@ Each change says when it takes effect. None needs turri started again - what tur
 | the next pulse - one running keeps what it started with | `coding-model`, `judge-model`, every other `models.<role>`, `review`, `mutation-testing`, `turn-limit`, `compact-at`, `agent-env`, `toolchains`, `debug` |
 | the next time the work is planned | `conformance-tests`, `conformance-budget`, `max-specs-per-pulse`, `max-lines-per-pulse` |
 | the next test run - the running pulse's too | the testing scripts, `testing-scripts-run-on` |
-| the next pulse that lands - the running one too | `release-after-pulse` |
+| the next pulse that lands - the running one too | `release-after-pulse`, `sentinel` |
 | the next regeneration that names no `.plain` file | `module` |
 | the next time turri starts here | `ledger-keep`, `cache-keep` |
 
@@ -90,6 +90,7 @@ models:                              # each agent role's model, thinking and tur
 | `rules-off` | a list of rule names - `integrations`, `concise-specs`, the files of `genome/rules/` without `.md` - left out of the conversation's prompt and every \*\*\*plain-writing agent's: a rule this project's own skills or AGENTS.md replace, such as one that says to probe a live API before any \*\*\*plain is written. `turri init-config` writes it with `integration-embedded`, `integration-embedded-testing` and `integration-standalone` - take them out when the project writes an integration against a REST API. The project's alone | none |
 | `allow-to-stop-jobs` | `true` or `false`: whether turri stops a running job \*\*\*plain has moved on from - a functional spec it regenerates changed, or a file one links was edited - rolls it back and regenerates \*\*\*plain as it now is. `false`: the job runs to its end and lands, and what changed since is regenerated on top of it by the next job - see [regenerating the code](regenerating.md). Your own `halt` stops a job either way | `true` |
 | `release-after-pulse` | `true` or `false`: whether every pulse that lands code releases it, in the chat, as its last stage - before the module's next pulse starts, whatever the chat is doing: an agent on the coding model releases it, following the project's release guidance as the chat finds it (what was passed to `release` this conversation, AGENTS.md, the project's skills) for how, or to `dist/<module>` without any - see [deploy](deploy.md#after-every-pulse). One release a pulse that lands; a release that fails is said in the pulse's report, and what it landed stays. `turri init-config` writes `true` | `false` |
+| `sentinel` | `true` or `false`: whether a chat of turri's own, the sentinel, gets every pulse that finishes - checks it, tests what was released under `release-after-pulse`, and puts what needs you as a notice in the chat you are in - instead of the chat that asked for it. See [the sentinel](sentinel.md). `turri init-config` writes `true` | `true` |
 | `unittests-script` | the unit testing script, by path from the project root - it runs the code's static checks too, exiting 80 when only they fail (see [the static checks](regenerating.md#the-static-checks)) | looked for - see below |
 | `conformance-tests-script` | the conformance testing script, by path from the project root | looked for - see below |
 | `prepare-environment-script` | optional: run as `<script> <build>` before every run of the conformance testing script, which runs only once it passes - see [the testing scripts](regenerating.md#the-testing-scripts). turri never writes one | the one `prepare_environment*.sh` at the root or in `test_scripts/`, else none |
@@ -116,6 +117,7 @@ Keys are written with dashes; underscores are read the same (`conformance_tests`
 | --- | --- |
 | `default` | every role not named below - but the conversation's side |
 | `chat` | `turri`'s model - the same as `harness-model`, which it wins over |
+| `sentinel` | [the sentinel](sentinel.md): checks every finished pulse, and tests the release. Unnamed, the chat's model |
 | `chooser`, `planner` | the conversation's side: the conformance chooser of `turri regenerate`, the planner's agents. Unnamed, the chat's model |
 | `diagnosis` | the diagnosis of a job that failed for good: why it did not land, and what to do. Unnamed, the coding model the job ran on, thinking medium |
 | `release` | `turri release`'s agent and release-after-pulse's: it follows steps - a script, a start command - so it runs on the coding model, thinking low |

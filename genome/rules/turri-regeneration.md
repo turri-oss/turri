@@ -42,6 +42,7 @@ The other rules say what a spec means. This one says what turri does with a chan
 - Never edit the code under `plain_modules/`: the next regeneration does not keep it, and the code record no longer says what the code is
 - In order of cost: change the spec where it is wrong or silent; regenerate the functional specs whose code went bad again, by name; regenerate the module from scratch, or its whole chain - only when the person asks for it or agrees to it
 - A pulse that does not land is rolled back whole - code, tests and record together - and its module waits until the spec changes or the module is asked for again. Running it again unchanged usually ends the same way: look at why it did not land first
+- A finished pulse goes to the sentinel, a chat of turri's own - unless `sentinel: false`: it checks the pulse, tests what was released, and puts what is wrong to the person as a notice with what can be done. A pulse that landed is told to the chat the person is in too, only to say it landed and what the sentinel does with it, and when the sentinel is done with a pulse, what it found - the chat does nothing else about either; a pulse that went wrong is not told to it - the chat's agent is given a notice's task once the person accepts it, and does that
 
 ## Where the cost is
 

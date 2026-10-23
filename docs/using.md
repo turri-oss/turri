@@ -194,6 +194,7 @@ It is in `.turri/ledger/` in the project, a JSON line an event, one file a run -
 | the healers | `healer.started`, `healer.ended` with what it found, `healer.failed` and why - the debugger, the diagnosis of a failed pulse |
 | the history | `history.committed`, `history.failed`, `history.reset`, `history.rolledBack` |
 | the environment | `environment.error` |
+| chats and notices | `chat.opened` (`role: "sentinel"` for the [sentinel](sentinel.md)'s), `chat.closed`, `notice.put` (its severity and module), `notice.over` (accepted, steered, dismissed or superseded), `sentinel.concluded` (`holds` or `wrong`, a pulse the sentinel is done with) |
 
 Never in it: prompts, replies, thinking, tool arguments and results, file contents - the one body it keeps is each pulse's \*\*\*plain diff, so what an earlier session regenerated can be read back. What an event does carry - a stage, an error's first line - is masked as the logs are.
 

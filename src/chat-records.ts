@@ -15,6 +15,8 @@ export interface ChatRecord {
   title: string;
   /** pi's session file: the chat's conversation. */
   sessionFile: string;
+  /** `sentinel` for the session's sentinel. */
+  role?: "sentinel";
 }
 
 export interface RunRecord {

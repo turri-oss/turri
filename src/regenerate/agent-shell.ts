@@ -7,7 +7,7 @@ import { afterCommand, auditMessage, beforeCommand } from "./audit.ts";
 import { checkCommand, machineReadable, type CheckResult, type CommandFence } from "./command-check.ts";
 import { darwinUserDirs, machineFor, sandboxAvailable, sandboxWrap, type SandboxFence, type Wall } from "./os-sandbox.ts";
 import { MODULES_DIR, projectRootOf } from "./paths.ts";
-import { RECORD_FILE } from "./records.ts";
+import { RECORD_FILE } from "./paths.ts";
 import { runCommand, type RunResult } from "./shell.ts";
 
 /**
@@ -23,6 +23,11 @@ export interface ShellRole {
   read?: string[];
   /** The folders it may write; its workdir when not given, none for a role that only reads. */
   write?: string[];
+  /**
+   * The module folder its home, TMPDIR and caches are kept for - its workdir's module when not given: for a role whose
+   * folder is no module's, the sentinel's the project itself.
+   */
+  home?: string;
 }
 
 export interface AgentShell {
@@ -63,7 +68,7 @@ export function agentShell(role: ShellRole, options: { wall?: Wall; busy?: (modu
   const workdir = resolve(role.workdir);
   const read = (role.read ?? [workdir]).map((dir) => resolve(dir));
   const write = (role.write ?? [workdir]).map((dir) => resolve(dir));
-  const moduleDir = moduleOf(workdir);
+  const moduleDir = role.home !== undefined ? resolve(role.home) : moduleOf(workdir);
   const project = projectRootOf(workdir);
   const { env } = agentEnvironment(moduleDir);
   const root = projectRootOf(moduleDir);

@@ -52,6 +52,7 @@ const SECONDS = ["0", "60", "120", "180", "300"];
 const ROLE_ABOUT: Record<(typeof AGENT_ROLES)[number] | "default", string> = {
   default: "every role not named",
   chat: "the conversation - as harness-model, which it wins over",
+  sentinel: "the sentinel: checks every finished pulse and tests the release",
   chooser: "chooses what gets conformance tests under turri regenerate",
   planner: "cuts the work into pulses",
   diagnosis: "looks into a pulse that failed for good",
@@ -98,6 +99,7 @@ export function settings(rules: string[] = []): Setting[] {
     { key: "mutation-testing", about: "whether the coding agent and the reviewer can put a bug in the code for one test run (can_it_fail)", kind: "boolean", unset: "true", effect: "next-pulse" },
     { key: "allow-to-stop-jobs", about: "whether turri stops a running pulse the ***plain has moved on from", kind: "boolean", unset: "true", effect: "now" },
     { key: "release-after-pulse", about: "whether every pulse that lands code releases it", kind: "boolean", unset: "false", effect: "next-landing" },
+    { key: "sentinel", about: "whether a chat of its own checks every finished pulse, tests the release, and tells you what is wrong", kind: "boolean", unset: "true", effect: "next-landing" },
     { key: "unittests-script", about: "the unit testing script, by path from the project root", kind: "path", unset: "the one run_unittests*.sh found", effect: "next-test-run" },
     { key: "conformance-tests-script", about: "the conformance testing script, by path from the project root", kind: "path", unset: "the one run_conformance_tests*.sh found", effect: "next-test-run" },
     { key: "prepare-environment-script", about: "run on the build before every conformance testing script run, by path from the project root - optional", kind: "path", unset: "the one prepare_environment*.sh found, else none", effect: "next-test-run" },

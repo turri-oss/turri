@@ -6,6 +6,7 @@ import { createTurriCore, sessionLoop } from "./extension.ts";
 import { stopDeployed } from "./regenerate/release.ts";
 import type { JobRegistry } from "./regenerate/jobs.ts";
 import type { WorkLoop } from "./regenerate/loop.ts";
+import type { Notice, NoticeAnswer } from "./notice.ts";
 
 /**
  * turri's session for a host that runs its chats itself - a desktop app, an editor: the chats, each a pi session with
@@ -62,6 +63,16 @@ export interface Turri {
    * stops the turn. `none` when the chat asks nothing now, `missing` for a chat not open.
    */
   decline(id: string): Promise<"declined" | "none" | "missing">;
+  /**
+   * The notices put to the person and not yet over - the sentinel's, and turri's own: each in the chat it names. A host
+   * hears each as it is put (`onNotice`) and as it ends (`onNoticeOver`).
+   */
+  notices(): Notice[];
+  /**
+   * A notice answered: one of its actions (by index or label) - the chat it is in started on it - the person's own words
+   * about it, or dismissed. `over` when it was answered or superseded already, `missing` for one never put.
+   */
+  answer(id: string, answer: NoticeAnswer): Promise<"done" | "dismissed" | "missing" | "over">;
   /** Told when a chat is opened, closed, renamed, or starts or stops working. */
   onChats(listener: (chats: ChatInfo[]) => void): () => void;
   /** Every chat let go, and what activate started stopped. */
@@ -125,6 +136,8 @@ export async function createTurri(options: TurriOptions = {}): Promise<Turri> {
       return did;
     },
     decline: async (id) => core.decline(id),
+    notices: () => core.notices(),
+    answer: async (id, answer) => core.answer(id, answer),
     onChats: (listener) => core.onChats(() => listener(core.chats())),
     dispose,
   };

@@ -65,13 +65,17 @@ if (interactive) {
   let restore: RunRecord | undefined;
   const asked = args.findIndex((arg) => arg === "--continue" || arg === "-c");
   const saved = asked !== -1 ? lastRun(process.cwd()) : undefined;
+  // pi reopens the first of the person's chats as its own; the rest - the sentinel among them - are opened beside it.
+  const first = saved?.chats.find((chat) => chat.role === undefined);
   if (saved !== undefined) {
-    args.splice(asked, 1, "--session", saved.chats[0]!.sessionFile);
+    if (first !== undefined) args.splice(asked, 1, "--session", first.sessionFile);
+    else args.splice(asked, 1);
     restore = saved;
   }
   driveTerminal(
     processSession(() => createTurriCore({}, { persist: true })),
-    restore !== undefined ? { restore } : {},
+    // With none of the person's chats saved - only the sentinel's - pi starts a fresh one, and every saved chat is opened beside it.
+    restore !== undefined ? { restore, skipFirst: restore.chats.some((chat) => chat.role === undefined) } : {},
   );
 }
 

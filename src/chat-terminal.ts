@@ -73,7 +73,7 @@ export function pressCtrlC(screen: CtrlCScreen, lastStop: number, now = Date.now
   });
 }
 
-export function driveTerminal(core: TurriCore, options: { restore?: RunRecord } = {}): void {
+export function driveTerminal(core: TurriCore, options: { restore?: RunRecord; skipFirst?: boolean } = {}): void {
   let screen: Screen | undefined;
   let runtime: Runtime | undefined;
   let real: ExtensionUIContext | undefined;
@@ -96,7 +96,7 @@ export function driveTerminal(core: TurriCore, options: { restore?: RunRecord } 
     if (restore !== undefined) {
       const saved = restore;
       restore = undefined;
-      void core.restore(saved, { skipFirst: true });
+      void core.restore(saved, { skipFirst: options.skipFirst !== false });
     }
   };
 

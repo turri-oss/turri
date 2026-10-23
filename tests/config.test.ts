@@ -179,8 +179,10 @@ describe("how hard each role thinks when nothing names a level", () => {
   it("has the agents that do the work think low, the ones that judge medium, and leaves the conversation its own", () => {
     for (const role of ["coding", "conformance", "explorer", "release"] as const) expect(ROLE_THINKING[role], role).toBe("low");
     for (const role of ["reviewer", "test-reviewer", "judge", "arbiter", "debugger", "planner", "chooser", "diagnosis"] as const) expect(ROLE_THINKING[role], role).toBe("medium");
+    // The sentinel is a chat too: it keeps its own level, as the conversation does.
     expect(ROLE_THINKING.chat).toBeUndefined();
-    expect(AGENT_ROLES.filter((role) => role !== "chat" && ROLE_THINKING[role] === undefined)).toEqual([]);
+    expect(ROLE_THINKING.sentinel).toBeUndefined();
+    expect(AGENT_ROLES.filter((role) => role !== "chat" && role !== "sentinel" && ROLE_THINKING[role] === undefined)).toEqual([]);
   });
 
   it("is what an agent starts with: below a level the config or its model names, above the conversation's", async () => {

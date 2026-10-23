@@ -21,7 +21,7 @@ The session's, shared by every chat:
 - **what `activate` started** - it runs until turri ends or `/halt activated <name>`, whatever chats are opened or closed;
 - **the ledger** - one run, each event with the id of the chat its work was asked for in (`chat`), and `chat.opened` and `chat.closed` as they happen.
 
-A pulse's end is told to the chat that asked for it, shown or not - its agent reacts to it there; the chat's mark in the strip says it has something new. When that chat has been closed, the chat shown is told. Closing a chat stops its turn, never its pulses.
+A pulse's end goes to the [sentinel](sentinel.md) - a chat of turri's own, opened in the background with the first pulse that finishes - which checks it, tests what was released, and puts what needs you as a notice in the chat you are in. That chat shows the pulse's end; its agent is told of a pulse that landed, to tell you so and what the sentinel is doing with it - and when the sentinel is done with any pulse, what it found - and nothing more - and not of one that went wrong: the sentinel's notice is what it hears of that. With `sentinel: false`, a pulse's end is told to the chat that asked for it instead, shown or not - its agent reacts to it there; the chat's mark in the strip says it has something new. When that chat has been closed, the chat shown is told. Closing a chat stops its turn, never its pulses.
 
 ## In the terminal
 
@@ -45,13 +45,14 @@ On macOS, `alt` is Option (⌥), and reaches turri only when the terminal sends 
 - **The side panel** (`ctrl+h`) is the session's, not a chat's: docked beside the chat or over it, it stays as another chat is shown, and opening it from any chat finds it as it was left.
 - **A long command** - `/regenerate`, planning a module from scratch - does its work in the background once it is under way: the chat, and switching to another, stay free while the planner plans.
 - **`ctrl+c`** reaches the chat shown and nothing else: another chat's turn and skill go on, and so do the pulses - `/halt` stops one. A skill stopped keeps its run, for the model to continue with `resume`. At a question - the chat's `ask_user`, a skill's interview - `ctrl+c` declines it, and the asker is told so and goes on - each question it is pressed at, however many in a row. A skill is stopped by `ctrl+c` with no question open. A second press straight after one that stopped something does nothing, so pressing twice to be sure does not leave turri; once the chat is doing nothing, the next one does - with what every other chat is doing. A host has the same as `interrupt(id)`, and `decline(id)` for a question ([hosting](hosting.md)).
-- **The last chat** is not closed: `/quit` leaves turri. Leaving turri leaves the terminal as it was: the conversation is not written out to it, nor a line on how to resume - the command run is all that stays. `turri --continue` opens the chats again.
+- **The sentinel** is a chat in the strip like the others, `sentinel`, and never shown by itself: it closes like any chat, and the next pulse that finishes opens it again. With it on, you open up to eight chats - the ninth slot is its. See [the sentinel](sentinel.md).
+- **The last chat** of yours is not closed: `/quit` leaves turri. Leaving turri leaves the terminal as it was: the conversation is not written out to it, nor a line on how to resume - the command run is all that stays. `turri --continue` opens the chats again.
 - **`/fork`** and **`/reload`** work on the chat shown, as [pi](https://pi.dev)'s do: the chat's history forked, or turri's extension rebuilt in it.
 - **A chat shown mid-turn** draws its reply as far as it is written, and follows it from there.
 
 ## Coming back
 
-`turri --continue` (`-c`) opens every chat of the last session here again, in their order - the first shown, the others beside it. A plain `turri` starts with one fresh chat and deletes nothing: the chats of the sessions before stay on disk, and `--continue` opens the most recent one's - the last session that recorded a chat.
+`turri --continue` (`-c`) opens every chat of the last session here again, in their order - the first of yours shown, the others beside it, the sentinel among them. A plain `turri` starts with one fresh chat and deletes nothing: the chats of the sessions before stay on disk, and `--continue` opens the most recent one's - the last session that recorded a chat.
 
 turri records which chats are open in `.turri/chats.json` - a run a session, each chat with its title and [pi](https://pi.dev)'s saved conversation - and keeps it from piling up:
 

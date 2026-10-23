@@ -8,6 +8,8 @@ import { debugMode } from "./config.ts";
 import type { AskUserIO } from "./ask.ts";
 import { record } from "./regenerate/ledger.ts";
 import type { Job, JobRegistry } from "./regenerate/jobs.ts";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { newNotice, noticeTask, SENTINEL, wentWrong, type ChatRole, type Conclusion, type Notice, type NoticeAnswer, type NoticeInput } from "./notice.ts";
 
 /**
  * The chats of a turri session.
@@ -23,6 +25,10 @@ import type { Job, JobRegistry } from "./regenerate/jobs.ts";
  *
  * Where the chats live is a driver's: the terminal's (chat-terminal.ts) swaps which one pi's screen shows; a host's
  * (`createTurri`) makes a session for each and shows them in its own windows.
+ *
+ * With the project's sentinel on (sentinel.ts), every finished pulse goes to the sentinel - a chat of the session's own,
+ * opened in the background with the first, and again after it is closed - and the chat the person looks at shows only
+ * that it landed. What the sentinel finds wrong it puts to the person as a notice, in the chat they look at.
  */
 
 /** The most chats a session has open at once. */
@@ -40,6 +46,8 @@ export interface ChatInfo {
   status: ChatStatus;
   /** On the screen now - the terminal's, or the window the host said it shows (`focus`). */
   shown: boolean;
+  /** `sentinel` for the session's sentinel; none for a chat of the person's. */
+  role?: ChatRole;
 }
 
 /** What turri tells and asks a host that runs its conversation itself. */
@@ -61,12 +69,35 @@ export interface TurriHost {
    * work: what it returns is what is sent. For a host that needs to change anything else.
    */
   systemPrompt?(prompt: string): string;
+  /** The sentinel is done with a pulse - told to the chat it names, whose agent says so. */
+  onConcluded?(conclusion: Conclusion & { chat: string }): void;
+  /** What the sentinel puts to the person: the host draws it in the chat it names, and answers it with `answer`. */
+  onNotice?(notice: Notice): void;
+  /** A notice is over - answered, dismissed, or superseded by a newer one about its module: the host takes its card down. */
+  onNoticeOver?(notice: Notice): void;
+  /** The sentinel's own tools beside turri's: a host's browser, say. */
+  sentinel?: { tools?: ToolDefinition[] };
 }
 
 /** What a chat's extension does for its chat when the session asks. */
 export interface ChatInstance {
-  /** A pulse it asked for ended: said in the chat, and its agent told. */
+  /** A pulse it asked for ended: said in the chat, and its agent told, to react to it. */
   announce(job: Job): void;
+  /**
+   * A pulse ended, with the sentinel on: said in the chat - and, with `tell`, its agent told it landed and what the
+   * sentinel does with it, to tell the person and do nothing more.
+   */
+  landed(job: Job, options?: { tell?: boolean }): void;
+  /** The sentinel's: a pulse ended - its agent told, at once, or after what it does now; `replace`, what it does now stopped. */
+  brief(job: Job, context: { asked?: string; focused?: string; replace: boolean }): Promise<void>;
+  /** A notice put in the chat: drawn, and - in the terminal - put to the person once the chat is idle. */
+  notice(notice: Notice): void;
+  /** A notice is over: its dialog closed, if it is open. */
+  noticeOver(notice: Notice): void;
+  /** The sentinel is done with a pulse: said in the chat, and its agent told, to tell the person and do nothing more. */
+  concluded(conclusion: Conclusion): void;
+  /** The person answered a notice with something to do: the chat's agent started on it. */
+  act(task: string): void;
   /** The jobs changed: what it draws of them is drawn again. */
   jobsChanged(): void;
   /** How hard the chat's model thinks now: sub-agents started from it think as hard. */
@@ -81,6 +112,8 @@ export interface ChatLink {
   readonly scope: ChatScope;
   /** The host's dialogs, for this chat's questions - undefined in the terminal. */
   readonly dialogs: AskUserIO | undefined;
+  /** `sentinel` for the session's sentinel. */
+  readonly role: ChatRole | undefined;
   /** Its pi session, once it has one. */
   session(): AgentSession | undefined;
   /** The extension built for the chat - again, when pi rebuilds it - and what it does for it. */
@@ -103,6 +136,7 @@ export interface ChatDriver {
 export interface ChatState {
   id: string;
   scope: ChatScope;
+  role?: ChatRole;
   /** Its title as recorded, until it says one of its own. */
   recordedTitle?: string;
   session?: AgentSession;
@@ -134,8 +168,8 @@ export interface TurriCore {
   decline(id: string): "declined" | "none" | "missing";
   /** The chat shown now. */
   shown(): string | undefined;
-  /** Open a chat - fresh, or the saved one `sessionFile` is - shown at once unless `hidden`. */
-  open(options?: { sessionFile?: string; hidden?: boolean; title?: string }): Promise<ChatInfo>;
+  /** Open a chat - fresh, or the saved one `sessionFile` is - shown at once unless `hidden`; the sentinel with `role`. */
+  open(options?: { sessionFile?: string; hidden?: boolean; title?: string; role?: ChatRole }): Promise<ChatInfo>;
   close(id: string): Promise<void>;
   /** Show the chat - in the terminal, put it on the screen; for a host, the one its person looks at now. */
   show(id: string): Promise<void>;
@@ -156,8 +190,18 @@ export interface TurriCore {
   adopt(session: AgentSession, services: unknown): ChatState;
   /** For a driver: `chat` is on the screen now. */
   showing(chat: ChatState): void;
-  /** For the extension: a pulse ended - told to the chat that asked for it. */
+  /** For the extension: a pulse ended - told to the chat that asked for it, or, with the sentinel on, to the sentinel. */
   jobFinished(job: Job): void;
+  /** Whether finished pulses go to the sentinel now: it is on, and there is somewhere to open it. */
+  sentinelOn(): boolean;
+  /** A notice put to the person, in the chat they look at - the sentinel's, or turri's own. Undefined: no chat to put it in. */
+  notice(input: NoticeInput): Notice | undefined;
+  /** The sentinel done with a pulse: told to the chat the person looks at. Undefined: no chat to tell. */
+  concluded(conclusion: Conclusion): string | undefined;
+  /** The notices put to the person and not yet answered. */
+  notices(): Notice[];
+  /** A notice answered: what it asked done in the chat it is in, or dismissed. */
+  answer(id: string, answer: NoticeAnswer): "done" | "dismissed" | "missing" | "over";
   /** For the extension: the jobs changed - every chat draws them again. */
   jobsChanged(): void;
   /** The chat whose work this is, else the one shown: its instance. */
@@ -177,6 +221,8 @@ export interface CoreOptions {
   persist?: boolean;
   /** The host's dialogs, a chat's own. */
   dialogs?: (chat: string) => AskUserIO | undefined;
+  /** Whether the project wants a sentinel - read as each pulse finishes. Unset: none. */
+  sentinel?: () => boolean;
 }
 
 /** A chat's session, as stopping what it does reaches it. */
@@ -234,6 +280,10 @@ export function createChats(options: CoreOptions): TurriCore {
   /** Chats are opened one at a time: each one's extension is built while it is the one attaching. */
   let opening: Promise<unknown> = Promise.resolve();
   let notices: Array<[string, "info" | "warning" | "error"]> = [];
+  /** What the sentinel put to the person, and turri itself, this session: open until answered or superseded. */
+  const open: Notice[] = [];
+  /** The pulse the sentinel is on now, while its agent works: a newer one of the same module replaces a check of one that went well. */
+  let sentinelOnJob: { module: string | undefined; wrong: boolean } | undefined;
   const run: RunRecord = { run: randomUUID().slice(0, 8), pid: process.pid, started: new Date().toISOString(), chats: [] };
 
   const changed = () => {
@@ -247,7 +297,23 @@ export function createChats(options: CoreOptions): TurriCore {
   };
 
   /** A chat nothing was said in yet is a new chat: its number is beside it already, in the strip and the picker. */
-  const titleFor = (chat: ChatState) => titleOf(chat.session) ?? chat.recordedTitle ?? NEW_CHAT_TITLE;
+  const titleFor = (chat: ChatState) => (chat.role === SENTINEL ? SENTINEL : (titleOf(chat.session) ?? chat.recordedTitle ?? NEW_CHAT_TITLE));
+  const sentinelChat = () => chats.find((chat) => chat.role === SENTINEL);
+  /** The person's chats: all but the sentinel. */
+  const people = () => chats.filter((chat) => chat.role !== SENTINEL);
+  const wantsSentinel = () => {
+    try {
+      return options.sentinel?.() === true;
+    } catch {
+      return false;
+    }
+  };
+  /** The chat the person looks at, for what is put to them - never the sentinel: when it is shown, `fallback`, else their first. */
+  const personFacing = (fallback?: ChatState) => {
+    const shown = chats.find((chat) => chat.id === shownId);
+    if (shown !== undefined && shown.role !== SENTINEL && shown.instance !== undefined) return shown;
+    return fallback?.instance !== undefined && fallback.role !== SENTINEL ? fallback : people().find((chat) => chat.instance !== undefined);
+  };
 
   const statusOf = (chat: ChatState): ChatStatus =>
     (chat.ui?.waiting() ?? 0) > 0 ? "question" : chat.working ? "working" : chat.unread ? "unread" : "idle";
@@ -255,19 +321,21 @@ export function createChats(options: CoreOptions): TurriCore {
   /** What the session keeps of its chats on disk: those with something said in them, in order. */
   const persist = () => {
     if (options.persist !== true) return;
-    run.chats = chats.flatMap((chat): ChatRecord[] => {
+    // The sentinel last: `--continue` opens the first as pi's own chat, and that is the person's.
+    run.chats = [...people(), ...chats.filter((chat) => chat.role === SENTINEL)].flatMap((chat): ChatRecord[] => {
       const file = chat.session?.sessionFile;
-      return file !== undefined && existsSync(file) ? [{ id: chat.id, title: titleFor(chat), sessionFile: file }] : [];
+      return file !== undefined && existsSync(file) ? [{ id: chat.id, title: titleFor(chat), sessionFile: file, ...(chat.role !== undefined ? { role: chat.role } : {}) }] : [];
     });
     recordRun(cwd, run, { keep: debugMode(cwd) });
   };
 
-  const newChat = (title?: string): ChatState => {
+  const newChat = (title?: string, role?: ChatRole): ChatState => {
     const id = randomUUID().slice(0, 8);
     const chat: ChatState = {
       id,
       scope: { id, stack: process.env.TURRI_STACK?.trim() || undefined, asking: new Set() },
       ...(title !== undefined ? { recordedTitle: title } : {}),
+      ...(role !== undefined ? { role } : {}),
       working: false,
       unread: false,
     };
@@ -287,6 +355,7 @@ export function createChats(options: CoreOptions): TurriCore {
         changed();
       } else if (event.type === "agent_end") {
         chat.working = false;
+        if (chat.role === SENTINEL) sentinelOnJob = undefined;
         if (shownId !== chat.id) chat.unread = true;
         persist();
         changed();
@@ -308,7 +377,7 @@ export function createChats(options: CoreOptions): TurriCore {
     get terminal() {
       return driver?.terminal === true;
     },
-    chats: () => chats.map((chat) => ({ id: chat.id, title: titleFor(chat), status: statusOf(chat), shown: chat.id === shownId })),
+    chats: () => chats.map((chat) => ({ id: chat.id, title: titleFor(chat), status: statusOf(chat), shown: chat.id === shownId, ...(chat.role !== undefined ? { role: chat.role } : {}) })),
     session: (id) => chats.find((chat) => chat.id === id)?.session,
     decline(id) {
       const chat = chats.find((candidate) => candidate.id === id);
@@ -324,10 +393,16 @@ export function createChats(options: CoreOptions): TurriCore {
     async open(asked = {}) {
       if (driver === undefined) throw new Error("This turri has one chat: there is nowhere to open another.");
       const done = opening.then(async () => {
-        const already = asked.sessionFile !== undefined ? chats.find((chat) => chat.session?.sessionFile === asked.sessionFile) : undefined;
+        const already =
+          asked.sessionFile !== undefined ? chats.find((chat) => chat.session?.sessionFile === asked.sessionFile) : asked.role === SENTINEL ? sentinelChat() : undefined;
         if (already !== undefined) return already;
-        if (chats.length >= MAX_CHATS) throw new Error(`${MAX_CHATS} chats are open, the most there can be: close one first.`);
-        const chat = newChat(asked.title);
+        // The sentinel has a slot of its own: with it on, the person's chats are one fewer.
+        const room = asked.role === SENTINEL ? MAX_CHATS - people().length : (wantsSentinel() ? MAX_CHATS - 1 : MAX_CHATS) - people().length;
+        if (room <= 0) {
+          const most = wantsSentinel() ? MAX_CHATS - 1 : MAX_CHATS;
+          throw new Error(`${most} chats are open, the most there can be${wantsSentinel() ? " beside the sentinel" : ""}: close one first.`);
+        }
+        const chat = newChat(asked.title, asked.role);
         attaching = chat;
         try {
           await driver!.create(chat, asked.sessionFile);
@@ -338,7 +413,7 @@ export function createChats(options: CoreOptions): TurriCore {
           attaching = undefined;
         }
         follow(chat);
-        inChat(chat.scope, () => record({ kind: "chat.opened", reopened: asked.sessionFile !== undefined }, { project: cwd }));
+        inChat(chat.scope, () => record({ kind: "chat.opened", reopened: asked.sessionFile !== undefined, ...(chat.role !== undefined ? { role: chat.role } : {}) }, { project: cwd }));
         persist();
         changed();
         return chat;
@@ -354,7 +429,8 @@ export function createChats(options: CoreOptions): TurriCore {
       if (index === -1) return;
       const chat = chats[index]!;
       if (shownId === id) {
-        const next = chats[index + 1] ?? chats[index - 1];
+        const others = chats.filter((other) => other !== chat);
+        const next = others.find((other, at) => other.role !== SENTINEL && at >= index) ?? [...others].reverse().find((other) => other.role !== SENTINEL) ?? others[0];
         if (next !== undefined) await core.show(next.id);
         else shownId = undefined;
       }
@@ -432,6 +508,7 @@ export function createChats(options: CoreOptions): TurriCore {
         id: chat.id,
         scope: chat.scope,
         dialogs: chat.dialogs,
+        role: chat.role,
         session: () => chat.session,
         live: (instance) => {
           chat.instance = instance;
@@ -450,7 +527,13 @@ export function createChats(options: CoreOptions): TurriCore {
       return chat;
     },
 
+    sentinelOn: () => driver !== undefined && wantsSentinel(),
+
     jobFinished(job) {
+      if (core.sentinelOn()) {
+        sentinelFinished(job);
+        return;
+      }
       const asked = chats.find((chat) => chat.id === job.chat);
       const chat = asked?.instance !== undefined ? asked : (core.shownChat() ?? chats[0]);
       if (chat === undefined) return;
@@ -475,6 +558,69 @@ export function createChats(options: CoreOptions): TurriCore {
       }
     },
 
+    notice(input) {
+      const asked = chats.find((chat) => chat.id === (input.job !== undefined ? jobs.get(input.job)?.chat : undefined));
+      const target = personFacing(asked);
+      if (target === undefined) return undefined;
+      // One notice open a module: a newer one makes the older one's call to action stale.
+      if (input.module !== undefined) {
+        for (const older of open.filter((notice) => notice.state === "open" && notice.module === input.module)) over(older, "superseded");
+      }
+      const notice = newNotice(input, target.id);
+      open.push(notice);
+      if (target.id !== shownId) target.unread = true;
+      inChat(target.scope, () => record({ kind: "notice.put", notice: notice.id, severity: notice.severity, ...(notice.module !== undefined ? { module: notice.module } : {}) }, { project: cwd }));
+      try {
+        target.instance?.notice(notice);
+      } catch {
+        /* a chat let go as it was put: the host still hears it */
+      }
+      try {
+        host.onNotice?.(notice);
+      } catch {
+        /* a host that throws must not lose the notice */
+      }
+      changed();
+      return notice;
+    },
+
+    notices: () => open.filter((notice) => notice.state === "open"),
+
+    concluded(conclusion) {
+      const job = jobs.get(conclusion.job);
+      const target = personFacing(chats.find((chat) => chat.id === job?.chat));
+      if (target === undefined) return undefined;
+      const module = conclusion.module ?? job?.module;
+      const pulse = conclusion.pulse ?? job?.pulse;
+      const told = { ...conclusion, ...(module !== undefined ? { module } : {}), ...(pulse !== undefined ? { pulse } : {}) };
+      if (target.id !== shownId) target.unread = true;
+      inChat(target.scope, () => record({ kind: "sentinel.concluded", verdict: told.verdict, ...(module !== undefined ? { module } : {}) }, { project: cwd, job: told.job }));
+      try {
+        target.instance?.concluded(told);
+      } catch {
+        /* a chat let go as it was told: the host still hears it */
+      }
+      try {
+        host.onConcluded?.({ ...told, chat: target.id });
+      } catch {
+        /* a host that throws must not lose it */
+      }
+      changed();
+      return target.id;
+    },
+
+    answer(id, answer) {
+      const notice = open.find((candidate) => candidate.id === id);
+      if (notice === undefined) return "missing";
+      if (notice.state !== "open") return "over";
+      const task = noticeTask(notice, answer);
+      over(notice, "dismiss" in answer ? "dismissed" : "steer" in answer ? "steered" : "accepted");
+      if (task === undefined) return "dismissed";
+      const chat = chats.find((candidate) => candidate.id === notice.chat) ?? personFacing();
+      chat?.instance?.act(task);
+      return "done";
+    },
+
     instanceInScope() {
       const scoped = currentChat();
       return (chats.find((chat) => chat.id === scoped?.id) ?? core.shownChat() ?? chats[0])?.instance;
@@ -486,14 +632,15 @@ export function createChats(options: CoreOptions): TurriCore {
 
     async restore(saved, asked = {}) {
       adoptRun(cwd, saved.run);
-      const [first, ...rest] = saved.chats;
+      // The first of the person's chats is the one pi reopened itself (pi-launch.ts): the sentinel is never it.
+      const first = saved.chats.find((kept) => kept.role === undefined);
       if (first !== undefined && asked.skipFirst === true) {
         const chat = chats[0];
         if (chat !== undefined) chat.recordedTitle ??= first.title;
       }
-      for (const kept of asked.skipFirst === true ? rest : saved.chats) {
+      for (const kept of asked.skipFirst === true ? saved.chats.filter((other) => other !== first) : saved.chats) {
         try {
-          await core.open({ sessionFile: kept.sessionFile, hidden: true, title: kept.title });
+          await core.open({ sessionFile: kept.sessionFile, hidden: true, title: kept.title, ...(kept.role !== undefined ? { role: kept.role } : {}) });
         } catch (error) {
           core.notify(`The chat "${kept.title}" could not be reopened: ${error instanceof Error ? error.message : String(error)}`, "warning");
         }
@@ -501,6 +648,72 @@ export function createChats(options: CoreOptions): TurriCore {
       persist();
     },
   };
+  /** A notice ended - answered, dismissed, superseded: its dialog closed, and the host told. */
+  function over(notice: Notice, state: Exclude<Notice["state"], "open">): void {
+    notice.state = state;
+    const chat = chats.find((candidate) => candidate.id === notice.chat);
+    try {
+      chat?.instance?.noticeOver(notice);
+    } catch {
+      /* a chat let go has no dialog to close */
+    }
+    try {
+      host.onNoticeOver?.(notice);
+    } catch {
+      /* a host that throws must not keep the notice open */
+    }
+    if (chat !== undefined) inChat(chat.scope, () => record({ kind: "notice.over", notice: notice.id, state }, { project: cwd }));
+  }
+
+  /**
+   * A pulse ended, with the sentinel on: the chat the person looks at says so - its agent told of one that landed, to
+   * tell the person it landed and what the sentinel does with it, and nothing more; of one that went wrong, not, the
+   * sentinel's notice being what it hears of it - and the sentinel is told, opened in the background when it is not open. A newer pulse of a module replaces a check of the
+   * module's last pulse that went well; one that went wrong is looked into to its end.
+   */
+  function sentinelFinished(job: Job): void {
+    const asked = chats.find((chat) => chat.id === job.chat && chat.role !== SENTINEL);
+    const where = personFacing(asked);
+    if (where !== undefined) {
+      if (where.id !== shownId) where.unread = true;
+      try {
+        where.instance?.landed(job, { tell: !wentWrong(job) });
+      } catch {
+        /* a chat let go as the pulse ended: the sentinel still hears of it */
+      }
+    }
+    changed();
+    void (async () => {
+      let sentinel = sentinelChat();
+      if (sentinel === undefined) {
+        try {
+          await core.open({ hidden: true, role: SENTINEL });
+          sentinel = sentinelChat();
+        } catch (error) {
+          // No room for it, or nowhere to open it: the pulse is told as it is without one.
+          core.notify(`The sentinel could not be opened: ${error instanceof Error ? error.message : String(error)}`, "warning");
+          (asked ?? where)?.instance?.announce(job);
+          return;
+        }
+      }
+      if (sentinel?.instance === undefined) return;
+      const busy = sentinel.session?.isStreaming === true;
+      const replace = busy && sentinelOnJob !== undefined && !sentinelOnJob.wrong && sentinelOnJob.module !== undefined && sentinelOnJob.module === job.module;
+      sentinelOnJob = { module: job.module, wrong: wentWrong(job) };
+      if (sentinel.id !== shownId) sentinel.unread = true;
+      try {
+        await sentinel.instance.brief(job, {
+          ...(asked !== undefined ? { asked: titleFor(asked) } : {}),
+          ...(where !== undefined ? { focused: titleFor(where) } : {}),
+          replace,
+        });
+      } catch (error) {
+        core.notify(`The sentinel could not be told of ${job.id}: ${error instanceof Error ? error.message : String(error)}`, "warning");
+      }
+      changed();
+    })();
+  }
+
   return core;
 }
 

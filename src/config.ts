@@ -26,6 +26,7 @@ import { projectDirOf } from "./regenerate/paths.ts";
  * mutation-testing: false                                   # give the coding agent and the reviewer can_it_fail (default: true)
  * allow-to-stop-jobs: false                                 # stop a running job the spec moved on from (default: true)
  * release-after-pulse: true                                 # release what each pulse lands, as its last stage, before the next pulse (default: false)
+ * sentinel: false                                           # a chat of its own every finished pulse goes to, which tests the release and tells you what is wrong (default: true)
  * rules-off: [integrations]                                 # ***plain rules to leave out of the prompts, by name (default: none)
  * unittests-script: test_scripts/run_unittests.sh           # the testing scripts - see test-scripts.ts
  * conformance-tests-script: test_scripts/run_conformance_tests.sh
@@ -236,7 +237,7 @@ export interface ModelChoice {
  * The code fixer of a conformance run and the repair agent are coding agents; the unit-test and conformance arbiters
  * are both `arbiter`.
  */
-export const AGENT_ROLES = ["chat", "chooser", "planner", "diagnosis", "release", "coding", "conformance", "explorer", "reviewer", "test-reviewer", "judge", "arbiter", "debugger"] as const;
+export const AGENT_ROLES = ["chat", "sentinel", "chooser", "planner", "diagnosis", "release", "coding", "conformance", "explorer", "reviewer", "test-reviewer", "judge", "arbiter", "debugger"] as const;
 export type AgentRole = (typeof AGENT_ROLES)[number];
 
 /**
@@ -263,7 +264,7 @@ export const ROLE_THINKING: Partial<Record<AgentRole, ThinkingLevel>> = {
 /** The roles on the conversation's side: without their own entry they take the chat's model, not `default`. */
 // The release is not: it follows steps - a script, a start command - and runs on the coding model, thinking low. Nor
 // is the diagnosis: a post-mortem of a job that failed, read by the person - it runs on the coding model, thinking medium.
-const CHAT_SIDE: readonly AgentRole[] = ["chat", "chooser", "planner"];
+const CHAT_SIDE: readonly AgentRole[] = ["chat", "sentinel", "chooser", "planner"];
 
 /** A role's model and thinking, and how long each of its turns may take, in seconds - each may be left out. */
 export interface RoleChoice extends ModelChoice {
@@ -452,6 +453,11 @@ export interface ProjectConfig {
    * looking for the project's release guidance as the chat does, and doing what it says. Unset: false.
    */
   releaseAfterPulse?: boolean;
+  /**
+   * Whether the session has a sentinel: a chat of its own that every finished pulse goes to - checked, a release tested,
+   * and what is wrong put to the person - instead of the chat that asked for it (docs/sentinel.md). Unset: true.
+   */
+  sentinel?: boolean;
   /** Path from the root to the unit testing script. */
   unittestsScript?: string;
   /** Path from the root to the conformance testing script. */
@@ -525,6 +531,7 @@ export const CONFIG_KEYS = {
   mutationTesting: "mutation-testing",
   allowToStopJobs: "allow-to-stop-jobs",
   releaseAfterPulse: "release-after-pulse",
+  sentinel: "sentinel",
   unittestsScript: "unittests-script",
   conformanceTestsScript: "conformance-tests-script",
   prepareEnvironmentScript: "prepare-environment-script",
@@ -720,6 +727,7 @@ function readConfigFile(path: string): ProjectConfig {
     mutationTesting: typeof raw[CONFIG_KEYS.mutationTesting] === "boolean" ? (raw[CONFIG_KEYS.mutationTesting] as boolean) : undefined,
     allowToStopJobs: typeof raw[CONFIG_KEYS.allowToStopJobs] === "boolean" ? (raw[CONFIG_KEYS.allowToStopJobs] as boolean) : undefined,
     releaseAfterPulse: typeof raw[CONFIG_KEYS.releaseAfterPulse] === "boolean" ? (raw[CONFIG_KEYS.releaseAfterPulse] as boolean) : undefined,
+    sentinel: typeof raw[CONFIG_KEYS.sentinel] === "boolean" ? (raw[CONFIG_KEYS.sentinel] as boolean) : undefined,
     unittestsScript: text(raw[CONFIG_KEYS.unittestsScript]),
     conformanceTestsScript: text(raw[CONFIG_KEYS.conformanceTestsScript]),
     prepareEnvironmentScript: text(raw[CONFIG_KEYS.prepareEnvironmentScript]),

@@ -67,6 +67,8 @@ import { supersededByTurri } from "./chat-skills.ts";
 import { conversationIdentity } from "./identity.ts";
 import { setSurface, surfaceOf } from "./surface.ts";
 import { createChats, scopedToChat, type ChatLink, type TurriCore, type TurriHost } from "./chats.ts";
+import { landedNote, pulseEndsBlock, SENTINEL, SENTINEL_TOOLS, sentinelBrief, sentinelOn, sentinelPrompt, specConflictNotice } from "./sentinel.ts";
+import { noticeDialogs, registerSentinel } from "./sentinel-chat.ts";
 import { currentChat } from "./chat-scope.ts";
 import { registerChats } from "./chat-commands.ts";
 import { turriIdentity } from "./environment.ts";
@@ -372,6 +374,8 @@ export function createTurriCore(host: TurriHost = {}, options: { persist?: boole
     host,
     jobs,
     extension: (pi, link) => turriExtension(pi, core!, link),
+    // A finished pulse goes to the sentinel when the project wants one - read as each pulse finishes.
+    sentinel: () => sentinelOn(cwd),
     ...(options.persist !== undefined ? { persist: options.persist } : {}),
     ...(options.dialogs !== undefined ? { dialogs: options.dialogs } : {}),
   });
@@ -438,6 +442,12 @@ export function sessionLoop(session: TurriCore): WorkLoop {
 function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
   const pi = scopedToChat(api, link.scope);
   const { cwd, host, jobs } = session;
+  // The session's sentinel: its own prompt and tools - the project to read, notices, its guidance - and nothing that
+  // changes the project or starts work.
+  const isSentinel = link.role === SENTINEL;
+  const hostSentinelTools = isSentinel ? (host.sentinel?.tools ?? []) : [];
+  const sentinelAllowed = new Set([...SENTINEL_TOOLS, ...hostSentinelTools.map((tool) => tool.name)]);
+  if (isSentinel) registerSentinel(pi, session, cwd, hostSentinelTools, sentinelAllowed);
   const dialogs = link.dialogs ?? host.dialogs;
   // turri's own skills, and the project's - .turri/skills, .agents/skills (skills.ts).
   const discoveredSkills = discoverSkills(PACKAGE_ROOT, cwd);
@@ -490,8 +500,48 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
       { triggerTurn: true, deliverAs: "followUp" },
     );
   };
+  // The sentinel's: what a pulse that ended is, told to its agent - after what it does now, or in its place.
+  const brief = async (job: Job, context: { asked?: string; focused?: string; replace: boolean }) => {
+    if (context.replace) await link.session()?.abort();
+    announceJob(pi, job);
+    const config = readProjectConfig(cwd);
+    const content = sentinelBrief(job, {
+      project: cwd,
+      ...(context.asked !== undefined ? { asked: context.asked } : {}),
+      ...(context.focused !== undefined ? { focused: context.focused } : {}),
+      released: runningDeployed(job.module),
+      releaseAfterPulse: config.releaseAfterPulse === true,
+      reaction: JOB_FINISHED_REACTION,
+    });
+    const busy = link.session()?.isStreaming === true;
+    void pi.sendMessage(
+      { customType: "turri_sentinel_pulse", content, display: false, details: { jobId: job.id, status: job.status } },
+      { triggerTurn: true, ...(busy ? { deliverAs: "followUp" as const } : {}) },
+    );
+  };
+  // A pulse ended, with the sentinel on: said in the chat. One that landed is told to its agent too, to tell the person
+  // it landed and what the sentinel does with it - and nothing more: the pulse is the sentinel's. ***plain that
+  // contradicts itself is put to the person at once, by turri itself, as the chat would have been started on it.
+  const landed = (job: Job, options: { tell?: boolean } = {}) => {
+    announceJob(pi, job);
+    if (job.specConflict !== undefined) session.notice(specConflictNotice(job, specConflictTask(job.specConflict)));
+    if (options.tell !== true) return;
+    void pi.sendMessage(
+      { customType: "turri_job_landed", content: landedNote(job, runningDeployed(job.module)), display: false, details: { jobId: job.id, status: job.status } },
+      { triggerTurn: true, deliverAs: "followUp" },
+    );
+  };
+  const notices = noticeDialogs(pi, session, link, contextNow);
   link.live({
     announce,
+    landed,
+    brief,
+    notice: notices.put,
+    noticeOver: notices.over,
+    concluded: notices.concluded,
+    act: (task) => {
+      void pi.sendMessage({ customType: "turri_notice_answer", content: task, display: false }, { triggerTurn: true, deliverAs: "followUp" });
+    },
     jobsChanged: () => panel.refresh(),
     thinkingLevel: () => pi.getThinkingLevel(),
     context: contextNow,
@@ -540,8 +590,12 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
         );
       }
     }
+    if (isSentinel) {
+      const prompt = [event.systemPrompt, sentinelPrompt(cwd, { extraTools: hostSentinelTools.map((tool) => tool.name) }), projectConfigBlock(cwd), rulesBlock()].join("\n\n");
+      return { systemPrompt: host.systemPrompt !== undefined ? host.systemPrompt(prompt) : prompt };
+    }
     return {
-      systemPrompt: conversationSystemPrompt(event.systemPrompt, host, [TOOLS_NOT_CLI, NEW_PROJECT, projectConfigBlock(cwd), machineBlock(cwd, machine.now()), rulesBlock()]),
+      systemPrompt: conversationSystemPrompt(event.systemPrompt, host, [TOOLS_NOT_CLI, NEW_PROJECT, pulseEndsBlock(session.sentinelOn()), projectConfigBlock(cwd), machineBlock(cwd, machine.now()), rulesBlock()]),
     };
   });
 
@@ -558,6 +612,10 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
     return { action: "continue" as const };
   });
   pi.on("tool_call", (event) => {
+    // The sentinel reads, and puts what it finds to the person: whatever else it calls is refused.
+    if (isSentinel && !sentinelAllowed.has(event.toolName)) {
+      return { block: true, reason: `The sentinel changes nothing: ${event.toolName} is not one of its tools. Put what needs doing to the person with notify_person.` };
+    }
     const command = (event.input as { command?: unknown }).command;
     if (event.toolName === "bash" && typeof command === "string") {
       const what = selfInvocation(command);

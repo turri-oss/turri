@@ -97,7 +97,8 @@ function chatNamed(session: TurriCore, which: string): ChatInfo | string {
 function closeChat(ctx: ExtensionContext, session: TurriCore, which: string): void {
   const chat = chatNamed(session, which);
   if (typeof chat === "string") return ctx.ui.notify(chat, "warning");
-  if (session.chats().length === 1) return ctx.ui.notify("This is the only chat - /quit leaves turri.", "info");
+  // The sentinel is not the person's: the last chat of theirs is not closed.
+  if (chat.role === undefined && session.chats().filter((other) => other.role === undefined).length === 1) return ctx.ui.notify("This is the only chat - /quit leaves turri.", "info");
   later(ctx, session, () => session.close(chat.id));
 }
 

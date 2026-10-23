@@ -15,7 +15,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { NOTES_FILE } from "./notes.ts";
-import { RECORD_FILE } from "./records.ts";
+import { RECORD_FILE } from "./paths.ts";
 import { keptShellOutput, outputsDir, readOutputTool } from "./testing.ts";
 import { reportLogNote } from "./activity.ts";
 import { agentShell, type AgentShell } from "./agent-shell.ts";
@@ -52,6 +52,8 @@ export interface Confinement {
    * and run code: the coding agents and the conformance agent. Observers, explorers and judges never do.
    */
   reportsEnvironment?: boolean;
+  /** Whose home and temporary folder its shell has, by the module folder they are kept for - its workdir's module when not given. */
+  shellHome?: string;
 }
 
 export class ConfinementError extends Error {
@@ -377,7 +379,7 @@ export function confinedTools(c: Confinement): ConfinedTools {
   if (c.noBash === true) {
     description += ", no bash";
   } else {
-    const shell = agentShell({ workdir, read, write }, { busy: anotherPulseIn });
+    const shell = agentShell({ workdir, read, write, ...(c.shellHome !== undefined ? { home: c.shellHome } : {}) }, { busy: anotherPulseIn });
     const bash = createBashToolDefinition(workdir, { operations: hostBashOperations(shell), exposeSessionEnvironment: false });
     bash.description = `${bash.description}\n\n${hostEnvironmentNote()}\n\n${timeLimitNote()}`;
     tools.push(withKeptOutput(bash, workdir));

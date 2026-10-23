@@ -54,7 +54,12 @@ export type LedgerEvent =
   | { kind: "run.started"; mode: string; version: string | null; commit: string | null; dirty: boolean | null; pid: number; platform: string; node: string }
   | { kind: "run.ended"; ms: number }
   // A chat of the run's, opened - fresh, or a saved one reopened - and closed: its id is the entry's chat.
-  | { kind: "chat.opened"; reopened: boolean }
+  | { kind: "chat.opened"; reopened: boolean; role?: string }
+  // What the sentinel - or turri itself - put to the person, and how it ended: answered, dismissed, superseded.
+  | { kind: "notice.put"; notice: string; severity: string; module?: string }
+  | { kind: "notice.over"; notice: string; state: string }
+  // The sentinel done with a pulse: whether what it checked holds.
+  | { kind: "sentinel.concluded"; verdict: string; module?: string }
   | { kind: "chat.closed" }
   // A pulse, from queued to its end.
   | { kind: "job.queued"; jobKind: string; summary: string; pulse?: number; title?: string; model?: string; stack?: string; waitingOn: string[]; follows?: string }
