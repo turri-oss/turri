@@ -35,6 +35,13 @@ describe("what the chat is told it is", () => {
     expect(TURRI_IDENTITY).toContain("Say it as that likeness, not as a fact about a");
   });
 
+  it("goes on with the person while pulses regenerate in the background, and tells them they need not wait", () => {
+    expect(TURRI_IDENTITY).toContain("Pulses regenerate in the background and never hold the conversation");
+    expect(TURRI_IDENTITY).toContain("say so in a way that makes it plain they need not wait for it to finish");
+    expect(TURRI_IDENTITY).toContain("never tell\nthem to wait for one, and never stop to wait for one yourself");
+    expect(TURRI_IDENTITY).toContain("Changing the ***plain while a pulse runs is safe");
+  });
+
   it("says regenerate for what it does to the code - never grow - and reads an older text's grow as regenerate", () => {
     expect(TURRI_IDENTITY).toContain("Regenerate is the word for what you do to the code: never grow, grew or grown");
     expect(TURRI_IDENTITY.replace(/never grow, grew or grown/, "")).not.toMatch(/\bgr[eo]w/i);

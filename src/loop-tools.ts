@@ -138,7 +138,8 @@ export async function loopReply(loop: WorkLoop, statuses: ModuleStatus[], wait: 
       ? "Tell the user how it went."
       : "It regenerates in the background. " +
         "Nothing to wait for: if what you are doing has a next step - a question to ask, a file to edit, functional specs to conform - take it now, " +
-        "in this same turn, and tell the user what runs and what is planned alongside it, never as a reply that ends your turn. " +
+        "in this same turn, and tell the user what runs and what is planned alongside it, never as a reply that ends your turn - " +
+        "and that the two of you can go on with the ***plain, or anything else, meanwhile: they need not wait for it. " +
         "Use pulses with a pulse's id if they ask how it is going.",
   ].join("\n");
   return { content: [{ type: "text" as const, text }], details: { jobIds } };

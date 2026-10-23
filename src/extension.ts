@@ -1888,11 +1888,13 @@ async function deliver(
             ? `Queued ${input.kind} as pulse ${job.id}: ${summary}${onModel}. It writes the same ` +
               `module as ${job.waitingOn.map((id) => `pulse ${id}`).join(" and ")}, so it starts when that ` +
               "finishes. Nothing to wait for: if what you are doing has a next step, take it now, in this same turn, and tell " +
-              "the user it is queued and why alongside it, never as a reply that ends your turn. "
+              "the user it is queued and why alongside it, never as a reply that ends your turn - and that the two of you " +
+              "can go on with the ***plain, or anything else, meanwhile: they need not wait for it. "
             : `Started ${input.kind} as pulse ${job.id}: ${summary}${onModel}.\n` +
               "It is running now and will report back when it finishes - nothing to wait for: if what you are doing has a " +
               "next step, take it now, in this same turn, and tell the user it has started alongside it, never as a reply " +
-              "that ends your turn. ") +
+              "that ends your turn - and that the two of you can go on with the ***plain, or anything else, meanwhile: they " +
+              "need not wait for it. ") +
           `Use pulses with "${job.id}" if they ask how it is going.`,
       },
     ],
