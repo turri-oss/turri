@@ -116,7 +116,7 @@ describe("regenerating and waiting, from a skill - with the conversation's own r
     const registry = createJobRegistry();
     const loop = createWorkLoop({ registry, cwd: dir, planner: false });
     const regenerate = regenerateTool({ cwd: dir, jobs: registry, loop: () => loop });
-    expect(await call(regenerate, { plain_file: "app.plain" })).toContain("built from the spec as it is");
+    expect(await call(regenerate, { plain_file: "app.plain" })).toContain("built from the ***plain as it is");
     writeFileSync(join(dir, "app.plain"), spec(["- Say hello, loudly."]));
     const changed = await call(regenerate, { plain_file: "app.plain" });
     expect(changed).toContain("running: pulse");
@@ -133,7 +133,7 @@ describe("regenerating and waiting, from a skill - with the conversation's own r
     const asked: Array<string | undefined> = [];
     const regenerate = regenerateTool({ cwd: dir, jobs: registry, loop: () => loop, model: (_ctx, _file, _named, work) => (asked.push(work), undefined) });
     // Built from the spec as it is: nothing to do - until a functionality is named.
-    expect(await call(regenerate, { plain_file: "app.plain" })).toContain("built from the spec as it is");
+    expect(await call(regenerate, { plain_file: "app.plain" })).toContain("built from the ***plain as it is");
     expect(await call(regenerate, { plain_file: "app.plain", functionalities: ["1"] })).toContain("running: pulse");
     expect(asked).toEqual(["spec_changes", "functionalities"]);
     registry.stop(registry.list()[0]!.id);

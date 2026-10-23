@@ -161,7 +161,7 @@ describe("the panel", () => {
     const planning = { id: "planned-shorty-1", kind: "regenerate", summary: "shorty.plain the work", module: "shorty", status: "queued", sequence: 1, queuedAt: 0, startedAt: 0, waitingOn: [], tail: "", activity: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 }, agents: [], transcript: [], planning: { since: 1_000 } } as unknown as Job;
     const lines = jobPanelLines([planning], { now: 13_000 });
     expect(lines[0]).toMatch(/^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] shorty · planning the pulses · 12s$/);
-    expect(lines[1]).toBe("    the planner is cutting the work into pulses - the first starts once it is done");
+    expect(lines[1]).toBe("    working out what to regenerate and cutting it into pulses - the first starts once it is done");
     // A queued pulse alone - planned, not being planned - is no work going on: no panel.
     expect(jobPanelLines([{ ...planning, planning: undefined }])).toEqual([]);
   });

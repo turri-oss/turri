@@ -179,8 +179,8 @@ describe("the work loop", () => {
     expect(ran.map((job) => job.add)).toEqual([["1"], ["2"], ["3"]]);
     expect(ran.map((job) => job.fresh)).toEqual([true, false, false]);
     expect(readRecord(codeDir())).toEqual(codeTree(snapshotSpec(join(dir, "app.plain"), { cwd: dir }).tree));
-    expect(loop.status()[0]).toMatchObject({ module: "app", planned: [], why: "built from the spec as it is" });
-    expect(describeModules(loop.status())).toBe("app is up to date: its code is built from the spec as it is now in app.plain, so there is nothing to regenerate.");
+    expect(loop.status()[0]).toMatchObject({ module: "app", planned: [], why: "built from the ***plain as it is" });
+    expect(describeModules(loop.status())).toBe("app is up to date: its code is built from the ***plain as it is now in app.plain, so there is nothing to regenerate.");
   });
 
   it("is not fully regenerated while a pulse that ended without passing has its work undone - and is, once it lands", async () => {
@@ -1201,7 +1201,7 @@ describe("a codebase built without a module it now requires", () => {
     await loop.drain();
     expect(ran.slice(1).map((job) => job.module)).toEqual(["greeting", "app"]);
     expect(historyLog(codeDir())).toContain("start from scratch: it now requires greeting");
-    expect(loop.status().find((entry) => entry.module === "app")).toMatchObject({ planned: [], why: "built from the spec as it is" });
+    expect(loop.status().find((entry) => entry.module === "app")).toMatchObject({ planned: [], why: "built from the ***plain as it is" });
   });
 
   it("is not started over when nothing has to be", async () => {
@@ -1221,9 +1221,56 @@ describe("a module being planned", () => {
     loop = createWorkLoop({ registry, cwd: dir, planner: false, run: runner().run });
     await loop.bringUp("app.plain");
     await loop.drain();
-    expect(seen.length).toBeGreaterThanOrEqual(2);
-    expect(seen[0]).toEqual([{ id: "planned-app-1", since: expect.any(Number) }]);
-    expect(seen[1]!.some((row) => row.since !== undefined)).toBe(false);
+    // Asked for, it shows at once - before what is left is worked out - then as the planner plans it, then planned.
+    expect(seen[0]).toEqual([{ id: "planned-app-preparing", since: expect.any(Number) }]);
+    expect(seen).toContainEqual([{ id: "planned-app-1", since: expect.any(Number) }]);
+    expect(seen.at(-1)!.some((row) => row.since !== undefined)).toBe(false);
+  });
+
+  it("is shown from the moment it is asked for from scratch, before its code is deleted, a frame given to draw it", async () => {
+    const { existsSync } = await import("node:fs");
+    writeFileSync(join(dir, "app.plain"), app(["Say hello."]));
+    const registry = createJobRegistry();
+    const loop = createWorkLoop({ registry, cwd: dir, planner: false, run: runner().run });
+    await loop.bringUp("app.plain");
+    await loop.drain();
+    const seen: Array<{ rows: string[]; built: boolean }> = [];
+    registry.notify = () => seen.push({ rows: loop.planned().map((job) => job.id), built: existsSync(join(codeDir(), "app.py")) });
+    const asked = loop.fromScratch("app.plain");
+    // Told before anything is deleted - and the deletion waits a frame, the event loop free to draw it.
+    expect(seen).toEqual([{ rows: ["planned-app-1"], built: true }]);
+    expect(loop.planned()[0]!.planning).toEqual({ since: expect.any(Number) });
+    // A host draws the plan from status(): its code being planned, the same from the moment it was asked for.
+    expect(loop.status()).toEqual([expect.objectContaining({ module: "app", planned: [expect.objectContaining({ title: "the work", track: "code", planning: true })] })]);
+    expect(existsSync(join(codeDir(), "app.py"))).toBe(true);
+    await asked;
+    await loop.drain();
+    expect(loop.status()[0]!.planned.some((entry) => entry.planning === true)).toBe(false);
+  });
+
+  it("is in status() from the moment it is asked for though the loop holds nothing of it yet - turri just opened", async () => {
+    writeFileSync(join(dir, "app.plain"), app(["Say hello."]));
+    const registry = createJobRegistry();
+    const loop = createWorkLoop({ registry, cwd: dir, planner: false, run: runner().run });
+    const statuses: unknown[] = [];
+    registry.notify = () => statuses.push(loop.status());
+    const asked = loop.bringUp("app.plain");
+    expect(statuses[0]).toEqual([{ module: "app", plainFile: join(dir, "app.plain"), planned: [{ title: "the work", cases: expect.any(Object), track: "code", planning: true }] }]);
+    expect(loop.planned().map((job) => job.id)).toEqual(["planned-app-preparing"]);
+    await asked;
+    await loop.drain();
+    expect(loop.status().filter((status) => status.module === "app")).toHaveLength(1);
+  });
+
+  it("is looked at quietly when only its spec changed - no row before the plan", async () => {
+    writeFileSync(join(dir, "app.plain"), app(["Say hello."]));
+    const registry = createJobRegistry();
+    const seen: string[][] = [];
+    const loop = createWorkLoop({ registry, cwd: dir, planner: false, run: runner().run });
+    registry.notify = () => seen.push(loop.planned().map((job) => job.id));
+    await loop.bringUp("app.plain", { specChange: true });
+    await loop.drain();
+    expect(seen.flat()).not.toContain("planned-app-preparing");
   });
 });
 
@@ -1247,7 +1294,7 @@ describe("a module regenerated from scratch", () => {
     expect(ran).toHaveLength(4);
     expect(historyLog(codeDir())).toContain("start from scratch: asked to be regenerated from scratch");
     expect(existsSync(join(codeDir(), "app.py"))).toBe(true);
-    expect(loop.status().find((entry) => entry.module === "app")).toMatchObject({ planned: [], why: "built from the spec as it is" });
+    expect(loop.status().find((entry) => entry.module === "app")).toMatchObject({ planned: [], why: "built from the ***plain as it is" });
   });
 
   it("leaves the modules below it as they are - the module starts again from a copy of the code below it", async () => {
@@ -1277,7 +1324,7 @@ describe("a module regenerated from scratch", () => {
     await loop.drain();
     expect(ran.slice(2).map((job) => job.module)).toEqual(["greeting", "app"]);
     for (const module of ["greeting", "app"]) expect(historyLog(codeDir(module))).toContain("start from scratch: asked to be regenerated from scratch, with its whole chain");
-    expect(loop.status().find((entry) => entry.module === "app")).toMatchObject({ planned: [], why: "built from the spec as it is" });
+    expect(loop.status().find((entry) => entry.module === "app")).toMatchObject({ planned: [], why: "built from the ***plain as it is" });
   });
 
   it("builds a module never built, as regenerate does", async () => {

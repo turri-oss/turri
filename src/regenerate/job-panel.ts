@@ -258,7 +258,7 @@ export function jobPanelLines(jobs: Job[], options: PanelOptions = {}): string[]
   for (const job of planning) {
     if (lines.length > 0 && running.length > 0) lines.push("");
     lines.push(`${spinner(now)} ${job.module ?? job.summary} · planning the pulses · ${formatElapsed(now - job.planning!.since)}`);
-    lines.push("    the planner is cutting the work into pulses - the first starts once it is done");
+    lines.push("    working out what to regenerate and cutting it into pulses - the first starts once it is done");
   }
 
   // Always a line of help: how to see more here, and how to inspect the jobs in the side panel.

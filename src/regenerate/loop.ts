@@ -1141,6 +1141,27 @@ export function createWorkLoop(options: {
   /** The files asked for, each with how: what the loop brings up, worked out again each look. */
   const asked = new Map<string, { model?: string; guidance?: string }>();
 
+  /**
+   * The modules asked for whose plan is not made yet - their code being deleted, what is left being worked out, the
+   * planner not started - by name, with since when: each shows as being planned from the moment it is asked for, not
+   * only once the planner runs, so the person never looks at nothing.
+   */
+  const preparing = new Map<string, { since: number; plainFile: string }>();
+  const preparingFor = async <T>(plainFile: string, work: () => Promise<T>): Promise<T> => {
+    const name = basename(plainFile).replace(/\.plain$/, "");
+    if (preparing.has(name)) return work();
+    preparing.set(name, { since: Date.now(), plainFile: resolve(options.cwd, plainFile) });
+    options.registry.notify?.();
+    // A frame to draw it in before what follows: deleting a codebase and committing it hold the event loop.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    try {
+      return await work();
+    } finally {
+      preparing.delete(name);
+      options.registry.notify?.();
+    }
+  };
+
   /** The codebases the requests bring up now - where each module's code lives, and what is to be built on it. */
   const active = (): Set<ModuleState> => {
     const states = new Set<ModuleState>();
@@ -1328,14 +1349,29 @@ export function createWorkLoop(options: {
 
   const statusOf = (state: ModuleState): ModuleStatus => describe(state).status;
 
+  /** The modules asked for that the loop holds nothing of yet - turri just opened, say: their code being planned all the same. */
+  const preparingAlone = (): Array<ModuleStatus & { since: number }> => {
+    const held = new Set(order.map((key) => tipEntry(modules.get(key)!).moduleName));
+    return [...preparing]
+      .filter(([name]) => !held.has(name))
+      .map(([name, { since, plainFile }]) => ({
+        module: name,
+        plainFile,
+        planned: [{ title: "the work", cases: { fresh: false, add: [], patch: [], again: [], delete: [], mechanical: false }, track: "code" as const, planning: true as const }],
+        since,
+      }));
+  };
+
   /** A codebase's status, and beside each job it lists as planned, the planned job it is - none for one being planned or scheduled. */
   const describe = (state: ModuleState): ReturnType<typeof describeIn> => inStack(state, () => describeIn(state));
   const describeIn = (state: ModuleState): { status: ModuleStatus; jobs: Array<PlannedJob | undefined>; scheduled: Array<{ title: string; specs: string[] } | undefined> } => {
     // What runs next: the code's jobs, then the conformance tests' - the module's, once its code is built - the running job first.
     const running = state.running?.planned;
     const own = (jobs: PlannedJob[] | undefined) => (jobs ?? []).filter((job) => job !== running);
-    // A track being planned again shows as that, not as its plan before.
-    const replanning = state.running === undefined ? state.planning : undefined;
+    // A track being planned again shows as that, not as its plan before - and a module asked for, from that moment, as
+    // its code being planned: its code deleted, what is left worked out, before the planner runs.
+    const planningTrack = state.running === undefined ? (state.planning ?? (preparing.has(tipEntry(state).moduleName) ? "code" : undefined)) : undefined;
+    const replanning = planningTrack;
     const jobs = [
       ...(running !== undefined ? [running] : []),
       ...(replanning === "code" ? [] : own(state.plan?.jobs)),
@@ -1353,18 +1389,18 @@ export function createWorkLoop(options: {
     // Being planned, nothing running: what is next - for the conformance tests, the groups chosen that it plans - not nothing.
     const together = (state.together ?? []).flat().map((touched) => `fs ${touched.frid}`);
     const planningNow: ModuleStatus["planned"] =
-      state.running === undefined && state.planning !== undefined
+      planningTrack !== undefined
         ? [
             {
-              title: state.planning === "conformance" ? (together.length > 0 ? together.join(", ") : "the conformance tests") : "the work",
+              title: planningTrack === "conformance" ? (together.length > 0 ? together.join(", ") : "the conformance tests") : "the work",
               cases: { fresh: false, add: [], patch: [], again: [], delete: [], mechanical: false },
-              track: state.planning,
+              track: planningTrack,
               planning: true,
             },
           ]
         : [];
     // The module's conformance tests, wanted for all of it while code is still to build: planned once it is built, shown now.
-    const codeToBuild = lastCode !== -1 || (state.running === undefined && state.planning === "code");
+    const codeToBuild = lastCode !== -1 || planningTrack === "code";
     const testReqs = ((state.seen?.tree[TEST_REQUIREMENTS] as unknown[] | undefined) ?? []).length > 0;
     const plainFile = tipEntry(state).plainFile;
     const wholeModule = (state.conformance !== undefined && state.conformance.chosen === undefined) || (configConformance(plainFile) && !configChosen(plainFile));
@@ -1430,65 +1466,71 @@ export function createWorkLoop(options: {
 
   const loop: WorkLoop = {
     async bringUp(plainFile, given = {}) {
-      const { specChange, ...request } = given;
-      const files = codebasesOf(resolve(options.cwd, plainFile));
-      for (const file of files) asked.set(file, { ...asked.get(file), ...request });
-      // Asked for, it is built with its stack - the one the call names, its own, or the one chosen now - pinned, whatever
-      // is chosen later; a spec change keeps the one it was asked for with.
-      const pin = { keep: specChange === true };
-      const states = withParseCache(() =>
-        files.flatMap((file) => chainsFor(file).flatMap((chain) => toBuild(chain).map((entry) => track(chain.slice(0, chain.indexOf(entry) + 1), file, request, pin)))),
-      );
-      // Asked again, a halted codebase is tried again - one the person halted too, unless only its spec changed.
-      for (const state of states) {
-        state.halted = undefined;
-        if (specChange !== true) state.held = undefined;
-      }
-      await tick();
-      return [...new Set(states)].map(statusOf);
+      const now = async () => {
+        const { specChange, ...request } = given;
+        const files = codebasesOf(resolve(options.cwd, plainFile));
+        for (const file of files) asked.set(file, { ...asked.get(file), ...request });
+        // Asked for, it is built with its stack - the one the call names, its own, or the one chosen now - pinned, whatever
+        // is chosen later; a spec change keeps the one it was asked for with.
+        const pin = { keep: specChange === true };
+        const states = withParseCache(() =>
+          files.flatMap((file) => chainsFor(file).flatMap((chain) => toBuild(chain).map((entry) => track(chain.slice(0, chain.indexOf(entry) + 1), file, request, pin)))),
+        );
+        // Asked again, a halted codebase is tried again - one the person halted too, unless only its spec changed.
+        for (const state of states) {
+          state.halted = undefined;
+          if (specChange !== true) state.held = undefined;
+        }
+        await tick();
+        return [...new Set(states)].map(statusOf);
+      };
+      // Asked for, it shows as being planned at once; a spec change is looked at quietly, as every change is.
+      return given.specChange === true ? now() : preparingFor(plainFile, now);
     },
     async regenerateAgain(plainFile, given, request = {}) {
-      const frids = [...new Set(Array.isArray(given) ? given : [given])];
-      const asked = resolve(options.cwd, plainFile);
-      const own = resolveRequiresChain(asked, [], undefined, { allowNoFunctionalities: true });
-      const module = tipOf(own).moduleName;
-      const chains = chainsFor(asked);
-      for (const chain of chains) {
-        const tip = tipOf(chain);
-        if (modules.get(tip.buildDir)?.running !== undefined) throw new Error(`${tip.moduleName} has a pulse running: ask again once it is done.`);
-      }
-      const found = new Set<string>();
-      for (const chain of chains) {
-        const tip = tipOf(chain);
-        const record = readRecord(tip.buildDir);
-        if (record === null) continue;
-        const section = tip.moduleName === module ? FUNCTIONAL_REQUIREMENTS : REQUIRED_FUNCTIONAL_SPECS;
-        const items = (record[section] as Array<{ module?: string; frid?: string }> | undefined) ?? [];
-        const named = (item: { module?: string; frid?: string }, index: number) =>
-          section === FUNCTIONAL_REQUIREMENTS ? String(index + 1) : item.module === module ? (item.frid ?? "") : "";
-        const taken = items.flatMap((item, index) => (frids.includes(named(item, index)) ? [named(item, index)] : []));
-        if (taken.length === 0) continue;
-        for (const frid of taken) found.add(frid);
-        const marked = items.map((item, index) => (frids.includes(named(item, index)) ? { ...item, [REGENERATE_AGAIN]: true } : item));
-        writeCodeRecord(tip.buildDir, { ...record, [section]: marked } as MarshalledPlainSource);
-        // Its conformance tests were written against the code being replaced: marked with it, they are written again -
-        // checked against the new code, and rewritten where they relied on what the old code chose - once it lands.
-        if (section === FUNCTIONAL_REQUIREMENTS) {
-          const testsDir = conformanceDirFor(tip.moduleName, modulesRoot(projectDirOf(tip.plainFile)));
-          const tests = readRecord(testsDir);
-          const tested = (tests?.[FUNCTIONAL_REQUIREMENTS] as Array<{ frid?: string }> | undefined) ?? [];
-          if (tested.some((item) => item.frid !== undefined && taken.includes(item.frid))) {
-            const again = tested.map((item) => (item.frid !== undefined && taken.includes(item.frid) ? { ...item, [REGENERATE_AGAIN]: true } : item));
-            writeTestsRecord(testsDir, { ...tests, [FUNCTIONAL_REQUIREMENTS]: again } as MarshalledPlainSource);
-          }
+      return preparingFor(plainFile, async () => {
+        const frids = [...new Set(Array.isArray(given) ? given : [given])];
+        const asked = resolve(options.cwd, plainFile);
+        const own = resolveRequiresChain(asked, [], undefined, { allowNoFunctionalities: true });
+        const module = tipOf(own).moduleName;
+        const chains = chainsFor(asked);
+        for (const chain of chains) {
+          const tip = tipOf(chain);
+          if (modules.get(tip.buildDir)?.running !== undefined) throw new Error(`${tip.moduleName} has a pulse running: ask again once it is done.`);
         }
-        recordHistory(tip.buildDir, `${module} functional spec${taken.length === 1 ? "" : "s"} ${taken.join(", ")} to regenerate again`);
-      }
-      const missing = frids.filter((frid) => !found.has(frid));
-      if (found.size === 0) throw new Error(`${module} has no functional spec ${missing.join(", ")} built anywhere, so there is nothing to regenerate again: regenerate builds what is not built.`);
-      const statuses = await loop.bringUp(plainFile, request);
-      if (missing.length > 0) reportActivity(`  ${module}: functional spec ${missing.join(", ")} is not built anywhere - nothing to regenerate again there`);
-      return statuses;
+        const found = new Set<string>();
+        for (const chain of chains) {
+          const tip = tipOf(chain);
+          const record = readRecord(tip.buildDir);
+          if (record === null) continue;
+          const section = tip.moduleName === module ? FUNCTIONAL_REQUIREMENTS : REQUIRED_FUNCTIONAL_SPECS;
+          const items = (record[section] as Array<{ module?: string; frid?: string }> | undefined) ?? [];
+          const named = (item: { module?: string; frid?: string }, index: number) =>
+            section === FUNCTIONAL_REQUIREMENTS ? String(index + 1) : item.module === module ? (item.frid ?? "") : "";
+          const taken = items.flatMap((item, index) => (frids.includes(named(item, index)) ? [named(item, index)] : []));
+          if (taken.length === 0) continue;
+          for (const frid of taken) found.add(frid);
+          const marked = items.map((item, index) => (frids.includes(named(item, index)) ? { ...item, [REGENERATE_AGAIN]: true } : item));
+          writeCodeRecord(tip.buildDir, { ...record, [section]: marked } as MarshalledPlainSource);
+          // Its conformance tests were written against the code being replaced: marked with it, they are written again -
+          // checked against the new code, and rewritten where they relied on what the old code chose - once it lands.
+          if (section === FUNCTIONAL_REQUIREMENTS) {
+            const testsDir = conformanceDirFor(tip.moduleName, modulesRoot(projectDirOf(tip.plainFile)));
+            const tests = readRecord(testsDir);
+            const tested = (tests?.[FUNCTIONAL_REQUIREMENTS] as Array<{ frid?: string }> | undefined) ?? [];
+            if (tested.some((item) => item.frid !== undefined && taken.includes(item.frid))) {
+              const again = tested.map((item) => (item.frid !== undefined && taken.includes(item.frid) ? { ...item, [REGENERATE_AGAIN]: true } : item));
+              writeTestsRecord(testsDir, { ...tests, [FUNCTIONAL_REQUIREMENTS]: again } as MarshalledPlainSource);
+            }
+          }
+          recordHistory(tip.buildDir, `${module} functional spec${taken.length === 1 ? "" : "s"} ${taken.join(", ")} to regenerate again`);
+        }
+        const missing = frids.filter((frid) => !found.has(frid));
+        if (found.size === 0) throw new Error(`${module} has no functional spec ${missing.join(", ")} built anywhere, so there is nothing to regenerate again: regenerate builds what is not built.`);
+        const statuses = await loop.bringUp(plainFile, request);
+        if (missing.length > 0) reportActivity(`  ${module}: functional spec ${missing.join(", ")} is not built anywhere - nothing to regenerate again there`);
+        return statuses;
+      });
     },
     drift(plainFile) {
       const file = resolve(options.cwd, plainFile);
@@ -1633,18 +1675,20 @@ export function createWorkLoop(options: {
       return loop.bringUp(plainFile, request);
     },
     async fromScratch(plainFile, { chain, ...request } = {}) {
-      const file = resolve(options.cwd, plainFile);
-      // Where its code lives: the tips its module is built in, or - none built yet - its own codebase. The whole chain:
-      // every codebase in those chains, bottom first - a tip taken back to nothing is otherwise started from a copy of
-      // the code below it.
-      const chains = chainsFor(file);
-      const codebases = [...new Map((chain === true ? chains.flat() : chains.map(tipOf)).map((entry) => [entry.buildDir, entry])).values()];
-      for (const entry of codebases) {
-        if (modules.get(entry.buildDir)?.running !== undefined) throw new Error(`${entry.moduleName} has a pulse running: halt it, or ask again once it is done.`);
-      }
-      const why = chain === true ? "asked to be regenerated from scratch, with its whole chain" : "asked to be regenerated from scratch";
-      for (const entry of codebases) if (started(entry)) startAgain(entry, why);
-      return loop.bringUp(plainFile, request);
+      return preparingFor(plainFile, async () => {
+        const file = resolve(options.cwd, plainFile);
+        // Where its code lives: the tips its module is built in, or - none built yet - its own codebase. The whole chain:
+        // every codebase in those chains, bottom first - a tip taken back to nothing is otherwise started from a copy of
+        // the code below it.
+        const chains = chainsFor(file);
+        const codebases = [...new Map((chain === true ? chains.flat() : chains.map(tipOf)).map((entry) => [entry.buildDir, entry])).values()];
+        for (const entry of codebases) {
+          if (modules.get(entry.buildDir)?.running !== undefined) throw new Error(`${entry.moduleName} has a pulse running: halt it, or ask again once it is done.`);
+        }
+        const why = chain === true ? "asked to be regenerated from scratch, with its whole chain" : "asked to be regenerated from scratch";
+        for (const entry of codebases) if (started(entry)) startAgain(entry, why);
+        return loop.bringUp(plainFile, request);
+      });
     },
     halt(target, reason) {
       const named = target.trim();
@@ -1690,14 +1734,33 @@ export function createWorkLoop(options: {
       ].join("");
     },
     status() {
-      return order.map((key) => statusOf(modules.get(key)!));
+      return [...order.map((key) => statusOf(modules.get(key)!)), ...preparingAlone().map(({ since: _since, ...status }) => status)];
     },
     planned() {
       const now = Date.now();
       let sequence = Number.MAX_SAFE_INTEGER;
       // The last job - running or planned - of each module, by name: what a module waiting for it waits behind.
       const lastOf = new Map<string, string>();
-      return order.flatMap((key) => {
+      // A module asked for that the loop holds nothing of yet: being planned, from the moment it was asked for.
+      const early = preparingAlone().map(({ module: name, since }): Job => ({
+        id: `planned-${name}-preparing`,
+        kind: "regenerate",
+        summary: `${name}.plain - being planned`,
+        module: name,
+        note: "Being planned into pulses now. The first starts as soon as the plan is made.",
+        status: "queued",
+        sequence: sequence--,
+        queuedAt: since,
+        startedAt: since,
+        waitingOn: [],
+        tail: "",
+        activity: [],
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 },
+        agents: [],
+        transcript: [],
+        planning: { since },
+      }));
+      return [...early, ...order.flatMap((key) => {
         const state = modules.get(key)!;
         const tip = tipEntry(state);
         const status = statusOf(state);
@@ -1749,12 +1812,12 @@ export function createWorkLoop(options: {
             before !== undefined ? [before] : [],
             job.track === "conformance",
           );
-          if (job.planning === true) planned.planning = { since: state.planningSince ?? now };
+          if (job.planning === true) planned.planning = { since: state.planningSince ?? preparing.get(tip.moduleName)?.since ?? now };
           before = planned.id;
           lastOf.set(tip.moduleName, planned.id);
           return planned;
         });
-      });
+      })];
     },
     firsts() {
       return order.flatMap((key) => {
@@ -1818,7 +1881,7 @@ export function createWorkLoop(options: {
 }
 
 /** Why nothing runs in a codebase whose code - and conformance tests, where they are wanted - is built from its spec as it is. */
-export const UP_TO_DATE = "built from the spec as it is";
+export const UP_TO_DATE = "built from the ***plain as it is";
 
 /** Why a codebase with work left has no plan: the planner found none. */
 const NO_PLAN = "the planner found no way to cut the work into pulses that hold together";
@@ -1941,12 +2004,12 @@ export function describeModules(statuses: ModuleStatus[], options: { for?: "chat
   return statuses
     .map((status) => {
       // Nothing to do there: said in a sentence, not as a status.
-      if (isUpToDate(status)) return `${status.module} is up to date: its code is built from the spec as it is now in ${basename(status.plainFile)}, so there is nothing to regenerate.`;
+      if (isUpToDate(status)) return `${status.module} is up to date: its code is built from the ***plain as it is now in ${basename(status.plainFile)}, so there is nothing to regenerate.`;
       const lines = [`${status.module} (${basename(status.plainFile)}${status.stack !== undefined ? `, stack ${status.stack}` : ""}):`];
       if (status.running !== undefined) {
         lines.push(`  running: pulse ${status.running.jobId} - ${status.running.title}`);
         // Steered, not stopped or planned again: what changed went to its agent.
-        for (const why of status.running.steered ?? []) lines.push(`    ⇢ steered: ${why} - its agent was told, and it lands the spec as it is now there`);
+        for (const why of status.running.steered ?? []) lines.push(`    ⇢ steered: ${why} - its agent was told, and it lands the ***plain as it is now there`);
       }
       status.planned.forEach((job, index) =>
         lines.push(

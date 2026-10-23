@@ -1040,7 +1040,7 @@ function registerRegenerate(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
   // by the planner: one functional spec at a time, a few together or the whole module in one, as it judges. What
   // follows the module is guidance for that plan, in the person's words.
   pi.registerCommand("regenerate", {
-    description: "Regenerate a module from its spec as it is now, in pulses the planner cuts - named functionalities though they did not change, or all of it from scratch, its whole chain too when asked: /regenerate [module | file.plain] [functionality ...] [from scratch [whole chain]] [how to cut the work]",
+    description: "Regenerate a module from its ***plain as it is now, in pulses the planner cuts - named functionalities though they did not change, or all of it from scratch, its whole chain too when asked: /regenerate [module | file.plain] [functionality ...] [from scratch [whole chain]] [how to cut the work]",
     handler: async (args, ctx) => {
       const command = `/regenerate ${args.trim()}`.trim();
       await echoCommand(pi, command);
@@ -1090,8 +1090,8 @@ function registerRegenerate(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
         const agreed = await ctx.ui.confirm(
           chain ? `Regenerate ${module} and its whole chain from scratch?` : `Regenerate ${module} from scratch?`,
           chain
-            ? `The code and conformance tests of ${module} and of every module it requires are deleted - committed first, so /lineage keeps them - and the whole chain is regenerated from its spec, from the bottom.`
-            : `Its code and conformance tests are deleted - committed first, so /lineage ${module} keeps them - and the whole module is regenerated from its spec.`,
+            ? `The code and conformance tests of ${module} and of every module it requires are deleted - committed first, so /lineage keeps them - and the whole chain is regenerated from its ***plain, from the bottom.`
+            : `Its code and conformance tests are deleted - committed first, so /lineage ${module} keeps them - and the whole module is regenerated from its ***plain.`,
         );
         if (!agreed) return;
       }
@@ -1123,10 +1123,12 @@ function registerRegenerate(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
                 : loop.bringUp(target, request),
           );
           // Nothing to do: say how to build it again anyway.
-          const hint = statuses.length > 0 && statuses.every(isUpToDate)
+          const upToDate = statuses.length > 0 && statuses.every(isUpToDate);
+          const hint = upToDate
             ? `\nTo regenerate parts of it anyway, name their functionalities - /regenerate ${basename(target)} 2.1 - or start over with /regenerate ${basename(target)} from scratch.`
             : "";
-          say(describeModules(statuses) + hint, "info");
+          // Pulses started: the agent says so, and that the person need not wait - a plan alone leaves the chat silent.
+          shownAfterCommand(pi, ctx, command, describeModules(statuses) + hint, "info", true, upToDate ? undefined : COMMAND_STARTED_REACTION);
         } catch (error) {
           say(error instanceof Error ? error.message : String(error), "error");
         }
@@ -1141,7 +1143,8 @@ function registerRegenerate(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
 /**
  * What a slash command showed the person: kept in the chat, where they read it, and put in the conversation as well -
  * unseen there - so that when they speak of it next ("fix it"), the agent knows what they saw. A command runs outside
- * the agent's turns, and a notification is gone in seconds and reaches no model.
+ * the agent's turns, and a notification is gone in seconds and reaches no model. Given `react`, the agent is started on
+ * it too - at once when it is idle, else once its turn ends - told what to do with it.
  */
 export function shownAfterCommand(
   pi: ExtensionAPI,
@@ -1151,6 +1154,7 @@ export function shownAfterCommand(
   level: NonNullable<CommandOutcome["level"]>,
   /** The command is in the chat already, above it (echoCommand): the text alone. */
   echoed = false,
+  react?: string,
 ): void {
   try {
     pi.appendEntry(COMMAND_OUTCOME, { command, text, level, ...(echoed ? { echoed } : {}) } satisfies CommandOutcome);
@@ -1158,8 +1162,19 @@ export function shownAfterCommand(
     // Shown for a moment all the same.
     if (ctx.hasUI) ctx.ui.notify(text, level);
   }
-  void pi.sendMessage({ customType: COMMAND_OUTCOME, content: `The person ran ${command}, and was shown:\n${text}`, display: false });
+  const content = `The person ran ${command}, and was shown:\n${text}${react !== undefined ? `\n\n${react}` : ""}`;
+  if (react === undefined) void pi.sendMessage({ customType: COMMAND_OUTCOME, content, display: false });
+  else void pi.sendMessage({ customType: COMMAND_OUTCOME, content, display: false }, { triggerTurn: true, deliverAs: "followUp" });
 }
+
+/**
+ * What the agent does once /regenerate has started pulses: a command's output alone leaves the chat silent, and the
+ * person wondering whether to wait. It says what runs, and that they need not - and starts nothing itself.
+ */
+export const COMMAND_STARTED_REACTION =
+  "My pulses are regenerating from the person's /regenerate, in the background. Tell the person, in a line or two, what " +
+  "runs and what is planned - and that the two of us can go on with the ***plain, or anything else, meanwhile: they need " +
+  "not wait for it. Start nothing for it: no regenerate, no check, no release - its end is told when it comes.";
 
 export const COMMAND_OUTCOME = "turri_command_outcome";
 

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { COMMAND_OUTCOME, echoCommand, moduleNamedFirst, shownAfterCommand } from "../src/extension.ts";
+import { COMMAND_OUTCOME, COMMAND_STARTED_REACTION, echoCommand, moduleNamedFirst, shownAfterCommand } from "../src/extension.ts";
 
 function fakes(options: { appendFails?: boolean } = {}) {
   const notified: Array<{ text: string; level: string }> = [];
@@ -40,6 +40,22 @@ describe("what a slash command showed the person", () => {
     shownAfterCommand(pi, ctx, "/halt activated api", "Halted api.", "info");
     expect(notified).toEqual([{ text: "Halted api.", level: "info" }]);
     expect(sent.map((entry) => entry.message.content)).toEqual(["The person ran /halt activated api, and was shown:\nHalted api."]);
+  });
+});
+
+describe("a command that started pulses", () => {
+  it("starts the agent on what it showed - once its turn ends, if it is in one - to say what runs and that the person need not wait", () => {
+    const { pi, ctx, entries, sent } = fakes();
+    const plan = "ping (ping.plain):\n  running: pulse c125e1de - pingcli ping command printing zan";
+    shownAfterCommand(pi, ctx, "/regenerate ping.plain from scratch", plan, "info", true, COMMAND_STARTED_REACTION);
+    // The person sees the plan alone; the agent is told what to do with it.
+    expect(entries).toEqual([{ type: COMMAND_OUTCOME, data: { command: "/regenerate ping.plain from scratch", text: plan, level: "info", echoed: true } }]);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.message.content).toBe(`The person ran /regenerate ping.plain from scratch, and was shown:\n${plan}\n\n${COMMAND_STARTED_REACTION}`);
+    expect(sent[0]!.message.display).toBe(false);
+    expect(sent[0]!.options).toEqual({ triggerTurn: true, deliverAs: "followUp" });
+    expect(COMMAND_STARTED_REACTION).toContain("they need not wait for it");
+    expect(COMMAND_STARTED_REACTION).toContain("Start nothing for it");
   });
 });
 
