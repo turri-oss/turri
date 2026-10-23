@@ -82,12 +82,12 @@ function finishedItem(job: Job, marks: MarkPaint): string {
 }
 
 /**
- * What finished, a line a module - its name, then its pulses oldest first - fitted to `width` from the left: the
- * newest that fit, the rest counted as earlier. The side panel lists every one.
+ * What finished, a line a module - the module that finished last on top, its name, then its pulses newest first -
+ * fitted to `width`: the newest that fit, the rest counted as earlier. The side panel lists every one.
  */
 export function finishedLines(finished: Job[], width: number | undefined, marks: MarkPaint = PLAIN_MARKS): string[] {
   const byModule = new Map<string, Job[]>();
-  for (const job of [...finished].sort((a, b) => a.sequence - b.sequence)) {
+  for (const job of [...finished].sort((a, b) => (b.finishedAt ?? 0) - (a.finishedAt ?? 0) || b.sequence - a.sequence)) {
     const key = job.module ?? job.kind;
     byModule.set(key, [...(byModule.get(key) ?? []), job]);
   }
@@ -95,10 +95,10 @@ export function finishedLines(finished: Job[], width: number | undefined, marks:
   return [...byModule].map(([name, jobs]) => {
     const head = `  ${name}${" ".repeat(pad - visibleWidth(name))}  `;
     const items = jobs.map((job) => finishedItem(job, marks));
-    const lineOf = (from: number) => `${head}${from > 0 ? `… ${from} earlier · ` : ""}${items.slice(from).join(" · ")}`;
-    let from = 0;
-    while (width !== undefined && from < items.length - 1 && visibleWidth(lineOf(from)) > width) from += 1;
-    return lineOf(from);
+    const lineOf = (shown: number) => `${head}${items.slice(0, shown).join(" · ")}${shown < items.length ? ` · … ${items.length - shown} earlier` : ""}`;
+    let shown = items.length;
+    while (width !== undefined && shown > 1 && visibleWidth(lineOf(shown)) > width) shown -= 1;
+    return lineOf(shown);
   });
 }
 
@@ -210,8 +210,9 @@ export interface PanelOptions {
 export function jobPanelLines(jobs: Job[], options: PanelOptions = {}): string[] {
   const now = options.now ?? Date.now();
   const expanded = options.expanded === true;
-  const inOrder = [...jobs].sort((a, b) => a.sequence - b.sequence);
-  const running = inOrder.filter((job) => job.status === "running");
+  // Newest first, as every list of pulses is.
+  const inOrder = [...jobs].sort((a, b) => b.sequence - a.sequence);
+  const running = inOrder.filter((job) => job.status === "running").sort((a, b) => b.startedAt - a.startedAt || b.sequence - a.sequence);
   // A module whose work is being planned: the planner is an agent, and takes a while - shown at once, as work going on.
   const planning = inOrder.filter((job) => job.status === "queued" && job.planning !== undefined);
   // Nothing running or being planned: no panel - what waits and what finished are in the side panel.
@@ -220,7 +221,7 @@ export function jobPanelLines(jobs: Job[], options: PanelOptions = {}): string[]
 
   const lines: string[] = [];
 
-  // What finished, on top - a line a module, oldest first - and a rule under it: what runs now is below, by the input.
+  // What finished, on top - a line a module, newest first - and a rule under it: what runs now is below, by the input.
   if (finished.length > 0) {
     lines.push(...finishedLines(finished, options.width, options.marks ?? PLAIN_MARKS));
     lines.push(`  ${"─".repeat(Math.max(10, (options.width ?? 80) - 4))}`);

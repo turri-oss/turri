@@ -157,7 +157,7 @@ const stop = onLedgerEvent((entry, project) => {
   if (entry.kind === "provider.error" && !entry.transient) notify(`the model provider: ${entry.error}`);
 });
 
-// The project's runs, the most recent first, each with its pulses - how each ended, how long, what it cost.
+// The project's runs, the most recent first, each with its pulses, the most recent first - how each ended, how long, what it cost.
 const runs = runViews(projectDir);
 
 // One pulse, from this session or an earlier one: its rounds, test runs, verdicts, healers, refusals, history.

@@ -77,8 +77,8 @@ describe("the ledger tool", () => {
     const group = await ask({ kinds: ["healer"], limit: 1 });
     expect(group).toMatch(/^4 events, in 2 runs and 2 pulses: /);
     expect(group).toContain("healer.started 2");
-    expect(group).toContain("The last 1, oldest first:");
-    expect(failed).toContain("Each, oldest first:");
+    expect(group).toContain("The last 1, newest first:");
+    expect(failed).toContain("Each, newest first:");
   });
 
   it("narrows the events to a module and a time, and says what the ledger has when nothing matches", async () => {

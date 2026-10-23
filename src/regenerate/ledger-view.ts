@@ -179,7 +179,7 @@ export function describePulseView(view: PulseView, options: { diff?: boolean } =
   lines.push(`  ${outcomeOf(view)}${view.usage !== undefined && describeUsage(view.usage) !== "" ? ` · ${describeUsage(view.usage)}` : ""}${view.queued?.model !== undefined ? ` · ${view.queued.model}` : ""}`);
   if (view.finished?.error !== undefined) lines.push(`  ended with: ${view.finished.error}`);
   if (view.environment !== undefined) lines.push(`  the environment lacks ${view.environment.missing} (found by ${view.environment.source === "harness" ? "turri" : "an agent"})`);
-  for (const retry of view.retried) lines.push(`  tried again (${retry.attempt} of ${retry.of}) after: ${retry.failure}`);
+  for (const retry of [...view.retried].reverse()) lines.push(`  tried again (${retry.attempt} of ${retry.of}) after: ${retry.failure}`);
   if (view.rounds.size > 0) lines.push(`  rounds: ${[...view.rounds].map(([gate, { round, of }]) => `${gate} ${round} of ${of}`).join("; ")}`);
   // can_it_fail's runs, on code changed to break it, apart: one failing is a test that caught the bug.
   const mutations = view.scripts.filter((run) => run.mutated === true);
@@ -215,14 +215,14 @@ export function describePulseView(view: PulseView, options: { diff?: boolean } =
   }
   if (view.refused.size > 0) lines.push(`  turri refused calls: ${[...view.refused].map(([rule, times]) => `${rule} ${times}x`).join(", ")}`);
   if (view.stopped.length > 0) lines.push(`  turri stopped ${view.stopped.length} turn${view.stopped.length === 1 ? "" : "s"} - last: ${view.stopped.at(-1)}`);
-  for (const event of view.history) {
+  for (const event of [...view.history].reverse()) {
     if (event.kind === "history.committed") lines.push(`  committed: ${event.subject}`);
     else if (event.kind === "history.failed") lines.push(`  a commit FAILED${event.landing ? " (landing work)" : ""}: ${event.said}`);
     else if (event.kind === "history.reset") lines.push(`  put back to the last commit: ${event.undone} change${event.undone === 1 ? "" : "s"} undone`);
     else lines.push(`  rolled back: ${event.why}`);
   }
   if (view.steered > 0) lines.push(`  steered ${view.steered} time${view.steered === 1 ? "" : "s"}: its ***plain diff moved with ***plain`);
-  if (view.stages.length > 0) lines.push("  last stages:", ...view.stages.slice(-8).map((stage) => `    ${stage}`));
+  if (view.stages.length > 0) lines.push("  last stages, newest first:", ...view.stages.slice(-8).reverse().map((stage) => `    ${stage}`));
   const log = view.finished?.logFile ?? view.started?.logFile;
   if (log !== undefined) lines.push(`  log: ${log}`);
   if (options.diff !== false && view.diff !== undefined) lines.push(`  its ***plain diff${view.steered > 0 ? ", as last steered" : ""}:`, ...view.diff.diff.trimEnd().split("\n").map((line) => `    ${line}`));
@@ -239,7 +239,7 @@ export function describePastPulse(projects: string[], id: string): string | unde
   return undefined;
 }
 
-/** A run of the project's, and its pulses: the most recent first. */
+/** A run of the project's, and its pulses: runs and pulses the most recent first. */
 export interface RunView {
   run: string;
   started?: Of<"run.started">;
@@ -256,7 +256,8 @@ export function runViews(project: string): RunView[] {
       const ids = [...new Set(own.filter((entry) => entry.kind === "job.queued").map((entry) => entry.job!))];
       const started = own.find((entry): entry is Of<"run.started"> & LedgerEntry => entry.kind === "run.started");
       const ended = own.find((entry): entry is Of<"run.ended"> & LedgerEntry => entry.kind === "run.ended");
-      return { run, ...(started !== undefined ? { started } : {}), ...(ended !== undefined ? { ended } : {}), pulses: ids.map((id) => pulseView(id, own)!).filter(Boolean) };
+      // Its pulses the most recent first, as its runs are.
+      return { run, ...(started !== undefined ? { started } : {}), ...(ended !== undefined ? { ended } : {}), pulses: ids.map((id) => pulseView(id, own)!).filter(Boolean).reverse() };
     })
     .reverse();
 }
@@ -376,11 +377,11 @@ export function describeEvents(projects: string[], query: EventQuery = {}): stri
   const pulses = new Set(found.map((entry) => entry.job).filter((job) => job !== undefined)).size;
   const runs = new Set(found.map((entry) => entry.run)).size;
   const limit = Math.max(1, query.limit ?? 20);
-  const recent = found.slice(-limit);
+  const recent = found.slice(-limit).reverse();
   return [
     `${found.length} event${found.length === 1 ? "" : "s"}${scope !== "" ? ` ${scope}` : ""}, in ${runs} run${runs === 1 ? "" : "s"} and ${pulses} pulse${pulses === 1 ? "" : "s"}: ${[...counts].sort((a, b) => b[1] - a[1]).map(([kind, times]) => `${kind} ${times}`).join(", ")}`,
     "",
-    recent.length === found.length ? "Each, oldest first:" : `The last ${recent.length}, oldest first:`,
+    recent.length === found.length ? "Each, newest first:" : `The last ${recent.length}, newest first:`,
     ...recent.map(eventLine),
   ].join("\n");
 }

@@ -66,6 +66,11 @@ describe("the jobs tree", () => {
     expect(rowsOf(jobs, state)).toEqual(["[running 1]", "b", "[queued 1]", "c", "[finished 2]", "d", "a"]);
   });
 
+  it("lists running and queued newest first too - running by when it started, queued by when it was queued", () => {
+    const jobs = [job("a", "running", { startedAt: 2 }), job("b", "running", { startedAt: 5 }), job("c", "queued", { queuedAt: 1 }), job("d", "queued", { queuedAt: 3 }), job("e", "queued", { queuedAt: 3 })];
+    expect(rowsOf(jobs)).toEqual(["[running 2]", "b", "a", "[queued 3]", "e", "d", "c", "[finished 0]"]);
+  });
+
   it("is put on a pulse that went wrong - its section opened, the pulse opened, the cursor on it - for ctrl+h to open on", () => {
     const jobs = [job("a", "succeeded", { finishedAt: 1 }), job("b", "running"), job("d", "failed", { finishedAt: 2 })];
     const state = createJobsTreeState();
@@ -179,7 +184,8 @@ describe("the jobs tree", () => {
 
   it("scrolls only to keep the cursor in sight, and lets a long open job be read a page at a time", () => {
     const long = Array.from({ length: 60 }, (_, n) => `+- line ${n}`).join("\n");
-    const jobs = [job("c", "queued", { diff: `--- a/app.plain\n+++ b/app.plain\n@@ -1 +1,60 @@\n${long}\n` }), job("f", "queued")];
+    // Newest first: c, queued after f, is the first of them.
+    const jobs = [job("f", "queued"), job("c", "queued", { diff: `--- a/app.plain\n+++ b/app.plain\n@@ -1 +1,60 @@\n${long}\n` })];
     const state = createJobsTreeState();
     state.cursor = 2; // c
     treeKey(state, jobsTreeRows(jobs, state), "open");

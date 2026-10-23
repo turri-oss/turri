@@ -86,7 +86,6 @@ function isOpen(state: JobsTreeState, job: Job): boolean {
   return false;
 }
 
-/** The rows, top to bottom: each section's header, and its jobs when it is open - finished ones newest first. */
 /** The pulse list put on one pulse: its section open, the pulse opened - its stages, its agents, its log - and the cursor on it. */
 export function selectJob(jobs: Job[], state: JobsTreeState, id: string): boolean {
   const job = jobs.find((entry) => entry.id === id);
@@ -99,13 +98,15 @@ export function selectJob(jobs: Job[], state: JobsTreeState, id: string): boolea
   return at !== -1;
 }
 
+/** The rows, top to bottom: each section's header, and its jobs when it is open - newest first in every section. */
 export function jobsTreeRows(jobs: Job[], state: JobsTreeState): TreeRow[] {
   // A job queued again as another is that other one: it is not listed apart.
-  const bySequence = jobs.filter((job) => job.replacedBy === undefined).sort((a, b) => a.sequence - b.sequence);
-  const of = (section: JobSection) => {
-    const inSection = bySequence.filter((job) => sectionOf(job) === section);
-    return section === "finished" || section === "earlier" ? inSection.sort((a, b) => (b.finishedAt ?? b.sequence) - (a.finishedAt ?? a.sequence) || b.sequence - a.sequence) : inSection;
-  };
+  const listed = jobs.filter((job) => job.replacedBy === undefined);
+  // Every section newest first: running by when it started, queued by when it was queued, finished by when it ended.
+  const when = (job: Job, section: JobSection) =>
+    section === "running" ? job.startedAt : section === "queued" ? job.queuedAt : (job.finishedAt ?? job.queuedAt);
+  const of = (section: JobSection) =>
+    listed.filter((job) => sectionOf(job) === section).sort((a, b) => when(b, section) - when(a, section) || b.sequence - a.sequence);
   // Forget what is open for jobs that moved on - they close as they leave.
   for (const job of jobs) isOpen(state, job);
   return SECTIONS.flatMap((section) => {

@@ -141,8 +141,9 @@ describe("the panel", () => {
     jobs.start({ kind: "regenerate", summary: "z", module: "backend", pulse: 3, title: "Log in with :User:", run: () => new Promise(() => {}) });
     const marks = { success: (t: string) => `<ok>${t}`, error: (t: string) => `<bad>${t}`, warning: (t: string) => `<stop>${t}` };
     const lines = jobPanelLines(jobs.list(), { marks, width: 80 });
-    expect(lines[0]).toBe("  backend  <ok>✓ 1 regenerate · <bad>✗ 2 conformance");
-    expect(lines[1]).toBe("  web      <ok>✓ 1 regenerate");
+    // Newest first: web finished last, and backend's conformance after its regenerate.
+    expect(lines[0]).toBe("  web      <ok>✓ 1 regenerate");
+    expect(lines[1]).toBe("  backend  <bad>✗ 2 conformance · <ok>✓ 1 regenerate");
     expect(lines[2]).toBe(`  ${"─".repeat(76)}`);
     // What runs is below the rule, by the input: its module, its kind and number - never what it regenerates.
     expect(lines[3]).toMatch(/^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] backend · regenerate pulse 3 · \d+s$/);
@@ -173,9 +174,9 @@ describe("the panel", () => {
     }
     jobs.start({ kind: "regenerate", summary: "z", module: "cognio", pulse: 6, title: "profiles", run: () => new Promise(() => {}) });
     const line = jobPanelLines(jobs.list(), { width: 75 })[0]!;
-    expect(line).toBe("  cognio  … 2 earlier · ✓ 3 regenerate · ✓ 4 regenerate · ✓ 5 regenerate");
+    expect(line).toBe("  cognio  ✓ 5 regenerate · ✓ 4 regenerate · ✓ 3 regenerate · … 2 earlier");
     expect(line.length).toBeLessThanOrEqual(75);
-    expect(jobPanelLines(jobs.list())[0]).toBe("  cognio  ✓ 1 regenerate · ✓ 2 regenerate · ✓ 3 regenerate · ✓ 4 regenerate · ✓ 5 regenerate");
+    expect(jobPanelLines(jobs.list())[0]).toBe("  cognio  ✓ 5 regenerate · ✓ 4 regenerate · ✓ 3 regenerate · ✓ 2 regenerate · ✓ 1 regenerate");
   });
 
   it("shows running jobs by module, time and cost, with their activity and not their stage - and what finished, above them", async () => {
