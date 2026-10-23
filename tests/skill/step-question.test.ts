@@ -19,7 +19,7 @@ const { compileSkill, endsOnQuestion, QUESTION_NUDGES } = await import("../../sr
 
 const skillOf = (paced: boolean) =>
   ({
-    name: "spawn",
+    name: "probe",
     dir: "/nowhere",
     allowedTools: [],
     paced,
@@ -52,7 +52,7 @@ describe("a step whose turn ends on a question in its reply", () => {
     expect(asked).toHaveLength(3);
     expect(asked[1]).toContain("Write the product.");
     expect(asked[2]).toContain("Your turn ended on a question in your reply");
-    expect(asked[2]).toContain("'spawn' asks the person nothing more: decide it yourself");
+    expect(asked[2]).toContain("'probe' asks the person nothing more: decide it yourself");
     expect(asked[2]).toContain("carry on with step 'product' until all of it is done");
   });
 

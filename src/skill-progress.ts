@@ -2,13 +2,13 @@ import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 /**
  * A skill's run as one line above the input: every phase by name, in order - the ones done ticked, the one it is in
- * marked, the rest to come - and where that is, phase 2 of 4. `brood` and `spawn` take many turns of
- * questions and spec changes; without it, nothing on the screen says how far through they are.
+ * marked, the rest to come - and where that is, phase 2 of 4. A skill of many phases takes many turns of
+ * questions and ***plain changes; without it, nothing on the screen says how far through it is.
  *
- *   brood       ✓ intent ━━━━ ⠋ stack ──── ○ testing ──── ○ product       phase 2 of 4
+ *   onboard     ✓ intent ━━━━ ⠋ stack ──── ○ product       phase 2 of 3
  *                 stack - the language, frameworks, storage and architecture
  *
- * The second line says what the phase it is in does: a phase's name alone - `skeleton` - says little to someone
+ * The second line says what the phase it is in does: a phase's name alone - `stack` - says little to someone
  * who has not read the skill.
  *
  * A skill of one phase, or none, has nothing to be partway through: its line is the spinner and its name alone.

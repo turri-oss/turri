@@ -173,7 +173,7 @@ A module that `requires` others is built in its own codebase on top of theirs: t
 
 **Pulses.** `landed`: its work is committed. `rolled_back`: it ended without landing - failed, stopped, or did not pass - and everything it wrote was undone. A pulse that failed is tried once more before it counts as failed; both tries are the one pulse.
 
-**Time to first regeneration.** `pulses.first_started_seconds` is how long after the run started its first code pulse started - planning the work, and any wait for a free slot, before it - and `first_landed_seconds` how long until the first one landed, when there is first something to try. Both are `null` until it happens. In the chat, `spawn` and the other skills that write \*\*\*plain diffs say the same in their result, counted from when the skill began.
+**Time to first regeneration.** `pulses.first_started_seconds` is how long after the run started its first code pulse started - planning the work, and any wait for a free slot, before it - and `first_landed_seconds` how long until the first one landed, when there is first something to try. Both are `null` until it happens. In the chat, a skill that writes \*\*\*plain diffs with `change_plain` says the same in their result, counted from when the skill began.
 
 **Gaps in \*\*\*plain.** A behaviour \*\*\*plain leaves open that an agent met and decided on its own - reported with `report_spec_gap` (see [regenerating](regenerating.md)). In the chat they are put to you as the pulse ends; a headless run has no one to ask, so they are listed here, in the order the pulses started, and printed under the pulse that met them. `assumption` is what the agent decided meanwhile, also in the codebase's notes' assumptions while its pulse is `landed`; a pulse rolled back takes it out of the notes, but the question still stands. Settle the ones you care about in \*\*\*plain and run again.
 
@@ -228,4 +228,4 @@ turri regenerate app.plain --harness-model amazon-bedrock/eu.anthropic.claude-op
 nohup turri -p "Render app.plain as a whole module, with conformance tests" > render.log 2>&1 &
 ```
 
-It reports what it did at the end, and nothing streams in between, so for long runs `turri regenerate` is the better choice. The interview skill (`brood`) needs someone to answer; without one they decide and record their assumptions, and a gate that escalates to a human stops the run.
+It reports what it did at the end, and nothing streams in between, so for long runs `turri regenerate` is the better choice. A skill that interviews needs someone to answer; without one it decides and record their assumptions, and a gate that escalates to a human stops the run.

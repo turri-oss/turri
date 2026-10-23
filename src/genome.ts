@@ -12,8 +12,6 @@ import { createAskUserTool, createEndQuestionsTool, createReviewTools, createWri
 import { DECLINED, DISMISSED } from "./ask.ts";
 import { createQuestioning, levelOf, questioningQuestion, type Questioning, type QuestioningState } from "./questioning.ts";
 import { createSpecDiffTools } from "./spec-tools.ts";
-import { createMatureTools, MATURE_TOOLS } from "./mature-tools.ts";
-import type { JobRegistry } from "./regenerate/jobs.ts";
 
 const CHANGE_PLAIN = "change_plain";
 /** The conversation's tools a skill acts on the work loop with - never pi built-ins. */
@@ -77,8 +75,6 @@ export interface RunSkillOptions {
    * builds stand - and regenerate and halt for a skill that names them in its allowed-tools.
    */
   loopTools?: ToolDefinition[];
-  /** The jobs the render queue runs, for a skill that waits for its builds and reads what they recorded. */
-  jobs?: JobRegistry;
   /**
    * Stops the run: its agents end their turns and it throws JobStoppedError, its manifest left as it was - an
    * interrupted run, for `resume` to pick up. What it started on the work loop goes on.
@@ -97,7 +93,6 @@ export async function runSkill(opts: RunSkillOptions): Promise<RunSkillResult> {
     runStoppable({
       ...opts,
       ...(opts.renderQueue !== undefined ? { renderQueue: clearOfStop(opts.renderQueue) } : {}),
-      ...(opts.jobs !== undefined ? { jobs: clearOfStop(opts.jobs) } : {}),
       ...(opts.loopTools !== undefined ? { loopTools: opts.loopTools.map(clearOfStop) } : {}),
     }),
   );
@@ -212,16 +207,12 @@ async function runStoppable(opts: RunSkillOptions): Promise<RunSkillResult> {
     }
   }
   if (diffs !== undefined) customTools.push(...diffs.tools);
-  // A skill that builds what the spec holds, waits for it, and reads back where the builds had to guess.
-  if (opts.renderQueue !== undefined && opts.jobs !== undefined && skill.allowedTools.some((tool) => MATURE_TOOLS.includes(tool))) {
-    customTools.push(...createMatureTools({ jobs: opts.jobs, cwd: opts.cwd }));
-  }
   customTools.push(...(opts.sharedTools ?? []));
 
   const names = customTools.map((tool) => tool.name);
   // Tools this harness provides are never pi built-ins, even when it did not provide them.
   const builtins = skill.allowedTools.filter(
-    (t) => !names.includes(t) && t !== CHANGE_PLAIN && !MATURE_TOOLS.includes(t) && !LOOP_TOOLS.includes(t),
+    (t) => !names.includes(t) && t !== CHANGE_PLAIN && !LOOP_TOOLS.includes(t),
   );
   const executor = await createExecutor({
     cwd: opts.cwd,

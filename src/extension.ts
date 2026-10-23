@@ -685,7 +685,7 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
   registerBranding(pi, discoveredSkills);
   registerInterviewLog(pi);
   registerJobTools(pi, jobs, cwd);
-  // The skills the person starts themselves - brood, spawn, bud: each has its command, and cultivate starts it only
+  // The skills the person starts themselves - a project's, marked command-only: each has its command, and cultivate starts it only
   // once its command is typed, or picked among the options the conversation offers with ask_user.
   const gate = createCommandGate();
   // A skill picked is started at once, with what the person asked for: they never type its command after picking it.
@@ -736,7 +736,7 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
     promptSnippet: "cultivate: run a gated skill - its steps and review gates enforced by turri",
     promptGuidelines: [
       "When a request matches a skill listed in cultivate's description, call cultivate instead of doing the work yourself. Doing it by hand skips the review gates.",
-      "A skill marked as started only by the person runs only from its command: a message that is its command - /spawn a small server - is the person starting it, and so is an option starting with it that they picked in your ask_user - /brood - an interview. Call cultivate for it at once, with what they said as context. Never call cultivate for one otherwise; for a new project, offer the choice as <new-project> says.",
+      "A skill marked as started only by the person runs only from its command: a message that is its command - /<name> what they want - is the person starting it, and so is an option starting with it that they picked in your ask_user. Call cultivate for it at once, with what they said as context. Never call cultivate for one otherwise.",
       // pi lists .agents/skills among its own skills too: read and followed by hand, a skill's gates would be skipped.
       "A skill cultivate lists may also be among your own skills, from the project's .agents/skills: run it with cultivate all the same, never by reading its SKILL.md and following it.",
       "cultivate returns the reviewed artifact and a trace of every gate decision. Report the artifact to the user; do not rewrite it.",
@@ -931,8 +931,6 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
         // pulses sees them without knowing a skill started them.
         // Asked per job as it is queued, so a model chosen mid-interview applies from then on.
         renderQueue: workLoopFor(jobs, cwd, ctx),
-        // A skill that waits for its builds and reads what they recorded - `mature` - sees the same jobs.
-        jobs,
         // The person answers the skill's agent while it runs, so it can take "render these with ..." too.
         // validate too: a skill validates what it wrote with the same check the conversation has.
         sharedTools: [setRenderModelTool(pi, ctx), checkPlainTool(cwd), ...createWebTools()],
@@ -1077,7 +1075,7 @@ function registerRegenerate(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
         say(`${relative(cwd, plainFile) || plainFile} does not parse, so nothing can be regenerated from it yet: ${check.error}`, "error");
         return;
       }
-      // From scratch - started over, its code deleted - asked in the person's words: confirmed first, as it deletes.
+      // From scratch - started over, its code deleted - asked in the person's words: started at once, as asked.
       const scratch = asksFromScratch(guidance);
       // The whole chain with it - "from scratch, the whole chain" - every module it requires built again from the bottom.
       const chain = scratch && asksWholeChain(guidance);
@@ -1085,15 +1083,6 @@ function registerRegenerate(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
       if (scratch && again.length > 0) {
         say("Name functionalities or ask for it from scratch, not both: from scratch regenerates every one of them.", "warning");
         return;
-      }
-      if (scratch && ctx.hasUI) {
-        const agreed = await ctx.ui.confirm(
-          chain ? `Regenerate ${module} and its whole chain from scratch?` : `Regenerate ${module} from scratch?`,
-          chain
-            ? `The code and conformance tests of ${module} and of every module it requires are deleted - committed first, so /lineage keeps them - and the whole chain is regenerated from its ***plain, from the bottom.`
-            : `Its code and conformance tests are deleted - committed first, so /lineage ${module} keeps them - and the whole module is regenerated from its ***plain.`,
-        );
-        if (!agreed) return;
       }
       const loop = workLoopFor(jobs, cwd, ctx);
       const model = jobModel(ctx, again.length > 0 ? "functionalities" : "spec_changes", undefined, plainFile);

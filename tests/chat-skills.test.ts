@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { supersededByTurri } from "../src/chat-skills.ts";
 
-const turriRuns = new Set(["brood", "break-down-func-spec", "release-notes"]);
+const turriRuns = new Set(["probe", "break-down-func-spec", "release-notes"]);
 
 describe("the pi skills the conversation is not offered", () => {
   it("leaves out another tool's ***plain reference, which turri's rules already are", () => {

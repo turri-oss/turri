@@ -61,7 +61,7 @@ describe("where a skill run keeps its state", () => {
   it("is .turri/runs/<skill>, which the project's history ignores", async () => {
     const { skillRunDir } = await import("../../src/regenerate/paths.ts");
     const { existsSync, readFileSync } = await import("node:fs");
-    expect(skillRunDir(root, "brood")).toBe(join(root, ".turri", "runs", "brood"));
+    expect(skillRunDir(root, "probe")).toBe(join(root, ".turri", "runs", "probe"));
     expect(readFileSync(join(root, ".turri", ".gitignore"), "utf8")).toBe("*\n!skills/\n!skills/**\n");
   });
 });

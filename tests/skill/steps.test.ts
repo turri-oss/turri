@@ -136,35 +136,26 @@ describe("continuous review", () => {
   });
 });
 
-describe("brood's phases", () => {
-  it("are intent, stack, testing and product - testing before the product phase, so its changes are conformance tested as they are built", () => {
-    const skill = loadSkill("genome/skills/brood");
-    expect(skill.steps.map((step) => step.name)).toEqual(["intent", "stack", "testing", "product"]);
+describe("an interview's frontmatter", () => {
+  const steps = "## Steps\n\n### intent\n\nAsk.\n\n### stack\n\nAsk.\n\n### product\n\nAsk.\n";
+
+  it("names the phases the questioning level caps and those where every answer is a spec change", () => {
+    const s = skill(steps, "metadata:\n  questioning: [stack, product]\n  change-plain-per-answer: [product]\n");
+    expect(s.questioning).toEqual(["stack", "product"]);
+    expect(s.diffPerAnswer).toEqual(["product"]);
+    expect(skill(steps).questioning).toEqual([]);
   });
 
-  it("are ungated - each ends on the person's confirmation, with no review", () => {
-    expect(loadSkill("genome/skills/brood").steps.every((step) => step.gate === undefined)).toBe(true);
+  it("is paced and left to the model unless it says otherwise", () => {
+    expect(skill(steps).paced).toBe(true);
+    expect(skill(steps).commandOnly).toBe(false);
+    const own = skill(steps, "metadata:\n  paced: false\n  command-only: true\n");
+    expect(own.paced).toBe(false);
+    expect(own.commandOnly).toBe(true);
   });
-});
 
-describe("brood's questioning level", () => {
-  it("caps the stack and product phases, not intent or testing", () => {
-    expect(loadSkill("genome/skills/brood").questioning).toEqual(["stack", "product"]);
-    // Whatever the level, each product answer is a spec change before the next question.
-    expect(loadSkill("genome/skills/brood").diffPerAnswer).toEqual(["product"]);
-    expect(loadSkill("genome/skills/spawn").questioning).toEqual([]);
-  });
-});
-
-describe("spawn, brood's quick twin", () => {
-  it("asks as little as it can, then writes the first spec and the first slices on its own - unpaced, and ungated", () => {
-    const skill = loadSkill("genome/skills/spawn");
-    expect(skill.steps.map((step) => step.name)).toEqual(["start", "skeleton", "regenerate"]);
-    expect(skill.steps.every((step) => step.gate === undefined)).toBe(true);
-    expect(skill.paced).toBe(false);
-    expect(skill.allowedTools).toContain("change_plain");
-    // brood's interview stays paced: one answer, one change.
-    expect(loadSkill("genome/skills/brood").paced).toBe(true);
+  it("is rejected when its questioning level names a step it does not have", () => {
+    expect(() => skill(steps, "metadata:\n  questioning: [testing]\n")).toThrow(/'metadata.questioning' names unknown step 'testing'/);
   });
 });
 
@@ -191,29 +182,9 @@ describe("a skill's tools", () => {
   });
 });
 
-describe("mature", () => {
-  it("regenerates a rough spec until it is fully regenerated, on its own - with the conversation's regenerate, drift and halt, and its own tools to watch the pulses and read what they decided", () => {
-    const skill = loadSkill("genome/skills/mature");
-    expect(skill.steps.map((step) => step.name)).toEqual(["intake", "regenerate", "report"]);
-    expect(skill.allowedTools).toEqual(expect.arrayContaining(["change_plain", "regenerate", "drift", "halt", "watch_jobs", "spec_findings"]));
-    expect(skill.paced).toBe(false);
-  });
-});
-
-describe("bud", () => {
-  it("builds a feature as brood builds a product: the questioning level first, product questions, a spec diff per answer, paced, no review", () => {
-    const skill = loadSkill("genome/skills/bud");
-    expect(skill.steps.map((step) => step.name)).toEqual(["intent", "scope", "product"]);
-    expect(skill.questioning).toEqual(["product"]);
-    expect(skill.diffPerAnswer).toEqual(["product"]);
-    expect(skill.allowedTools).toContain("change_plain");
-    expect(skill.paced).toBe(true);
-  });
-});
-
 describe("the status line while a skill runs", () => {
   const skill = {
-    name: "brood",
+    name: "probe",
     steps: ["intent", "stack", "product"].map((name) => ({
       name,
       instructions: "",
@@ -221,10 +192,10 @@ describe("the status line while a skill runs", () => {
   } as unknown as Parameters<typeof skillStatus>[0];
 
   it("names the phase and where it sits among them", () => {
-    expect(skillStatus(skill, "stack", 1)).toBe("brood: stack (phase 2 of 3)");
+    expect(skillStatus(skill, "stack", 1)).toBe("probe: stack (phase 2 of 3)");
   });
 
   it("says when a phase is being retried after its gate", () => {
-    expect(skillStatus(skill, "product", 2)).toBe("brood: product (phase 3 of 3), attempt 2");
+    expect(skillStatus(skill, "product", 2)).toBe("probe: product (phase 3 of 3), attempt 2");
   });
 });

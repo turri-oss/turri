@@ -95,7 +95,7 @@ export interface Skill {
    */
   diffPerAnswer: string[];
   /**
-   * Started only by the person, with its slash command - `/brood` - never by the model on its own
+   * Started only by the person, with its slash command - `/release-notes` - never by the model on its own
    * (`metadata.command-only: true`): cultivate runs it only when the person has just typed its command.
    */
   commandOnly: boolean;

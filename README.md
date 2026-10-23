@@ -50,7 +50,7 @@ turri init-config --vendor anthropic
 
 It then tells you which API key to set - or to type `/login` once **turri** is running instead. **turri** loads the `config.turri.yaml` in the folder you start it from. Below the two models, the file sets every other setting to its default - change any of them in the file, or from the chat with `/turri-config`. Any other model works too: [models](#models).
 
-Once `turri` is running, type: `/spawn a small API where people can register and sign in` - or `/brood` for an interview that settles each feature with you first.
+Once `turri` is running, say what you want - `a small API where people can register and sign in` - and **turri** starts the project and regenerates it at once.
 
 No project of your own yet? Build one of [**the examples**](examples/README.md) with turri, step by step.
 
@@ -147,17 +147,17 @@ cd ~/my-project
 turri
 ```
 
-Then start the interview:
+Then say what you want:
 
-> /brood a small API where people can register and sign in
+> A small API where people can register and sign in, in Python.
 
-It asks you about the problem, the stack and the product, writes \*\*\*plain, and builds each functionality as it is written. While it works:
+In a new project **turri** starts it itself, without asking how: it chooses the stack - the one you name, else a standard library stack this machine can build - writes the module and its unit testing script (and the conformance tests' when you ask for them), regenerates the smallest thing that runs at once, then the main thing you described, and says what it chose and what it would write next. Every change after is yours to ask for: **turri** writes it as \*\*\*plain and regenerates it. While it works:
 
 - the **panel** above the input shows every build - its stage, what its agents are doing, its model and cost - and the queue behind it;
 - ask to try it at any time - "let me try it" - and **`release`** puts what is built so far in `dist/<module>` and **`activate`** starts it, installing what it needs - nothing to approve;
 - the **side panel** (`ctrl+h`) takes the screen and opens on **regen** - \*\*\*plain, every item marked planned, working, regenerated, validating, conform or needs you - and `p` turns it to the **pulses** (`/pulses`) - every pulse, running, queued and finished, and what each regenerates; what its agents did is in each pulse's log in `.turri/jobs/`, kept with `--debug` (`debug: true`);
 - **`/halt`** halts a pulse, **`/lineage`** shows every generation of a module, and the **`drift`** tool says what is left to regenerate;
-- **`/btw <question>`** asks turri something on the side - answered at once, even in the middle of a skill's interview (typed as the answer, under "Something else…"), and left out of the conversation;
+- **`/btw <question>`** asks turri something on the side - answered at once, even while a question waits for you (typed as the answer, under "Something else…"), and left out of the conversation;
 - **`/turri-config`** changes any setting of the project's `config.turri.yaml` - the models, review, conformance tests, how many pulses at once - and says when it takes effect: now, at your next message, or at the next pulse. No restart: `/turri-config review false`, or `/turri-config` alone to pick from the list;
 - **`/stack`** chooses the stack to build with, in a project whose backend and frontend each have their own testing scripts in `config.turri.<stack>.yaml` - `/stack backend`, `/stack none` - for the session (`--stack <name>` on the command line). The chat's model builds each part with its own stack by itself, pinned to that module's pulses.
 

@@ -286,7 +286,7 @@ describe("a spec change written in a project of stacks", () => {
     return (params: object) => tools[0]!.execute("id", params as never, undefined, undefined, {} as never) as Promise<{ content: Array<{ text: string }> }>;
   };
 
-  it("is built with the stack named after its module, with nothing chosen - as a brood writes it", async () => {
+  it("is built with the stack named after its module, with nothing chosen", async () => {
     const { ran, run } = runner();
     const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run });
     const before = app(["Serve the orders.", "Serve the invoices."], "is Python.");

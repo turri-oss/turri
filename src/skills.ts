@@ -4,7 +4,7 @@
  * project's skill is run the same way: its steps, its gates and judges, the tools its frontmatter names.
  *
  * A name is one skill: turri's own come first, then `.turri/skills/`, then `.agents/skills/`, and a skill whose name is
- * taken already is left out and said to be - a project's `brood` never quietly stands in for turri's.
+ * taken already is left out and said to be - a project's `debug-specs` never quietly stands in for turri's.
  */
 
 import { readdirSync } from "node:fs";
@@ -92,7 +92,7 @@ export function leftOutNote(catalogue: SkillCatalogue): string {
 }
 
 /**
- * Which skills cultivate may start now. A skill marked command-only (`/brood`) waits for the person to type its command:
+ * Which skills cultivate may start now. A skill marked command-only (`/release-notes`) waits for the person to type its command:
  * the command lets it start once, and the run starting uses that up - the model cannot start it again later on its own.
  */
 export function createCommandGate(): {
@@ -113,7 +113,7 @@ export function createCommandGate(): {
 
 /** What cultivate says of a command-only skill the person did not start. */
 export function startedByCommandOnly(name: string): string {
-  return `Not started: ${name} is started only by the person, with /${name} or by picking an option starting /${name} that you offer them with ask_user. For a new project, ask them as <new-project> says; otherwise do what they asked yourself, in the conversation.`;
+  return `Not started: ${name} is started only by the person, with /${name} or by picking an option starting /${name} that you offer them with ask_user. Do what they asked yourself, in the conversation.`;
 }
 
 /**
@@ -129,8 +129,8 @@ export function startPicked(name: string, request: string): string {
 }
 
 /**
- * The command-only skill an answer picks: an option offered to the person that starts with its command - `/brood - an
- * interview` - is the person starting it, as if they typed it.
+ * The command-only skill an answer picks: an option offered to the person that starts with its command - `/release-notes - for
+ * this release` - is the person starting it, as if they typed it.
  */
 export function chosenCommand(answer: string, skills: ReadonlyArray<Pick<FoundSkill, "name" | "commandOnly">>): string | undefined {
   const typed = /^\s*\/([\w-]+)/.exec(answer)?.[1];

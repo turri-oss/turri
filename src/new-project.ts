@@ -1,21 +1,11 @@
 /**
  * Starting a project from the conversation: the person says what they want built - "create a small server in Java
- * Spring Boot" - and the chat offers the three ways to start it: brood's interview, spawn's quick start, or writing the
- * ***plain itself, here, with no skill. An option picked that starts with a skill's command starts that skill, as if
- * typed (`chosenCommand` in skills.ts).
+ * Spring Boot" - and the chat writes the ***plain itself, here, with no skill, regenerating from the first functional spec.
  */
 export const NEW_PROJECT = [
   "<new-project>",
-  "When the person asks for new software / project ",
-  "and there is no ***plain module for it yet, or they ask for a new project, ask them first how to start it, with",
-  "ask_user: one question, these three options, word for word, so they know the skills are there:",
-  `- "${"/brood - an interview: the stack, the testing and every feature settled with you, each answer regenerated"}"`,
-  `- "${"/spawn - something running in minutes: the quick start, asking the stack in one question unless your message names it"}"`,
-  `- "${"Just do it - no skill: I write it here and start regenerating"}"`,
-  "Picked /brood or /spawn: the answer starts it - call cultivate for it at once, with what they said as its context,",
-  "never asking them to type its command. Do not ask when their",
-  "message says already - they typed the command, or said to just build it, with no skill, without questions: then",
-  "start it yourself. Started yourself, how soon the first pulse starts, and something they can try, come first:",
+  "When the person asks for new software / project and there is no ***plain module for it yet, or they ask for a new",
+  "project, start it yourself, without asking how. How soon the first pulse starts, and something they can try, come first:",
   "1. The stack: the one they named; otherwise one of the standard library's that this machine can build - common,",
   "   simple - said in a line. A stack named in a language the machine lacks is written all the same: tell them what to",
   "   install, and that turri doctor checks it. Read the stack's template, its language's and its kind's common first.",

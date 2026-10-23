@@ -170,9 +170,9 @@ A job keeps the model it was queued with: choosing another holds for what is que
 
 ## Conformance tests
 
-`conformance-tests:` is the one switch, and the chat, every regeneration and `brood`'s testing phase follow it. `false` turns them off entirely: no conformance tests are written, the ones already in a codebase are not run, and no agent is shown the conformance testing script. No key is the same as `false`: conformance tests are off by default. `all` (or `true`) means on wherever a module has `***test reqs***` - a module without them has nothing to write conformance tests from, so it writes none, but still keeps the codebase's existing ones passing. Asked in the conversation (`conform`), or with `--conformance-tests all|chosen|module|false` on `turri regenerate` and `change-plain` - for that run, the file left as it is - a regeneration does otherwise.
+`conformance-tests:` is the one switch, and the chat and every regeneration follow it. `false` turns them off entirely: no conformance tests are written, the ones already in a codebase are not run, and no agent is shown the conformance testing script. No key is the same as `false`: conformance tests are off by default. `all` (or `true`) means on wherever a module has `***test reqs***` - a module without them has nothing to write conformance tests from, so it writes none, but still keeps the codebase's existing ones passing. Asked in the conversation (`conform`), or with `--conformance-tests all|chosen|module|false` on `turri regenerate` and `change-plain` - for that run, the file left as it is - a regeneration does otherwise.
 
-`spawn` writes `conformance-tests: false` into a new project unless you ask for tests; `brood` asks, whatever the key says, offering what it says first.
+The chat writes `conformance-tests: false` into a new project unless you ask for tests.
 
 ## The testing scripts
 
@@ -244,7 +244,7 @@ coding-model:
 Which stack builds a module, first match wins:
 
 - **The one a call names.** `regenerate`, `conform`, `glimpse` and `change_plain` take a `stack`; the chat's model passes it for a module whose stack has a name of its own, leaving the chat's choice as it is.
-- **The stack named after the module** - `config.turri.backend.yaml` builds `backend.plain` - with nothing to choose or pass. Name each stack after the module it builds, and a backend and a frontend are each built with their own, side by side - in the chat, in a brood as each change is written, and on the command line.
+- **The stack named after the module** - `config.turri.backend.yaml` builds `backend.plain` - with nothing to choose or pass. Name each stack after the module it builds, and a backend and a frontend are each built with their own, side by side - in the chat, as each change is written, and on the command line.
 - **The one chosen in the chat** - each [chat](chats.md) its own - with `/stack` - a list of the project's stacks and none - or `/stack backend`, `/stack none`. The chat's model has a `stack` tool too, and switches the stack when you ask it to. `/stack` alone says which is chosen now. On the command line, with `--stack <name>` on any command - `turri regenerate`, `conform`, `change-plain`, `glimpse`, `release`, `cultivate` - and on `turri --stack backend` for the chat; or with `TURRI_STACK` in the environment.
 
 A chat's choice is its own, and lasts while it is open: a new chat starts with `--stack`'s, or none, and nothing remembers it - turri started again has none chosen. A stack the project has no file for is refused, with the stacks it has. With none chosen, `config.turri.yaml` alone is used.

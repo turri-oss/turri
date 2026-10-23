@@ -44,11 +44,11 @@ describe("a side question", () => {
   it("is shown the conversation as who said what, tool calls named and thinking left out, from its end", () => {
     const entries = [
       message("user", "Build me an invoice tracker."),
-      message("assistant", [{ type: "thinking", thinking: "hmm" }, { type: "text", text: "Starting brood." }, { type: "toolCall", name: "cultivate" }]),
+      message("assistant", [{ type: "thinking", thinking: "hmm" }, { type: "text", text: "Starting probe." }, { type: "toolCall", name: "cultivate" }]),
       message("toolResult", [{ type: "text", text: "ignored" }]),
       { type: "custom", data: {} },
     ];
-    expect(transcriptOf(entries, 10_000)).toBe("user: Build me an invoice tracker.\n\nassistant: Starting brood.\n\nassistant called cultivate");
+    expect(transcriptOf(entries, 10_000)).toBe("user: Build me an invoice tracker.\n\nassistant: Starting probe.\n\nassistant called cultivate");
     expect(transcriptOf(entries, 10)).toBe("… cultivate");
   });
 
@@ -91,8 +91,8 @@ describe("a side question", () => {
   });
 
   it("knows the skill running only until it says it has ended", () => {
-    const ended = skillRunStarted({ skill: "brood", dir: root, step: () => "", trace: () => [], runDir: root });
-    expect(runningSkill()?.skill).toBe("brood");
+    const ended = skillRunStarted({ skill: "probe", dir: root, step: () => "", trace: () => [], runDir: root });
+    expect(runningSkill()?.skill).toBe("probe");
     ended();
     expect(runningSkill()).toBeUndefined();
   });

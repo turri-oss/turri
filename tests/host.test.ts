@@ -124,12 +124,11 @@ describe("what a host says of its own surface", () => {
     expect(prompt).not.toContain("<surface>");
   });
 
-  it("tells the conversation to offer brood, spawn or starting a new project itself", async () => {
+  it("tells the conversation to start a new project itself, without offering a skill", async () => {
     const prompt = await systemPromptFor();
     expect(prompt).toContain(`${TOOLS_NOT_CLI}\n\n${NEW_PROJECT}`);
-    expect(NEW_PROJECT).toContain('"/brood - ');
-    expect(NEW_PROJECT).toContain('"/spawn - ');
-    expect(NEW_PROJECT).toContain('"Just do it - no skill');
+    expect(NEW_PROJECT).toContain("start it yourself, without asking how");
+    expect(NEW_PROJECT).not.toContain("/brood");
   });
 
   it("tells the model the host's surface in place of the terminal's keys, side panel, regen and /pulses", async () => {
@@ -189,42 +188,49 @@ describe("the skills the person starts with a command", () => {
     return { pi, commands, tools, sent };
   }
 
-  it("have a command each, which puts what was typed in the chat as the person's message", async () => {
-    const { pi, commands, sent } = registeringPi();
-    createTurriCore().extension(pi);
-    for (const name of ["brood", "spawn", "bud"]) expect(commands.has(name), name).toBe(true);
-    expect(commands.has("analyze-func-specs")).toBe(false);
-    await commands.get("spawn")!.handler("  a small server ", {});
-    expect(sent).toEqual(["/spawn a small server"]);
-  });
-
-  it("are refused when the model starts one without the person's command", async () => {
-    const { pi, tools } = registeringPi();
-    createTurriCore().extension(pi);
-    const result = await tools.get("cultivate")!.execute("id", { skill: "spawn" }, undefined, undefined, { hasUI: false });
-    expect(result.content[0]!.text).toContain("Not started: spawn is started only by the person, with /spawn");
-  });
-
-  it("start from an option starting with their command, picked in the conversation's question", async () => {
-    // An interrupted run of spawn here: cultivate, let through, stops at it instead of running the skill.
+  /** A project with a skill of its own that only the person starts - none of turri's own is - and turri run in it. */
+  function inProject<T>(work: (project: string) => Promise<T>): Promise<T> {
     const project = mkdtempSync(join(tmpdir(), "turri-picked-"));
-    mkdirSync(join(project, ".turri", "runs", "spawn"), { recursive: true });
-    writeFileSync(join(project, ".turri", "runs", "spawn", "run.json"), JSON.stringify({ skill: "spawn", status: "running", updatedAt: "now" }));
+    const own = join(project, ".turri", "skills", "kickoff");
+    mkdirSync(own, { recursive: true });
+    writeFileSync(join(own, "SKILL.md"), "---\nname: kickoff\ndescription: start a project.\nallowed-tools: [read]\nmetadata:\n  command-only: true\n---\n\nStart it.\n");
     const before = process.cwd();
     process.chdir(project);
-    try {
+    return work(project).finally(() => process.chdir(before));
+  }
+
+  it("have a command each, which puts what was typed in the chat as the person's message", () =>
+    inProject(async () => {
+      const { pi, commands, sent } = registeringPi();
+      createTurriCore().extension(pi);
+      expect(commands.has("kickoff")).toBe(true);
+      expect(commands.has("analyze-func-specs")).toBe(false);
+      await commands.get("kickoff")!.handler("  a small server ", {});
+      expect(sent).toEqual(["/kickoff a small server"]);
+    }));
+
+  it("are refused when the model starts one without the person's command", () =>
+    inProject(async () => {
       const { pi, tools } = registeringPi();
-      const { dialogs } = hostDialogs((options) => options.find((option) => option.startsWith("/spawn")));
+      createTurriCore().extension(pi);
+      const result = await tools.get("cultivate")!.execute("id", { skill: "kickoff" }, undefined, undefined, { hasUI: false });
+      expect(result.content[0]!.text).toContain("Not started: kickoff is started only by the person, with /kickoff");
+    }));
+
+  it("start from an option starting with their command, picked in the conversation's question", () =>
+    inProject(async (project) => {
+      // An interrupted run of kickoff here: cultivate, let through, stops at it instead of running the skill.
+      mkdirSync(join(project, ".turri", "runs", "kickoff"), { recursive: true });
+      writeFileSync(join(project, ".turri", "runs", "kickoff", "run.json"), JSON.stringify({ skill: "kickoff", status: "running", updatedAt: "now" }));
+      const { pi, tools } = registeringPi();
+      const { dialogs } = hostDialogs((options) => options.find((option) => option.startsWith("/kickoff")));
       createTurriCore({ dialogs }).extension(pi);
-      const cultivate = () => tools.get("cultivate")!.execute("id", { skill: "spawn" }, undefined, undefined, { hasUI: false });
+      const cultivate = () => tools.get("cultivate")!.execute("id", { skill: "kickoff" }, undefined, undefined, { hasUI: false });
       expect((await cultivate()).content[0]!.text).toContain("Not started");
-      const picked = await tools.get("ask_user")!.execute("q", { question: "How shall I start it?", options: ["/brood - an interview", "/spawn - something running in minutes", "Just do it - no skill"] }, undefined, undefined, { hasUI: false });
-      expect(picked.content.map((part) => part.text).join("\n")).toContain('call cultivate with skill "spawn" at once');
-      expect((await cultivate()).content[0]!.text).toContain("There is an interrupted run of spawn here");
-    } finally {
-      process.chdir(before);
-    }
-  });
+      const picked = await tools.get("ask_user")!.execute("q", { question: "How shall I start it?", options: ["/kickoff - something running in minutes", "Just do it - no skill"] }, undefined, undefined, { hasUI: false });
+      expect(picked.content.map((part) => part.text).join("\n")).toContain('call cultivate with skill "kickoff" at once');
+      expect((await cultivate()).content[0]!.text).toContain("There is an interrupted run of kickoff here");
+    }));
 });
 
 describe("config settings for a host", () => {

@@ -64,7 +64,7 @@ describe("what a chat draws on while another is shown", () => {
     const first = screen();
     const chat = createChatUi({ screen: () => undefined });
     chat.show(first.ui);
-    chat.ui.setWidget("turri-skill", ["brood · interview"]);
+    chat.ui.setWidget("turri-skill", ["probe · interview"]);
     chat.ui.setWidget("turri-gone", ["x"]);
     chat.ui.setWidget("turri-gone", undefined);
     chat.ui.setStatus("turri", "regenerating");

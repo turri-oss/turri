@@ -7,7 +7,7 @@ describe("a shell command that runs turri again", () => {
     expect(selfInvocation("cd ~/proj && turri change-plain app.plain change.diff")).toBe("change-plain");
     expect(selfInvocation("nohup turri regenerate app.plain 3 > log 2>&1 &")).toBe("regenerate");
     expect(selfInvocation("npx turri conform app.plain 1")).toBe("conform");
-    expect(selfInvocation("node bin/turri.mjs cultivate genome/skills/brood")).toBe("cultivate");
+    expect(selfInvocation("node bin/turri.mjs cultivate genome/skills/debug-specs")).toBe("cultivate");
     expect(selfInvocation("npm run regenerate -- app.plain")).toBe("regenerate");
     expect(selfInvocation("npx tsx src/regenerate-cli.ts app.plain 1")).toBe("regenerate");
     expect(selfInvocation("turri regenerate app.plain")).toBe("regenerate");

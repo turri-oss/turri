@@ -1,70 +1,57 @@
-# A backend service: shorty
+# A backend service, tested as it grows: shorty
 
-You will build **shorty**, a URL shortener: an HTTP API that turns a long URL into a short code, redirects anyone who opens the code, and counts the clicks - in the language you choose, with conformance tests from the start. These are black-box tests that start the service and call it over HTTP, so they show that it does what the spec says.
+You will build **shorty**, a URL shortener: an HTTP API that turns a long URL into a short code, and redirects anyone who opens the code. It starts with only that, and grows click counts, expiry and a list of your links while it regenerates. It has conformance tests from the first feature: black-box tests that start the service and call it over HTTP. They are written for each feature once its code is built, and the whole suite runs again each time more lands, so nothing that worked before quietly breaks.
 
-It takes an hour or so. [guestbook](guestbook.md) is the quicker start. This example is about the conformance tests.
-
-## 1. The project
-
-Build it on any backend stack your machine can build - Python, TypeScript, Go, Rust or Java. The agents use the toolchains on your machine and install none, so the interview offers only the stacks it can build.
+Build it on any backend stack your machine can build - Python, TypeScript, Go, Rust or Java.
 
 ```bash
 mkdir ~/shorty && cd ~/shorty
 turri init-config
-```
-
-## 2. Say what you want
-
-```bash
 turri
 ```
 
-> Let's build shorty - a URL shortener API. You post a long URL and get back a short
-> code; opening `/<code>` redirects to the URL and counts the click. Codes are 7 characters, letters and digits,
-> or a custom alias of my choice if it's free. A link can expire at a given time; after that, the code returns
-> 410. I can list my links with their click counts, and delete one. Keep the data in SQLite. Requests are
-> authenticated with an API key per user.
+## 1. The smallest thing, with conformance tests
 
-## 3. Two tracks
+> Let's build shorty, a URL shortener API, with conformance tests. To start: `POST /links` with `{"url"}` returns
+> a 7-character code, letters and digits, and `GET /<code>` redirects to the URL. Keep the data in SQLite.
 
-Each module is regenerated on two tracks. The **code** track regenerates the functional specs into code that passes its unit tests. The **conformance** track writes the black-box tests for what is built and runs the whole suite. A conformance pulse starts once the module's code is built, and nothing is built on the module until it passes.
+**turri** writes `shorty.plain` importing a backend stack from the standard library, and its unit testing script. Because you asked for conformance tests, it also writes the module's test reqs - the stack's conformance template, `stdlib/backend/conformance/<stack>` - and the conformance testing script, and puts `conformance-tests: true` in `config.turri.yaml`. Then it starts regenerating the first functional spec.
 
-In regen (`ctrl+h`) the second column is the conformance track's:
+## 2. Two tracks
 
-```
-  ✓ ◆ │ - A :User: can create a :Link: via `POST /links` with the JSON body `{"url", "alias"?, "expires_at"?}`.
-  ✓ ◆ │ - Opening `GET /{code}` redirects to the :Link:'s URL with `302` and adds one to its clicks.
-  ✓ 6 │ - A :Link: past its `expires_at` returns `410` `gone` on `GET /{code}`, and is not counted.
-  ⠋   │ - A :User: can list their :Link: items via `GET /links`, newest first, each with its clicks.
-```
+Each module is regenerated on two tracks:
 
-`◆` means the conformance tests pass for the functionality as it reads now. A number is the conformance pulse planned to write its tests, and a spinner means they are being written now.
+- **Code.** The functional specs are regenerated into code that passes its unit tests.
+- **Conformance.** Once the module's code is built, the conformance tests are written for what was built, and the whole suite runs.
 
-A conformance test that fails is not simply made to pass. A judge first works out what is wrong: the code, the tests or the spec. The code or the tests are fixed. Two functional specs that contradict each other stop the pulse and come back to you.
+So as long as you keep adding features, the code goes first. Each time the code catches up with the \*\*\*plain, the conformance tests catch up with the code.
 
-## 4. Bind ahead
+## 3. Grow it while it regenerates
 
-With conformance tests off, or set to `chosen`, `bind` asks for them for some functional specs only:
+Say the next features one after another, without waiting:
 
-> Bind the redirect and expiry specs.
+> Opening a code counts the click. `GET /links/<code>` returns the link with its click count.
 
-From the command line, by functional spec number:
+> A link can be given `expires_at`. After that time, `GET /<code>` returns `410` and the click is not counted.
 
-```bash
-turri bind shorty.plain 2 3
-```
+> `GET /links` lists all links, newest first, each with its click count.
 
-When their code is not built yet, the conformance pulse is scheduled ahead of it. It shows a number in the regen's second column and starts once the code is built.
+Each is a \*\*\*plain change, planned behind what is already regenerating. When the code for one lands, the conformance tests for it are written, and every conformance test written before runs with them. A test for the redirect from step 1 that fails after the click counts land means the click counts broke the redirect, and it is caught then, not later.
+
+## 4. When a conformance test fails
+
+A failing conformance test is not simply made to pass. A judge first works out what is wrong: the code, the test, or the \*\*\*plain. The code or the test is fixed. When two functional specs contradict each other - a counted click on an expired link, say - the pulse stops, and **turri** tells you in the chat which two, so you decide which one holds.
 
 ## 5. Try it
 
-> Release it.
+Each pulse that lands is released and running. Ask where:
 
-**turri** starts the service on this machine and tells you where it is running - the port is the stack's. Make a key and a link, with that address for `$SHORTY`:
+> Where is shorty running?
+
+Then make a link, with that address for `$SHORTY`:
 
 ```bash
-curl -s -X POST $SHORTY/links -H "Authorization: Bearer $KEY" \
-  -H 'Content-Type: application/json' -d '{"url": "https://example.com"}'
+curl -s -X POST $SHORTY/links -H 'Content-Type: application/json' -d '{"url": "https://example.com"}'
 curl -si $SHORTY/<code>
 ```
 
@@ -72,7 +59,17 @@ curl -si $SHORTY/<code>
 
 > Codes should be 6 characters, not 7.
 
-That is a change to a definition, not a feature. In regen the definition gets the number of the pulse that changes it. Every functional spec that uses it is regenerated again with it, and its conformance tests are written again: `◆` turns into a dimmed, hollow `◇`, then fills in again once they pass for the new text.
+This is a change to a rule, not a new feature. Every functional spec that uses it is regenerated again with it, and their conformance tests are written again for the new text. The rest of the suite runs too, so you know the shorter codes did not break expiry or the click counts.
+
+## Try it: regenerate from scratch
+
+The \*\*\*plain is the software; the code is just one regeneration of it. Delete shorty's code and conformance tests, and regenerate both from the \*\*\*plain alone - every feature you added along the way, built again from the start:
+
+```
+/regenerate shorty from scratch
+```
+
+It starts at once, and the code it deletes stays in `/lineage`. The new code will not be the same code, but it does what the \*\*\*plain says - and its conformance tests, written again too, show it.
 
 ## Where next
 

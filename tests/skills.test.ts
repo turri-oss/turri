@@ -24,16 +24,16 @@ function skill(dir: string, name: string, description = `${name}, described.`, b
 
 describe("the skills turri can run", () => {
   it("are its own, then the project's from .turri/skills and .agents/skills, each said whose it is", () => {
-    skill(join(harness, "genome", "skills", "brood"), "brood");
+    skill(join(harness, "genome", "skills", "onboard"), "onboard");
     skill(join(project, ".turri", "skills", "release-notes"), "release-notes");
     skill(join(project, ".agents", "skills", "changelog"), "changelog");
 
     const found = discoverSkills(harness, project);
-    expect(found.skills.map((s) => s.name)).toEqual(["brood", "release-notes", "changelog"]);
+    expect(found.skills.map((s) => s.name)).toEqual(["onboard", "release-notes", "changelog"]);
     expect(found.skills.map((s) => s.origin)).toEqual(["turri", { project: join(".turri", "skills", "release-notes") }, { project: join(".agents", "skills", "changelog") }]);
     expect(found.skills[2]!.dir).toBe(join(project, ".agents", "skills", "changelog"));
     expect(found.skills.map(catalogueLine)).toEqual([
-      "- brood: brood, described.",
+      "- onboard: onboard, described.",
       `- release-notes (this project's, ${join(".turri", "skills", "release-notes")}): release-notes, described.`,
       `- changelog (this project's, ${join(".agents", "skills", "changelog")}): changelog, described.`,
     ]);
@@ -56,15 +56,15 @@ describe("the skills turri can run", () => {
   });
 
   it("leave out a project's skill whose name is taken - turri's own first, then .turri/skills - and say so", () => {
-    skill(join(harness, "genome", "skills", "brood"), "brood");
-    skill(join(project, ".turri", "skills", "brood"), "brood", "A brood of our own.");
+    skill(join(harness, "genome", "skills", "onboard"), "onboard");
+    skill(join(project, ".turri", "skills", "onboard"), "onboard", "An onboard of our own.");
     skill(join(project, ".turri", "skills", "notes"), "notes");
     skill(join(project, ".agents", "skills", "notes"), "notes", "Other notes.");
 
     const found = discoverSkills(harness, project);
-    expect(found.skills.map((s) => `${s.name}: ${s.description}`)).toEqual(["brood: brood, described.", "notes: notes, described."]);
+    expect(found.skills.map((s) => `${s.name}: ${s.description}`)).toEqual(["onboard: onboard, described.", "notes: notes, described."]);
     expect(found.shadowed).toEqual([
-      `${join(".turri", "skills", "brood")} (brood is turri's own)`,
+      `${join(".turri", "skills", "onboard")} (onboard is turri's own)`,
       `${join(".agents", "skills", "notes")} (notes is ${join(".turri", "skills", "notes")})`,
     ]);
     expect(leftOutNote(found)).toContain("Left out, their names taken:");
@@ -82,9 +82,9 @@ describe("the skills turri can run", () => {
   });
 
   it("are turri's own alone when there is no project, or it has no skill folders", () => {
-    skill(join(harness, "genome", "skills", "brood"), "brood");
-    expect(discoverSkills(harness, undefined).skills.map((s) => s.name)).toEqual(["brood"]);
-    expect(discoverSkills(harness, project).skills.map((s) => s.name)).toEqual(["brood"]);
+    skill(join(harness, "genome", "skills", "onboard"), "onboard");
+    expect(discoverSkills(harness, undefined).skills.map((s) => s.name)).toEqual(["onboard"]);
+    expect(discoverSkills(harness, project).skills.map((s) => s.name)).toEqual(["onboard"]);
   });
 });
 
@@ -92,8 +92,8 @@ describe("the scratch folder", () => {
   it("ignores everything in it but the project's skills", () => {
     execFileSync("git", ["init", "-q"], { cwd: project });
     const scratch = join(project, ".turri");
-    ensureInScratch(scratch, join(scratch, "runs", "brood"));
-    writeFileSync(join(scratch, "runs", "brood", "run.json"), "{}");
+    ensureInScratch(scratch, join(scratch, "runs", "onboard"));
+    writeFileSync(join(scratch, "runs", "onboard", "run.json"), "{}");
     skill(join(scratch, "skills", "notes"), "notes");
     mkdirSync(join(scratch, "skills", "notes", "references"));
     writeFileSync(join(scratch, "skills", "notes", "references", "rubric.md"), "rubric");
@@ -119,21 +119,24 @@ describe("the scratch folder", () => {
 });
 
 describe("the skills the person starts themselves", () => {
-  it("are brood, spawn and bud - marked in cultivate's list with their command", () => {
-    const { skills } = discoverSkills(process.cwd(), process.cwd());
-    expect(skills.filter((skill) => skill.commandOnly).map((skill) => skill.name).sort()).toEqual(["brood", "bud", "spawn"]);
-    expect(catalogueLine(skills.find((skill) => skill.name === "spawn")!)).toContain("Started only by the person, with /spawn");
+  it("are a project's marked command-only - none of turri's own - each marked in cultivate's list with its command", () => {
+    const own = join(project, ".turri", "skills", "kickoff");
+    mkdirSync(own, { recursive: true });
+    writeFileSync(join(own, "SKILL.md"), "---\nname: kickoff\ndescription: kickoff, described.\nallowed-tools: [read]\nmetadata:\n  command-only: true\n---\n\nDo it.\n");
+    const { skills } = discoverSkills(process.cwd(), project);
+    expect(skills.filter((skill) => skill.commandOnly).map((skill) => skill.name)).toEqual(["kickoff"]);
+    expect(catalogueLine(skills.find((skill) => skill.name === "kickoff")!)).toContain("Started only by the person, with /kickoff");
     expect(catalogueLine(skills.find((skill) => skill.name === "analyze-func-specs")!)).not.toContain("Started only by the person");
   });
 
   it("start once their command is typed, and not again until it is typed again", () => {
     const gate = createCommandGate();
-    const spawn = { name: "spawn", commandOnly: true };
-    expect(gate.mayStart(spawn)).toBe(false);
-    gate.typed("spawn");
-    expect(gate.mayStart(spawn)).toBe(true);
-    gate.started("spawn");
-    expect(gate.mayStart(spawn)).toBe(false);
+    const kickoff = { name: "kickoff", commandOnly: true };
+    expect(gate.mayStart(kickoff)).toBe(false);
+    gate.typed("kickoff");
+    expect(gate.mayStart(kickoff)).toBe(true);
+    gate.started("kickoff");
+    expect(gate.mayStart(kickoff)).toBe(false);
   });
 
   it("leave every other skill free for the model to start", () => {
@@ -141,24 +144,24 @@ describe("the skills the person starts themselves", () => {
   });
 
   it("are refused with how the person starts them - their command, or an option picked", () => {
-    expect(startedByCommandOnly("brood")).toContain("with /brood or by picking an option starting /brood");
+    expect(startedByCommandOnly("onboard")).toContain("with /onboard or by picking an option starting /onboard");
   });
 
   it("start from an option the person picked that starts with their command", () => {
     const skills = [
-      { name: "brood", commandOnly: true },
+      { name: "onboard", commandOnly: true },
       { name: "analyze-func-specs", commandOnly: false },
     ];
-    expect(chosenCommand("/brood - an interview: the stack, the testing and every feature", skills)).toBe("brood");
+    expect(chosenCommand("/onboard - an interview: the stack, the testing and every feature", skills)).toBe("onboard");
     expect(chosenCommand("Just do it - no skill: I write it here", skills)).toBeUndefined();
     expect(chosenCommand("/analyze-func-specs", skills)).toBeUndefined();
-    expect(chosenCommand("I would rather /brood later", skills)).toBeUndefined();
+    expect(chosenCommand("I would rather /onboard later", skills)).toBeUndefined();
   });
 
   it("are started at once once picked, with what the person asked for word for word", () => {
-    const told = startPicked("spawn", " create a small server in java springboot ");
-    expect(told).toContain('call cultivate with skill "spawn" at once');
+    const told = startPicked("kickoff", " create a small server in java springboot ");
+    expect(told).toContain('call cultivate with skill "kickoff" at once');
     expect(told).toContain('word for word: "create a small server in java springboot"');
-    expect(told).toContain("never ask them to type /spawn");
+    expect(told).toContain("never ask them to type /kickoff");
   });
 });
