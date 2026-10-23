@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Box, Text } from "@earendil-works/pi-tui";
 import type { ChatLink, TurriCore } from "./chats.ts";
-import { readProjectConfig, roleModel } from "./config.ts";
+import { projectModels, readProjectConfig, roleModel } from "./config.ts";
 import { concludedNote, concludeTool, keepGuidanceTool, notifyTool, sentinelFileTools, type Conclusion, type Notice } from "./sentinel.ts";
 
 /**
@@ -43,10 +43,12 @@ export function registerSentinel(pi: ExtensionAPI, session: TurriCore, cwd: stri
     } catch {
       /* a session let go has no tools to set */
     }
-    // Its model, once: the `sentinel` role's, else the chat's - what the person then picks in its chat stands.
+    // Its model, once: the `sentinel` role's, else the chat's - never the one its session started on, which in a host is
+    // pi's default and may not be the project's provider's. What the person then picks in its chat stands.
     if (modelSet) return;
     modelSet = true;
-    const choice = roleModel(readProjectConfig(cwd), "sentinel");
+    const config = readProjectConfig(cwd);
+    const choice = roleModel(config, "sentinel") ?? projectModels(config).harness;
     if (choice?.model !== undefined) {
       const slash = choice.model.indexOf("/");
       const found = slash === -1 ? undefined : ctx.modelRegistry.find(choice.model.slice(0, slash), choice.model.slice(slash + 1));

@@ -43,7 +43,7 @@ It has a slot of its own: with it on, you open up to eight chats, and the ninth 
 
 ## Its model
 
-The `sentinel` role in `models:` - else the chat's model, `harness-model` - see [models](config.md#models). Judging behaviour against \*\*\*plain, and driving a browser, want a capable model; point it at a cheaper one if it costs too much for every pulse.
+The `sentinel` role in `models:` - else the chat's model, `models.chat` else `harness-model`, with its thinking - see [models](config.md#models). A `sentinel` entry that gives only `thinking` runs on the chat's model, thinking as it says. It is set as the sentinel's chat opens, in the terminal and in a host alike - never the model its session started on, which in a host is [pi](https://pi.dev)'s default and may not be one the project's provider has. What the person then picks in its chat stands. Judging behaviour against \*\*\*plain, and driving a browser, want a capable model; point it at a cheaper one if it costs too much for every pulse.
 
 ## In a host
 

@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -6,8 +6,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 /** A tool turri registered in a chat, run as pi runs it: id, arguments, the turn's signal, updates, the context. */
 type Tool = { execute: (...args: unknown[]) => Promise<{ content: Array<{ text: string }> }> };
 
-/** What each chat's session was asked to do, and the tools turri registered in it, by the order the chats were made in. */
-const sessions: Array<{ isStreaming: boolean; did: string[]; tools: Map<string, Tool>; sent: string[] }> = [];
+/** An event handler turri registered in a chat. */
+type Handler = (event: unknown, ctx: unknown) => unknown;
+
+/** A chat's session: what it was asked to do, the tools and handlers turri registered in it, the model and thinking set on it. */
+type Session = {
+  isStreaming: boolean;
+  did: string[];
+  tools: Map<string, Tool>;
+  sent: string[];
+  handlers: Map<string, Handler[]>;
+  model?: { provider: string; id: string };
+  thinking?: string;
+};
+
+/** Each chat's session, by the order the chats were made in. */
+const sessions: Session[] = [];
 
 // A host's chats on pi sessions that run nothing: each says whether a turn is running, and records what stops it. The
 // extensions are built into each, keeping the tools they register.
@@ -25,7 +39,7 @@ vi.mock("@earendil-works/pi-coding-agent", async (actual) => {
     DefaultResourceLoader,
     SessionManager: { create: () => ({}), open: () => ({}) },
     createAgentSession: async ({ resourceLoader }: { resourceLoader: DefaultResourceLoader }) => {
-      const state = { isStreaming: false, did: [] as string[], tools: new Map<string, Tool>(), sent: [] as string[] };
+      const state: Session = { isStreaming: false, did: [], tools: new Map(), sent: [], handlers: new Map() };
       sessions.push(state);
       const api = new Proxy(
         {},
@@ -35,7 +49,15 @@ vi.mock("@earendil-works/pi-coding-agent", async (actual) => {
               ? (tool: Tool & { name: string }) => state.tools.set(tool.name, tool)
               : key === "sendMessage"
                 ? (message: { customType: string }) => state.sent.push(message.customType)
-                : () => undefined,
+                : key === "on"
+                  ? (event: string, handler: Handler) => state.handlers.set(event, [...(state.handlers.get(event) ?? []), handler])
+                  : key === "setModel"
+                    ? async (model: { provider: string; id: string }) => (state.model = model)
+                    : key === "setThinkingLevel"
+                      ? (level: string) => (state.thinking = level)
+                      : key === "getAllTools"
+                        ? () => [...state.tools.keys()].map((name) => ({ name }))
+                        : () => undefined,
         },
       );
       for (const factory of resourceLoader.factories) factory(api);
@@ -69,6 +91,20 @@ const { SENTINEL } = await import("../src/sentinel.ts");
 
 const settled = () => new Promise((resolve) => setTimeout(resolve, 30));
 
+/** Anything a handler asks of its context that the test does not care about: a function that does nothing, all the way down. */
+const anything: unknown = new Proxy(() => undefined, {
+  get: (_target, key) => (key === "then" || typeof key === "symbol" ? undefined : anything),
+  apply: () => anything,
+});
+
+/** A new session shown, as pi starts it: its session_start handlers run, with a model registry that has every model asked for. */
+async function start(session: Session): Promise<void> {
+  const modelRegistry = { find: (provider: string, id: string) => ({ provider, id }) };
+  const sessionManager = { getEntries: () => [], getBranch: () => [], getSessionName: () => undefined };
+  const ctx = new Proxy({ modelRegistry, sessionManager }, { get: (target, key) => (key in target ? target[key as keyof typeof target] : anything) });
+  for (const handler of session.handlers.get("session_start") ?? []) await handler({ type: "session_start", reason: "new" }, ctx);
+}
+
 describe("the sentinel in a host", () => {
   const cwd = process.cwd();
   beforeEach(() => {
@@ -90,6 +126,19 @@ describe("the sentinel in a host", () => {
     // The person's chat is told the pulse landed, to say so; the sentinel checks it.
     expect(sessions[0]!.sent).toEqual(["turri_job_landed"]);
     expect(sessions[1]!.sent).toEqual(["turri_sentinel_pulse"]);
+  });
+
+  it("runs on the chat's model, with its thinking, when models.sentinel names none - not on the model its session started on", async () => {
+    writeFileSync("config.turri.yaml", "harness-model: amazon-bedrock/claude-chat:high\ncoding-model: amazon-bedrock/claude-coder\n");
+    const turri = await createTurri();
+    const mine = await turri.openChat();
+    turri.focus(mine.id);
+    const job = turri.jobs.start({ kind: "regenerate", summary: "app pulse 1", module: "app", run: async () => ({ report: "done", details: { passed: true, landed: true } }) });
+    await turri.jobs.wait(job.id);
+    await settled();
+    await start(sessions[1]!);
+    expect(sessions[1]!.model).toEqual({ provider: "amazon-bedrock", id: "claude-chat" });
+    expect(sessions[1]!.thinking).toBe("high");
   });
 
   it("has tools that read and notify, and none that write - and its notice reaches the host, answered back into the person's chat", async () => {
