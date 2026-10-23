@@ -116,8 +116,8 @@ function stepPrompt(skill: Skill, step: StepSpec, critique: string, context?: st
     `This skill's own files are in ${skill.dir}: a path its steps name, such as references/<file>.md, is there. ` +
       `A skill it says to follow is beside it, in ${dirname(skill.dir)}/<skill name>/SKILL.md - read it and follow it.`,
     "",
-    // The artifact exists for the gate's judges to read. Without a gate nothing reads it,
-    // and asking for one is a tool call spent on a file no one opens.
+    // The artifact exists for the gate's judges to read. Without a gate its reply is what the step gives,
+    // and asking for a file is a tool call spent on what the reply already says.
     step.gate
       ? `When you are done, call write_artifact with path "${artifactPath(step)}" holding the record the review will be checked against.`
       : "",
@@ -185,6 +185,8 @@ export function compileSkill(opts: {
       } catch {
         // Left empty on purpose: the gate treats a missing artifact as a failure.
       }
+      // A step with no gate is asked for no artifact: what it found is its reply - an analysis's verdict, all it gives.
+      if (artifact === "" && !step.gate) artifact = reply.trim();
       if (artifact) report.artifact(artifactPath(step), artifact);
 
       return {

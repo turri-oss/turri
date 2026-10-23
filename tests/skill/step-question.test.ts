@@ -42,7 +42,7 @@ async function run(paced: boolean) {
     skill: skillOf(paced), cwd: dir, runDir: dir, executor: {} as never,
     report: { step() {}, artifact() {}, gate() {}, judge() {}, outcome() {} },
   }).compile({ checkpointer: new MemorySaver() });
-  await app.invoke({}, { configurable: { thread_id: "t" } });
+  return (await app.invoke({}, { configurable: { thread_id: "t" } })) as { artifacts: Record<string, string> };
 }
 
 describe("a step whose turn ends on a question in its reply", () => {
@@ -68,6 +68,14 @@ describe("a step whose turn ends on a question in its reply", () => {
     // The groundwork asks three times - its turn and two nudges - and the product step still starts.
     expect(asked.slice(0, 3).filter((text) => text.includes("Your turn ended on a question"))).toHaveLength(QUESTION_NUDGES);
     expect(asked[3]).toContain("Write the product.");
+  });
+});
+
+describe("a step with no gate", () => {
+  it("gives its reply, when it wrote no artifact - an analysis's verdict is all it says", async () => {
+    replies = ["Groundwork is ready.", "COMPATIBLE"];
+    const { artifacts } = await run(false);
+    expect(artifacts).toEqual({ groundwork: "Groundwork is ready.", product: "COMPATIBLE" });
   });
 });
 

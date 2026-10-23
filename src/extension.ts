@@ -988,7 +988,9 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
       const changed =
         changes.length > 0
           ? `It changed ${changes.length} file${changes.length === 1 ? "" : "s"} in the project: ${changes.join(", ")}.`
-          : "It changed no file in the project - whatever it said it wrote is not there. Say so to the user; do not report the work as done.";
+          : writes
+            ? "It changed no file in the project - whatever it said it wrote is not there. Say so to the user; do not report the work as done."
+            : "It only reads: what it found is the artifact below.";
       // A skill that edits the specs with the file tools builds nothing: the change is the conversation's to render.
       const specsChanged = changes.filter((path) => path.endsWith(".plain"));
       const unrendered =

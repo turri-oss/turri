@@ -64,7 +64,7 @@ Each step is told where its skill's files are, so a path it names - `references/
 - **Whether review happens.** The gate is an edge. There is no prompt the executor can write that skips it.
 - **How many attempts.** `max_retries` is a counter in graph state. The executor is never asked how many tries it would like.
 - **What "fail" means.** Judges answer through a schema (`submit_verdict`), so the router branches on a value. A judge that returns no verdict counts as a fail - silence is not consent.
-- **What gets reviewed.** The executor's only write path for the artifact is `write_artifact`, pointed at a path the graph chose. A step that produces no artifact fails its gate without spending a single judge call.
+- **What gets reviewed.** The executor's only write path for the artifact is `write_artifact`, pointed at a path the graph chose. A step that produces no artifact fails its gate without spending a single judge call. A step with no gate is asked for none: its reply is what it gives - an analysis's verdict (`COMPATIBLE`, or the pairs that conflict) is all it says - and the last step's is the skill's result. A skill that only reads is not told it changed nothing, as one that writes is.
 - **Who is judging.** Each judge is a fresh session given the artifact and the rubric and nothing else. It never sees the executor's transcript, because a judge that inherits the actor's reasoning inherits its rationalisations.
 
 `on_fail: escalate` (and `retry` once retries are exhausted) pauses the graph on a LangGraph `interrupt`: in the TUI that is a real confirm dialog; with no UI there is nobody to ask, so the gate stands and the run stops.
