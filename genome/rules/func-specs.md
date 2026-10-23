@@ -47,7 +47,15 @@ GOOD — statements of fact with concrete subjects:
 - The current mechanism for enforcing the complexity limit is that each functional spec must imply a **maximum of 200 changed lines of code**.
 - Smaller slices produce focused test failures, reduce hidden coupling and regression surface, and make review and incremental rendering more predictable
 - If a spec is too large, use `break-down-func-spec` to split it into multiple smaller, independent specs
-- Use `analyze-if-func-spec-too-complex` to verify before inserting
+- Judge a spec's size yourself before inserting it: estimate the code it implies - new files, functions, data model changes, UI components, error paths, boilerplate, its unit tests - and treat more than ~150 lines as too big, leaving the renderer headroom
+- Signs a spec is too big - one is not proof, several are:
+  - more than one independently testable behavior ("create, edit, delete and archive")
+  - more than three new constructs at once - data structures, UI components, endpoints
+  - several modes or conditional paths, each with its own behavior
+  - core behavior bundled with cross-cutting concerns - retries, pagination, caching, logging
+  - a whole screen with several interactive elements and state transitions
+  - multi-step transformations, joins or aggregations across entities
+  - a substantial technical component it must build as well as use - an engine, parser, scheduler, layout algorithm, state machine, sync mechanism; it counts toward the limit, and goes in a spec of its own before the one that uses it
 - Use `analyze-func-specs` to check a spec (or a batch of specs) against all relevant existing specs in a single batched call; use `resolve-spec-conflict` for each conflicting pair it reports
 
 ## First-spec bootstrap cost
@@ -76,7 +84,7 @@ GOOD — statements of fact with concrete subjects:
 ## Adding a functional spec
 Every new functional spec - one or a batch - is checked before it is written into the file:
 1. Draft it, then trim it per `concise-specs.md` to the shortest wording that keeps every fact
-2. Check its size with `analyze-if-func-spec-too-complex`; when it is too complex, split it with `break-down-func-spec` and check each part from step 1
+2. Judge its size against the complexity limit; when it is too big, split it with `break-down-func-spec` and check each part from step 1
 3. Check it for conflicts with **one** `analyze-func-specs` call over the new spec and every existing functional spec in the file and its `requires` chain - never pair by pair. Resolve each conflicting pair it reports with `resolve-spec-conflict`, then run it again over what changed until it is compatible
 4. Only then write it in, where it belongs (see Placement)
 

@@ -2,8 +2,8 @@
 name: break-down-func-spec
 description: >-
   Break down a functional spec that is too complex into smaller specs that
-  each imply ≤ 200 lines of code. Use when analyze-if-func-spec-too-complex
-  flags a spec as TOO COMPLEX, or when a spec is suspected of being too large.
+  each imply ≤ 200 lines of code. Use when a spec is judged too large against
+  the complexity limit (`func-specs.md`), before or after it is written in.
 allowed-tools: [read, write, edit, ls, grep, find]
 ---
 
@@ -11,8 +11,8 @@ allowed-tools: [read, write, edit, ls, grep, find]
 
 ## When to Use
 
-- `analyze-if-func-spec-too-complex` flagged a spec as TOO COMPLEX.
-- A spec is suspected of exceeding the 200 LOC limit and needs to be split preemptively.
+- A spec is judged to exceed the 200 LOC limit (`func-specs.md`, *Complexity limit*) and needs to be split before it is written in.
+- A spec already written in turns out too large - its pulse could not get its unit tests to pass.
 - A spec bundles multiple behaviors, constructs, or concerns that should be separated.
 
 ## Input
@@ -23,7 +23,7 @@ The functional spec to break down, plus the full `.plain` file it belongs to.
 
 1. **Read the full `.plain` file** — definitions, implementation reqs, and all functional specs (including `requires` modules) to understand context.
 2. **Identify the spec to break down** — the one flagged as too complex or pointed to by the user.
-3. **Analyze why it is too complex** — use the indicators from `analyze-if-func-spec-too-complex`:
+3. **Analyze why it is too complex** — use the signs in `func-specs.md` (*Complexity limit*):
    - Multiple distinct behaviors bundled together?
    - Too many new constructs introduced at once?
    - Complex branching logic or conditional paths?
@@ -37,7 +37,7 @@ The functional spec to break down, plus the full `.plain` file it belongs to.
    - Within the 200 LOC limit
 5. **Draft the replacement specs** — write the smaller specs in chronological order. The first replacement spec typically sets up the foundation, and subsequent ones layer behavior on top.
 6. **Verify functional completeness** — this is critical. The replacement specs taken together must cover **100% of the functionality** described in the original spec. Walk through every behavior, condition, and detail in the original and confirm it appears in exactly one of the replacement specs. Nothing may be lost, weakened, or left implicit. If any functionality from the original is missing, add it to the appropriate replacement spec or create an additional one.
-7. **Verify each replacement spec** — run `analyze-if-func-spec-too-complex` on each to confirm it fits within the limit.
+7. **Verify each replacement spec** — judge each against the complexity limit, and split again any that is still too large.
 8. **Check for conflicts** — run `analyze-func-specs` **once** with the full set of replacement specs plus every existing spec in the file and its `requires` chain. The batched analyzer reports every conflicting pair (replacement × existing and replacement × replacement) in one call — do not loop over pairs. Resolve each reported pair with `resolve-spec-conflict`, then re-run `analyze-func-specs` over the touched set until the verdict is `COMPATIBLE`.
 9. **Replace in the file** — remove the original spec and insert the replacement specs in its position, preserving chronological order.
 10. **Read the file again** to confirm correct placement and syntax.
@@ -192,7 +192,7 @@ If the original spec had acceptance tests, redistribute them to the most appropr
 
 - [ ] Original spec has been removed from the file
 - [ ] Replacement specs together cover 100% of the original spec's functionality — nothing lost
-- [ ] Each replacement spec implies ≤ 200 LOC (verified via `analyze-if-func-spec-too-complex`)
+- [ ] Each replacement spec implies ≤ 200 LOC (judged against the complexity limit)
 - [ ] No conflicts between replacement specs and existing specs (verified via one batched `analyze-func-specs` call)
 - [ ] No conflicts between the replacement specs themselves (covered by the same batched call)
 - [ ] Replacement specs are in correct chronological order

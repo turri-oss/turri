@@ -114,7 +114,7 @@ A requirement beyond the stack - storage, an outside service - is added on top o
 
 The ones that shape \*\*\*plain most:
 
-- **One functionality is at most ~200 lines of code.** A bigger one is split before it is written (`analyze-if-func-spec-too-complex`, `break-down-func-spec`).
+- **One functionality is at most ~200 lines of code.** A bigger one is split before it is written (`break-down-func-spec`) - the author judges its size by the signs in `func-specs.md`.
 - **Functional specs are in build order.** Each is regenerated on top of the ones before it - which is what a functional spec may assume, not what a change costs: a functional spec inserted anywhere is regenerated alone.
 - **They state facts, with a concrete subject.** "A :User: can add a :Task:" - not "Implement adding tasks", not "The system should…".
 - **Nothing a test cannot check.** No `robust`, `seamless`, `as appropriate`; state the checkable fact or cut the word.
@@ -132,7 +132,7 @@ Every skill in `genome/skills/` can be run from a conversation; most are also us
 | --- | --- |
 | start a project | ask, in the conversation: turri writes it itself, with no skill |
 | add to \*\*\*plain | ask in the conversation: it writes a concept, a functional spec, a req, an acceptance test or a linked resource itself, by the rules in its prompt, as a \*\*\*plain diff |
-| check what is written | `analyze-if-func-spec-too-complex`, `analyze-2-func-specs`, `analyze-func-specs`, `resolve-section-ownership` |
+| check what is written | `analyze-2-func-specs`, `analyze-func-specs`, `resolve-section-ownership` |
 | fix what is written | `break-down-func-spec`, `resolve-spec-conflict`, `debug-specs` |
 | restructure modules | `refactor-module`, `consolidate-concepts` |
 | set up the project to build | `implement-unit-testing-script`, `implement-conformance-testing-script` |

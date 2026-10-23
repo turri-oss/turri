@@ -19,7 +19,7 @@ This is the ownership counterpart to `break-down-func-spec`. That skill splits o
 
 ## When Not to Use
 
-- The spec is correctly placed but too large → `analyze-if-func-spec-too-complex`, then `break-down-func-spec`.
+- The spec is correctly placed but too large → `break-down-func-spec`.
 - Two specs contradict each other → `analyze-func-specs`, then `resolve-spec-conflict`.
 - The wording is merely verbose → trim per `concise-specs.md`; no fact changes section.
 

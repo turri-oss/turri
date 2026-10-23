@@ -401,7 +401,7 @@ GOOD — each fact in the section that owns it:
 
 Each section now answers one question, and the definition, the mechanism, and the behavior are each one line to check instead of clauses buried in a paragraph about resizing. Use the split whenever a bullet answers more than one of *what is it*, *what does it do*, *how is it built*, and *how is it tested* — see `module-structure.md` for section ownership and canonical section order.
 
-Use `resolve-section-ownership` to perform the split. It is not the same as splitting a functional spec that is simply too large — for that, run `analyze-if-func-spec-too-complex`, then `break-down-func-spec`.
+Use `resolve-section-ownership` to perform the split. It is not the same as splitting a functional spec that is simply too large — for that, use `break-down-func-spec`.
 
 The most common single case of this is a functional spec that states a mechanism rather than a result — a retry schedule, a cache, a token refresh. `impl-reqs.md` owns HOW; a functional spec keeps what a caller observes. `concise-specs-integration-examples.md` works through several.
 

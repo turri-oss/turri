@@ -78,7 +78,7 @@ export function describeStop(facts: StopFacts): string {
     why = `after ${tries} attempt${tries === 1 ? "" : "s"} it still could not be built to pass its own unit tests.`;
     todo = [
       "The functional spec is most likely too big for one functionality, or leaves a choice open that keeps coming " +
-        "out wrong. Split it into smaller functional specs (`analyze-if-func-spec-too-complex`, `break-down-func-spec`), " +
+        "out wrong. Split it into smaller functional specs (`break-down-func-spec`), " +
         "or say exactly what it should do.",
       "If it needs something the stack does not name - a library, a tool, a service - add it to the implementation reqs.",
       "If its unit tests have to be run in a particular way, say how in the implementation reqs.",

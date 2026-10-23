@@ -181,7 +181,7 @@ GOOD — one spec, with the result stated first:
   - A failed catalogue read fails `fetch()` before any :Record: is requested.
 ```
 
-Merging is not in tension with the complexity limit. Split a spec when it implies more than 200 changed lines of code (`analyze-if-func-spec-too-complex`, then `break-down-func-spec`); merge when several specs implement one operation that fits inside that budget. Fragment count is not a measure of size.
+Merging is not in tension with the complexity limit. Split a spec when it implies more than 200 changed lines of code (`break-down-func-spec`); merge when several specs implement one operation that fits inside that budget. Fragment count is not a measure of size.
 
 ## The auth flow narrated step by step
 
