@@ -45,7 +45,7 @@ On macOS, `alt` is Option (⌥), and reaches turri only when the terminal sends 
 - **The side panel** (`ctrl+h`) is the session's, not a chat's: docked beside the chat or over it, it stays as another chat is shown, and opening it from any chat finds it as it was left.
 - **A long command** - `/regenerate`, planning a module from scratch - does its work in the background once it is under way: the chat, and switching to another, stay free while the planner plans.
 - **`ctrl+c`** reaches the chat shown and nothing else: another chat's turn and skill go on, and so do the pulses - `/halt` stops one. A skill stopped keeps its run, for the model to continue with `resume`. At a question - the chat's `ask_user`, a skill's interview - `ctrl+c` declines it, and the asker is told so and goes on - each question it is pressed at, however many in a row. A skill is stopped by `ctrl+c` with no question open. A second press straight after one that stopped something does nothing, so pressing twice to be sure does not leave turri; once the chat is doing nothing, the next one does - with what every other chat is doing. A host has the same as `interrupt(id)`, and `decline(id)` for a question ([hosting](hosting.md)).
-- **The last chat** is not closed: `/quit` leaves turri.
+- **The last chat** is not closed: `/quit` leaves turri. Leaving turri leaves the terminal as it was: the conversation is not written out to it, nor a line on how to resume - the command run is all that stays. `turri --continue` opens the chats again.
 - **`/fork`** and **`/reload`** work on the chat shown, as [pi](https://pi.dev)'s do: the chat's history forked, or turri's extension rebuilt in it.
 - **A chat shown mid-turn** draws its reply as far as it is written, and follows it from there.
 

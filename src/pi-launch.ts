@@ -3,7 +3,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { main, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { ProcessTerminal } from "@earendil-works/pi-tui";
 import "./terminal-images.ts";
-import { resumeLine } from "./resume-line.ts";
+import { withoutResumeLine } from "./resume-line.ts";
 import { lastRun, type RunRecord } from "./chat-records.ts";
 import { driveTerminal } from "./chat-terminal.ts";
 import turri, { createTurriCore, processSession } from "./extension.ts";
@@ -35,11 +35,14 @@ ProcessTerminal.prototype.setTitle = function (title: string) {
   setTitle.call(this, title.replace(/^π(?= |$)/, "🪼 turri"));
 };
 
-// What pi prints on the way out to resume the session names pi - its APP_NAME, a constant - which may not be on the
-// PATH at all: turri takes the same flags, so it is turri the line names.
+// Leaving turri leaves the terminal as it was, the command run its only trace. pi's fullscreen screen - its default -
+// writes the conversation out to the terminal on the way out, unless its `fullscreenExitOutput` is `resume-hint`, which
+// is answered for this run as `quietStartup` is; the line it prints instead, to resume the session, is left out too:
+// `turri --continue` opens the last run again.
+SettingsManager.prototype.getFullscreenExitOutput = () => "resume-hint";
 const write = process.stdout.write.bind(process.stdout) as (chunk: unknown, ...rest: unknown[]) => boolean;
 process.stdout.write = ((chunk: unknown, ...rest: unknown[]) =>
-  write(typeof chunk === "string" ? resumeLine(chunk) : chunk, ...rest)) as typeof process.stdout.write;
+  write(typeof chunk === "string" ? withoutResumeLine(chunk) : chunk, ...rest)) as typeof process.stdout.write;
 
 // pi's own keys stand: a new line is shift+enter or ctrl+j. turri's side panel is on ctrl+h (job-panel.ts PANEL_KEY).
 
