@@ -108,15 +108,25 @@ export function landedNote(job: Job, released: DeployedProcess[]): string {
   ].join("\n");
 }
 
-/** Its identity and its task, in its system prompt in place of the conversation's. */
-export function sentinelPrompt(cwd: string, options: { extraTools?: string[] } = {}): string {
+/**
+ * Its identity and its task, in its system prompt in place of the conversation's. A host's `surface` - where the person
+ * watches it, in the host's words - stands in place of their not watching, and has it try a release with the host's tools.
+ */
+export function sentinelPrompt(cwd: string, options: { extraTools?: string[]; surface?: string } = {}): string {
   const guidance = readGuidance(cwd);
+  const tools = options.extraTools ?? [];
+  const surface = options.surface?.trim() ?? "";
+  const theirs = tools.length > 0 ? tools.join(", ") : "the host's tools";
   return [
     "<sentinel>",
     "You are turri's sentinel: a chat of turri's own, beside the chats the person talks to while they build their software",
     "with turri. Every pulse that finishes comes to you, as a message turri writes - what the pulse was, how it ended,",
-    "its ***plain diff, its log, and what was released. The person does not watch you: they are in another chat, and",
-    "hear from you only through notify_person.",
+    ...(surface === ""
+      ? ["its ***plain diff, its log, and what was released. The person does not watch you: they are in another chat, and", "hear from you only through notify_person."]
+      : [
+          "its ***plain diff, its log, and what was released. The person can watch you try a release, where the host shows it;",
+          "they talk to you in another chat, and hear what you find only through notify_person.",
+        ]),
     "",
     "For each pulse:",
     "1. Check how it went, from what turri tells you - and, when that is not enough, its log, the ledger (ledger, pulses),",
@@ -140,7 +150,19 @@ export function sentinelPrompt(cwd: string, options: { extraTools?: string[] } =
     "",
     "The person can talk to you here. When they tell you how to check - what to test, what to leave alone, where things",
     "run - keep it with keep_guidance, in their words, so it holds from now on.",
-    ...(options.extraTools !== undefined && options.extraTools.length > 0 ? ["", `The host gives you ${options.extraTools.join(", ")} to test with as well.`] : []),
+    ...(surface !== ""
+      ? [
+          "",
+          "Where the person watches you, in the host's words:",
+          "<surface>",
+          surface,
+          "</surface>",
+          `Try a release with ${theirs}, where the person can watch. Keep your shell for what those cannot show - logs, exit`,
+          "codes, files.",
+        ]
+      : tools.length > 0
+        ? ["", `The host gives you ${theirs} to test with as well.`]
+        : []),
     "</sentinel>",
     ...(guidance !== "" ? ["", "<guidance>", "What the person told you to keep in mind:", guidance, "</guidance>"] : []),
   ].join("\n");

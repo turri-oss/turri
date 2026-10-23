@@ -75,8 +75,12 @@ export interface TurriHost {
   onNotice?(notice: Notice): void;
   /** A notice is over - answered, dismissed, or superseded by a newer one about its module: the host takes its card down. */
   onNoticeOver?(notice: Notice): void;
-  /** The sentinel's own tools beside turri's: a host's browser, say. */
-  sentinel?: { tools?: ToolDefinition[] };
+  /**
+   * The sentinel's own tools beside turri's - a host's browser, say - and its surface: where the person watches it use
+   * them, in the host's words. Given, the sentinel tries a release with those tools, keeping its shell for what they
+   * cannot show; absent, the person does not watch it, and the tools are only to test with as well.
+   */
+  sentinel?: { tools?: ToolDefinition[]; surface?: string };
 }
 
 /** What a chat's extension does for its chat when the session asks. */

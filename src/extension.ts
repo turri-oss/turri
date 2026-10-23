@@ -591,7 +591,7 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
       }
     }
     if (isSentinel) {
-      const prompt = [event.systemPrompt, sentinelPrompt(cwd, { extraTools: hostSentinelTools.map((tool) => tool.name) }), projectConfigBlock(cwd), rulesBlock()].join("\n\n");
+      const prompt = [event.systemPrompt, sentinelPrompt(cwd, { extraTools: hostSentinelTools.map((tool) => tool.name), ...(host.sentinel?.surface !== undefined ? { surface: host.sentinel.surface } : {}) }), projectConfigBlock(cwd), rulesBlock()].join("\n\n");
       return { systemPrompt: host.systemPrompt !== undefined ? host.systemPrompt(prompt) : prompt };
     }
     return {

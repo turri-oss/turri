@@ -97,6 +97,30 @@ const anything: unknown = new Proxy(() => undefined, {
   apply: () => anything,
 });
 
+/** The system prompt a session's agent is given for a turn, as its before_agent_start handlers leave it. */
+async function systemPrompt(session: Session): Promise<string> {
+  let prompt = "pi's own";
+  for (const handler of session.handlers.get("before_agent_start") ?? []) {
+    const result = (await handler({ type: "before_agent_start", prompt: "BEGIN", systemPrompt: prompt, systemPromptOptions: { skills: [] } }, anything)) as { systemPrompt?: string } | undefined;
+    if (result?.systemPrompt !== undefined) prompt = result.systemPrompt;
+  }
+  return prompt;
+}
+
+/** A host's browser tool, as pi defines one. */
+const browser = { name: "browser_open", label: "Open", description: "Opens a page in the preview pane.", parameters: {}, execute: async () => ({ content: [] }) };
+
+/** A host's chats, the sentinel opened by a pulse that landed: the sentinel's session. */
+async function sentinelOf(options: Parameters<typeof createTurri>[0]): Promise<Session> {
+  const turri = await createTurri(options);
+  const mine = await turri.openChat();
+  turri.focus(mine.id);
+  const job = turri.jobs.start({ kind: "regenerate", summary: "app pulse 1", module: "app", run: async () => ({ report: "done", details: { passed: true, landed: true } }) });
+  await turri.jobs.wait(job.id);
+  await settled();
+  return sessions[1]!;
+}
+
 /** A new session shown, as pi starts it: its session_start handlers run, with a model registry that has every model asked for. */
 async function start(session: Session): Promise<void> {
   const modelRegistry = { find: (provider: string, id: string) => ({ provider, id }) };
@@ -139,6 +163,27 @@ describe("the sentinel in a host", () => {
     await start(sessions[1]!);
     expect(sessions[1]!.model).toEqual({ provider: "amazon-bedrock", id: "claude-chat" });
     expect(sessions[1]!.thinking).toBe("high");
+  });
+
+  it("tries a release with the host's tools where the person watches, given the host's surface, its shell kept for what they cannot show", async () => {
+    const surface = "The preview pane beside the chat shows the page you open with browser_open.";
+    const prompt = await systemPrompt(await sentinelOf({ sentinel: { tools: [browser as never], surface } }));
+    expect(prompt).toContain(`<surface>\n${surface}\n</surface>`);
+    expect(prompt).toContain("Try a release with browser_open, where the person can watch");
+    expect(prompt).not.toContain("The person does not watch you");
+    expect(prompt).not.toContain("to test with as well");
+  });
+
+  it("is not watched, the host's tools only to test with as well, when the host gives no surface", async () => {
+    const prompt = await systemPrompt(await sentinelOf({ sentinel: { tools: [browser as never] } }));
+    expect(prompt).not.toContain("<surface>");
+    expect(prompt).toContain("The person does not watch you");
+    expect(prompt).toContain("The host gives you browser_open to test with as well.");
+  });
+
+  it("leaves the last word on its prompt to the host's systemPrompt", async () => {
+    const prompt = await systemPrompt(await sentinelOf({ sentinel: { surface: "The preview pane." }, systemPrompt: (built) => built.replace("The preview pane.", "The host's pane.") }));
+    expect(prompt).toContain("<surface>\nThe host's pane.\n</surface>");
   });
 
   it("has tools that read and notify, and none that write - and its notice reaches the host, answered back into the person's chat", async () => {

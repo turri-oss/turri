@@ -86,7 +86,10 @@ const turri = await createTurri({
   onNotice: (notice) => {},            // the sentinel puts something to the person: draw it in notice.chat
   onNoticeOver: (notice) => {},        // ...answered, dismissed or superseded: take its card down
   onConcluded: (conclusion) => {},     // the sentinel is done with a pulse: holds or wrong, told to conclusion.chat
-  sentinel: { tools: [browserTool] },  // the sentinel's own tools, beside turri's: what it tests a release with
+  sentinel: {
+    tools: [browserTool],               // the sentinel's own tools, beside turri's: what it tests a release with
+    surface: "...",                     // where the person watches it use them, in the host's words
+  },
 });
 
 const chat = await turri.openChat();   // { id, title, status, shown, session }: a fresh chat, shown
@@ -123,6 +126,7 @@ The [sentinel](sentinel.md) is one of the host's chats: turri opens it with the 
 - **Conclusions.** As the sentinel is done with each pulse - all well or not - `onConcluded({ job, verdict: "holds" | "wrong", summary, module, pulse, chat })` comes, and the chat `chat` names - the one `focus` last named, as for a notice - shows it and its agent says so in a line.
 - **Its model.** The `sentinel` role in `models:`, else the chat's model - `models.chat`, else `harness-model` - with its thinking, set as its chat opens: not pi's default model, which may not be one the project's provider has. What the person then picks in its chat stands. See [its model](sentinel.md#its-model).
 - **Its tools.** `sentinel: { tools }` are [pi](https://pi.dev) tool definitions registered in the sentinel's chat alone and told to it in its prompt - the host's browser, say, for it to test a release with. The rest of the host's `extensions` are built into its chat too, but their tools are refused it: only its own read, and these.
+- **Its surface.** `sentinel: { surface }` is where the person watches the sentinel use those tools, in the host's own words - the preview pane its browser and terminal show in, say. Given, the sentinel's prompt has it, as a `<surface>` block, in place of the person not watching it: it tries a release with the host's tools, where the person can watch, and keeps its own shell for what those cannot show - logs, exit codes, files. Without it, the person does not watch the sentinel, and the host's tools are only to test with as well. As for the conversation, `systemPrompt` has the last word on its prompt.
 - **Its surface.** What it is told is its own prompt, not the conversation's: the host's `surface` is not in it; `systemPrompt` still has the last word.
 
 A surface for a desktop app might read:
