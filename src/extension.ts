@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import type { AgentSession, ExtensionAPI, ExtensionContext, ExtensionFactory, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import type { OverlayHandle, TUI } from "@earendil-works/pi-tui";
 import { allocateImageId, Box, type Component, getCapabilities, getPngDimensions, type ImageDimensions, isKeyRelease, isKeyRepeat, matchesKey, renderImage, Text, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import { defineTool } from "@earendil-works/pi-coding-agent";
+import { defineTool, getMarkdownTheme, UserMessageComponent } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { CODING_MODEL_ENV } from "./chat-models.ts";
 import { AGENT_ROLES, chosenStack, CONFIG_FILE, configForSpec, hasProjectConfig, LEGACY_CONFIG_FILE, projectConfigFile, stackConfigFileIn, stackOf, stacksOf, withStack, modelOnly, modelSpec, projectModels, readProjectConfig, roleModel, splitModelSpec } from "./config.ts";
@@ -20,7 +20,8 @@ import { findTestScripts } from "./regenerate/test-scripts.ts";
 import { createAskUserTool } from "./tools.ts";
 import { asksFromScratch, asksWholeChain, driftTool, fromWorkingDir, haltTool, loopReply, MODEL_PARAM, regenerateTool, STACK_PARAM, stopJob, WAIT_PARAM, withCallStack, WORKING_DIR_PARAM } from "./loop-tools.ts";
 import { createWebTools } from "./regenerate/web.ts";
-import { describeGates, interruptedRun, runSkill } from "./genome.ts";
+import { describeGates, interruptedRun, runSkill, type SkillMessages } from "./genome.ts";
+import { unqueue } from "./chat-waiting.ts";
 import type { Reporter } from "./graph.ts";
 import { loadSkill, skillStatus, type Skill } from "./skill.ts";
 import { runningDeployed, stopDeployed } from "./regenerate/release.ts";
@@ -547,8 +548,13 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
   // The conversation's agent does not run turri again through its shell, unless the person
   // asked for the command line in the message it is answering.
   let lastUserMessage = "";
+  /** While a skill runs in this chat: what passes the person's message to its agent. */
+  let skillMessage: ((text: string) => void) | undefined;
   pi.on("input", (event) => {
     if (event.source !== "extension") lastUserMessage = event.text;
+    // A skill running in this chat holds its agent for the whole run: what the person types meanwhile is for the
+    // skill's agent. It stays queued here too, shown waiting, until that agent reads it - or, the run over first, this one.
+    if (event.source === "interactive" && skillMessage !== undefined && !event.text.startsWith("/")) skillMessage(event.text);
     return { action: "continue" as const };
   });
   pi.on("tool_call", (event) => {
@@ -736,6 +742,21 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
 
       // Its command is used up: started again later, it is typed again.
       gate.started(skill.name);
+      // What the person said to it while it ran, its agent having read it: told to this chat's agent with the result.
+      const heard: string[] = [];
+      const messages: SkillMessages = {
+        open: (tell) => {
+          skillMessage = tell;
+        },
+        read: (text) => {
+          heard.push(text);
+          const session = link.session();
+          // Read by the skill's agent, not this one: out of this chat's queue, and into its chat where it was read.
+          void (session !== undefined ? unqueue(session, text) : Promise.resolve(false)).then((taken) => {
+            if (taken) pi.appendEntry(SKILL_MESSAGE_ENTRY, { text, skill: skill.name });
+          });
+        },
+      };
       const trace: string[] = [`skill: ${skill.name}`, ...describeGates(skill).map((l) => `  ${l}`)];
       // While it runs, what its agent is doing leads: pi shows a running tool's first lines, and the trace's first
       // lines are the gates, which say nothing about now. The result keeps the trace alone.
@@ -839,6 +860,7 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
         resume: params.resume === true && interrupted !== undefined,
         report,
         context: conversationContext(ctx, params.context),
+        messages,
         askUser: askUserVia(ctx, (question, answer, said) => {
           // What the skill's agent said before asking stays in the run's record, not only in the dialog.
           for (const line of (said ?? "").trim().split("\n").filter((line) => line.trim() !== "")) push(`  ${line}`);
@@ -920,12 +942,15 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
           ? ""
           : `Time to first regeneration: ${formatElapsed(first.started)} - its first pulse started that long after ${skill.name} began` +
             (first.landed !== undefined ? `, and landed after ${formatElapsed(first.landed)}.` : ".");
+      const said =
+        heard.length > 0 ? ["", `While it ran, the person said to it - its agent read and acted on each:`, ...heard.map((text) => `- ${text.replace(/\s+/g, " ").trim()}`)] : [];
       const text = result.ok
         ? [
             gated ? `${skill.name}: passed all gates.` : `${skill.name}: finished. It has no review gates, so nothing checked its work: read what it changed before you report it.`,
             changed,
             ...(unrendered !== "" ? [unrendered] : []),
             ...(ttfr !== "" ? [ttfr] : []),
+            ...said,
             "",
             "<artifact>",
             result.output,
@@ -935,7 +960,7 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
             ...trace,
             "</trace>",
           ].join("\n")
-        : [`${skill.name}: stopped at a gate. No approved artifact.`, changed, "", "<trace>", ...trace, "</trace>"].join("\n");
+        : [`${skill.name}: stopped at a gate. No approved artifact.`, changed, ...said, "", "<trace>", ...trace, "</trace>"].join("\n");
 
       return { content: [{ type: "text" as const, text }], details: { ok: result.ok, artifacts: result.artifacts } };
     },
@@ -2519,6 +2544,8 @@ function registerSteering(pi: ExtensionAPI, cwd: string) {
  * started is stopped when the session ends.
  */
 const SIDE_ENTRY = "turri_btw";
+/** A message the person sent while a skill ran in the chat, read by the skill's agent: drawn as the message it is. */
+const SKILL_MESSAGE_ENTRY = "turri_skill_message";
 
 /**
  * /btw, a question on the side (btw.ts): answered at once, even while a skill runs - pi runs a command mid-turn - and
@@ -2547,6 +2574,12 @@ function registerSideQuestions(pi: ExtensionAPI, cwd: string, jobs: JobRegistry)
     const lines = data.text === undefined ? [theme.bold(theme.fg("accent", data.command))] : data.echoed === true ? [said!] : [theme.fg("muted", data.command), said!];
     box.addChild(new Text(lines.join("\n"), 0, 0));
     return box;
+  });
+
+  pi.registerEntryRenderer(SKILL_MESSAGE_ENTRY, (entry) => {
+    const data = entry.data as { text: string } | undefined;
+    if (data === undefined) return undefined;
+    return new UserMessageComponent(data.text, getMarkdownTheme());
   });
 
   pi.registerEntryRenderer(SIDE_ENTRY, (entry, _options, theme) => {

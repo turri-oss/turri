@@ -1,5 +1,6 @@
 import { AgentSessionRuntime, InteractiveMode, SessionManager, type AgentSession, type ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import type { RunRecord } from "./chat-records.ts";
+import { showWaitingMessages } from "./chat-waiting.ts";
 import { interruptChat, terminalUi, type ChatState, type Stoppable, type TurriCore } from "./chats.ts";
 
 /**
@@ -19,6 +20,8 @@ import { interruptChat, terminalUi, type ChatState, type Stoppable, type TurriCo
 /** What of pi's interactive mode and runtime this reaches: their own fields, in plain JavaScript. */
 interface Screen {
   runtimeHost: Runtime;
+  /** pi's queued messages under the chat - and, with chat-waiting.ts, in it. */
+  updatePendingMessagesDisplay?(): void;
   handleEvent(event: unknown): Promise<void>;
   /** pi-tui's screen: its overlays among it. */
   ui: { hideOverlay(): void };
@@ -86,6 +89,8 @@ export function driveTerminal(core: TurriCore, options: { restore?: RunRecord } 
     ui.show(real);
     runner.setUIContext(ui.ui, runner.mode);
     catchUp(session);
+    // What the chat shown was sent while its agent worked, and has not read yet: in its chat, shaded.
+    screen?.updatePendingMessagesDisplay?.();
     core.showing(chat);
     // The run `--continue` reopens: its first chat is pi's own, the rest are opened beside it.
     if (restore !== undefined) {
@@ -106,6 +111,7 @@ export function driveTerminal(core: TurriCore, options: { restore?: RunRecord } 
     if (writing !== undefined && writing.role === "assistant") void screen.handleEvent({ type: "message_start", message: writing });
   };
 
+  showWaitingMessages();
   const prototype = InteractiveMode.prototype as unknown as Patched;
   const rebind = prototype.rebindCurrentSession;
   prototype.rebindCurrentSession = async function (this: Screen, ...args: unknown[]) {

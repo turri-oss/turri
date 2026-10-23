@@ -6,6 +6,8 @@ import { describe, expect, it } from "vitest";
 import { createChats, INTERRUPT_SETTLE_MS } from "../src/chats.ts";
 import { chatStrip } from "../src/chat-commands.ts";
 import { pressCtrlC, type CtrlCScreen } from "../src/chat-terminal.ts";
+import { Shade, showWaiting, unqueue, type QueueOf, type WaitingScreen } from "../src/chat-waiting.ts";
+import { Container, Text } from "@earendil-works/pi-tui";
 import { createJobRegistry } from "../src/regenerate/jobs.ts";
 
 const PI = dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent")));
@@ -16,7 +18,7 @@ describe("what the terminal's chats reach of pi", () => {
   // fields. A pi that changes them fails here, before a person finds it.
   it("finds the methods it patches and calls", () => {
     const screen = InteractiveMode.prototype as unknown as Record<string, unknown>;
-    for (const name of ["rebindCurrentSession", "handleEvent", "resetExtensionUI", "handleCtrlC", "clearEditor", "restoreQueuedMessagesToEditor", "shutdown"]) expect(typeof screen[name], name).toBe("function");
+    for (const name of ["rebindCurrentSession", "handleEvent", "resetExtensionUI", "handleCtrlC", "clearEditor", "restoreQueuedMessagesToEditor", "shutdown", "updatePendingMessagesDisplay", "getAllQueuedMessages", "addMessageToChat", "getAppKeyDisplay"]) expect(typeof screen[name], name).toBe("function");
     const runtime = AgentSessionRuntime.prototype as unknown as Record<string, unknown>;
     for (const name of ["newSession", "switchSession", "dispose", "setRebindSession", "setBeforeSessionInvalidate"]) expect(typeof runtime[name], name).toBe("function");
   });
@@ -29,7 +31,7 @@ describe("what the terminal's chats reach of pi", () => {
     const runner = piFile("core/extensions/runner.js");
     for (const method of ["setUIContext(uiContext, mode", "getUIContext()", "this.mode = mode"]) expect(runner, method).toContain(method);
     const screen = piFile("modes/interactive/interactive-mode.js");
-    for (const call of ['onAction("app.clear", () => this.handleCtrlC())', "this.ui.hideOverlay();", "this.runtimeHost.setRebindSession(", "await this.rebindCurrentSession({ renderBeforeBind: true })", "await this.runtimeHost.newSession()", "await this.runtimeHost.switchSession(sessionPath"]) {
+    for (const call of ["pendingMessages: this.pendingMessagesContainer", 'case "queue_update":\n                this.updatePendingMessagesDisplay();', "this.chatContainer.addChild(userComponent);", 'onAction("app.clear", () => this.handleCtrlC())', "this.ui.hideOverlay();", "this.runtimeHost.setRebindSession(", "await this.rebindCurrentSession({ renderBeforeBind: true })", "await this.runtimeHost.newSession()", "await this.runtimeHost.switchSession(sessionPath"]) {
       expect(screen, call).toContain(call);
     }
   });
@@ -231,5 +233,75 @@ describe("ctrl+c in the chat shown", () => {
     expect(pressCtrlC(screen, now - 100, now)).toBe("ignored");
     expect(pressCtrlC(screen, now - INTERRUPT_SETTLE_MS, now)).toBe("left");
     expect(did).toEqual(["leave"]);
+  });
+});
+
+describe("a message sent while the agent works", () => {
+  /** pi's screen as chat-waiting.ts reaches it: a message drawn as a line of its text, in whichever container is the chat. */
+  function waitingScreen(queued: { steering: string[]; followUp: string[] }) {
+    const screen: WaitingScreen = {
+      chatContainer: new Container(),
+      pendingMessagesContainer: new Container(),
+      getAllQueuedMessages: () => queued,
+      addMessageToChat(message) {
+        this.chatContainer.addChild(new Text((message as { content: Array<{ text: string }> }).content[0]!.text, 0, 0));
+      },
+      getAppKeyDisplay: () => "alt+up",
+    };
+    return screen;
+  }
+  const plain = (lines: string[]) => lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, "").trimEnd()).filter((line) => line !== "");
+
+  it("is drawn under the chat as a message, shaded and marked not read yet, in the order they were sent", () => {
+    const screen = waitingScreen({ steering: ["make it blue"], followUp: ["then deploy it"] });
+    screen.chatContainer.addChild(new Text("the agent at work", 0, 0));
+    showWaiting(screen);
+
+    expect(plain(screen.chatContainer.render(80))).toEqual(["the agent at work"]);
+    const shades = screen.pendingMessagesContainer.children.filter((part) => part instanceof Shade);
+    expect(shades).toHaveLength(2);
+    expect(screen.pendingMessagesContainer.render(80).filter((line) => line.trim() !== "").every((line) => line.startsWith("\x1b[2m"))).toBe(true);
+    expect(plain(screen.pendingMessagesContainer.render(80))).toEqual([
+      "make it blue",
+      " not read yet · alt+up to edit",
+      "then deploy it",
+      " not read yet · alt+up to edit",
+    ]);
+  });
+
+  it("leaves the area under the chat once the agent has read it - pi puts it in the chat then", () => {
+    const queued = { steering: ["make it blue"], followUp: [] as string[] };
+    const screen = waitingScreen(queued);
+    showWaiting(screen);
+    queued.steering = [];
+    showWaiting(screen);
+
+    expect(screen.pendingMessagesContainer.children).toEqual([]);
+    expect(screen.chatContainer.children).toEqual([]);
+  });
+});
+
+describe("a message a skill's agent read", () => {
+  it("is taken out of the chat's queue, the rest put back in order and kind - as turri's, not typed again", async () => {
+    let steering = ["first", "make it blue", "second"];
+    let followUp = ["later"];
+    const put: string[] = [];
+    const session: QueueOf = {
+      getSteeringMessages: () => steering,
+      getFollowUpMessages: () => followUp,
+      clearQueue: () => {
+        const was = { steering, followUp };
+        steering = [];
+        followUp = [];
+        return was;
+      },
+      steer: async (text, _images, options) => (put.push(`${options?.source}: ${text}`), steering.push(text)),
+      followUp: async (text, _images, options) => (put.push(`${options?.source}: ${text}`), followUp.push(text)),
+    };
+    expect(await unqueue(session, "make it blue")).toBe(true);
+    expect(steering).toEqual(["first", "second"]);
+    expect(followUp).toEqual(["later"]);
+    expect(put.every((line) => line.startsWith("extension: "))).toBe(true);
+    expect(await unqueue(session, "never sent")).toBe(false);
   });
 });

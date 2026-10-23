@@ -11,6 +11,12 @@ type Tool = { name: string; execute: (...args: unknown[]) => Promise<unknown> };
 vi.mock("../src/pi.ts", () => {
   let tools: Tool[] = [];
   const listeners: Listener[] = [];
+  // What the person said to it meanwhile, read as pi reads a steer: at its next step.
+  let steered: string[] = [];
+  const readSteered = () => {
+    for (const text of steered) for (const listener of listeners) listener({ type: "message_start", message: { role: "user", content: [{ type: "text", text }] } });
+    steered = [];
+  };
   const say = (text: string) => {
     for (const listener of listeners) listener({ type: "message_update", assistantMessageEvent: { type: "text_start" } });
     for (const listener of listeners) listener({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: text } });
@@ -18,7 +24,12 @@ vi.mock("../src/pi.ts", () => {
   return {
     createExecutor: async (opts: { customTools: Tool[] }) => {
       tools = opts.customTools;
-      return { sessionFile: undefined, dispose: () => {}, subscribe: (listener: Listener) => (listeners.push(listener), () => {}) };
+      return {
+        sessionFile: undefined,
+        dispose: () => {},
+        subscribe: (listener: Listener) => (listeners.push(listener), () => {}),
+        steer: async (text: string) => void steered.push(text),
+      };
     },
     ask: async () => {
       const askUser = tools.find((tool) => tool.name === "ask_user")!;
@@ -43,6 +54,7 @@ vi.mock("../src/pi.ts", () => {
       for (const listener of listeners) listener({ type: "tool_execution_start", toolName: "write", args: { path: "asana.plain" } });
       say("- The problem: invoices get lost.\n- The primary user: a freelancer.");
       await askUser.execute("1", { question: "Is this the right brief for the first version?", options: ["Build it", "Change something"] });
+      readSteered();
       say("Noted.");
       await askUser.execute("2", { question: "Anything else?", free_form: true });
       return "done";
@@ -84,6 +96,34 @@ describe("a skill's agent at work", () => {
     });
     expect(activity[0]).toContain("write asana.plain");
     expect(saying).toBe("Noted.");
+  });
+});
+
+describe("what the person says while a skill runs", () => {
+  it("is passed to its agent, and said to be read once the agent reads it - none passed after the run", async () => {
+    const { runSkill } = await import("../src/genome.ts");
+    let tell: ((text: string) => void) | undefined;
+    const opened: boolean[] = [];
+    const read: string[] = [];
+    await runSkill({
+      skillDir: join(root, "skill"),
+      cwd: root,
+      runDir: join(root, "run"),
+      report: { step: () => {}, artifact: () => {}, gate: () => {}, judge: () => {}, outcome: () => {} },
+      escalate: async () => false,
+      messages: {
+        open: (given) => {
+          tell = given;
+          opened.push(given !== undefined);
+        },
+        read: (text) => read.push(text),
+      },
+      // Typed in the chat while the question waits.
+      askUser: async () => (tell?.("make the invoices blue"), "Build it"),
+    });
+    expect(read).toEqual(["make the invoices blue"]);
+    expect(opened).toEqual([true, false]);
+    expect(tell).toBeUndefined();
   });
 });
 

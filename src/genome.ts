@@ -37,6 +37,17 @@ export interface RunSkillResult {
   output: string;
 }
 
+/**
+ * The person's messages to a run while it works - typed in the chat the skill was started from, whose own agent is busy
+ * running it: each is given to the run's agent, and `read` is told when that agent reads it.
+ */
+export interface SkillMessages {
+  /** Given what passes a message to the run's agent as the run starts, and undefined as it ends. */
+  open(tell: ((text: string) => void) | undefined): void;
+  /** The run's agent read a message passed to it. */
+  read(text: string): void;
+}
+
 export interface RunSkillOptions {
   skillDir: string;
   cwd: string;
@@ -46,6 +57,8 @@ export interface RunSkillOptions {
   escalate: (request: EscalationRequest) => Promise<boolean>;
   /** Lets a step interview the user. Omitted: the skill runs with nobody to ask. */
   askUser?: AskUser;
+  /** What the person says in the chat while it runs, for its agent. */
+  messages?: SkillMessages;
   /** "provider/model-id" for the executor and the judges. Omitted: pi's default. */
   model?: string;
   /** Lets steps build functionalities in the background while the interview continues. */
@@ -231,8 +244,20 @@ async function runStoppable(opts: RunSkillOptions): Promise<RunSkillResult> {
     attempts: {},
     updatedAt: "",
   };
+  // The person's messages, given to the agent at its next step - or with its next prompt, between steps.
+  const passed: string[] = [];
   // What the agent does, as it does it: its session is its own, so without this a long step is silence.
   executor.subscribe((event) => {
+    if (event.type === "message_start" && (event.message as { role?: string }).role === "user") {
+      const content = (event.message as { content?: unknown }).content;
+      const text = typeof content === "string" ? content : Array.isArray(content) ? content.filter((part) => part?.type === "text").map((part) => part.text).join("") : "";
+      const at = passed.indexOf(text);
+      if (at !== -1) {
+        passed.splice(at, 1);
+        opts.messages?.read(text);
+      }
+      return;
+    }
     if (event.type === "tool_execution_start") {
       opts.report.activity?.(describeToolCall(event.toolName, event.args as Record<string, unknown> | undefined));
       return;
@@ -283,6 +308,10 @@ async function runStoppable(opts: RunSkillOptions): Promise<RunSkillResult> {
   }
 
   try {
+    opts.messages?.open((text) => {
+      passed.push(text);
+      void Promise.resolve(executor.steer(text, undefined, { source: "extension" })).catch(() => undefined);
+    });
     const app = compileSkill({
       skill,
       cwd: opts.cwd,
@@ -340,6 +369,7 @@ async function runStoppable(opts: RunSkillOptions): Promise<RunSkillResult> {
       output: artifacts[lastStep] ?? "",
     };
   } finally {
+    opts.messages?.open(undefined);
     executor.dispose();
   }
 }

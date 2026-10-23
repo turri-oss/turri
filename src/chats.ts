@@ -81,6 +81,8 @@ export interface ChatLink {
   readonly scope: ChatScope;
   /** The host's dialogs, for this chat's questions - undefined in the terminal. */
   readonly dialogs: AskUserIO | undefined;
+  /** Its pi session, once it has one. */
+  session(): AgentSession | undefined;
   /** The extension built for the chat - again, when pi rebuilds it - and what it does for it. */
   live(instance: ChatInstance): void;
 }
@@ -430,6 +432,7 @@ export function createChats(options: CoreOptions): TurriCore {
         id: chat.id,
         scope: chat.scope,
         dialogs: chat.dialogs,
+        session: () => chat.session,
         live: (instance) => {
           chat.instance = instance;
         },
