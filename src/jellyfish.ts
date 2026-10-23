@@ -225,6 +225,12 @@ export const JELLYFISH_SEQUENCE: number[] = [
   ...Array.from({ length: 19 }, (_, f) => 20 + f),
 ];
 
+/**
+ * Where in its sequence the jellyfish comes to rest once it can no longer move: swimming, whole - never stopped on a
+ * polyp half grown or a bell half sunk.
+ */
+export const JELLYFISH_REST = JELLYFISH_SEQUENCE.indexOf(SWIM);
+
 /** How long each frame shows. */
 export const JELLYFISH_FRAME_MS = 150;
 

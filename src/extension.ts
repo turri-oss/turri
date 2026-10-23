@@ -35,7 +35,7 @@ import { checkPlainFile, checkPlainTargets, formatCheckResults } from "./plain/c
 import { whyFailed } from "./regenerate/diagnose-job.ts";
 import { createWorkLoop, describeModules, isUpToDate, previewJobs, type WorkLoop } from "./regenerate/loop.ts";
 import { brandNeon, brandPink, plainPaint } from "./regenerate/plain-palette.ts";
-import { halfBlocks, JELLYFISH_FRAME_MS, JELLYFISH_SEQUENCE, JELLYFISH_TEXT_FRAMES } from "./jellyfish.ts";
+import { halfBlocks, JELLYFISH_FRAME_MS, JELLYFISH_REST, JELLYFISH_SEQUENCE, JELLYFISH_TEXT_FRAMES } from "./jellyfish.ts";
 import { createJobPanel, didNotPass, keyPressed, PANEL_KEY, spinner } from "./regenerate/job-panel.ts";
 import { clickToFocus, dockedWidth, narrowChat, shade, shadeChat } from "./regenerate/panel-dock.ts";
 import { overPictureRow, PICTURE_AT } from "./picture-row.ts";
@@ -3052,7 +3052,7 @@ const JELLYFISH_ROWS = 14;
 let jellyfishFrame = 0;
 
 /** The frame the jellyfish is on: the one its sequence has at this point. */
-const shownFrame = () => JELLYFISH_SEQUENCE[jellyfishFrame % JELLYFISH_SEQUENCE.length]!;
+export const shownFrame = () => JELLYFISH_SEQUENCE[jellyfishFrame % JELLYFISH_SEQUENCE.length]!;
 let jellyfishTimer: ReturnType<typeof setInterval> | undefined;
 
 /**
@@ -3060,9 +3060,10 @@ let jellyfishTimer: ReturnType<typeof setInterval> | undefined;
  * renderer is given no TUI to redraw, so an empty widget below the editor - which pi gives no
  * spacer - hands it over. Once the conversation is taller than the screen the banner has scrolled off,
  * and a line changing up there would have pi-tui clear and redraw everything, frame after frame: the
- * jellyfish stops on the frame it is at, for the rest of the session.
+ * jellyfish stops for the rest of the session - swimming, whole, drawn once more if it was not, rather than on whatever
+ * frame it was at, a polyp half grown.
  */
-function animateJellyfish(ctx: ExtensionContext): void {
+export function animateJellyfish(ctx: ExtensionContext): void {
   if (jellyfishTimer !== undefined) clearInterval(jellyfishTimer);
   jellyfishTimer = undefined;
   ctx.ui.setWidget(
@@ -3072,6 +3073,10 @@ function animateJellyfish(ctx: ExtensionContext): void {
       const timer = setInterval(() => {
         if (tui.render(tui.terminal.columns).length > tui.terminal.rows) {
           clearInterval(timer);
+          if (shownFrame() !== JELLYFISH_SEQUENCE[JELLYFISH_REST]) {
+            jellyfishFrame = JELLYFISH_REST;
+            tui.requestRender();
+          }
           return;
         }
         jellyfishFrame++;
