@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { projectImplementationReqs, stackOf } from "../stack.ts";
 import { MODULES_DIR, projectRootOf } from "./paths.ts";
-import { RECORD_FILE } from "./records.ts";
+import { RECORD_FILE } from "./paths.ts";
 import { listFiles } from "./testing.ts";
 
 /**

@@ -6,7 +6,7 @@ import { reportActivity } from "./activity.ts";
 import { maskSecrets } from "./masking.ts";
 import { NOTES_FILE } from "./notes.ts";
 import { modulesScratchDir } from "./paths.ts";
-import { RECORD_FILE } from "./records.ts";
+import { RECORD_FILE } from "./paths.ts";
 import { missingToolchain, runUnitScript, scriptFailure, type ScriptRun } from "./test-scripts.ts";
 import { COMMAND_TIMEOUT_MS } from "./shell.ts";
 import { pulseWrote } from "./pulse-files.ts";

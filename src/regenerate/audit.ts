@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, wri
 import { basename, dirname, join, relative, sep } from "node:path";
 import { writtenByConversation } from "./conversation-writes.ts";
 import { isCredentialFile } from "./credentials.ts";
-import { RECORD_FILE } from "./records.ts";
+import { RECORD_FILE } from "./paths.ts";
 
 /**
  * The audit after every agent command, on every platform: the net under the command check and the OS sandbox.

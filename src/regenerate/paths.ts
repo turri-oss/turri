@@ -2,6 +2,9 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
+/** A module's code record and its tests' - `code/.turri.json`, `tests/.turri.json` (records.ts). */
+export const RECORD_FILE = ".turri.json";
+
 /**
  * The ***plain standard library: import modules for generic pieces of software that ship with turri,
  * imported as `stdlib/backend/python-fastapi` - a reserved name (see plain/stdlib.ts).

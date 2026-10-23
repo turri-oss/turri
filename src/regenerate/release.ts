@@ -6,7 +6,7 @@ import { HISTORY_DIR } from "./lineage.ts";
 import { NOTES_FILE } from "./notes.ts";
 import { distDirFor, ensureInScratch, projectDirOf } from "./paths.ts";
 import { findCodebaseTip, type ChainEntry } from "./requires.ts";
-import { RECORD_FILE } from "./records.ts";
+import { RECORD_FILE } from "./paths.ts";
 
 /**
  * Deploy: a module's code, as its last commit has it, put out in `dist/<module>` for the person to try.

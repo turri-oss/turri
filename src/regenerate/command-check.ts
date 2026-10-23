@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { posix, win32 } from "node:path";
 import { isCredentialFile } from "./credentials.ts";
-import { RECORD_FILE } from "./records.ts";
+import { RECORD_FILE } from "./paths.ts";
 
 /**
  * The check every agent command passes before it runs, on every platform.

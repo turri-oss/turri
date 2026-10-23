@@ -27,7 +27,9 @@ import { committedText } from "./lineage.ts";
  * what it describes, in the module's `.plaingit`, so rolling a unit of work back puts it back too.
  */
 
-export const RECORD_FILE = ".turri.json";
+// Defined beside the paths, which import nothing of turri's: what reads it as it loads - testing.ts - never waits on this module.
+export { RECORD_FILE } from "./paths.ts";
+import { RECORD_FILE } from "./paths.ts";
 
 /**
  * A functional spec in the code record marked to regenerate again: its code is built, and is to be regenerated again
