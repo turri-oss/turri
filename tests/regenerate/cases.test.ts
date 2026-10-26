@@ -111,8 +111,11 @@ describe("what a job's agents are told, by its cases", () => {
     const again = text(conformanceCasesBlock({ ...none, again: [{ frid: "1", text: "The server answers a health check." }] }));
     expect(again).toContain("its conformance tests were written against the code it replaced: fs 1 (The server answers a health check.)");
     expect(again).toContain("What they check that the");
-    expect(again).toContain("is the new code's choice now: rewrite those checks to what the new code does,");
+    expect(again).toContain("is the new code's choice now: rewrite those checks to what the new code");
     expect(again).toContain("No test may hold the new code to what only the old code did.");
+    // That they still pass is not enough: the run that leaves them as they were is sent back.
+    expect(again).toContain("write its tests again for the new code - that they still pass is");
+    expect(again).toContain("test file labelled with it as it was is sent back.");
   });
 
   it("puts the conformance cases in the conformance agent's prompt and a mechanical job's in its reviewer's", () => {

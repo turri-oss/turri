@@ -8,7 +8,7 @@ import { llmChunkAgents, MAX_LINES_PER_JOB, MAX_SPECS_PER_JOB, planChunks, steps
 import { commitNotes, landWork, recordHistory, resetToLastCommit } from "./lineage.ts";
 import { firstLine, record } from "./ledger.ts";
 import { NOTES_FILE, recordPulse, type SpecGap } from "./notes.ts";
-import { createJobRegistry, formatDuration, type Job, type JobRegistry } from "./jobs.ts";
+import { createJobRegistry, formatDuration, type Job, type JobRegistry, type PulseCases } from "./jobs.ts";
 import { moduleLanes } from "./lanes.ts";
 import type { Steering } from "./steer.ts";
 import {
@@ -884,6 +884,8 @@ export function createWorkLoop(options: {
       diff: shown.diff,
       // Its lines where they are written: the module's .plain file, those it imports, and those of the modules below it.
       diffWhere: shown.where,
+      // The functional specs it covers, by case - its own module's, and those of modules below it.
+      cases: pulseCases(planned.cases, tip.moduleName),
       ...(state.model !== undefined ? { model: state.model } : {}),
       lanes: [...moduleLanes(tip.plainFile)],
       rerun: `turri regenerate ${relative(options.cwd, tip.plainFile) || basename(tip.plainFile)}`,
@@ -2049,11 +2051,29 @@ const defaultConformanceRunner: JobRunner = async (job, onDelta) => {
     onDelta,
   });
   if (result.passed) {
-    writeTestsRecord(result.conformanceDir, job.planned.step.tree);
+    writeTestsRecord(result.conformanceDir, keepAgainMarks(job.planned.step.tree, job.planned.cases, job.moduleName, result.conformance.rewritten ?? []));
     landWork(job.buildDir, `conformance tests: ${job.planned.title}`);
   }
   return { landed: result.passed, report: describeSpecDiffConformance(result), ...(result.specGaps !== undefined ? { specGaps: result.specGaps } : {}) };
 };
+
+/** The functional specs a pulse covers, by case, each with the module whose spec it is: a host's to light and mark. */
+export function pulseCases(cases: JobCases, moduleName: string): PulseCases {
+  const of = (specs: TouchedSpec[]) => specs.map((spec) => ({ module: spec.module ?? moduleName, frid: spec.frid }));
+  return { add: of(cases.add), patch: of(cases.patch), again: of(cases.again), delete: of(cases.delete) };
+}
+
+/**
+ * What a conformance job records its tests are written for: its step's tree, but a functional spec of the module it
+ * regenerates again keeps its mark unless the run wrote its tests - tests that passed as they were are still the old
+ * code's, and still conformance work.
+ */
+export function keepAgainMarks(tree: MarshalledPlainSource, cases: JobCases, moduleName: string, rewritten: string[]): MarshalledPlainSource {
+  const stale = new Set(cases.again.filter((spec) => (spec.module ?? moduleName) === moduleName && !rewritten.includes(spec.frid)).map((spec) => spec.frid));
+  if (stale.size === 0) return tree;
+  const items = (tree[FUNCTIONAL_REQUIREMENTS] as Array<{ frid?: string }> | undefined) ?? [];
+  return { ...tree, [FUNCTIONAL_REQUIREMENTS]: items.map((item) => (item.frid !== undefined && stale.has(item.frid) ? { ...item, [REGENERATE_AGAIN]: true } : item)) } as MarshalledPlainSource;
+}
 
 /**
  * A module's first pulse when it builds one functional spec - the project set up and the smallest thing that runs: it lands on its

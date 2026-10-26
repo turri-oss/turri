@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createJobRegistry } from "../../src/regenerate/jobs.ts";
 import type { JobCases } from "../../src/regenerate/drift.ts";
 import { moduleLanes } from "../../src/regenerate/lanes.ts";
-import { createWorkLoop, describeDrift, describeModules, skipsReview, type JobRunner } from "../../src/regenerate/loop.ts";
+import { createWorkLoop, describeDrift, describeModules, keepAgainMarks, skipsReview, type JobRunner } from "../../src/regenerate/loop.ts";
 import { codeTree, readRecord, writeCodeRecord, writeTestsRecord } from "../../src/regenerate/records.ts";
 import { recordHistory } from "../../src/regenerate/lineage.ts";
 import { copyRequiredCode } from "../../src/regenerate/requires.ts";
@@ -970,8 +970,9 @@ describe("the work loop", () => {
       const code = runner();
       const tests = conformanceRunner();
       const order: string[] = [];
+      const registry = createJobRegistry();
       const loop = createWorkLoop({
-        registry: createJobRegistry(),
+        registry,
         cwd: dir,
         planner: false,
         conformanceOn: () => true,
@@ -990,6 +991,12 @@ describe("the work loop", () => {
       expect(JSON.stringify(readRecord(testsDir()))).toContain("regenerate_again");
       await loop.drain();
       expect(order).toEqual(["code 1", "tests - again 1"]);
+      // A host is told which functional specs each pulse covers, and how: both pulses regenerate fs 1 again.
+      const pulses = registry.list().filter((job) => job.cases?.again.length).sort((a, b) => a.sequence - b.sequence);
+      expect(pulses.map((job) => [job.kind, job.cases])).toEqual([
+        ["regenerate", { add: [], patch: [], again: [{ module: "app", frid: "1" }], delete: [] }],
+        ["conformance", { add: [], patch: [], again: [{ module: "app", frid: "1" }], delete: [] }],
+      ]);
       expect(JSON.stringify(readRecord(testsDir()))).toContain("Say hello.");
       // Regenerated again, it is built and tested as the spec says it: the mark is gone from both records.
       expect(JSON.stringify(readRecord(codeDir()))).not.toContain("regenerate_again");
@@ -1592,5 +1599,20 @@ describe("the review of a pulse", () => {
     expect(skipsReview(cases({ fresh: true, add: [spec("1"), spec("2")] }))).toBe(false);
     expect(skipsReview(cases({ add: [spec("2")] }))).toBe(false);
     expect(skipsReview(cases({ patch: [spec("1")] }))).toBe(false);
+  });
+});
+
+describe("the tests record a conformance pulse writes", () => {
+  const cases = (over: Partial<JobCases>): JobCases => ({ fresh: false, add: [], patch: [], again: [], delete: [], mechanical: false, ...over });
+  const tree = { "functional specs": [{ frid: "1", markdown: "- One." }, { frid: "2", markdown: "- Two." }] };
+
+  it("keeps a functional spec regenerated again marked when the run did not write its tests", () => {
+    const written = keepAgainMarks(tree, cases({ again: [{ frid: "1", text: "One.", module: "app" }], add: [{ frid: "2", text: "Two.", module: "app" }] }), "app", []);
+    expect(written["functional specs"]).toEqual([{ frid: "1", markdown: "- One.", regenerate_again: true }, { frid: "2", markdown: "- Two." }]);
+  });
+
+  it("drops the mark of one whose tests the run wrote, and leaves a module below's alone", () => {
+    const written = keepAgainMarks(tree, cases({ again: [{ frid: "1", text: "One.", module: "app" }, { frid: "2", text: "Base two.", module: "base" }] }), "app", ["1"]);
+    expect(written).toEqual(tree);
   });
 });

@@ -161,9 +161,16 @@ function nameOf(view: PulseView): string {
   return queued.pulse !== undefined ? `${queued.module} · ${queued.jobKind} pulse ${queued.pulse}` : `${queued.module} ${queued.jobKind}`;
 }
 
+/**
+ * How a pulse ended. One not ended yet is still running, or waiting, when it is this run's - the run that is reading the
+ * ledger; another run's never will: that run stopped while it ran.
+ */
 function outcomeOf(view: PulseView): string {
   const finished = view.finished;
-  if (finished === undefined) return view.started !== undefined ? "never ended - its run stopped while it ran" : "never started";
+  if (finished === undefined) {
+    if (view.run === ledgerRun()) return view.started !== undefined ? "still running" : "queued - not started yet";
+    return view.started !== undefined ? "never ended - its run stopped while it ran" : "never started";
+  }
   const landed = finished.landed === true ? ", landed" : finished.landed === false ? ", did not land" : "";
   const stopped = finished.stoppedBy !== undefined ? ` by ${finished.stoppedBy === "turri" ? "turri" : "the person"}` : "";
   return `${finished.status}${stopped}${landed}, after ${formatElapsed(finished.ms)}`;
@@ -270,7 +277,7 @@ export function describeRuns(runs: RunView[]): string {
       const started = view.started as (Of<"run.started"> & { ts?: string }) | undefined;
       const when = started?.ts !== undefined ? started.ts.slice(0, 19).replace("T", " ") : "";
       const version = started?.version !== undefined && started.version !== null ? ` · turri ${started.version}${started.commit !== null && started.commit !== undefined ? ` (${started.commit.slice(0, 7)}${started.dirty === true ? ", changed" : ""})` : ""}` : "";
-      const head = `run ${view.run} · ${started?.mode ?? "?"} · ${when}${view.ended !== undefined ? ` · ${formatElapsed(view.ended.ms)}` : " · still running, or killed"}${version}`;
+      const head = `run ${view.run} · ${started?.mode ?? "?"} · ${when}${view.ended !== undefined ? ` · ${formatElapsed(view.ended.ms)}` : view.run === ledgerRun() ? " · this run, still running" : " · still running, or killed"}${version}`;
       const pulses = view.pulses.map((pulse) => `  ${pulse.id} ${nameOf(pulse).padEnd(32)} ${outcomeOf(pulse)}${pulse.usage !== undefined && describeUsage(pulse.usage) !== "" ? ` · ${describeUsage(pulse.usage)}` : ""}`);
       return [head, ...(pulses.length > 0 ? pulses : ["  no pulses"])].join("\n");
     })
@@ -309,6 +316,7 @@ export function asJob(view: PulseView): Job {
     ...(view.queued?.pulse !== undefined ? { pulse: view.queued.pulse } : {}),
     ...(view.queued?.title !== undefined ? { title: view.queued.title } : {}),
     ...(view.queued?.model !== undefined ? { model: view.queued.model } : {}),
+    ...(view.queued?.cases !== undefined ? { cases: view.queued.cases } : {}),
     // Its ***plain diff, shown a file at a time as this session's pulses' are.
     ...(view.diff !== undefined ? { diff: view.diff.diff, ...(view.diff.where !== undefined ? { diffWhere: view.diff.where } : {}) } : {}),
     status,

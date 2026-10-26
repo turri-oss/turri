@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { reportStage } from "../../src/regenerate/activity.ts";
 import { createJobRegistry } from "../../src/regenerate/jobs.ts";
 import { healing, ledgerDir, onLedgerEvent, readLedger, record, startLedger, stopLedger, tidy, type LedgerEntry } from "../../src/regenerate/ledger.ts";
-import { asJob, describePulseView, earlierPulses, pulseView, runViews } from "../../src/regenerate/ledger-view.ts";
+import { asJob, describePulseView, describeRuns, earlierPulses, pulseView, runViews } from "../../src/regenerate/ledger-view.ts";
 import { landWork, startWork } from "../../src/regenerate/lineage.ts";
 import { forgetSecretsForTests, registerSecrets } from "../../src/regenerate/masking.ts";
 
@@ -257,6 +257,38 @@ describe("a pulse read back from the ledger", () => {
     expect(job).toMatchObject({ diff: "+- :User: can sign in with a password.", diffWhere: { 0: { file: "backend.plain", line: 12 } } });
     // Its files are rows of their own under it: what the ledger says of it leaves the diff out.
     expect(job.earlier!.lines.join("\n")).not.toContain("can sign in");
+  });
+
+  it("records the functional specs a pulse covers, by case, and gives them back with an earlier session's pulse", async () => {
+    startLedger({ mode: "chat", project });
+    const cases = { add: [{ module: "app", frid: "2" }], patch: [], again: [{ module: "app", frid: "1" }], delete: [] };
+    const registry = createJobRegistry();
+    const job = registry.start({ kind: "conformance", summary: "app.plain", module: "app", pulse: 2, cases, lanes: [join(project, "plain_modules", "app", "code")], run: async () => ({ report: "done" }) });
+    await registry.wait(job.id);
+    stopLedger();
+    expect(job.cases).toEqual(cases);
+    expect(readLedger(project).find((entry) => entry.kind === "job.queued")).toMatchObject({ cases });
+    expect(asJob(pulseView(job.id, readLedger(project))!).cases).toEqual(cases);
+  });
+
+  it("tells a pulse still running in this run from one whose run stopped while it ran", async () => {
+    // A run that stopped mid-pulse: started, never finished.
+    startLedger({ mode: "chat", project });
+    const earlier = createJobRegistry().start({ kind: "regenerate", summary: "app.plain", module: "app", pulse: 1, lanes: [join(project, "plain_modules", "app", "code")], run: () => new Promise(() => {}) });
+    stopLedger();
+
+    startLedger({ mode: "chat", project });
+    let finish!: () => void;
+    const registry = createJobRegistry();
+    const live = registry.start({ kind: "regenerate", summary: "app.plain", module: "app", pulse: 2, lanes: [join(project, "plain_modules", "app", "code")], run: () => new Promise((done) => (finish = () => done({ report: "done" }))) });
+    await new Promise((settle) => setTimeout(settle, 10));
+    const entries = readLedger(project);
+
+    expect(describePulseView(pulseView(live.id, entries)!)).toContain("\n  still running");
+    expect(describePulseView(pulseView(earlier.id, entries)!)).toContain("never ended - its run stopped while it ran");
+    expect(describeRuns(runViews(project))).toContain("this run, still running");
+    finish();
+    await registry.wait(live.id);
   });
 
   it("lists the project's runs the most recent first, each with its pulses", async () => {

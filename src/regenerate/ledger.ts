@@ -6,6 +6,7 @@ import { currentChat } from "../chat-scope.ts";
 import { readProjectConfig } from "../config.ts";
 import { turriIdentity } from "../environment.ts";
 import type { DiffWhere } from "./diff-view.ts";
+import type { PulseCases } from "./jobs.ts";
 import { currentPlace, onModelEvent, type ModelEvent, type UsageReport } from "./activity.ts";
 import { maskSecrets } from "./masking.ts";
 import { ensureInScratch } from "./paths.ts";
@@ -64,7 +65,7 @@ export type LedgerEvent =
   | { kind: "sentinel.concluded"; verdict: string; module?: string }
   | { kind: "chat.closed" }
   // A pulse, from queued to its end.
-  | { kind: "job.queued"; jobKind: string; summary: string; pulse?: number; title?: string; model?: string; stack?: string; waitingOn: string[]; follows?: string }
+  | { kind: "job.queued"; jobKind: string; summary: string; pulse?: number; title?: string; model?: string; stack?: string; cases?: PulseCases; waitingOn: string[]; follows?: string }
   | { kind: "job.started"; waitedMs: number; logFile?: string }
   // Its ***plain diff, whole, as its agent is given it - again each time steering moves it - and where its lines are written.
   | { kind: "job.diff"; diff: string; where?: DiffWhere }

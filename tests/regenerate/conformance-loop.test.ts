@@ -22,6 +22,8 @@ let reviewSays: () => Record<string, unknown> = () => ({ pass: true, problems: [
 let arbiterRules: (() => Array<{ problem: number; uphold: boolean; why: string }>) | undefined;
 /** When set, the stubbed conformance agent writes nothing at all - it only looks. */
 let writesNothing = false;
+/** With `writesNothing`: when set, the stubbed conformance agent writes its tests once it is sent back for a functional spec regenerated again. */
+let rewritesWhenSentBack = false;
 /** When set, each time the tests are sent back, the stub's test fails the other way: A, B, A, B - as the artifact ping-pong did. */
 let pingPong = 0;
 /** How many of the coding agent's fixes miss before one makes the app print hello. */
@@ -101,6 +103,7 @@ vi.mock("../../src/pi.ts", async (importOriginal) => {
         return "Done.";
       }
       // The conformance agent.
+      if (rewritesWhenSentBack && prompt.includes("regenerated again: its code was built anew")) writesNothing = false;
       if (writesNothing) {
         await tool("run_conformance_tests").execute("id", {});
         return "The tests are already there.";
@@ -164,6 +167,7 @@ beforeEach(() => {
   pingPong = 0;
   coderMisses = 0;
   writesNothing = false;
+  rewritesWhenSentBack = false;
   touchesTests = false;
   touches = 0;
   staticBad = false;
@@ -564,6 +568,46 @@ describe("the conformance step", { timeout: 180_000 }, () => {
     expect(writers[1]!.prompt).toContain("There are no tests in your tests folder - nothing ran.");
     const { describeStop } = await import("../../src/regenerate/stop-report.ts");
     expect(describeStop({ moduleName: "app", frid: "1", at: "conformance", conformance: result })).toContain("were never written and labelled");
+  });
+
+  describe("a functional spec regenerated again", () => {
+    const testsDir = () => join(root, "plain_modules", "app", "tests");
+    const again = { fresh: false, add: [], patch: [], again: [{ frid: "1", text: "The app prints hello.", module: "app" }], delete: [], mechanical: false };
+    /** Its tests as the code it replaced left them: labelled, and passing on the new code too. */
+    const oldTests = () => {
+      writeFileSync(join(codeDir, "app.py"), "print('hello')\n");
+      mkdirSync(testsDir(), { recursive: true });
+      writeFileSync(
+        join(testsDir(), "test_conformance_hello.py"),
+        "# conformance tests of functionality 1\n# acceptance test 1 of functionality 1: Running the app prints hello and exits 0.\n" +
+          "import subprocess, sys, unittest\n\nclass Hello(unittest.TestCase):\n    def test_prints_hello(self):\n" +
+          "        out = subprocess.run([sys.executable, 'app.py'], capture_output=True, text=True).stdout\n        self.assertEqual(out.strip(), 'hello')\n",
+      );
+    };
+
+    it("does not land when the conformance agent leaves its tests as they were, though they pass", async () => {
+      oldTests();
+      writesNothing = true;
+      const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), frid: "1", buildDir: codeDir, conformanceDir: testsDir(), cases: again });
+      expect(result.passed).toBe(false);
+      expect(result.rewritten).toEqual([]);
+      expect(result.unlabelled).toEqual([expect.stringContaining("The tests of functionality 1, regenerated again, were not written again for the new code")]);
+      // Sent back three times before it stops - and the suite, which would pass, is never what decides.
+      const sentBack = asked.filter((turn) => turn.role === "conformance agent" && turn.prompt.includes("regenerated again: its code was built anew"));
+      expect(sentBack).toHaveLength(3);
+      expect(sentBack[0]!.prompt).toContain("Tests that pass prove nothing here");
+      expect(asked.some((turn) => turn.role === "reviewer")).toBe(false);
+    });
+
+    it("lands once the conformance agent writes its tests again, and says they were", async () => {
+      oldTests();
+      writesNothing = true;
+      rewritesWhenSentBack = true;
+      const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), frid: "1", buildDir: codeDir, conformanceDir: testsDir(), cases: again });
+      expect(result.passed).toBe(true);
+      expect(result.rewritten).toEqual(["1"]);
+      expect(asked.filter((turn) => turn.role === "conformance agent" && turn.prompt.includes("regenerated again: its code was built anew"))).toHaveLength(1);
+    });
   });
 
   it("sends the conformance agent what the arbiter upholds of the second review - a functionality not tested black box - and then goes on once the tests pass, without another", async () => {

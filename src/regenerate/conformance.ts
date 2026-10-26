@@ -22,7 +22,7 @@ import { createWorkLedger, describeAccounts, SUBMIT_WORK_NOTE, unanswered, unans
 import type { JobCases } from "./drift.ts";
 import { CONFORMANCE_COMPACTION } from "./compaction.ts";
 import { NOTES_TURN, notesForSession, passedOutcome, readNotes, reflectOnReview, withNotes } from "./notes.ts";
-import { acceptanceLabel, acceptanceText, labelsPrompt, labelsPromptFor, misplacedConformanceTests, misplacedTestsPrompt, missingTestLabels } from "./test-kinds.ts";
+import { acceptanceLabel, acceptanceText, labelledFiles, labelsPrompt, labelsPromptFor, misplacedConformanceTests, misplacedTestsPrompt, missingTestLabels } from "./test-kinds.ts";
 import {
   createScriptTool,
   findTestScripts,
@@ -177,6 +177,11 @@ export interface RenderConformanceTestsResult {
   escalation?: { reason: string; evidence: Evidence[]; error: string; failure: string; changedNothing?: boolean };
   /** The tests were sent back to be written and labelled, and never were: what was missing the last time. */
   unlabelled?: string[];
+  /**
+   * Of the functional specs the job regenerates again, those whose tests this run wrote - a test file labelled with it
+   * added or changed. Only these have tests for the new code; the rest are still marked to regenerate again.
+   */
+  rewritten?: string[];
   /** The tests were optimised as far as REVIEW_ROUNDS reviews could take them: what the last one still suggested. */
   reviewWaived?: ReviewProblem[];
   /** The suite passed, but the tests never passed review: what the review last found. */
@@ -526,6 +531,19 @@ export async function renderConformanceTests(
     );
     let response = await askConformance(BEGIN, options.onDelta);
 
+    // The functional specs of this module the job regenerates again, and of those, the ones whose tests this run has
+    // not written yet: no test file labelled with it added or changed since the run began.
+    const againFrids = (options.cases?.again ?? []).filter((spec) => spec.module === undefined || spec.module === moduleName).map((spec) => spec.frid);
+    const rewrittenAgain = () => {
+      const changes = diffFiles(testsAtStart, digestFiles(conformanceDir));
+      const touchedFiles = new Set([...changes.added, ...changes.changed]);
+      return againFrids.filter((id) => labelledFiles(conformanceDir, id).some((file) => touchedFiles.has(file)));
+    };
+    const staleAgain = () => {
+      const done = new Set(rewrittenAgain());
+      return againFrids.filter((id) => !done.has(id));
+    };
+    let againAsks = 0;
     const maxRounds = options.maxRounds ?? DEFAULT_MAX_ROUNDS;
     let verified = false;
     let rounds = 0;
@@ -585,6 +603,21 @@ export async function renderConformanceTests(
           response = await askConformance(labelsPromptFor(pending, listFiles(conformanceDir).length === 0, acceptance), options.onDelta);
           continue;
         }
+      }
+
+      // Regenerated again: its tests were written against the code it replaced, and their passing says nothing of the new
+      // code - they pass on what only the old code did as readily. Its tests have to be written again in this run.
+      const stale = staleAgain();
+      if (stale.length > 0) {
+        if (againAsks >= LABEL_ASKS) {
+          stage(`the tests of functionalit${stale.length === 1 ? "y" : "ies"} ${stale.join(", ")}, regenerated again, were sent back ${LABEL_ASKS} times to be written again, and still are not - stopping`);
+          unlabelled = stale.map((id) => `The tests of functionality ${id}, regenerated again, were not written again for the new code: no test file labelled with it changed.`);
+          break;
+        }
+        againAsks += 1;
+        stage(`the tests of functionalit${stale.length === 1 ? "y" : "ies"} ${stale.join(", ")}, regenerated again, are as they were - the conformance agent writes them again`);
+        response = await askConformance(againPrompt(stale), options.onDelta);
+        continue;
       }
 
       // The suite is the tests folder: a conformance test in the code folder is in the wrong place,
@@ -1016,6 +1049,7 @@ export async function renderConformanceTests(
       ...(stuck !== undefined ? { stuck } : {}),
       ...(escalation !== undefined ? { escalation } : {}),
       ...(unlabelled !== undefined ? { unlabelled } : {}),
+      ...(againFrids.length > 0 ? { rewritten: rewrittenAgain() } : {}),
       ...(reviewWaived !== undefined ? { reviewWaived } : {}),
       ...(verified && green !== undefined ? { green } : {}),
       ...(!verified && lastReview !== undefined ? { review: lastReview } : {}),
@@ -1026,6 +1060,19 @@ export async function renderConformanceTests(
     reviewer?.dispose();
     await fixerServices.stopAll();
   }
+}
+
+/** Sent back when the tests of a functional spec regenerated again are as they were: they are to be written for the new code. */
+export function againPrompt(frids: string[]): string {
+  const which = frids.length === 1 ? `functionality ${frids[0]}` : `functionalities ${frids.join(", ")}`;
+  return [
+    `${which[0]!.toUpperCase()}${which.slice(1)} ${frids.length === 1 ? "is" : "are"} regenerated again: ${frids.length === 1 ? "its" : "their"} code was built anew, and no test file labelled with ${frids.length === 1 ? "it" : "them"} has changed.`,
+    "Tests that pass prove nothing here: they were written against the code it replaced, and pass on what only the old",
+    "code did as readily as on what the specification says. Read the new code, and write the tests again for it: what",
+    "the specification says, checked as the new code is reached; what it leaves open - a path, a field, a message, a",
+    "format the old code chose - checked as the new code does it, or taken out. Keep each label. The tests of",
+    "everything else stay as they are.",
+  ].join("\n");
 }
 
 /**

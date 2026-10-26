@@ -66,7 +66,7 @@ export { isStack, STDLIB_KINDS, stdlibTemplates, type StdlibKind, type StdlibTem
 
 // The work: what is built, what is left, and the jobs that build it.
 export { createWorkLoop, describeModules, functionalityCompletion, promptOf, type DriftReport, type ModuleStatus, type WorkLoop } from "./regenerate/loop.ts";
-export { createJobRegistry, defaultParallelJobs, type Job, type JobRegistry } from "./regenerate/jobs.ts";
+export { createJobRegistry, defaultParallelJobs, type Job, type JobRegistry, type PulseCases, type PulseSpec } from "./regenerate/jobs.ts";
 export { describeTurnIncident, onModelEvent, type TranscriptEntry } from "./regenerate/activity.ts";
 export { sweepOrphanedGroups } from "./regenerate/shell.ts";
 

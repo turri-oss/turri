@@ -61,6 +61,23 @@ export function missingTestLabels(testsDir: string, frid: string, acceptanceTest
   return missing;
 }
 
+/**
+ * The test files that carry a functionality's labels - its conformance tests' or any of its acceptance tests'. The
+ * harness's own files beside them - the notes, the record - are not tests, whatever they mention.
+ */
+export function labelledFiles(testsDir: string, frid: string): string[] {
+  const id = frid.replace(/\./g, "\\.");
+  const label = new RegExp(`(conformance tests|acceptance test \\d+) of functionality ${id}(?![0-9.]*[0-9])`);
+  return listFiles(testsDir).filter((file) => {
+    if (file.split(/[\\/]/).at(-1)!.startsWith(".turri")) return false;
+    try {
+      return label.test(normalise(readFileSync(join(testsDir, file), "utf8")));
+    } catch {
+      return false;
+    }
+  });
+}
+
 /** Sent back when the labels are missing: which, and how to label them. */
 export function labelsPrompt(frid: string, missing: string[], empty = false, hasAcceptance = true): string {
   return labelsPromptFor([{ frid, missing }], empty, hasAcceptance);

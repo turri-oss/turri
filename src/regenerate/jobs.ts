@@ -20,6 +20,23 @@ import { pulseEnded, pulseWrote } from "./pulse-files.ts";
 
 export type JobStatus = "queued" | "running" | "succeeded" | "failed" | "stopped";
 
+/** A functional spec a pulse covers: the module whose spec it is - the pulse's own, or one below it - and its number there. */
+export interface PulseSpec {
+  module: string;
+  frid: string;
+}
+
+/**
+ * The functional specs a pulse covers, by what it does to each (`cases.ts`): new, changed, regenerated again - its text
+ * unchanged - or taken out. A pulse of none is mechanical: reqs, or definitions none uses.
+ */
+export interface PulseCases {
+  add: PulseSpec[];
+  patch: PulseSpec[];
+  again: PulseSpec[];
+  delete: PulseSpec[];
+}
+
 export interface Job {
   id: string;
   kind: string;
@@ -35,6 +52,8 @@ export interface Job {
   diff?: string;
   /** Where its diff's lines are in the .plain files - their files and line numbers there - when they could be placed. */
   diffWhere?: import("./diff-view.ts").DiffWhere;
+  /** The functional specs it covers, by case: what it does to each. */
+  cases?: PulseCases;
   /** For a conformance job: the render job it is the conformance of. */
   follows?: string;
   /** A note on it, for the person: why it did not run, or what became of it. */
@@ -123,6 +142,8 @@ export interface StartJobInput {
   diff?: string;
   /** Where the diff's lines are in the .plain files, when they could be placed. */
   diffWhere?: import("./diff-view.ts").DiffWhere;
+  /** The functional specs it covers, by case. */
+  cases?: PulseCases;
   /** "provider/model-id" its agents run on, to show where the job is shown. */
   model?: string;
   /** For a conformance job: the render it is the conformance of. */
@@ -255,6 +276,7 @@ export function createJobRegistry(options?: {
         ...(input.title !== undefined ? { title: input.title } : {}),
         diff: input.diff,
         ...(input.diffWhere !== undefined ? { diffWhere: input.diffWhere } : {}),
+        ...(input.cases !== undefined ? { cases: input.cases } : {}),
         model: input.model,
         ...(stack !== undefined ? { stack } : {}),
         ...(chat !== undefined ? { chat } : {}),
@@ -284,6 +306,7 @@ export function createJobRegistry(options?: {
           ...(input.title !== undefined ? { title: input.title } : {}),
           ...(input.model !== undefined ? { model: input.model } : {}),
           ...(stack !== undefined ? { stack } : {}),
+          ...(input.cases !== undefined ? { cases: input.cases } : {}),
           waitingOn: blockers,
           ...(input.follows !== undefined ? { follows: input.follows } : {}),
         },
