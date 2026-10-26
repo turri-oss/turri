@@ -99,7 +99,7 @@ export function settings(rules: string[] = []): Setting[] {
     { key: "mutation-testing", about: "whether the coding agent and the reviewer can put a bug in the code for one test run (can_it_fail)", kind: "boolean", unset: "true", effect: "next-pulse" },
     { key: "allow-to-stop-jobs", about: "whether turri stops a running pulse the ***plain has moved on from", kind: "boolean", unset: "true", effect: "now" },
     { key: "release-after-pulse", about: "whether every pulse that lands code releases it", kind: "boolean", unset: "false", effect: "next-landing" },
-    { key: "sentinel", about: "whether a chat of its own checks every finished pulse, tests the release, and tells you what is wrong", kind: "boolean", unset: "true", effect: "next-landing" },
+    { key: "sentinel", about: "whether a chat of its own checks every finished pulse, tests the release, and tells you what is wrong - ask: you are asked before it first opens", kind: "choice", options: ["ask", "true", "false"], unset: "ask", effect: "next-landing" },
     { key: "unittests-script", about: "the unit testing script, by path from the project root", kind: "path", unset: "the one run_unittests*.sh found", effect: "next-test-run" },
     { key: "conformance-tests-script", about: "the conformance testing script, by path from the project root", kind: "path", unset: "the one run_conformance_tests*.sh found", effect: "next-test-run" },
     { key: "prepare-environment-script", about: "run on the build before every conformance testing script run, by path from the project root - optional", kind: "path", unset: "the one prepare_environment*.sh found, else none", effect: "next-test-run" },
@@ -154,7 +154,7 @@ export function parseValue(setting: Setting, typed: string, known?: (model: stri
     }
     case "choice": {
       const word = text.toLowerCase();
-      if (setting.options?.includes(word)) return { value: setting.key === "conformance-tests" && word === "false" ? false : word };
+      if (setting.options?.includes(word)) return { value: word === "false" ? false : word === "true" ? true : word };
       return { error: `${setting.key} is one of ${setting.options?.join(", ")}.` };
     }
     case "number": {

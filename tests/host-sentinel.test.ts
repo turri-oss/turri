@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -134,6 +134,8 @@ describe("the sentinel in a host", () => {
   beforeEach(() => {
     sessions.length = 0;
     process.chdir(mkdtempSync(join(tmpdir(), "turri-sentinel-")));
+    // On without asking: the question before it first opens has tests of its own, below.
+    writeFileSync("config.turri.yaml", "sentinel: true\n");
   });
   afterEach(() => process.chdir(cwd));
 
@@ -153,7 +155,7 @@ describe("the sentinel in a host", () => {
   });
 
   it("runs on the chat's model, with its thinking, when models.sentinel names none - not on the model its session started on", async () => {
-    writeFileSync("config.turri.yaml", "harness-model: amazon-bedrock/claude-chat:high\ncoding-model: amazon-bedrock/claude-coder\n");
+    writeFileSync("config.turri.yaml", "harness-model: amazon-bedrock/claude-chat:high\ncoding-model: amazon-bedrock/claude-coder\nsentinel: true\n");
     const turri = await createTurri();
     const mine = await turri.openChat();
     turri.focus(mine.id);
@@ -214,5 +216,66 @@ describe("the sentinel in a host", () => {
     // Done with it: the person's chat is told, to say so.
     await tools.get("conclude")!.execute("call", { pulse: job.id, verdict: "wrong", summary: "the home page answers 500" }, undefined, undefined, {});
     expect(sessions[0]!.sent).toEqual(["turri_job_landed", "turri_notice_answer", "turri_sentinel_concluded"]);
+  });
+});
+
+describe("asking to start the sentinel in a host", () => {
+  const cwd = process.cwd();
+  beforeEach(() => {
+    sessions.length = 0;
+    process.chdir(mkdtempSync(join(tmpdir(), "turri-sentinel-ask-")));
+  });
+  afterEach(() => process.chdir(cwd));
+
+  /** A host's chat, focused, and the first pulse that finishes in it under `sentinel: ask`: the question the host hears. */
+  async function asked() {
+    const heard: Array<import("../src/notice.ts").Notice> = [];
+    const turri = await createTurri({ onNotice: (notice) => heard.push(notice) });
+    const mine = await turri.openChat();
+    turri.focus(mine.id);
+    const job = turri.jobs.start({ kind: "regenerate", summary: "app pulse 1", module: "app", run: async () => ({ report: "done", details: { passed: true, landed: true } }) });
+    await turri.jobs.wait(job.id);
+    await settled();
+    return { turri, mine, heard };
+  }
+
+  it("puts the question to the person before it first opens - what it does said in it - and holds the pulse until they answer", async () => {
+    const { turri, mine, heard } = await asked();
+    expect(heard).toMatchObject([{ kind: "sentinel-start", chat: mine.id, severity: "info", actions: [{ label: "Start the sentinel" }, { label: "Start it, and don't ask again" }, { label: "Not this session" }, { label: "Turn it off for this project" }] }]);
+    expect(heard[0]!.summary).toBe("app regenerate finished - start the sentinel, a background tab that reviews each finished pulse?");
+    expect(turri.chats().find((chat) => chat.role === SENTINEL)).toBeUndefined();
+    expect(sessions[0]!.sent).toEqual([]);
+  });
+
+  it("opens it once the person says so, told of the pulse held - and, not to be asked again, writes sentinel: true", async () => {
+    const { turri, heard } = await asked();
+    expect(await turri.answer(heard[0]!.id, { action: "Start it, and don't ask again" })).toBe("done");
+    await settled();
+    expect(turri.chats().find((chat) => chat.role === SENTINEL)).toBeDefined();
+    expect(sessions[0]!.sent).toEqual(["turri_job_landed"]);
+    expect(sessions[1]!.sent).toEqual(["turri_sentinel_pulse"]);
+    expect(readFileSync("config.turri.yaml", "utf8")).toMatch(/^sentinel: true$/m);
+    expect(turri.notices()).toEqual([]);
+  });
+
+  it("tells the pulse to the chat that asked for it, as without one, when the person says not now - and does not ask again this session", async () => {
+    const { turri, heard } = await asked();
+    expect(await turri.answer(heard[0]!.id, { dismiss: true })).toBe("dismissed");
+    await settled();
+    expect(sessions[0]!.sent).toEqual(["turri_job"]);
+    const job = turri.jobs.start({ kind: "regenerate", summary: "app pulse 2", module: "app", run: async () => ({ report: "done", details: { passed: true, landed: true } }) });
+    await turri.jobs.wait(job.id);
+    await settled();
+    expect(heard).toHaveLength(1);
+    expect(sessions[0]!.sent).toEqual(["turri_job", "turri_job"]);
+    expect(turri.chats().find((chat) => chat.role === SENTINEL)).toBeUndefined();
+  });
+
+  it("writes sentinel: false when the person turns it off for the project", async () => {
+    const { turri, heard } = await asked();
+    await turri.answer(heard[0]!.id, { action: 3 });
+    await settled();
+    expect(readFileSync("config.turri.yaml", "utf8")).toMatch(/^sentinel: false$/m);
+    expect(sessions[0]!.sent).toEqual(["turri_job"]);
   });
 });

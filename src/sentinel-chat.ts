@@ -59,6 +59,14 @@ export function registerSentinel(pi: ExtensionAPI, session: TurriCore, cwd: stri
 }
 
 /**
+ * The terminal's question whether to start the sentinel: the sentence, and how to switch to it - it opens last in the
+ * strip, after the `open` chats there are. A host has its own way to it, and is given the sentence alone.
+ */
+export function startTitle(notice: Notice, open: number): string {
+  return `${notice.summary}\nUse "/chat ${open + 1}" to open the sentinel.`;
+}
+
+/**
  * A chat's notices: each drawn as a card, and - with no host to answer it - put to the person as a dialog once the chat
  * is idle, one at a time: an action accepted, their own words, or dismissed. A notice that is over closes its dialog.
  */
@@ -119,8 +127,10 @@ export function noticeDialogs(
     const controller = new AbortController();
     asking.set(notice.id, controller);
     try {
-      const options = [...notice.actions.map((action, index) => `${index + 1}. ${action.label}`), STEER, DISMISS];
-      const picked = await ctx.ui.select(`sentinel: ${notice.summary}`, options, { signal: controller.signal });
+      // Whether to start the sentinel is turri's question, its answers its own: no words of the person's to act on.
+      const starting = notice.kind === "sentinel-start";
+      const options = [...notice.actions.map((action, index) => `${index + 1}. ${action.label}`), ...(starting ? [] : [STEER]), DISMISS];
+      const picked = await ctx.ui.select(starting ? startTitle(notice, session.chats().length) : `sentinel: ${notice.summary}`, options, { signal: controller.signal });
       if (controller.signal.aborted || notice.state !== "open") return;
       if (picked === STEER) {
         const words = await ctx.ui.input("What should be done about it?", "", { signal: controller.signal });

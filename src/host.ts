@@ -9,7 +9,7 @@
 export { createTurri, type Turri, type TurriOptions } from "./host-session.ts";
 export { MAX_CHATS, type ChatInfo, type ChatStatus, type TurriHost } from "./chats.ts";
 // The sentinel's notices: what it puts to the person, and how they answer.
-export { SENTINEL, type Conclusion, type Notice, type NoticeAction, type NoticeAnswer, type NoticeSeverity, type NoticeState } from "./notice.ts";
+export { SENTINEL, SENTINEL_START, type Conclusion, type Notice, type NoticeAction, type NoticeAnswer, type NoticeSeverity, type NoticeState } from "./notice.ts";
 export type { AskUserIO } from "./ask.ts";
 /** pi itself, as turri is built against it: a host's own extensions and UI are made with this one, not another copy. */
 export * as pi from "@earendil-works/pi-coding-agent";

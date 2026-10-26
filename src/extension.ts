@@ -59,6 +59,7 @@ import { inheritProviders, inheritThinkingLevel } from "./pi.ts";
 import { beginCapture, captureConsole, describeCaptured, dropNoise } from "./quiet.ts";
 import { loadRules, renderRulesBlock } from "./rules.ts";
 import { registerTurriConfig } from "./config-command.ts";
+import { writeSetting } from "./config-edit.ts";
 import { describeStdlib } from "./stdlib.ts";
 import { DECLINED, peekKeyListener, runAsk, type AskUser, type AskUserIO, type AskUserRequest } from "./ask.ts";
 import { QuestionDialog } from "./question-dialog.ts";
@@ -68,7 +69,7 @@ import { supersededByTurri } from "./chat-skills.ts";
 import { conversationIdentity } from "./identity.ts";
 import { setSurface, surfaceOf } from "./surface.ts";
 import { createChats, scopedToChat, type ChatLink, type TurriCore, type TurriHost } from "./chats.ts";
-import { landedNote, pulseEndsBlock, SENTINEL, SENTINEL_TOOLS, sentinelBrief, sentinelOn, sentinelPrompt, specConflictNotice } from "./sentinel.ts";
+import { landedNote, pulseEndsBlock, SENTINEL, SENTINEL_TOOLS, sentinelBrief, sentinelPrompt, sentinelSetting, sentinelStartNotice, specConflictNotice } from "./sentinel.ts";
 import { noticeDialogs, registerSentinel } from "./sentinel-chat.ts";
 import { currentChat } from "./chat-scope.ts";
 import { registerChats } from "./chat-commands.ts";
@@ -375,8 +376,11 @@ export function createTurriCore(host: TurriHost = {}, options: { persist?: boole
     host,
     jobs,
     extension: (pi, link) => turriExtension(pi, core!, link),
-    // A finished pulse goes to the sentinel when the project wants one - read as each pulse finishes.
-    sentinel: () => sentinelOn(cwd),
+    // A finished pulse goes to the sentinel when the project wants one - read as each pulse finishes - the person asked
+    // first under `sentinel: ask`, and what they choose for the project written.
+    sentinel: () => sentinelSetting(cwd),
+    sentinelStart: (job) => sentinelStartNotice(job, cwd),
+    setSentinel: (on) => void writeSetting(cwd, "sentinel", on),
     ...(options.persist !== undefined ? { persist: options.persist } : {}),
     ...(options.dialogs !== undefined ? { dialogs: options.dialogs } : {}),
   });

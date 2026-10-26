@@ -173,6 +173,35 @@ export function registerTurriConfig(pi: ExtensionAPI, options: TurriConfigOption
     return top.find((setting) => chosen.startsWith(`${setting.key}:`));
   };
 
+  // /sentinel: its one setting by its own name - asked before it first opens in a session, on without asking, or off.
+  const sentinelChoices: Array<[word: string, value: string, about: string]> = [
+    ["ask", "ask", "you are asked, with what it does, before it first opens in a session"],
+    ["on", "true", "it opens with the first pulse that finishes, without asking"],
+    ["off", "false", "no sentinel: each pulse is told to the chat that asked for it"],
+  ];
+  pi.registerCommand("sentinel", {
+    description: "Whether the sentinel checks every finished pulse: ask first, on, or off",
+    getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {
+      const items = sentinelChoices.filter(([word]) => word.startsWith(prefix.trim().toLowerCase()));
+      return items.length === 0 ? null : items.map(([word, , about]) => ({ value: word, label: word, description: about }));
+    },
+    handler: async (args, ctx) => {
+      const setting = settingOf("sentinel")!;
+      const typed = args.trim().toLowerCase();
+      let word = typed;
+      if (word === "") {
+        if (!ctx.hasUI) return;
+        const now = currentValue(readConfigText(cwd), setting.key);
+        const lines = sentinelChoices.map(([choice, , about]) => `${choice} - ${about}`);
+        const chosen = await ctx.ui.select(`/sentinel - now: ${now === undefined ? `unset - ${setting.unset}` : shownValue(now)}`, lines);
+        if (chosen === undefined) return;
+        word = chosen.slice(0, chosen.indexOf(" "));
+      }
+      const value = sentinelChoices.find(([choice]) => choice === word)?.[1] ?? word;
+      await apply(setting, value, ctx);
+    },
+  });
+
   pi.registerCommand("turri-config", {
     description: `Change a setting of the project's ${CONFIG_FILE}`,
     getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {

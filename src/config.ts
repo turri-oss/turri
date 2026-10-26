@@ -26,7 +26,7 @@ import { projectDirOf } from "./regenerate/paths.ts";
  * mutation-testing: false                                   # give the coding agent and the reviewer can_it_fail (default: true)
  * allow-to-stop-jobs: false                                 # stop a running job the spec moved on from (default: true)
  * release-after-pulse: true                                 # release what each pulse lands, as its last stage, before the next pulse (default: false)
- * sentinel: false                                           # a chat of its own every finished pulse goes to, which tests the release and tells you what is wrong (default: true)
+ * sentinel: true                                            # a chat of its own every finished pulse goes to, which tests the release and tells you what is wrong: true, false, or ask - the person asked before it first opens in a session (default: ask)
  * rules-off: [integrations]                                 # ***plain rules to leave out of the prompts, by name (default: none)
  * unittests-script: test_scripts/run_unittests.sh           # the testing scripts - see test-scripts.ts
  * conformance-tests-script: test_scripts/run_conformance_tests.sh
@@ -405,6 +405,9 @@ function modelsSetting(value: unknown): ProjectConfig["models"] {
   return Object.keys(models).length > 0 ? models : undefined;
 }
 
+/** `sentinel:` - on, off, or `ask`: on once the person says so, asked before it first opens in a session. */
+export type SentinelSetting = boolean | "ask";
+
 export interface ProjectConfig {
   /** The .plain file the module command builds when it is given none. */
   module?: string;
@@ -455,9 +458,10 @@ export interface ProjectConfig {
   releaseAfterPulse?: boolean;
   /**
    * Whether the session has a sentinel: a chat of its own that every finished pulse goes to - checked, a release tested,
-   * and what is wrong put to the person - instead of the chat that asked for it (docs/sentinel.md). Unset: true.
+   * and what is wrong put to the person - instead of the chat that asked for it (docs/sentinel.md). `ask`: the person is
+   * asked, before it first opens in a session, whether to start it. Unset: ask.
    */
-  sentinel?: boolean;
+  sentinel?: SentinelSetting;
   /** Path from the root to the unit testing script. */
   unittestsScript?: string;
   /** Path from the root to the conformance testing script. */
@@ -727,7 +731,7 @@ function readConfigFile(path: string): ProjectConfig {
     mutationTesting: typeof raw[CONFIG_KEYS.mutationTesting] === "boolean" ? (raw[CONFIG_KEYS.mutationTesting] as boolean) : undefined,
     allowToStopJobs: typeof raw[CONFIG_KEYS.allowToStopJobs] === "boolean" ? (raw[CONFIG_KEYS.allowToStopJobs] as boolean) : undefined,
     releaseAfterPulse: typeof raw[CONFIG_KEYS.releaseAfterPulse] === "boolean" ? (raw[CONFIG_KEYS.releaseAfterPulse] as boolean) : undefined,
-    sentinel: typeof raw[CONFIG_KEYS.sentinel] === "boolean" ? (raw[CONFIG_KEYS.sentinel] as boolean) : undefined,
+    sentinel: typeof raw[CONFIG_KEYS.sentinel] === "boolean" || raw[CONFIG_KEYS.sentinel] === "ask" ? (raw[CONFIG_KEYS.sentinel] as SentinelSetting) : undefined,
     unittestsScript: text(raw[CONFIG_KEYS.unittestsScript]),
     conformanceTestsScript: text(raw[CONFIG_KEYS.conformanceTestsScript]),
     prepareEnvironmentScript: text(raw[CONFIG_KEYS.prepareEnvironmentScript]),

@@ -2,7 +2,7 @@ import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { readProjectConfig } from "./config.ts";
+import { readProjectConfig, type SentinelSetting } from "./config.ts";
 import { confinedTools } from "./regenerate/confine.ts";
 import { describeSpecConflict } from "./regenerate/stop-report.ts";
 import { didNotPass } from "./regenerate/job-panel.ts";
@@ -11,7 +11,7 @@ import { readLedger } from "./regenerate/ledger.ts";
 import { describePulseView, pulseView } from "./regenerate/ledger-view.ts";
 import { MODULES_DIR, ensureInScratch } from "./regenerate/paths.ts";
 import type { DeployedProcess } from "./regenerate/release.ts";
-import { SENTINEL, wentWrong, type Conclusion, type Notice, type NoticeInput } from "./notice.ts";
+import { SENTINEL, SENTINEL_START, wentWrong, type Conclusion, type Notice, type NoticeInput } from "./notice.ts";
 
 export * from "./notice.ts";
 
@@ -23,13 +23,40 @@ export * from "./notice.ts";
  * start work. The chat the person talks to is never interrupted for a pulse that went well.
  */
 
-/** Whether the project wants a sentinel: `sentinel:` in config.turri.yaml, true unset. */
-export function sentinelOn(cwd: string): boolean {
+/** Whether the project wants a sentinel: `sentinel:` in config.turri.yaml - true, false, or ask, as it is unset. */
+export function sentinelSetting(cwd: string): SentinelSetting {
   try {
-    return readProjectConfig(cwd).sentinel !== false;
+    return readProjectConfig(cwd).sentinel ?? "ask";
   } catch {
-    return true;
+    return "ask";
   }
+}
+
+/**
+ * What the person is asked before the sentinel first opens in a session, under `sentinel: ask`, in one sentence: the pulse
+ * that would open it and what it does - so a tab that starts working on its own is not a surprise - and whether to start it.
+ */
+export function sentinelStartNotice(job: Job, cwd: string): NoticeInput {
+  let released = false;
+  try {
+    released = readProjectConfig(cwd).releaseAfterPulse === true;
+  } catch {
+    /* a config that cannot be read releases nothing */
+  }
+  return {
+    kind: "sentinel-start",
+    severity: "info",
+    summary: `${pulseName(job)} finished - start the sentinel, a background tab that reviews each finished pulse${released ? " and tries to use what was released" : ""}?`,
+    evidence: [],
+    actions: [
+      { label: SENTINEL_START.start, task: "The sentinel is started for this session: this pulse and each after it go to it." },
+      { label: SENTINEL_START.always, task: "The sentinel is started, and sentinel: true written to config.turri.yaml: it opens without asking from now on." },
+      { label: SENTINEL_START.notNow, task: "No sentinel this session: each pulse is told to the chat that asked for it. turri asks again next time." },
+      { label: SENTINEL_START.never, task: "sentinel: false written to config.turri.yaml: no sentinel, and no asking." },
+    ],
+    job: job.id,
+    ...(job.pulse !== undefined ? { pulse: job.pulse } : {}),
+  };
 }
 
 /** A pulse that stopped on ***plain that contradicts itself: put to the person by turri itself, the way out the chat's to work out. */

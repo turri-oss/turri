@@ -4,12 +4,12 @@ import type { AgentSession, ExtensionAPI, ExtensionContext, ExtensionFactory, Ex
 import { currentChat, inChat, type ChatScope } from "./chat-scope.ts";
 import { adoptRun, forgetChat, recordRun, type ChatRecord, type RunRecord } from "./chat-records.ts";
 import { createChatUi, type ChatUi } from "./chat-ui.ts";
-import { debugMode } from "./config.ts";
+import { debugMode, type SentinelSetting } from "./config.ts";
 import type { AskUserIO } from "./ask.ts";
 import { record } from "./regenerate/ledger.ts";
 import type { Job, JobRegistry } from "./regenerate/jobs.ts";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { newNotice, noticeTask, SENTINEL, wentWrong, type ChatRole, type Conclusion, type Notice, type NoticeAnswer, type NoticeInput } from "./notice.ts";
+import { newNotice, noticeTask, SENTINEL, sentinelStartChoice, wentWrong, type ChatRole, type Conclusion, type Notice, type NoticeAnswer, type NoticeInput } from "./notice.ts";
 
 /**
  * The chats of a turri session.
@@ -28,7 +28,9 @@ import { newNotice, noticeTask, SENTINEL, wentWrong, type ChatRole, type Conclus
  *
  * With the project's sentinel on (sentinel.ts), every finished pulse goes to the sentinel - a chat of the session's own,
  * opened in the background with the first, and again after it is closed - and the chat the person looks at shows only
- * that it landed. What the sentinel finds wrong it puts to the person as a notice, in the chat they look at.
+ * that it landed. What the sentinel finds wrong it puts to the person as a notice, in the chat they look at. Under
+ * `sentinel: ask`, the person is asked first - a notice of turri's own, before it first opens in the session - the pulses
+ * that end meanwhile held until they answer.
  */
 
 /** The most chats a session has open at once. */
@@ -71,7 +73,7 @@ export interface TurriHost {
   systemPrompt?(prompt: string): string;
   /** The sentinel is done with a pulse - told to the chat it names, whose agent says so. */
   onConcluded?(conclusion: Conclusion & { chat: string }): void;
-  /** What the sentinel puts to the person: the host draws it in the chat it names, and answers it with `answer`. */
+  /** What the sentinel puts to the person - and, `kind: "sentinel-start"`, whether to start it: the host draws it in the chat it names, and answers it with `answer`. */
   onNotice?(notice: Notice): void;
   /** A notice is over - answered, dismissed, or superseded by a newer one about its module: the host takes its card down. */
   onNoticeOver?(notice: Notice): void;
@@ -225,8 +227,12 @@ export interface CoreOptions {
   persist?: boolean;
   /** The host's dialogs, a chat's own. */
   dialogs?: (chat: string) => AskUserIO | undefined;
-  /** Whether the project wants a sentinel - read as each pulse finishes. Unset: none. */
-  sentinel?: () => boolean;
+  /** Whether the project wants a sentinel - read as each pulse finishes: on, off, or ask the person first. Unset: none. */
+  sentinel?: () => SentinelSetting;
+  /** Under `sentinel: ask`: what the person is asked before the sentinel first opens, about the pulse that would open it. */
+  sentinelStart?: (job: Job) => NoticeInput;
+  /** The person chose for the project, asked whether to start the sentinel: `sentinel:` written. */
+  setSentinel?: (on: boolean) => void;
 }
 
 /** A chat's session, as stopping what it does reaches it. */
@@ -288,6 +294,13 @@ export function createChats(options: CoreOptions): TurriCore {
   const open: Notice[] = [];
   /** The pulse the sentinel is on now, while its agent works: a newer one of the same module replaces a check of one that went well. */
   let sentinelOnJob: { module: string | undefined; wrong: boolean } | undefined;
+  /**
+   * Under `sentinel: ask`, whether the person said to start the sentinel this session: asked - the notice `asking` open,
+   * the pulses that ended meanwhile `held` - started, or not this session.
+   */
+  let consent: "unasked" | "asking" | "given" | "declined" = "unasked";
+  let asking: Notice | undefined;
+  const held: Job[] = [];
   const run: RunRecord = { run: randomUUID().slice(0, 8), pid: process.pid, started: new Date().toISOString(), chats: [] };
 
   const changed = () => {
@@ -305,12 +318,17 @@ export function createChats(options: CoreOptions): TurriCore {
   const sentinelChat = () => chats.find((chat) => chat.role === SENTINEL);
   /** The person's chats: all but the sentinel. */
   const people = () => chats.filter((chat) => chat.role !== SENTINEL);
-  const wantsSentinel = () => {
+  const setting = (): SentinelSetting => {
     try {
-      return options.sentinel?.() === true;
+      return options.sentinel?.() ?? false;
     } catch {
       return false;
     }
+  };
+  /** On, or asked for - and not declined this session. */
+  const wantsSentinel = () => {
+    const now = setting();
+    return now === true || (now === "ask" && consent !== "declined");
   };
   /** The chat the person looks at, for what is put to them - never the sentinel: when it is shown, `fallback`, else their first. */
   const personFacing = (fallback?: ChatState) => {
@@ -440,6 +458,8 @@ export function createChats(options: CoreOptions): TurriCore {
       }
       const recorded = run.chats.find((kept) => kept.id === id);
       chats.splice(chats.indexOf(chat), 1);
+      // The question whether to start the sentinel was in it: put again in the chat the person looks at now.
+      if (asking?.chat === id) askAgain();
       chat.unsubscribe?.();
       chat.ui?.close();
       inChat(chat.scope, () => record({ kind: "chat.closed" }, { project: cwd }));
@@ -534,22 +554,18 @@ export function createChats(options: CoreOptions): TurriCore {
     sentinelOn: () => driver !== undefined && wantsSentinel(),
 
     jobFinished(job) {
+      // The question was settled in config.turri.yaml while it was open: what it held goes as the file now says.
+      if (consent === "asking" && setting() !== "ask") settleStart(setting() === true ? "given" : "declined", "superseded");
       if (core.sentinelOn()) {
+        if (consent === "asking" || (setting() === "ask" && consent === "unasked" && sentinelChat() === undefined && askToStart(job))) {
+          held.push(job);
+          changed();
+          return;
+        }
         sentinelFinished(job);
         return;
       }
-      const asked = chats.find((chat) => chat.id === job.chat);
-      const chat = asked?.instance !== undefined ? asked : (core.shownChat() ?? chats[0]);
-      if (chat === undefined) return;
-      if (chat.id !== shownId) chat.unread = true;
-      try {
-        chat.instance?.announce(job);
-      } catch {
-        // A chat let go as the pulse ended: the one shown is told instead.
-        const shown = core.shownChat();
-        if (shown !== undefined && shown !== chat) shown.instance?.announce(job);
-      }
-      changed();
+      toAsker(job);
     },
 
     jobsChanged() {
@@ -617,6 +633,7 @@ export function createChats(options: CoreOptions): TurriCore {
       const notice = open.find((candidate) => candidate.id === id);
       if (notice === undefined) return "missing";
       if (notice.state !== "open") return "over";
+      if (notice.kind === "sentinel-start") return answerStart(notice, answer);
       const task = noticeTask(notice, answer);
       over(notice, "dismiss" in answer ? "dismissed" : "steer" in answer ? "steered" : "accepted");
       if (task === undefined) return "dismissed";
@@ -667,6 +684,80 @@ export function createChats(options: CoreOptions): TurriCore {
       /* a host that throws must not keep the notice open */
     }
     if (chat !== undefined) inChat(chat.scope, () => record({ kind: "notice.over", notice: notice.id, state }, { project: cwd }));
+  }
+
+  /** A pulse ended, told to the chat that asked for it - as without a sentinel - or the chat shown, when that one is closed. */
+  function toAsker(job: Job): void {
+    const asked = chats.find((chat) => chat.id === job.chat);
+    const chat = asked?.instance !== undefined ? asked : (core.shownChat() ?? chats[0]);
+    if (chat === undefined) return;
+    if (chat.id !== shownId) chat.unread = true;
+    try {
+      chat.instance?.announce(job);
+    } catch {
+      // A chat let go as the pulse ended: the one shown is told instead.
+      const shown = core.shownChat();
+      if (shown !== undefined && shown !== chat) shown.instance?.announce(job);
+    }
+    changed();
+  }
+
+  /**
+   * Under `sentinel: ask`, the first pulse that would open the sentinel this session: the person asked whether to start it,
+   * in the chat they look at. False when there is nothing to ask with, or no chat to ask in: the sentinel opens as asked.
+   */
+  function askToStart(job: Job): boolean {
+    let input: NoticeInput | undefined;
+    try {
+      input = options.sentinelStart?.(job);
+    } catch {
+      input = undefined;
+    }
+    if (input === undefined) return false;
+    consent = "asking";
+    asking = core.notice({ ...input, kind: "sentinel-start" });
+    if (asking === undefined) consent = "unasked";
+    return asking !== undefined;
+  }
+
+  /** The chat the question was put in is gone: it is put in the chat the person looks at - none left, the pulses go as without one. */
+  function askAgain(): void {
+    const question = asking!;
+    over(question, "superseded");
+    asking = undefined;
+    consent = "unasked";
+    if (!askToStart(held[0]!)) settleStart("declined", "superseded");
+  }
+
+  /** The person answered whether to start the sentinel: written to the project, when they chose for it, and what was held let go. */
+  function answerStart(notice: Notice, answer: NoticeAnswer): "done" | "dismissed" {
+    const choice = sentinelStartChoice(notice, answer);
+    try {
+      if (choice === "always" || choice === "never") options.setSentinel?.(choice === "always");
+    } catch (error) {
+      core.notify(`config.turri.yaml could not be written: ${error instanceof Error ? error.message : String(error)}`, "warning");
+    }
+    settleStart(choice === "start" || choice === "always" ? "given" : "declined", "dismiss" in answer ? "dismissed" : "steer" in answer ? "steered" : "accepted");
+    // Their own words are the chat's to act on: the sentinel is not started.
+    if ("steer" in answer) {
+      const task = noticeTask(notice, answer);
+      const chat = chats.find((candidate) => candidate.id === notice.chat) ?? personFacing();
+      if (task !== undefined) chat?.instance?.act(task);
+    }
+    return "dismiss" in answer ? "dismissed" : "done";
+  }
+
+  /** Whether to start the sentinel is settled: its question closed, and the pulses held go to it - or, declined, to their chats. */
+  function settleStart(now: "given" | "declined", state: Exclude<Notice["state"], "open">): void {
+    consent = now;
+    const question = asking;
+    asking = undefined;
+    if (question !== undefined && question.state === "open") over(question, state);
+    for (const job of held.splice(0)) {
+      if (core.sentinelOn()) sentinelFinished(job);
+      else toAsker(job);
+    }
+    changed();
   }
 
   /**

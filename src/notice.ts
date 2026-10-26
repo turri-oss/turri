@@ -23,6 +23,11 @@ export interface NoticeAction {
 }
 
 export interface NoticeInput {
+  /**
+   * `sentinel-start`: not something wrong but a question turri puts before the sentinel first opens in a session - its
+   * actions start it, or not, and are turri's to carry out, not the chat's agent's (SENTINEL_START). None: the sentinel's.
+   */
+  kind?: "sentinel-start";
   severity: NoticeSeverity;
   /** What is wrong, in a line. */
   summary: string;
@@ -46,11 +51,28 @@ export interface Notice extends NoticeInput {
   at: string;
 }
 
+/** The answers to the question put before the sentinel first opens: the actions of a `sentinel-start` notice, in order. */
+export const SENTINEL_START = {
+  start: "Start the sentinel",
+  always: "Start it, and don't ask again",
+  notNow: "Not this session",
+  never: "Turn it off for this project",
+} as const;
+
+export type SentinelStartChoice = keyof typeof SENTINEL_START;
+
 /** How the person answered a notice: one of its actions (by index or label), their own words, or not at all. */
 export type NoticeAnswer = { action: number | string } | { steer: string } | { dismiss: true };
 
 export function newNotice(input: NoticeInput, chat: string): Notice {
   return { ...input, id: randomUUID().slice(0, 8), chat, state: "open", at: new Date().toISOString() };
+}
+
+/** The choice an answer to a `sentinel-start` notice makes: dismissed, or answered in the person's own words, it is not now. */
+export function sentinelStartChoice(notice: Notice, answer: NoticeAnswer): SentinelStartChoice {
+  if (!("action" in answer)) return "notNow";
+  const label = typeof answer.action === "number" ? notice.actions[answer.action]?.label : answer.action;
+  return (Object.keys(SENTINEL_START) as SentinelStartChoice[]).find((choice) => SENTINEL_START[choice] === label) ?? "notNow";
 }
 
 /** What the focused chat's agent is asked to do once the person answered a notice - undefined when they dismissed it. */

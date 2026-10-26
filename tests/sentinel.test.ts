@@ -39,7 +39,7 @@ interface Told {
 }
 
 /** A session with the sentinel on, its chats living nowhere but here: each chat's extension says what it is told. */
-function session(options: { sentinel?: boolean; host?: TurriHost } = {}) {
+function session(options: { sentinel?: boolean | "ask"; host?: TurriHost } = {}) {
   const told = new Map<string, Told>();
   const links: ChatLink[] = [];
   const sessions = new Map<string, ReturnType<typeof fakeSession>>();
@@ -53,7 +53,8 @@ function session(options: { sentinel?: boolean; host?: TurriHost } = {}) {
     cwd: process.cwd(),
     host: options.host ?? {},
     jobs,
-    sentinel: () => options.sentinel !== false,
+    sentinel: () => options.sentinel ?? true,
+    sentinelStart: (job) => ({ severity: "info", summary: `${job.summary} finished - start the sentinel?`, evidence: [], actions: [{ label: "Start the sentinel", task: "" }, { label: "Not this session", task: "" }], job: job.id }),
     extension: (_pi, link) => {
       links.push(link);
       link.live({
@@ -175,6 +176,57 @@ describe("the sentinel", () => {
       ["web pulse 2", true],
       ["web pulse 3", false],
     ]);
+  });
+});
+
+describe("asking to start the sentinel", () => {
+  it("holds every pulse that ends while the person is asked, and gives them all to the sentinel once they say so", async () => {
+    const { core, jobs, told, sentinel } = session({ sentinel: "ask" });
+    const mine = await core.open();
+    jobs.start(pulse("app pulse 1", "app"));
+    await settled();
+    jobs.start(pulse("web pulse 1", "web"));
+    await settled();
+    expect(told(mine.id).notices.map((notice) => [notice.kind, notice.summary])).toEqual([["sentinel-start", "app pulse 1 finished - start the sentinel?"]]);
+    expect(told(mine.id).landed).toEqual([]);
+    expect(sentinel()).toBeUndefined();
+    expect(core.answer(told(mine.id).notices[0]!.id, { action: 0 })).toBe("done");
+    await settled();
+    expect(told(mine.id).acted).toEqual([]);
+    expect(told(sentinel()!.id).briefs.map((brief) => brief.job)).toEqual(["app pulse 1", "web pulse 1"]);
+    // Started: the next pulse goes to it without asking.
+    jobs.start(pulse("app pulse 2", "app"));
+    await settled();
+    expect(told(mine.id).notices).toHaveLength(1);
+    expect(told(sentinel()!.id).briefs.map((brief) => brief.job)).toEqual(["app pulse 1", "web pulse 1", "app pulse 2"]);
+  });
+
+  it("puts the question again in the chat the person looks at when the chat it was in is closed", async () => {
+    const { core, jobs, told } = session({ sentinel: "ask" });
+    const first = await core.open();
+    const second = await core.open();
+    jobs.start(pulse("app pulse 1", "app"));
+    await settled();
+    expect(told(second.id).notices).toHaveLength(1);
+    await core.close(second.id);
+    expect(told(first.id).notices.map((notice) => notice.kind)).toEqual(["sentinel-start"]);
+    expect(core.notices().map((notice) => notice.chat)).toEqual([first.id]);
+  });
+
+  it("tells the terminal how to switch to it - the chat it opens as, after those open", async () => {
+    const { startTitle } = await import("../src/sentinel-chat.ts");
+    const notice = { summary: "app pulse 1 finished - start the sentinel?" } as Notice;
+    expect(startTitle(notice, 1)).toBe("app pulse 1 finished - start the sentinel?\nUse \"/chat 2\" to open the sentinel.");
+  });
+
+  it("does not ask when the sentinel is open already - reopened by turri --continue", async () => {
+    const { core, jobs, told, sentinel } = session({ sentinel: "ask" });
+    const mine = await core.open();
+    await core.open({ hidden: true, role: SENTINEL });
+    jobs.start(pulse("app pulse 1", "app"));
+    await settled();
+    expect(told(mine.id).notices).toEqual([]);
+    expect(told(sentinel()!.id).briefs.map((brief) => brief.job)).toEqual(["app pulse 1"]);
   });
 });
 
