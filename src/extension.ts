@@ -69,7 +69,7 @@ import { supersededByTurri } from "./chat-skills.ts";
 import { conversationIdentity } from "./identity.ts";
 import { setSurface, surfaceOf } from "./surface.ts";
 import { createChats, scopedToChat, type ChatLink, type TurriCore, type TurriHost } from "./chats.ts";
-import { landedNote, pulseEndsBlock, SENTINEL, SENTINEL_TOOLS, sentinelBrief, sentinelPrompt, sentinelSetting, sentinelStartNotice, specConflictNotice } from "./sentinel.ts";
+import { ignoredGuidance, keepGuidance, landedNote, pulseEndsBlock, SENTINEL, SENTINEL_TOOLS, sentinelBrief, sentinelPrompt, sentinelSetting, sentinelStartNotice, specConflictNotice } from "./sentinel.ts";
 import { noticeDialogs, registerSentinel } from "./sentinel-chat.ts";
 import { currentChat } from "./chat-scope.ts";
 import { registerChats } from "./chat-commands.ts";
@@ -381,6 +381,7 @@ export function createTurriCore(host: TurriHost = {}, options: { persist?: boole
     sentinel: () => sentinelSetting(cwd),
     sentinelStart: (job) => sentinelStartNotice(job, cwd),
     setSentinel: (on) => void writeSetting(cwd, "sentinel", on),
+    ignored: (notice) => keepGuidance(cwd, ignoredGuidance(notice)),
     ...(options.persist !== undefined ? { persist: options.persist } : {}),
     ...(options.dialogs !== undefined ? { dialogs: options.dialogs } : {}),
   });
@@ -505,10 +506,10 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
       { triggerTurn: true, deliverAs: "followUp" },
     );
   };
-  // The sentinel's: what a pulse that ended is, told to its agent - after what it does now, or in its place.
-  const brief = async (job: Job, context: { asked?: string; focused?: string; replace: boolean }) => {
-    if (context.replace) await link.session()?.abort();
-    announceJob(pi, job);
+  // The sentinel's: what a pulse that ended is, told to its agent in a conversation of its own for the pulse. The hidden
+  // message is the conversation's first entry - a host splits the sentinel's work by pulse on it - so the pulse's end is
+  // not drawn above it here: the person's chat shows it.
+  const brief = async (job: Job, context: { asked?: string; focused?: string }) => {
     const config = readProjectConfig(cwd);
     const content = sentinelBrief(job, {
       project: cwd,
@@ -518,11 +519,7 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
       releaseAfterPulse: config.releaseAfterPulse === true,
       reaction: JOB_FINISHED_REACTION,
     });
-    const busy = link.session()?.isStreaming === true;
-    void pi.sendMessage(
-      { customType: "turri_sentinel_pulse", content, display: false, details: { jobId: job.id, status: job.status } },
-      { triggerTurn: true, ...(busy ? { deliverAs: "followUp" as const } : {}) },
-    );
+    void pi.sendMessage({ customType: "turri_sentinel_pulse", content, display: false, details: { jobId: job.id, status: job.status } }, { triggerTurn: true });
   };
   // A pulse ended, with the sentinel on: said in the chat. One that landed is told to its agent too, to tell the person
   // it landed and what the sentinel does with it - and nothing more: the pulse is the sentinel's. ***plain that

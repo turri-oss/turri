@@ -17,6 +17,7 @@ const NOTICE_OVER_ENTRY = "turri_notice_over";
 /** The sentinel done with a pulse, in the chat the person is in. */
 const CONCLUDED_ENTRY = "turri_sentinel_concluded";
 
+const IGNORE = "Ignore - leave it as the build has it";
 const STEER = "Say what to do instead…";
 const DISMISS = "Dismiss";
 
@@ -107,7 +108,16 @@ export function noticeDialogs(
   pi.registerEntryRenderer(NOTICE_OVER_ENTRY, (entry, _options, theme) => {
     const data = entry.data as { state: Notice["state"]; summary: string } | undefined;
     if (data === undefined) return undefined;
-    const said = data.state === "superseded" ? "superseded by a newer notice" : data.state === "dismissed" ? "dismissed" : data.state === "steered" ? "answered in your words" : "accepted";
+    const said =
+      data.state === "superseded"
+        ? "superseded by a newer notice"
+        : data.state === "dismissed"
+          ? "dismissed"
+          : data.state === "ignored"
+            ? "ignored - left as the build has it, not raised again"
+            : data.state === "steered"
+              ? "answered in your words"
+              : "accepted";
     const box = new Box(1, 0);
     box.addChild(new Text(theme.fg("muted", `  ${said}: ${data.summary}`), 0, 0));
     return box;
@@ -129,7 +139,12 @@ export function noticeDialogs(
     try {
       // Whether to start the sentinel is turri's question, its answers its own: no words of the person's to act on.
       const starting = notice.kind === "sentinel-start";
-      const options = [...notice.actions.map((action, index) => `${index + 1}. ${action.label}`), ...(starting ? [] : [STEER]), DISMISS];
+      const options = [
+        ...notice.actions.map((action, index) => `${index + 1}. ${action.label}`),
+        ...(notice.ignorable === true ? [IGNORE] : []),
+        ...(starting ? [] : [STEER]),
+        DISMISS,
+      ];
       const picked = await ctx.ui.select(starting ? startTitle(notice, session.chats().length) : `sentinel: ${notice.summary}`, options, { signal: controller.signal });
       if (controller.signal.aborted || notice.state !== "open") return;
       if (picked === STEER) {
@@ -137,6 +152,10 @@ export function noticeDialogs(
         if (controller.signal.aborted || notice.state !== "open") return;
         if (words === undefined || words.trim() === "") waiting.unshift(notice);
         else session.answer(notice.id, { steer: words });
+        return;
+      }
+      if (picked === IGNORE) {
+        session.answer(notice.id, { ignore: true });
         return;
       }
       const index = options.indexOf(picked ?? DISMISS);

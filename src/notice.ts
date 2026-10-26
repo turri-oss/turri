@@ -39,9 +39,15 @@ export interface NoticeInput {
   job?: string;
   /** Its number among its module's pulses. */
   pulse?: number;
+  /**
+   * The person may leave it as the build has it, for good (`{ ignore: true }`): a gap in the ***plain the build settled
+   * with an assumption - never something broken, a pulse that went wrong, a release that did not come up, nor the
+   * question whether to start the sentinel.
+   */
+  ignorable?: boolean;
 }
 
-export type NoticeState = "open" | "accepted" | "steered" | "dismissed" | "superseded";
+export type NoticeState = "open" | "accepted" | "steered" | "dismissed" | "ignored" | "superseded";
 
 export interface Notice extends NoticeInput {
   id: string;
@@ -61,8 +67,11 @@ export const SENTINEL_START = {
 
 export type SentinelStartChoice = keyof typeof SENTINEL_START;
 
-/** How the person answered a notice: one of its actions (by index or label), their own words, or not at all. */
-export type NoticeAnswer = { action: number | string } | { steer: string } | { dismiss: true };
+/**
+ * How the person answered a notice: one of its actions (by index or label), their own words, not at all this once
+ * (`dismiss`) - or, on an ignorable one, not at all and not again (`ignore`): left as the build has it.
+ */
+export type NoticeAnswer = { action: number | string } | { steer: string } | { dismiss: true } | { ignore: true };
 
 export function newNotice(input: NoticeInput, chat: string): Notice {
   return { ...input, id: randomUUID().slice(0, 8), chat, state: "open", at: new Date().toISOString() };
@@ -77,7 +86,7 @@ export function sentinelStartChoice(notice: Notice, answer: NoticeAnswer): Senti
 
 /** What the focused chat's agent is asked to do once the person answered a notice - undefined when they dismissed it. */
 export function noticeTask(notice: Notice, answer: NoticeAnswer): string | undefined {
-  if ("dismiss" in answer) return undefined;
+  if ("dismiss" in answer || "ignore" in answer) return undefined;
   const head = [
     `The sentinel put this to the person, about ${notice.module !== undefined ? `${notice.module}${notice.pulse !== undefined ? ` pulse ${notice.pulse}` : ""}` : "the work"}:`,
     describeNotice(notice),
@@ -87,6 +96,16 @@ export function noticeTask(notice: Notice, answer: NoticeAnswer): string | undef
   const action = typeof answer.action === "number" ? notice.actions[answer.action] : notice.actions.find((candidate) => candidate.label === answer.action);
   if (action === undefined) return undefined;
   return [...head, `The person chose: ${action.label}. Do it now:`, action.task.trim()].join("\n");
+}
+
+/**
+ * What the sentinel keeps of a notice the person ignored, in its guidance: what was left as it is - its module, the gap,
+ * what the build does - and why, so a fresh conversation does not raise it again.
+ */
+export function ignoredGuidance(notice: Notice): string {
+  const about = notice.module !== undefined ? ` in ${notice.module}` : "";
+  const shows = notice.evidence.length > 0 ? ` (${notice.evidence.join("; ")})` : "";
+  return `The person chose to leave this${about} as the build has it - do not raise it again unless the build no longer does what they accepted: ${notice.summary}${shows}`;
 }
 
 /** A notice in words: its summary, its evidence and what can be done - for the agent, the log and a chat without a card. */

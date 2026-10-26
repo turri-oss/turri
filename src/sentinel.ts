@@ -147,7 +147,8 @@ export function sentinelPrompt(cwd: string, options: { extraTools?: string[]; su
   return [
     "<sentinel>",
     "You are turri's sentinel: a chat of turri's own, beside the chats the person talks to while they build their software",
-    "with turri. Every pulse that finishes comes to you, as a message turri writes - what the pulse was, how it ended,",
+    "with turri. Every pulse that finishes comes to you, each in a conversation of its own: this one is for the pulse in",
+    "the message turri writes first - what the pulse was, how it ended,",
     ...(surface === ""
       ? ["its ***plain diff, its log, and what was released. The person does not watch you: they are in another chat, and", "hear from you only through notify_person."]
       : [
@@ -155,7 +156,7 @@ export function sentinelPrompt(cwd: string, options: { extraTools?: string[]; su
           "they talk to you in another chat, and hear what you find only through notify_person.",
         ]),
     "",
-    "For each pulse:",
+    "For the pulse:",
     "1. Check how it went, from what turri tells you - and, when that is not enough, its log, the ledger (ledger, pulses),",
     "   diagnose, and the code and the ***plain, which you read.",
     "2. When it was released (the message says so - release-after-pulse is on), test what was released: it is running",
@@ -166,17 +167,21 @@ export function sentinelPrompt(cwd: string, options: { extraTools?: string[]; su
     "   and what the person can do about it, each a task the agent of their chat can carry out once they accept it - a",
     "   change to the ***plain, a setting, a credential to provide, a pulse to regenerate again. Be exact: the task is",
     "   all that agent is given.",
+    "   When it is a gap in the ***plain the build settled with an assumption - something the person may reasonably leave",
+    "   as it is - say so with ignorable: the gap in the summary, what the build does in the evidence. Never for",
+    "   something broken, a pulse that went wrong, or a release that did not come up.",
     "4. When all is well, notify no one.",
-    "5. Last, call conclude once for the pulse - holds or wrong, and in a line or two what you checked and what you found:",
+    "5. Last, call conclude once for it - holds or wrong, and in a line or two what you checked and what you found:",
     "   the chat the person is in is told, whether all is well or not. Then say the same here, in a line or two.",
     "",
     "You change nothing. Your file tools read the whole project and write nothing; your shell runs with the project",
     "read only. You never regenerate, steer, release or change ***plain yourself, and never ask the person questions -",
-    "a notice is how you reach them. A newer message about the same module can arrive while you check an older pulse",
-    "that went well: leave the older one and check the newer.",
+    "a notice is how you reach them.",
     "",
     "The person can talk to you here. When they tell you how to check - what to test, what to leave alone, where things",
-    "run - keep it with keep_guidance, in their words, so it holds from now on.",
+    "run - keep it with keep_guidance, in their words, so it holds from now on: this conversation ends with its pulse,",
+    "and the next pulse's starts afresh, with only what you kept. What the person chose to leave as the build has it is",
+    "in your guidance too: do not raise it again, unless the build no longer does what they accepted.",
     ...(surface !== ""
       ? [
           "",
@@ -283,6 +288,14 @@ export function notifyTool(notify: (input: NoticeInput) => Notice | undefined): 
       ),
       module: Type.Optional(Type.String({ description: "The module it is about" })),
       pulse: Type.Optional(Type.String({ description: "The pulse's id" })),
+      ignorable: Type.Optional(
+        Type.Boolean({
+          description:
+            "true when the person may reasonably leave it as the build has it, for good: chiefly a gap in the ***plain the build settled with an " +
+            "assumption - then say the gap in the summary and what the build does in the evidence (the ***plain does not say what happens to " +
+            "passwords over 72 bytes; the build refuses them with 422). Never for something broken, a pulse that went wrong, or a release that did not come up.",
+        }),
+      ),
     }),
     async execute(_id, params) {
       const notice = notify({
@@ -290,6 +303,7 @@ export function notifyTool(notify: (input: NoticeInput) => Notice | undefined): 
         summary: params.summary,
         evidence: params.evidence,
         actions: params.actions,
+        ...(params.ignorable === true ? { ignorable: true } : {}),
         ...(params.module !== undefined ? { module: params.module } : {}),
         ...(params.pulse !== undefined ? { job: params.pulse } : {}),
       });

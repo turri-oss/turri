@@ -69,7 +69,10 @@ vi.mock("@earendil-works/pi-coding-agent", async (actual) => {
         isRetrying: false,
         isBashRunning: false,
         sessionFile: undefined,
-        messages: [],
+        // What turri sent it, for its conversation: one it was told something in is not a fresh one.
+        get messages() {
+          return state.sent;
+        },
         sessionManager: { getSessionName: () => undefined },
         extensionRunner: { getUIContext: () => undefined },
         subscribe: () => () => {},
@@ -216,6 +219,72 @@ describe("the sentinel in a host", () => {
     // Done with it: the person's chat is told, to say so.
     await tools.get("conclude")!.execute("call", { pulse: job.id, verdict: "wrong", summary: "the home page answers 500" }, undefined, undefined, {});
     expect(sessions[0]!.sent).toEqual(["turri_job_landed", "turri_notice_answer", "turri_sentinel_concluded"]);
+  });
+
+  it("leaves an ignorable notice as the build has it when the person ignores it - kept in the guidance, and carried into the next pulse's conversation", async () => {
+    const over: string[] = [];
+    const turri = await createTurri({ onNotice: () => {}, onNoticeOver: (notice) => over.push(notice.state) });
+    const mine = await turri.openChat();
+    turri.focus(mine.id);
+    const pulse = async (summary: string) => {
+      const job = turri.jobs.start({ kind: "regenerate", summary, module: "app", run: async () => ({ report: "done", details: { passed: true, landed: true } }) });
+      await turri.jobs.wait(job.id);
+      await settled();
+      return job;
+    };
+    const job = await pulse("app pulse 1");
+    const notify = sessions[1]!.tools.get("notify_person")!;
+    const put = async (ignorable?: boolean) => {
+      await notify.execute(
+        "call",
+        {
+          severity: "info",
+          summary: "the ***plain does not say what happens to passwords over 72 bytes",
+          evidence: ["the build refuses them with 422"],
+          actions: [{ label: "Say it in the ***plain", task: "add to app.plain what happens to passwords over 72 bytes" }],
+          pulse: job.id,
+          ...(ignorable !== undefined ? { ignorable } : {}),
+        },
+        undefined,
+        undefined,
+        {},
+      );
+      return turri.notices().at(-1)!;
+    };
+    const gap = await put(true);
+    expect(gap.ignorable).toBe(true);
+    expect(await turri.answer(gap.id, { ignore: true })).toBe("ignored");
+    expect(over).toEqual(["ignored"]);
+    expect(sessions[0]!.sent).toEqual(["turri_job_landed"]);
+    const guidance = readFileSync(join(".turri", "sentinel.md"), "utf8");
+    expect(guidance).toContain("The person chose to leave this in app as the build has it - do not raise it again unless the build no longer does what they accepted");
+    expect(guidance).toContain("passwords over 72 bytes (the build refuses them with 422)");
+    // A later pulse, in a conversation of its own, is told it.
+    await pulse("app pulse 2");
+    const prompt = await systemPrompt(sessions.at(-1)!);
+    expect(prompt).toContain("passwords over 72 bytes (the build refuses them with 422)");
+    expect(prompt).toContain("do not raise it again, unless the build no longer does what they accepted");
+  });
+
+  it("gives each pulse a fresh conversation in the same chat - the host told of its new session before the pulse is put to it", async () => {
+    const heard: Array<{ chat: string; sent: string[] }> = [];
+    const turri = await createTurri({ onChatSession: (chat) => heard.push({ chat, sent: [...sessions.at(-1)!.sent] }) });
+    const mine = await turri.openChat();
+    turri.focus(mine.id);
+    for (const summary of ["app pulse 1", "app pulse 2"]) {
+      const job = turri.jobs.start({ kind: "regenerate", summary, module: "app", run: async () => ({ report: "done", details: { passed: true, landed: true } }) });
+      await turri.jobs.wait(job.id);
+      await settled();
+    }
+    const sentinel = turri.chats().find((chat) => chat.role === SENTINEL)!;
+    expect(turri.chats().filter((chat) => chat.role === SENTINEL)).toHaveLength(1);
+    // The first conversation let go, the second the chat's now: each told of its own pulse alone.
+    expect(sessions[1]!.did).toEqual(["abort", "dispose"]);
+    expect(sessions[1]!.sent).toEqual(["turri_sentinel_pulse"]);
+    expect(sessions[2]!.sent).toEqual(["turri_sentinel_pulse"]);
+    expect(heard).toEqual([{ chat: sentinel.id, sent: [] }]);
+    expect(turri.session(sentinel.id)).not.toBeUndefined();
+    expect(turri.session(sentinel.id)!.messages).toBe(sessions[2]!.sent);
   });
 });
 

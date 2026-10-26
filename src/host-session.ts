@@ -70,9 +70,11 @@ export interface Turri {
   notices(): Notice[];
   /**
    * A notice answered: one of its actions (by index or label) - the chat it is in started on it - the person's own words
-   * about it, or dismissed. `over` when it was answered or superseded already, `missing` for one never put.
+   * about it, dismissed, or - `ignorable: true` - ignored for good: left as the build has it, the sentinel told not to
+   * raise it again. `refused` for `ignore` on one that is not ignorable, `over` when it was answered or superseded
+   * already, `missing` for one never put.
    */
-  answer(id: string, answer: NoticeAnswer): Promise<"done" | "dismissed" | "missing" | "over">;
+  answer(id: string, answer: NoticeAnswer): Promise<"done" | "dismissed" | "ignored" | "refused" | "missing" | "over">;
   /** Told when a chat is opened, closed, renamed, or starts or stops working. */
   onChats(listener: (chats: ChatInfo[]) => void): () => void;
   /** Every chat let go, and what activate started stopped. */

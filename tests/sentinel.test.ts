@@ -8,10 +8,14 @@ import { createChats, MAX_CHATS, type ChatLink, type TurriCore, type TurriHost }
 import { createJobRegistry, type Job } from "../src/regenerate/jobs.ts";
 import { describeNotice, noticeTask, SENTINEL, SENTINEL_TOOLS, sentinelBrief, sentinelFileTools, type Notice } from "../src/sentinel.ts";
 
-/** A pi session as the session follows it: its events sent by the test, and whether its agent is at work. */
+/**
+ * A pi session as the session follows it: its events sent by the test, whether its agent is at work, what it was told,
+ * whether it was stopped and let go, and the model and thinking set on it.
+ */
 function fakeSession() {
   const listeners = new Set<(event: { type: string }) => void>();
-  const state = { isStreaming: false, aborted: 0 };
+  const state = { isStreaming: false, aborted: 0, disposed: false, model: undefined as { id: string } | undefined, thinking: undefined as string | undefined };
+  const messages: unknown[] = [];
   const session = {
     subscribe: (listener: (event: { type: string }) => void) => {
       listeners.add(listener);
@@ -20,18 +24,31 @@ function fakeSession() {
     get isStreaming() {
       return state.isStreaming;
     },
+    get model() {
+      return state.model;
+    },
+    get thinkingLevel() {
+      return state.thinking;
+    },
+    setModel: async (model: { id: string }) => void (state.model = model),
+    setThinkingLevel: (level: string) => void (state.thinking = level),
+    abort: async () => {
+      state.aborted += 1;
+      state.isStreaming = false;
+    },
+    dispose: () => void (state.disposed = true),
     sessionFile: undefined,
-    messages: [],
+    messages,
     sessionManager: { getSessionName: () => undefined },
     extensionRunner: { getUIContext: () => undefined },
   } as unknown as AgentSession;
-  return { session, state, emit: (type: string) => listeners.forEach((listener) => listener({ type })) };
+  return { session, state, messages, emit: (type: string) => listeners.forEach((listener) => listener({ type })) };
 }
 
 interface Told {
   announced: string[];
   landed: Array<{ job: string; tell: boolean }>;
-  briefs: Array<{ job: string; replace: boolean; asked?: string; focused?: string }>;
+  briefs: Array<{ job: string; asked?: string; focused?: string }>;
   notices: Notice[];
   over: Array<{ id: string; state: string }>;
   acted: string[];
@@ -39,10 +56,13 @@ interface Told {
 }
 
 /** A session with the sentinel on, its chats living nowhere but here: each chat's extension says what it is told. */
-function session(options: { sentinel?: boolean | "ask"; host?: TurriHost } = {}) {
+function session(options: { sentinel?: boolean | "ask"; host?: TurriHost; ignored?: (notice: Notice) => void } = {}) {
   const told = new Map<string, Told>();
   const links: ChatLink[] = [];
+  /** Each chat's session now - and every session each chat had, in order. */
   const sessions = new Map<string, ReturnType<typeof fakeSession>>();
+  const history = new Map<string, Array<ReturnType<typeof fakeSession>>>();
+  const shownBy: string[] = [];
   let core: TurriCore;
   const jobs = createJobRegistry({ onFinish: (job) => core.jobFinished(job) });
   const of = (id: string): Told => {
@@ -54,13 +74,20 @@ function session(options: { sentinel?: boolean | "ask"; host?: TurriHost } = {})
     host: options.host ?? {},
     jobs,
     sentinel: () => options.sentinel ?? true,
+    ...(options.ignored !== undefined ? { ignored: options.ignored } : {}),
     sentinelStart: (job) => ({ severity: "info", summary: `${job.summary} finished - start the sentinel?`, evidence: [], actions: [{ label: "Start the sentinel", task: "" }, { label: "Not this session", task: "" }], job: job.id }),
     extension: (_pi, link) => {
       links.push(link);
       link.live({
         announce: (job: Job) => of(link.id).announced.push(job.summary),
         landed: (job: Job, options) => of(link.id).landed.push({ job: job.summary, tell: options?.tell === true }),
-        brief: async (job, context) => void of(link.id).briefs.push({ job: job.summary, ...context }),
+        // As pi does, the brief starts a turn: the session is at work, the pulse's message its first.
+        brief: async (job, context) => {
+          of(link.id).briefs.push({ job: job.summary, ...context });
+          const made = sessions.get(link.id)!;
+          made.messages.push({ role: "custom", customType: "turri_sentinel_pulse", details: { jobId: job.id } });
+          made.state.isStreaming = true;
+        },
         notice: (notice) => of(link.id).notices.push(notice),
         noticeOver: (notice) => of(link.id).over.push({ id: notice.id, state: notice.state }),
         act: (task) => of(link.id).acted.push(task),
@@ -76,12 +103,24 @@ function session(options: { sentinel?: boolean | "ask"; host?: TurriHost } = {})
       core.extension({} as ExtensionAPI);
       const made = fakeSession();
       sessions.set(chat.id, made);
+      history.set(chat.id, [...(history.get(chat.id) ?? []), made]);
       chat.session = made.session;
+    },
+    async show(chat) {
+      shownBy.push(chat.id);
+      core.showing(chat);
     },
     async dispose() {},
   });
   const sentinel = () => core.chats().find((chat) => chat.role === SENTINEL);
-  return { core, jobs, told: of, links, sessions, sentinel };
+  /** The sentinel's agent done with its turn. */
+  const finish = async () => {
+    const made = sessions.get(sentinel()!.id)!;
+    made.state.isStreaming = false;
+    made.emit("agent_end");
+    await settled();
+  };
+  return { core, jobs, told: of, links, sessions, history, shownBy, sentinel, finish };
 }
 
 const settled = () => new Promise((resolve) => setTimeout(resolve, 20));
@@ -107,7 +146,7 @@ describe("the sentinel", () => {
     const opened = sentinel();
     expect(opened).toMatchObject({ title: SENTINEL, role: SENTINEL, shown: false });
     expect(core.shown()).toBe(mine.id);
-    expect(told(opened!.id).briefs).toEqual([{ job: "app pulse 1", replace: false, asked: "new chat", focused: "new chat" }]);
+    expect(told(opened!.id).briefs).toEqual([{ job: "app pulse 1", asked: "new chat", focused: "new chat" }]);
   });
 
   it("has a pulse that went wrong to itself: the chat the person looks at shows it, its agent not told", async () => {
@@ -154,34 +193,143 @@ describe("the sentinel", () => {
     expect(sentinel()).toBeUndefined();
   });
 
-  it("leaves a check of a module's pulse that went well for the module's next, but looks into one that went wrong to its end", async () => {
-    const { core, jobs, told, sessions, sentinel } = session();
+  it("checks each pulse in a conversation of its own: a new session under the same chat id, the one before stopped and let go", async () => {
+    const changed: Array<[string, AgentSession]> = [];
+    const { core, jobs, told, history, sentinel, finish } = session({ host: { onChatSession: (chat, made) => void changed.push([chat, made]) } });
+    await core.open();
+    const one = jobs.start(pulse("app pulse 1", "app"));
+    await settled();
+    const id = sentinel()!.id;
+    await finish();
+    const two = jobs.start(pulse("app pulse 2", "app"));
+    await settled();
+    expect(sentinel()!.id).toBe(id);
+    expect(history.get(id)).toHaveLength(2);
+    const [first, second] = history.get(id)!;
+    // The pulse's message is the first of each conversation, and nothing of the pulse before is in the second.
+    const pulses = (made: typeof first) => made!.messages.map((message) => (message as { details: { jobId: string } }).details.jobId);
+    expect(pulses(first)).toEqual([one.id]);
+    expect(pulses(second)).toEqual([two.id]);
+    expect(first!.state).toMatchObject({ aborted: 1, disposed: true });
+    expect(core.session(id)).toBe(second!.session);
+    expect(changed).toEqual([[id, second!.session]]);
+    expect(told(id).briefs.map((brief) => brief.job)).toEqual(["app pulse 1", "app pulse 2"]);
+  });
+
+  it("starts the first pulse in the conversation it was opened with", async () => {
+    const { core, jobs, history, sentinel } = session();
+    await core.open();
+    jobs.start(pulse("app pulse 1", "app"));
+    await settled();
+    expect(history.get(sentinel()!.id)).toHaveLength(1);
+  });
+
+  it("keeps the model and thinking its chat had - what the person picked in it stands", async () => {
+    const { core, jobs, sessions, sentinel, finish } = session();
     await core.open();
     jobs.start(pulse("app pulse 1", "app"));
     await settled();
     const id = sentinel()!.id;
+    Object.assign(sessions.get(id)!.state, { model: { id: "picked" }, thinking: "high" });
+    await finish();
+    jobs.start(pulse("app pulse 2", "app"));
+    await settled();
+    expect(sessions.get(id)!.state).toMatchObject({ model: { id: "picked" }, thinking: "high" });
+  });
+
+  it("draws the new conversation on the screen when the sentinel is the chat shown", async () => {
+    const { core, jobs, shownBy, sentinel, finish } = session();
+    await core.open();
+    jobs.start(pulse("app pulse 1", "app"));
+    await settled();
+    const id = sentinel()!.id;
+    await core.show(id);
+    await finish();
+    shownBy.length = 0;
+    jobs.start(pulse("app pulse 2", "app"));
+    await settled();
+    expect(shownBy).toEqual([id]);
+    expect(core.shown()).toBe(id);
+  });
+
+  it("has pulses that finish while it works wait their turn, each then checked from scratch", async () => {
+    const { core, jobs, told, history, sentinel, finish } = session();
+    await core.open();
+    jobs.start(pulse("app pulse 1", "app"));
+    await settled();
+    const id = sentinel()!.id;
+    jobs.start(pulse("web pulse 1", "web"));
+    await settled();
+    jobs.start(pulse("api pulse 1", "api"));
+    await settled();
+    expect(told(id).briefs.map((brief) => brief.job)).toEqual(["app pulse 1"]);
+    await finish();
+    expect(told(id).briefs.map((brief) => brief.job)).toEqual(["app pulse 1", "web pulse 1"]);
+    await finish();
+    expect(told(id).briefs.map((brief) => brief.job)).toEqual(["app pulse 1", "web pulse 1", "api pulse 1"]);
+    expect(history.get(id)!.map((made) => made.messages.length)).toEqual([1, 1, 1]);
+  });
+
+  it("waits for what the person says to it to be answered before a pulse starts afresh", async () => {
+    const { core, jobs, told, sessions, sentinel, finish } = session();
+    await core.open();
+    jobs.start(pulse("app pulse 1", "app"));
+    await settled();
+    const id = sentinel()!.id;
+    await finish();
+    // The person talks to it.
     sessions.get(id)!.state.isStreaming = true;
     jobs.start(pulse("app pulse 2", "app"));
     await settled();
+    expect(told(id).briefs.map((brief) => brief.job)).toEqual(["app pulse 1"]);
+    await finish();
+    expect(told(id).briefs.map((brief) => brief.job)).toEqual(["app pulse 1", "app pulse 2"]);
+  });
+
+  it("leaves a check of a module's pulse that went well for the module's next, but looks into one that went wrong to its end", async () => {
+    const { core, jobs, told, history, sentinel, finish } = session();
+    await core.open();
+    jobs.start(pulse("app pulse 1", "app"));
+    await settled();
+    const id = sentinel()!.id;
+    // A newer pulse of the module: the check of the one that went well stopped, the newer checked afresh at once.
+    jobs.start(pulse("app pulse 2", "app"));
+    await settled();
+    expect(history.get(id)![0]!.state).toMatchObject({ aborted: 1, disposed: true });
+    // Pulses of another module wait - a newer one of it taking the place of one that went well and waits.
     jobs.start(pulse("web pulse 1", "web"));
     await settled();
-    jobs.start(pulse("web pulse 2", "web", "fails"));
+    jobs.start(pulse("web pulse 2", "web"));
     await settled();
-    jobs.start(pulse("web pulse 3", "web"));
+    // One that went wrong replaces the check of one that went well - and is looked into to its end.
+    jobs.start(pulse("app pulse 3", "app", "fails"));
     await settled();
-    expect(told(id).briefs.map((brief) => [brief.job, brief.replace])).toEqual([
-      ["app pulse 1", false],
-      ["app pulse 2", true],
-      ["web pulse 1", false],
-      ["web pulse 2", true],
-      ["web pulse 3", false],
-    ]);
+    jobs.start(pulse("app pulse 4", "app"));
+    await settled();
+    expect(told(id).briefs.map((brief) => brief.job)).toEqual(["app pulse 1", "app pulse 2", "app pulse 3"]);
+    await finish();
+    await finish();
+    expect(told(id).briefs.map((brief) => brief.job)).toEqual(["app pulse 1", "app pulse 2", "app pulse 3", "web pulse 2", "app pulse 4"]);
+  });
+
+  it("lets go of the pulses that waited for it when it is closed", async () => {
+    const { core, jobs, told, sentinel, finish } = session();
+    await core.open();
+    jobs.start(pulse("app pulse 1", "app"));
+    await settled();
+    jobs.start(pulse("web pulse 1", "web"));
+    await settled();
+    await core.close(sentinel()!.id);
+    jobs.start(pulse("api pulse 1", "api"));
+    await settled();
+    await finish();
+    expect(told(sentinel()!.id).briefs.map((brief) => brief.job)).toEqual(["api pulse 1"]);
   });
 });
 
 describe("asking to start the sentinel", () => {
   it("holds every pulse that ends while the person is asked, and gives them all to the sentinel once they say so", async () => {
-    const { core, jobs, told, sentinel } = session({ sentinel: "ask" });
+    const { core, jobs, told, sentinel, finish } = session({ sentinel: "ask" });
     const mine = await core.open();
     jobs.start(pulse("app pulse 1", "app"));
     await settled();
@@ -193,7 +341,11 @@ describe("asking to start the sentinel", () => {
     expect(core.answer(told(mine.id).notices[0]!.id, { action: 0 })).toBe("done");
     await settled();
     expect(told(mine.id).acted).toEqual([]);
+    // Each in turn, in a conversation of its own.
+    expect(told(sentinel()!.id).briefs.map((brief) => brief.job)).toEqual(["app pulse 1"]);
+    await finish();
     expect(told(sentinel()!.id).briefs.map((brief) => brief.job)).toEqual(["app pulse 1", "web pulse 1"]);
+    await finish();
     // Started: the next pulse goes to it without asking.
     jobs.start(pulse("app pulse 2", "app"));
     await settled();
@@ -296,6 +448,36 @@ describe("a notice", () => {
     expect(core.answer(dismissed.id, { dismiss: true })).toBe("dismissed");
     expect(told(mine.id).acted).toHaveLength(2);
     expect(core.answer("nope", { dismiss: true })).toBe("missing");
+  });
+
+  it("refuses to be ignored when it is not ignorable - left open, nothing kept", async () => {
+    const kept: string[] = [];
+    const { core } = session({ ignored: (notice) => void kept.push(notice.id) });
+    await core.open();
+    const broken = core.notice(input())!;
+    expect(core.answer(broken.id, { ignore: true })).toBe("refused");
+    expect(core.notices().map((notice) => notice.id)).toEqual([broken.id]);
+    expect(kept).toEqual([]);
+  });
+
+  it("is never ignorable when it asks whether to start the sentinel", async () => {
+    const { core } = session();
+    await core.open();
+    const question = core.notice({ ...input(), kind: "sentinel-start", ignorable: true })!;
+    expect(question.ignorable).toBeUndefined();
+    expect(core.answer(question.id, { ignore: true })).toBe("refused");
+  });
+
+  it("ignored, does nothing in the chat and ends as ignored - kept for the sentinel", async () => {
+    const kept: string[] = [];
+    const { core, told } = session({ ignored: (notice) => void kept.push(notice.id) });
+    const mine = await core.open();
+    const gap = core.notice({ ...input(), ignorable: true })!;
+    expect(core.answer(gap.id, { ignore: true })).toBe("ignored");
+    expect(told(mine.id).acted).toEqual([]);
+    expect(told(mine.id).over).toEqual([{ id: gap.id, state: "ignored" }]);
+    expect(core.notices()).toEqual([]);
+    expect(kept).toEqual([gap.id]);
   });
 
   it("says what is wrong, what shows it and what can be done, for an agent", () => {

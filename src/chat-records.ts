@@ -64,6 +64,11 @@ function write(project: string, file: ChatsFile): void {
   }
 }
 
+/** A chat's saved conversation it no longer has - the sentinel's, before a pulse's fresh one - deleted, unless kept. */
+export function forgetSessionFile(file: string, options: { keep?: boolean } = {}): void {
+  if (options.keep !== true) deleteSession(file);
+}
+
 function deleteSession(file: string): void {
   try {
     rmSync(file, { force: true });

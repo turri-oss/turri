@@ -58,6 +58,8 @@ export type LedgerEvent =
   // What the sentinel - or turri itself - put to the person, and how it ended: answered, dismissed, superseded.
   | { kind: "notice.put"; notice: string; severity: string; module?: string }
   | { kind: "notice.over"; notice: string; state: string }
+  // The sentinel on a pulse, in a conversation of its own - in place of its check of `replaced`, a pulse of the same module.
+  | { kind: "sentinel.checking"; module?: string; replaced?: string }
   // The sentinel done with a pulse: whether what it checked holds.
   | { kind: "sentinel.concluded"; verdict: string; module?: string }
   | { kind: "chat.closed" }

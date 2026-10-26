@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import type { AgentSession, ExtensionAPI, ExtensionContext, ExtensionFactory, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { currentChat, inChat, type ChatScope } from "./chat-scope.ts";
-import { adoptRun, forgetChat, recordRun, type ChatRecord, type RunRecord } from "./chat-records.ts";
+import { adoptRun, forgetChat, forgetSessionFile, recordRun, type ChatRecord, type RunRecord } from "./chat-records.ts";
 import { createChatUi, type ChatUi } from "./chat-ui.ts";
 import { debugMode, type SentinelSetting } from "./config.ts";
 import type { AskUserIO } from "./ask.ts";
@@ -28,9 +28,10 @@ import { newNotice, noticeTask, SENTINEL, sentinelStartChoice, wentWrong, type C
  *
  * With the project's sentinel on (sentinel.ts), every finished pulse goes to the sentinel - a chat of the session's own,
  * opened in the background with the first, and again after it is closed - and the chat the person looks at shows only
- * that it landed. What the sentinel finds wrong it puts to the person as a notice, in the chat they look at. Under
- * `sentinel: ask`, the person is asked first - a notice of turri's own, before it first opens in the session - the pulses
- * that end meanwhile held until they answer.
+ * that it landed. The sentinel checks each pulse in a conversation of its own: its chat keeps its id, and is given a new
+ * session for each pulse, one at a time. What the sentinel finds wrong it puts to the person as a notice, in the chat
+ * they look at. Under `sentinel: ask`, the person is asked first - a notice of turri's own, before it first opens in the
+ * session - the pulses that end meanwhile held until they answer.
  */
 
 /** The most chats a session has open at once. */
@@ -71,6 +72,11 @@ export interface TurriHost {
    * work: what it returns is what is sent. For a host that needs to change anything else.
    */
   systemPrompt?(prompt: string): string;
+  /**
+   * A chat's session replaced by a new one, under the same id: the sentinel's, a fresh conversation for each pulse it
+   * checks - told before the pulse is put to it. The host follows this session in place of the one it had.
+   */
+  onChatSession?(chat: string, session: AgentSession): void;
   /** The sentinel is done with a pulse - told to the chat it names, whose agent says so. */
   onConcluded?(conclusion: Conclusion & { chat: string }): void;
   /** What the sentinel puts to the person - and, `kind: "sentinel-start"`, whether to start it: the host draws it in the chat it names, and answers it with `answer`. */
@@ -94,8 +100,8 @@ export interface ChatInstance {
    * sentinel does with it, to tell the person and do nothing more.
    */
   landed(job: Job, options?: { tell?: boolean }): void;
-  /** The sentinel's: a pulse ended - its agent told, at once, or after what it does now; `replace`, what it does now stopped. */
-  brief(job: Job, context: { asked?: string; focused?: string; replace: boolean }): Promise<void>;
+  /** The sentinel's: a pulse ended - its agent, in a conversation of its own for this pulse, told of it. */
+  brief(job: Job, context: { asked?: string; focused?: string }): Promise<void>;
   /** A notice put in the chat: drawn, and - in the terminal - put to the person once the chat is idle. */
   notice(notice: Notice): void;
   /** A notice is over: its dialog closed, if it is open. */
@@ -206,8 +212,11 @@ export interface TurriCore {
   concluded(conclusion: Conclusion): string | undefined;
   /** The notices put to the person and not yet answered. */
   notices(): Notice[];
-  /** A notice answered: what it asked done in the chat it is in, or dismissed. */
-  answer(id: string, answer: NoticeAnswer): "done" | "dismissed" | "missing" | "over";
+  /**
+   * A notice answered: what it asked done in the chat it is in, dismissed, or - an ignorable one - ignored for good.
+   * `refused`: `ignore` on one that is not ignorable.
+   */
+  answer(id: string, answer: NoticeAnswer): "done" | "dismissed" | "ignored" | "refused" | "missing" | "over";
   /** For the extension: the jobs changed - every chat draws them again. */
   jobsChanged(): void;
   /** The chat whose work this is, else the one shown: its instance. */
@@ -233,6 +242,8 @@ export interface CoreOptions {
   sentinelStart?: (job: Job) => NoticeInput;
   /** The person chose for the project, asked whether to start the sentinel: `sentinel:` written. */
   setSentinel?: (on: boolean) => void;
+  /** The person ignored a notice for good: kept in the sentinel's guidance, for every conversation after. */
+  ignored?: (notice: Notice) => void;
 }
 
 /** A chat's session, as stopping what it does reaches it. */
@@ -292,8 +303,12 @@ export function createChats(options: CoreOptions): TurriCore {
   let notices: Array<[string, "info" | "warning" | "error"]> = [];
   /** What the sentinel put to the person, and turri itself, this session: open until answered or superseded. */
   const open: Notice[] = [];
-  /** The pulse the sentinel is on now, while its agent works: a newer one of the same module replaces a check of one that went well. */
-  let sentinelOnJob: { module: string | undefined; wrong: boolean } | undefined;
+  /** The pulse the sentinel's conversation is on, from its brief until its agent is done: a newer one of the same module replaces a check of one that went well. */
+  let checking: { job: Job; wrong: boolean } | undefined;
+  /** Pulses that finished while the sentinel was at work: each checked in turn, in a conversation of its own. */
+  const waiting: Job[] = [];
+  /** What the sentinel is given is given one pulse at a time: its conversations made, and its pulses put to them, in order. */
+  let sentinelWork: Promise<unknown> = Promise.resolve();
   /**
    * Under `sentinel: ask`, whether the person said to start the sentinel this session: asked - the notice `asking` open,
    * the pulses that ended meanwhile `held` - started, or not this session.
@@ -377,10 +392,14 @@ export function createChats(options: CoreOptions): TurriCore {
         changed();
       } else if (event.type === "agent_end") {
         chat.working = false;
-        if (chat.role === SENTINEL) sentinelOnJob = undefined;
         if (shownId !== chat.id) chat.unread = true;
         persist();
         changed();
+        // Done with its pulse - or with what the person said to it: the next pulse waiting, in a conversation of its own.
+        if (chat.role === SENTINEL && (event as { willRetry?: boolean }).willRetry !== true) {
+          checking = undefined;
+          toSentinel(() => nextPulse(chat));
+        }
       } else if (event.type === "session_info_changed") {
         persist();
         changed();
@@ -458,6 +477,11 @@ export function createChats(options: CoreOptions): TurriCore {
       }
       const recorded = run.chats.find((kept) => kept.id === id);
       chats.splice(chats.indexOf(chat), 1);
+      // Closed, the sentinel is let go with what it had to check: the next pulse that finishes opens it again.
+      if (chat.role === SENTINEL) {
+        checking = undefined;
+        waiting.length = 0;
+      }
       // The question whether to start the sentinel was in it: put again in the chat the person looks at now.
       if (asking?.chat === id) askAgain();
       chat.unsubscribe?.();
@@ -586,7 +610,9 @@ export function createChats(options: CoreOptions): TurriCore {
       if (input.module !== undefined) {
         for (const older of open.filter((notice) => notice.state === "open" && notice.module === input.module)) over(older, "superseded");
       }
-      const notice = newNotice(input, target.id);
+      // Only the sentinel's own may be ignored: never the question whether to start it.
+      const { ignorable, ...rest } = input;
+      const notice = newNotice(ignorable === true && input.kind !== "sentinel-start" ? input : rest, target.id);
       open.push(notice);
       if (target.id !== shownId) target.unread = true;
       inChat(target.scope, () => record({ kind: "notice.put", notice: notice.id, severity: notice.severity, ...(notice.module !== undefined ? { module: notice.module } : {}) }, { project: cwd }));
@@ -633,6 +659,17 @@ export function createChats(options: CoreOptions): TurriCore {
       const notice = open.find((candidate) => candidate.id === id);
       if (notice === undefined) return "missing";
       if (notice.state !== "open") return "over";
+      // Left as the build has it, for good: nothing done in the chat, and the sentinel told not to raise it again.
+      if ("ignore" in answer) {
+        if (notice.ignorable !== true) return "refused";
+        try {
+          options.ignored?.(notice);
+        } catch (error) {
+          core.notify(`The sentinel's guidance could not be written: ${error instanceof Error ? error.message : String(error)}`, "warning");
+        }
+        over(notice, "ignored");
+        return "ignored";
+      }
       if (notice.kind === "sentinel-start") return answerStart(notice, answer);
       const task = noticeTask(notice, answer);
       over(notice, "dismiss" in answer ? "dismissed" : "steer" in answer ? "steered" : "accepted");
@@ -763,8 +800,8 @@ export function createChats(options: CoreOptions): TurriCore {
   /**
    * A pulse ended, with the sentinel on: the chat the person looks at says so - its agent told of one that landed, to
    * tell the person it landed and what the sentinel does with it, and nothing more; of one that went wrong, not, the
-   * sentinel's notice being what it hears of it - and the sentinel is told, opened in the background when it is not open. A newer pulse of a module replaces a check of the
-   * module's last pulse that went well; one that went wrong is looked into to its end.
+   * sentinel's notice being what it hears of it - and the sentinel is given it, opened in the background when it is not
+   * open.
    */
   function sentinelFinished(job: Job): void {
     const asked = chats.find((chat) => chat.id === job.chat && chat.role !== SENTINEL);
@@ -778,7 +815,7 @@ export function createChats(options: CoreOptions): TurriCore {
       }
     }
     changed();
-    void (async () => {
+    toSentinel(async () => {
       let sentinel = sentinelChat();
       if (sentinel === undefined) {
         try {
@@ -792,21 +829,126 @@ export function createChats(options: CoreOptions): TurriCore {
         }
       }
       if (sentinel?.instance === undefined) return;
-      const busy = sentinel.session?.isStreaming === true;
-      const replace = busy && sentinelOnJob !== undefined && !sentinelOnJob.wrong && sentinelOnJob.module !== undefined && sentinelOnJob.module === job.module;
-      sentinelOnJob = { module: job.module, wrong: wentWrong(job) };
-      if (sentinel.id !== shownId) sentinel.unread = true;
+      await takePulse(sentinel, job);
+    });
+  }
+
+  /** The sentinel's work, after what it was given before. */
+  function toSentinel(work: () => Promise<void> | void): void {
+    sentinelWork = sentinelWork.then(work).catch((error: unknown) => {
+      core.notify(`The sentinel: ${error instanceof Error ? error.message : String(error)}`, "warning");
+    });
+  }
+
+  /** Whether the sentinel is at work: on a pulse - its turn starts as it is told of one - or on what the person said to it. */
+  const sentinelBusy = (sentinel: ChatState) => sentinel.session?.isStreaming === true;
+
+  /**
+   * A finished pulse, for the sentinel: checked now when it is free. Busy, a newer pulse of a module replaces a check of
+   * the module's last pulse that went well - and a pulse of it that went well and waits - and one that went wrong is
+   * looked into to its end; the rest wait their turn.
+   */
+  function takePulse(sentinel: ChatState, job: Job): Promise<void> | void {
+    if (!sentinelBusy(sentinel)) return check(sentinel, job);
+    const sameModule = (other: Job) => job.module !== undefined && other.module === job.module;
+    if (checking !== undefined && !checking.wrong && sameModule(checking.job)) return check(sentinel, job, checking.job);
+    const older = waiting.findIndex((other) => sameModule(other) && !wentWrong(other));
+    if (older !== -1) waiting.splice(older, 1, job);
+    else waiting.push(job);
+  }
+
+  /** The sentinel free again: the next pulse that waits, checked. */
+  function nextPulse(sentinel: ChatState): Promise<void> | void {
+    if (!chats.includes(sentinel) || sentinelBusy(sentinel)) return;
+    const job = waiting.shift();
+    if (job !== undefined) return check(sentinel, job);
+  }
+
+  /**
+   * The sentinel on a pulse, from scratch: a conversation of its own - its prompt, the project's guidance and this
+   * pulse's brief, nothing of the pulses before it - in place of the one it had, stopped when it was on `replacing`.
+   */
+  async function check(sentinel: ChatState, job: Job, replacing?: Job): Promise<void> {
+    checking = { job, wrong: wentWrong(job) };
+    const module = job.module;
+    inChat(sentinel.scope, () =>
+      record({ kind: "sentinel.checking", ...(module !== undefined ? { module } : {}), ...(replacing !== undefined ? { replaced: replacing.id } : {}) }, { project: cwd, job: job.id }),
+    );
+    const session = sentinel.session;
+    if (session !== undefined && (session.messages.length > 0 || session.isStreaming)) await freshConversation(sentinel);
+    if (sentinel.id !== shownId) sentinel.unread = true;
+    const asked = chats.find((chat) => chat.id === job.chat && chat.role !== SENTINEL && chat.instance !== undefined);
+    const where = personFacing(asked);
+    try {
+      await sentinel.instance!.brief(job, {
+        ...(asked !== undefined ? { asked: titleFor(asked) } : {}),
+        ...(where !== undefined ? { focused: titleFor(where) } : {}),
+      });
+    } catch (error) {
+      core.notify(`The sentinel could not be told of ${job.id}: ${error instanceof Error ? error.message : String(error)}`, "warning");
+      checking = undefined;
+    }
+    changed();
+  }
+
+  /**
+   * The sentinel's chat given a new session, under the same id: what it does now stopped, and what it said let go - its
+   * saved conversation deleted outside debug mode. The model and thinking it had carry over: what the person picked in
+   * it stands. Shown in the terminal, the screen is drawn from the new one. A new session that cannot be made leaves it
+   * the one it had.
+   */
+  async function freshConversation(chat: ChatState): Promise<void> {
+    const old = { session: chat.session!, services: chat.services, instance: chat.instance };
+    chat.unsubscribe?.();
+    chat.unsubscribe = undefined;
+    try {
+      await old.session.abort();
+    } catch {
+      /* stopped already */
+    }
+    chat.working = false;
+    const model = old.session.model;
+    const thinking = old.session.thinkingLevel;
+    // Made as a chat is opened, one at a time: its extension built while it is the one attaching.
+    const made = opening.then(async () => {
+      attaching = chat;
       try {
-        await sentinel.instance.brief(job, {
-          ...(asked !== undefined ? { asked: titleFor(asked) } : {}),
-          ...(where !== undefined ? { focused: titleFor(where) } : {}),
-          replace,
-        });
-      } catch (error) {
-        core.notify(`The sentinel could not be told of ${job.id}: ${error instanceof Error ? error.message : String(error)}`, "warning");
+        await driver!.create(chat, undefined);
+      } finally {
+        attaching = undefined;
       }
-      changed();
-    })();
+    });
+    opening = made.catch(() => undefined);
+    try {
+      await made;
+    } catch (error) {
+      Object.assign(chat, old);
+      follow(chat);
+      core.notify(`The sentinel goes on in the conversation it had - a new one could not be started: ${error instanceof Error ? error.message : String(error)}`, "warning");
+      return;
+    }
+    const fresh = chat.session!;
+    try {
+      if (model !== undefined && fresh.model !== model) await fresh.setModel(model);
+      if (thinking !== undefined) fresh.setThinkingLevel(thinking);
+    } catch {
+      /* the model its session started on, then */
+    }
+    follow(chat);
+    if (shownId === chat.id) await driver?.show?.(chat, undefined);
+    try {
+      old.session.dispose();
+    } catch {
+      /* let go already */
+    }
+    if (old.session.sessionFile !== undefined && old.session.sessionFile !== fresh.sessionFile) forgetSessionFile(old.session.sessionFile, { keep: debugMode(cwd) });
+    try {
+      host.onChatSession?.(chat.id, fresh);
+    } catch {
+      /* a host that throws still has the chat's new session in session(id) */
+    }
+    persist();
+    changed();
   }
 
   return core;
