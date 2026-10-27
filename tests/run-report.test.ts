@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { syncTestPlainFiles } from "./test-plain.ts";
+import { syncTestPlainFiles, testPlainFile } from "./test-plain.ts";
 import { overrideConfig, projectModels, readProjectConfig, booleanOption, roleModel } from "../src/config.ts";
 import { configKeyOptions, parseArgs } from "../src/cli-options.ts";
 import { headlessOptions, moduleStates } from "../src/loop-cli.ts";
@@ -217,8 +217,11 @@ function spec(name: string, specs: string[], requires?: string): string {
 const item = (text: string, extra: object = {}) => ({ id: idOf(text), markdown: text, ...extra });
 
 describe("the functional specs completed", () => {
-  it("counts each module's in the furthest-built codebase - what its record has as the spec has it now", () => {
+  it("counts each module's in the furthest-built codebase - what its record has as the spec has it now - and those with scenarios, which are tested", () => {
     spec("base", ["Base one.", "Base two."]);
+    // app's first has a scenario: it is the one tested.
+    mkdirSync(join(dir, "tests", "app"), { recursive: true });
+    writeFileSync(join(dir, "tests", "app", "app-one.plain"), testPlainFile("app", "app-one", { acceptance: ["# works\nIt works."] }));
     const app = spec("app", ["App one.", "App two.", "App three."], "base");
     const chain = resolveRequiresChain(app, [], undefined, { allowNoFunctionalities: true });
     // app's codebase: built on all of base, and its own first two - the third not landed yet.
@@ -227,14 +230,17 @@ describe("the functional specs completed", () => {
     writeCodeRecord(chain[1]!.buildDir, { ...tree, "functional specs": own.slice(0, 2) });
     mkdirSync(join(chain[1]!.buildDir, "src"), { recursive: true });
     // Conformance tests written for app's first.
-    writeTestsRecord(join(dir, "plain_modules", "app", "tests"), { "functional specs": [item("App one.")] });
+    writeTestsRecord(join(dir, "plain_modules", "app", "tests"), { "functional specs": [item("App one.", { acceptance_tests: [{ id: "works", text: "It works." }] })] });
 
     const [counted] = functionalityCompletion(app);
     expect(counted!.codebase).toBe(chain[1]!.buildDir);
     expect(counted!.modules).toEqual([
-      { module: "base", specified: 2, completed: 2, conformanceTested: 0, tested: [], incomplete: [] },
-      { module: "app", specified: 3, completed: 2, conformanceTested: 1, tested: ["app-one"], incomplete: ["app-three"] },
+      { module: "base", specified: 2, withScenarios: 0, completed: 2, conformanceTested: 0, tested: [], incomplete: [] },
+      { module: "app", specified: 3, withScenarios: 1, completed: 2, conformanceTested: 1, tested: ["app-one"], incomplete: ["app-three"] },
     ]);
+    // Its scenario changed: its tests are written for an earlier one, and it is not counted as tested.
+    writeFileSync(join(dir, "tests", "app", "app-one.plain"), testPlainFile("app", "app-one", { acceptance: ["# works\nIt works well."] }));
+    expect(functionalityCompletion(app)[0]!.modules[1]).toMatchObject({ withScenarios: 1, conformanceTested: 0, tested: [] });
 
     // base's second spec says something else now: what app's code has of it is not what the spec says.
     spec("base", ["Base one.", "Base two, changed."]);
@@ -243,7 +249,7 @@ describe("the functional specs completed", () => {
 
   it("counts nothing completed where nothing is built", () => {
     const app = spec("app", ["App one."]);
-    expect(functionalityCompletion(app)[0]!.modules).toEqual([{ module: "app", specified: 1, completed: 0, conformanceTested: 0, tested: [], incomplete: ["app-one"] }]);
+    expect(functionalityCompletion(app)[0]!.modules).toEqual([{ module: "app", specified: 1, withScenarios: 0, completed: 0, conformanceTested: 0, tested: [], incomplete: ["app-one"] }]);
   });
 });
 
@@ -477,7 +483,7 @@ describe("turri regenerate, unattended", () => {
     expect(written.build_dir_export).toMatchObject({ exported: true, module: "app" });
     expect(readdirSync(join(dir, "out", "build"))).toEqual(["main.py"]);
     expect(written.outcome).toMatchObject({ status: "incomplete", exit_code: 1, modules: [{ module: "app", state: "start_over_needed" }] });
-    expect(written.functionalities.total).toEqual({ specified: 2, completed: 1, conformance_tested: 0 });
+    expect(written.functionalities.total).toEqual({ specified: 2, with_scenarios: 0, completed: 1, conformance_tested: 0 });
     expect(written.pulses.counts.total).toBe(0);
   });
 

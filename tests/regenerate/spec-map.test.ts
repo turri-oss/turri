@@ -28,7 +28,17 @@ afterEach(() => {
 });
 
 const item = (markdown: string) => ({ markdown });
-const tree = (sections: Record<string, string[]>): MarshalledPlainSource => Object.fromEntries(Object.entries(sections).map(([key, items]) => [key, items.map(item)]));
+/** A functional spec's func-id from its text: its first words but the filler - "A user can log in." is `log-in`. */
+const funcIdOf = (text: string) =>
+  text.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter((word) => word !== "" && !["a", "an", "the", "user", "can"].includes(word)).slice(0, 2).join("-");
+/** A tree of the sections given; a functional spec is its text - its func-id taken from it - or [func-id, text]. */
+const tree = (sections: Record<string, Array<string | [string, string]>>): MarshalledPlainSource =>
+  Object.fromEntries(
+    Object.entries(sections).map(([key, items]) => [
+      key,
+      items.map((entry) => (key === FUNCTIONAL_REQUIREMENTS ? (typeof entry === "string" ? { id: funcIdOf(entry), markdown: entry } : { id: entry[0], markdown: entry[1] }) : item(entry as string))),
+    ]),
+  );
 const id = (text: string) => text;
 /** A style that shows what is struck, added and removed as text. */
 const style: TranscriptStyle = {
@@ -91,9 +101,17 @@ describe("the regeneration from the files", () => {
     ]);
   });
 
+  it("marks the conformance tests of a functional spec whose scenario changed as written for an earlier text - matched by its func-id", () => {
+    const withScenario = (text: string): MarshalledPlainSource => ({ [FUNCTIONAL_REQUIREMENTS]: [{ id: "say-hello", markdown: "Say hello.", acceptance_tests: [{ id: "greets", text }] }] }) as MarshalledPlainSource;
+    const record = tree({ [FUNCTIONAL_REQUIREMENTS]: [["say-hello", "Say hello."]] });
+    const testsOf = (spec: MarshalledPlainSource) => page(spec, record, withScenario("It says hello.")).items.map((entry) => [entry.funcId, entry.tests]);
+    expect(testsOf(withScenario("It says hello."))).toEqual([["say-hello", "now"]]);
+    expect(testsOf(withScenario("It says hello loudly."))).toEqual([["say-hello", "older"]]);
+  });
+
   it("marks the conformance tests of a functional spec regenerated again as written for an earlier build until they are written again", () => {
     const spec = tree({ [FUNCTIONAL_REQUIREMENTS]: ["- Say hello.", "- Say goodbye."] });
-    const tested: MarshalledPlainSource = { [FUNCTIONAL_REQUIREMENTS]: [{ markdown: "- Say hello.", frid: "1", regenerate_again: true }, { markdown: "- Say goodbye.", frid: "2" }] };
+    const tested: MarshalledPlainSource = { [FUNCTIONAL_REQUIREMENTS]: [{ id: "say-hello", markdown: "- Say hello.", regenerate_again: true }, { id: "say-goodbye", markdown: "- Say goodbye." }] };
     const items = page(spec, spec, tested).items.filter((entry) => entry.section === FUNCTIONAL_REQUIREMENTS);
     expect(items.map((entry) => [entry.text, entry.tests])).toEqual([
       ["- Say hello.", "older"],
@@ -227,7 +245,7 @@ describe("the plan laid over the map", () => {
     // Nothing is written to the right of an item: where it stands is in its mark, and in its lines once opened.
     const lines = specMapLines([marked!], createSpecMapState(), 160, style).lines;
     const row = lines.findIndex((line) => line.includes("- Log in."));
-    expect(lines[row]!.trimEnd().endsWith("- Log in.")).toBe(true);
+    expect(lines[row]!.trimEnd().endsWith("log-in  - Log in.  not tested")).toBe(true);
     expect(lines[row]).toMatch(/^ {3}! {4}│ /);
     // Under the first item that needs the person: what for, and how to go about it.
     expect(lines[row + 1]).toBe(`${" ".repeat(8)}│ needs you - pulse 3 didn't land · d to talk it through in the chat`);
@@ -254,44 +272,44 @@ describe("the plan laid over the map", () => {
 
   it("spins beside each functional spec a running conformance pulse writes tests for - its acceptance tests changed too", () => {
     const first = page(tree({ [FUNCTIONAL_REQUIREMENTS]: ["- Register.", "- Log in."] }), tree({ [FUNCTIONAL_REQUIREMENTS]: ["- Register.", "- Log in."] }));
-    const spec = (markdown: string, frid: string, tests: string[]) => JSON.stringify({ acceptance_tests: tests.map((test) => ({ markdown: test })), frid, markdown });
+    const spec = (markdown: string, id: string, tests: string[]) => JSON.stringify({ acceptance_tests: tests.map((text, index) => ({ id: `t${index + 1}`, text })), id, markdown });
     const conformance = (before: string[], after: string[], extra = ""): MapPulse => ({
       number: 2, title: "conformance", track: "conformance", running: true, rowId: "job2",
       before: `["${DEFINITIONS}"]\n${extra}["${FUNCTIONAL_REQUIREMENTS}"]\n${before.join("\n")}\n`,
       after: `["${DEFINITIONS}"]\n["${FUNCTIONAL_REQUIREMENTS}"]\n${after.join("\n")}\n`,
     });
-    // Log in's acceptance tests changed, its text did not: its tests are written again.
-    const changed = conformance([spec("- Register.", "1", []), spec("- Log in.", "2", ["- Wrong password gives 401."])], [spec("- Register.", "1", []), spec("- Log in.", "2", ["- Wrong password gives 403."])]);
+    // Log in's acceptance scenario changed, its text did not: its tests are written again.
+    const changed = conformance([spec("- Register.", "register", ["Signs up."]), spec("- Log in.", "log-in", ["Wrong password gives 401."])], [spec("- Register.", "register", ["Signs up."]), spec("- Log in.", "log-in", ["Wrong password gives 403."])]);
     let [marked] = markSpecMap([first], { files: [], codebases: [codebase(first, { pulses: [changed] })] });
     expect(marked!.items.map((entry) => [entry.text, entry.testing === true])).toEqual([["- Register.", false], ["- Log in.", true]]);
     expect(marked!.items.map(rungOf)).toEqual(["regenerated", "validating"]);
     // The count is of all the module's pulses; what the running one does comes after it.
     expect(marked!.status).toBe("pulse 2 of 2 regenerating · conformance tests");
     // Only a definition changed: every one is tested again.
-    const definitions = conformance([spec("- Register.", "1", []), spec("- Log in.", "2", [])], [spec("- Register.", "1", []), spec("- Log in.", "2", [])], `{"markdown":"- :User: is a person."}\n`);
+    const definitions = conformance([spec("- Register.", "register", ["Signs up."]), spec("- Log in.", "log-in", ["Logs in."])], [spec("- Register.", "register", ["Signs up."]), spec("- Log in.", "log-in", ["Logs in."])], `{"markdown":"- :User: is a person."}\n`);
     [marked] = markSpecMap([first], { files: [], codebases: [codebase(first, { pulses: [definitions] })] });
     expect(marked!.items.every((entry) => entry.testing === true)).toBe(true);
   });
 
-  it("knows the conformance pulse planned to write each functional spec's tests - planned from trees, or scheduled ahead of its code - and draws the spec regenerated, unnumbered", () => {
+  it("knows the conformance pulse planned to write each functional spec's tests - planned from trees, or following the code still to build - and draws the spec regenerated, unnumbered", () => {
     const first = page(
       tree({ [FUNCTIONAL_REQUIREMENTS]: ["- Register.", "- Log in.\n  - With a password.", "- Log out."] }),
       tree({ [FUNCTIONAL_REQUIREMENTS]: ["- Register.", "- Log in.\n  - With a password.", "- Log out."] }),
     );
-    const spec = (markdown: string, frid: string) => JSON.stringify({ acceptance_tests: [], frid, markdown });
+    const spec = (markdown: string, id: string) => JSON.stringify({ acceptance_tests: [{ id: "works", text: "It works." }], id, markdown });
     const planned: MapPulse = {
-      number: 4, title: "fs 1", track: "conformance", running: false, rowId: "planned-app-1",
+      number: 4, title: "app:register", track: "conformance", running: false, rowId: "planned-app-1",
       before: `["${FUNCTIONAL_REQUIREMENTS}"]\n`,
-      after: `["${FUNCTIONAL_REQUIREMENTS}"]\n${spec("- Register.", "1")}\n`,
+      after: `["${FUNCTIONAL_REQUIREMENTS}"]\n${spec("- Register.", "register")}\n`,
     };
-    // Scheduled by conform before its code is built: no trees, its functional specs named by their first line.
-    const scheduled: MapPulse = { number: 12, title: "Log in.", track: "conformance", running: false, rowId: "planned-app-2", before: "", after: "", specs: ["Log in."] };
+    // Following the code still to build: no trees, its functional specs named module:func-id.
+    const scheduled: MapPulse = { number: 12, title: "conformance tests", track: "conformance", running: false, rowId: "planned-app-2", before: "", after: "", specs: ["app:log-in"] };
     const [marked] = markSpecMap([first], { files: [], codebases: [codebase(first, { pulses: [planned, scheduled] })] });
     expect(marked!.items.map((entry) => [entry.text.split("\n")[0], entry.testsPulse?.number])).toEqual([["- Register.", 4], ["- Log in.", 12], ["- Log out.", undefined]]);
     const lines = specMapLines([marked!], createSpecMapState(), 100, style).lines;
     // A number moves whenever the plan is made again: the row shows where the spec stands, its pulse once opened.
-    expect(lines.find((line) => line.includes("- Register."))).toMatch(/^[ ›] {2}◇ {4}│ - Register\./);
-    expect(lines.find((line) => line.includes("- Log in."))).toMatch(/^ {3}◇ {4}│ - Log in\./);
+    expect(lines.find((line) => line.includes("- Register."))).toMatch(/^[ ›] {2}◇ {4}│ register {2}- Register\./);
+    expect(lines.find((line) => line.includes("- Log in."))).toMatch(/^ {3}◇ {4}│ log-in {2}- Log in\./);
   });
 
   it("marks a test req from the conformance track: followed by the tests, being written for, or not yet - none where nothing is tested", () => {
@@ -312,14 +330,17 @@ describe("the plan laid over the map", () => {
     expect(reqs(markSpecMap([first], { files: [], codebases: [codebase(first, { pulses: [pulse] })] })[0]!)).toEqual(["built", "regenerating"]);
   });
 
-  it("shows test reqs only where conformance tests are on - by the config, or asked for this session", () => {
-    const spec = tree({ [TEST_REQUIREMENTS]: ["- Use pytest."], [FUNCTIONAL_REQUIREMENTS]: ["- Say hello."] });
-    const off = { ...page(spec, null), conformance: false };
-    const testReqs = (marked: MarkedPage) => marked.items.filter((entry) => entry.section === TEST_REQUIREMENTS).length;
-    expect(testReqs(markSpecMap([off], noPlan)[0]!)).toBe(0);
-    // The loop's word wins: conform turned them on for this session.
-    expect(testReqs(markSpecMap([off], { files: [], codebases: [codebase(off, { conformance: true })] })[0]!)).toBe(1);
-    expect(testReqs(markSpecMap([page(spec, null)], { files: [], codebases: [codebase(page(spec, null), { conformance: false })] })[0]!)).toBe(0);
+  it("always shows the test reqs - as not used, and saying so once, where no functional spec of the module has scenarios", () => {
+    const spec = tree({ [TEST_REQUIREMENTS]: ["- Use pytest.", "- Run in a container."], [FUNCTIONAL_REQUIREMENTS]: ["- Say hello."] });
+    const unused = { ...page(spec, null), conformance: false };
+    const [marked] = markSpecMap([unused], noPlan);
+    const reqs = marked!.items.filter((entry) => entry.section === TEST_REQUIREMENTS);
+    expect(reqs.map((entry) => [entry.mark, entry.unused])).toEqual([["none", true], ["none", true]]);
+    const lines = specMapLines([marked!], createSpecMapState(), 120, style).lines;
+    expect(lines.filter((line) => line.includes("not used: no scenarios"))).toHaveLength(1);
+    expect(lines.find((line) => line.includes("- Use pytest."))).toContain("not used: no scenarios");
+    // Used where one has scenarios: marked from the conformance track.
+    expect(markSpecMap([{ ...page(spec, null), conformance: true }], noPlan)[0]!.items.filter((entry) => entry.section === TEST_REQUIREMENTS).every((entry) => entry.unused === undefined)).toBe(true);
   });
 
   it("says what a module waits for", () => {
@@ -391,21 +412,23 @@ describe("the regeneration drawn", () => {
     expect(text).not.toContain("used by");
   });
 
-  it("opens a functional spec's acceptance tests as the spec has them - nested under it as deep as its sub-bullets, under a heading drawn as a section's", () => {
+  it("opens a functional spec's scenarios as its test plain file has them - each kind under a heading drawn as a section's, each scenario under its id - and says nothing of tests where it has none", () => {
     const spec: MarshalledPlainSource = {
-      [FUNCTIONAL_REQUIREMENTS]: [{ markdown: "- Patch the records.\n    - Lookups first.", acceptance_tests: [{ id: "lookup", text: "A lookup becomes an `@odata.bind` entry." }, { id: "empty-record", text: "An empty record patches nothing." }] }],
+      [FUNCTIONAL_REQUIREMENTS]: [{ id: "patch", markdown: "Patch the records.\n- Lookups first.", conformance_tests: [{ id: "patches", text: "A record is patched." }], acceptance_tests: [{ id: "lookup", text: "A lookup becomes an `@odata.bind` entry." }, { id: "empty-record", text: "An empty record patches nothing." }] }],
     } as MarshalledPlainSource;
     const [marked] = markSpecMap([page(spec, spec)], noPlan);
     const state = createSpecMapState();
     for (const entry of marked!.items) state.open.add(`${marked!.plainFile}\n${entry.key}`);
     const painted: TranscriptStyle = { ...style, diff: { ...PLAIN_PAINT, syntax: (role, text) => (role === "section" ? `<section>${text}</section>` : text) } };
     const lines = specMapLines([marked!], state, 120, painted).lines;
+    expect(lines.find((line) => line.includes("Patch the records."))).toContain("│ patch  Patch the records.");
+    expect(lines.join("\n")).not.toContain("not tested");
+    const conformance = lines.findIndex((line) => line.includes("conformance tests"));
+    expect(lines[conformance - 1]!.trimEnd()).toMatch(/│$/);
+    expect(lines.slice(conformance, conformance + 3)).toEqual(["        │ <section>***conformance tests***</section>", "        │ # patches", "        │ A record is patched."]);
     const heading = lines.findIndex((line) => line.includes("acceptance tests"));
-    expect(lines[heading - 1]!.trimEnd()).toMatch(/│$/);
-    expect(lines[heading]).toContain("│     <section>***acceptance tests***</section>");
-    expect(lines[heading + 1]).toContain("│     A lookup becomes an `@odata.bind` entry.");
-    expect(lines[heading + 2]).toContain("│     An empty record patches nothing.");
-    expect(lines.join("\n")).not.toContain("acceptance tests:");
+    expect(lines[heading]).toContain("│ <section>***acceptance tests***</section>");
+    expect(lines.slice(heading + 1, heading + 5)).toEqual(["        │ # lookup", "        │ A lookup becomes an `@odata.bind` entry.", "        │ # empty-record", "        │ An empty record patches nothing."]);
   });
 
   it("shows the files a module imports under its own text, each closed until opened - the module it requires is a tab of its own", () => {
@@ -483,8 +506,8 @@ describe("the regeneration drawn", () => {
   it("highlights the spec as plyn does - its section headings, concepts and literals - the words a diff keeps too", () => {
     const paint = { ...PLAIN_PAINT, syntax: (role: string, text: string) => `<${role}>${text}</${role}>` };
     const first = page(
-      tree({ [FUNCTIONAL_REQUIREMENTS]: ["- A :User: can log in via `POST /auth/login`.", "- A :User: can sign out via `POST /auth/logout`."] }),
-      tree({ [FUNCTIONAL_REQUIREMENTS]: ["- A :User: can log in via `POST /auth/login`.", "- A :User: can log out via `POST /auth/logout`."] }),
+      tree({ [FUNCTIONAL_REQUIREMENTS]: ["- A :User: can log in via `POST /auth/login`.", ["log-out", "- A :User: can sign out via `POST /auth/logout`."]] }),
+      tree({ [FUNCTIONAL_REQUIREMENTS]: ["- A :User: can log in via `POST /auth/login`.", ["log-out", "- A :User: can log out via `POST /auth/logout`."]] }),
     );
     const [marked] = markSpecMap([first], noPlan);
     const text = specMapLines([marked!], createSpecMapState(), 300, { ...style, diff: paint }).lines.join("\n");
@@ -541,9 +564,11 @@ describe("the side panel's two views", () => {
     const [marked] = markSpecMap([first], noPlan);
     const lines = specMapLines([marked!], createSpecMapState(), 100, style).lines;
     // A mark alone, under the status column's heading.
-    expect(lines.find((line) => line.includes("- Register."))).toMatch(/^[ ›] {2}◆ {4}│ - Register\./);
-    expect(lines.find((line) => line.includes("- Log in."))).toMatch(/^[ ›] {2}◇ {4}│ - Log in\./);
-    expect(lines.find((line) => line.includes("- Search."))).toMatch(/^[ ›] {2}○ {4}│ - Search\./);
+    expect(lines.find((line) => line.includes("- Register."))).toMatch(/^[ ›] {2}◆ {4}│ register {2}- Register\./);
+    expect(lines.find((line) => line.includes("- Log in."))).toMatch(/^[ ›] {2}◇ {4}│ log-in {2}- Log in\./);
+    expect(lines.find((line) => line.includes("- Search."))).toMatch(/^[ ›] {2}○ {4}│ search {2}- Search\./);
+    // A functional spec with no scenarios is not tested, and its row says so.
+    expect(lines.find((line) => line.includes("- Log in."))).toContain("not tested");
     // The legend: up the ladder, every rung whatever the page has - to take out only where something is.
     expect(legendLines(marked!, style)).toEqual(["○ planned", "⠋ working", "◇ regenerated", "⠋ validating", "◆ conform", "! needs you"]);
     const panel = createSidePanel({ jobs: () => [], map: () => [marked!], rows: () => 20, style, back() {}, close() {}, key: "ctrl+h" });

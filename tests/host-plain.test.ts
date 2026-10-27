@@ -137,6 +137,38 @@ describe("a project's .plain files and their links", () => {
   });
 });
 
+describe("the test plain files of a project", () => {
+  const testPlain = (folder: string, name: string, text: string) => {
+    mkdirSync(join(project, "tests", folder), { recursive: true });
+    write(`tests/${folder}/${name}`, text);
+  };
+
+  it("are nodes linked to the functional spec they bind to, which carries its file and its scenarios", () => {
+    testPlain("app", "fill-cart.plain", "---\nmodule: app\nfunc_id: fill-cart\n---\n\n***conformance tests***\n\n# adds-an-item\nAn item put in is in :Cart:.\n\n***acceptance tests***\n\n# pays\nA full :Cart: is paid for.\n");
+    const graph = plainGraph(project);
+    const file = graph.testPlainFiles.find((node) => node.file === join(project, "tests", "app", "fill-cart.plain"))!;
+    const spec = graph.items.find((item) => item.funcId === "fill-cart")!;
+    expect(file).toMatchObject({ module: "app", funcId: "fill-cart", item: spec.id });
+    expect(file.conformance).toEqual([{ id: "adds-an-item", text: "An item put in is in :Cart:.", line: 8 }]);
+    expect(file.acceptance.map((scenario) => [scenario.id, scenario.line])).toEqual([["pays", 13]]);
+    expect(spec.testPlainFile).toBe(file.file);
+    expect(spec.scenarios?.acceptance.map((scenario) => scenario.id)).toEqual(["pays"]);
+    // One with no file has none.
+    expect(graph.items.find((item) => item.funcId === "sign-up")).toMatchObject({ testPlainFile: null, scenarios: { conformance: [], acceptance: [] } });
+  });
+
+  it("gives a stray, an unparsable or an unbound one its error, bound to nothing", () => {
+    testPlain("nowhere", "x.plain", "---\nmodule: nowhere\nfunc_id: x\n---\n\n***conformance tests***\n\n***acceptance tests***\n");
+    testPlain("app", "gone.plain", "---\nmodule: app\nfunc_id: gone\n---\n\n***conformance tests***\n\n***acceptance tests***\n");
+    testPlain("app", "bad.plain", "---\nmodule: app\nfunc_id: fill-cart\n---\n\n***acceptance tests***\n\n***conformance tests***\n");
+    const nodes = plainGraph(project).testPlainFiles;
+    const of = (folder: string, name: string) => nodes.find((node) => node.file === join(project, "tests", folder, name))!;
+    expect(of("nowhere", "x.plain")).toMatchObject({ item: null, error: expect.stringContaining("no module nowhere") });
+    expect(of("app", "gone.plain")).toMatchObject({ item: null, error: expect.stringContaining("no such functional spec") });
+    expect(of("app", "bad.plain")).toMatchObject({ item: null, error: expect.any(String) });
+  });
+});
+
 describe("the linked resources an item names", () => {
   const itemAt = (graph: ReturnType<typeof plainGraph>, file: string, line: number) => graph.items.find((item) => item.id === `${join(project, file)}:${line}`)!;
 

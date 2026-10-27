@@ -1,11 +1,11 @@
 import { basename } from "node:path";
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { highlightLine, roleOf, type PlainRole } from "../plain/highlight.ts";
-import { ACCEPTANCE_TEST_HEADING, DEFINITIONS, FUNCTIONAL_REQUIREMENTS, NON_FUNCTIONAL_REQUIREMENTS } from "../plain/spec.ts";
+import { ACCEPTANCE_TEST_HEADING, CONFORMANCE_TEST_HEADING, DEFINITIONS, FUNCTIONAL_REQUIREMENTS, NON_FUNCTIONAL_REQUIREMENTS, TEST_REQUIREMENTS } from "../plain/spec.ts";
 import type { DiffPaint } from "./diff-view.ts";
 import { spinner } from "./job-panel.ts";
 import type { Job } from "./jobs.ts";
-import { countOf, type Mark, type MarkedItem, type MarkedPage } from "./spec-map.ts";
+import { countOf, hasScenarioViews, type Mark, type MarkedItem, type MarkedPage } from "./spec-map.ts";
 import type { TranscriptStyle } from "./transcript-view.ts";
 
 /**
@@ -13,7 +13,7 @@ import type { TranscriptStyle } from "./transcript-view.ts";
  *
  * Each item's first line, with its one mark in the gutter - its rung on the ladder; a changed item's changed
  * sub-bullets under it, word by word; an item taken out as a struck-through ghost. Enter opens an item: all of it, its
- * acceptance tests, the pulse that brings it, its conformance tests, and - a definition - the built specs that use it.
+ * scenarios, the pulse that brings it, its conformance tests, and - a definition - the built specs that use it.
  * One module is shown at a time, a tab a module of the chain - ←→ go from one to the next: the module regenerating now, until
  * another tab is chosen, and again once another module starts regenerating. Under its own text, the files it imports, a
  * folded block each. A chain of many modules nested one in another was too deep to read, and too much to draw.
@@ -121,6 +121,10 @@ const strike = (text: string) => `\x1b[9m${text}\x1b[29m`;
 
 /** How far a group, and what is in it, is indented under its module. */
 const INDENT = "  ";
+/** What the row of a functional spec with an empty test plain file says. */
+const NOT_TESTED = "  not tested";
+/** What the first test req of a module none of whose functional specs has scenarios says. */
+const NOT_USED = "  not used: no scenarios";
 
 /**
  * Where an item stands, as one mark on a ladder every item climbs: planned, working, regenerated, validating, conform - and needs
@@ -361,7 +365,11 @@ function wrapped(text: string, width: number, colour: (text: string) => string =
     .map((line) => `${CONTINUED}${colour(line)}`);
 }
 
-/** All of an item, opened: the rest of its text against the code's, and its acceptance tests. Where it stands is beside its mark. */
+/**
+ * All of an item, opened: the rest of its text against the code's, and a functional spec's scenarios - under
+ * `***conformance tests***` and `***acceptance tests***`, each scenario its `# <scenario-id>` and its text, as its test
+ * plain file has them. Where it stands is beside its mark.
+ */
 function detailLines(item: MarkedItem, width: number, style: TranscriptStyle): string[] {
   const lines: string[] = [];
   // The rest of its text - its first line is the row - against the record's, for a change.
@@ -370,14 +378,13 @@ function detailLines(item: MarkedItem, width: number, style: TranscriptStyle): s
     const drawn = item.state === "removed" ? style.removed(strike(line.now ?? "")) : item.state === "changed" ? diffLine(line, style) : highlighted(line.now ?? "", style);
     lines.push(...wrapped(drawn, width));
   }
-  if (item.acceptance.length > 0) {
-    // As the spec has them: nested under the functional spec as deep as its sub-bullets, under a heading of their own
-    // drawn as a section's is.
-    const nested = /^( +)\S/m.exec(item.text.split("\n").slice(1).join("\n"))?.[1] ?? INDENT;
-    const heading = `***${ACCEPTANCE_TEST_HEADING}***`;
+  // As the test plain file has them: at the start of a line, each kind under its section heading.
+  for (const [heading, scenarios] of [[CONFORMANCE_TEST_HEADING, item.scenarios.conformance], [ACCEPTANCE_TEST_HEADING, item.scenarios.acceptance]] as const) {
+    if (scenarios.length === 0) continue;
+    const title = `***${heading}***`;
     lines.push(CONTINUED.trimEnd());
-    lines.push(`${CONTINUED}${nested}${style.diff !== undefined ? style.diff.syntax("section", heading) : style.muted(heading)}`);
-    for (const test of item.acceptance) lines.push(...wrapped(test.split("\n").map((line) => `${nested}${highlighted(line, style)}`).join("\n"), width));
+    lines.push(`${CONTINUED}${style.diff !== undefined ? style.diff.syntax("section", title) : style.muted(title)}`);
+    for (const scenario of scenarios) lines.push(...wrapped([`# ${scenario.id}`, ...scenario.text.split("\n")].map((line) => highlighted(line, style)).join("\n"), width));
   }
   return lines;
 }
@@ -467,6 +474,8 @@ export function specMapLines(
   let underImport = false;
   // Whether what the module needs the person for is said yet, under its first `!`.
   let toldWhy = false;
+  // The first test req nothing uses: it says so for them all.
+  const firstUnused = shown?.items.find((item) => item.unused === true);
   rows.forEach((row, index) => {
     const here = index === state.cursor;
     const pointer = here ? style.accent("›") : " ";
@@ -507,15 +516,21 @@ export function specMapLines(
     const room = Math.max(10, width - GUTTER - BAR.length);
     const first = firstLine(item.text);
     const wasFirst = firstLine(item.was ?? "");
-    const drawn =
+    const body =
       item.state === "removed"
         ? style.removed(strike(first))
         : item.state === "changed" && wasFirst !== first
           ? wordDiff(wasFirst, first, style)
           : highlighted(first, style);
+    // A functional spec's row is its func-id and its body's first line; one with no scenarios is not tested, and says so.
+    const untested = item.funcId !== undefined && item.state !== "removed" && !hasScenarioViews(item.scenarios) ? NOT_TESTED : "";
+    const unused = item.unused === true && item === firstUnused ? NOT_USED : "";
+    const said = `${untested}${unused}`;
+    const plain = `${item.funcId !== undefined ? `${item.funcId}  ` : ""}${first}${said}`;
+    const drawn = `${item.funcId !== undefined ? `${style.accent(item.funcId)}  ` : ""}${body}${said !== "" ? style.muted(said) : ""}`;
     // Wrapped, never cut short: what follows a `…` is what a person came to read. The lines after the first hang
     // under the item's text, past its bullet.
-    const [head = "", ...rest] = hanging(drawn, first, room);
+    const [head = "", ...rest] = hanging(drawn, plain, room);
     add(`${gutter}${head}`, mark);
     for (const line of rest) add(`${CONTINUED}${line}`, mark);
     // The first item that needs the person says what for, and how to go about it - opened or closed.

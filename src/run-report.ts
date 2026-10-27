@@ -51,7 +51,7 @@ export interface ModuleState {
 
 export interface CompletionCounts {
   codebase: string;
-  modules: Array<{ module: string; specified: number; completed: number; conformanceTested: number; incomplete: string[] }>;
+  modules: Array<{ module: string; specified: number; withScenarios: number; completed: number; conformanceTested: number; incomplete: string[] }>;
 }
 
 /** What the report is made from, read each time it is written. Each is asked in a try: one that fails leaves its part out. */
@@ -303,6 +303,7 @@ export function startRunReport(options: RunReportOptions): RunReporter {
       chain.modules.map((module) => ({
         module: module.module,
         specified: module.specified,
+        with_scenarios: module.withScenarios,
         completed: module.completed,
         conformance_tested: module.conformanceTested,
         incomplete_func_ids: module.incomplete,
@@ -311,6 +312,7 @@ export function startRunReport(options: RunReportOptions): RunReporter {
     return {
       total: {
         specified: modules.reduce((sum, module) => sum + module.specified, 0),
+        with_scenarios: modules.reduce((sum, module) => sum + module.with_scenarios, 0),
         completed: modules.reduce((sum, module) => sum + module.completed, 0),
         conformance_tested: modules.reduce((sum, module) => sum + module.conformance_tested, 0),
       },
