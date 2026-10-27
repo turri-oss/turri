@@ -21,7 +21,7 @@ The other rules say what a spec means. This one says what turri does with a chan
 - A change to any module of the chain, the base's included, is regenerated in the tip's code - not in the module the change was made in
 - A functional spec of a module below is added, patched or taken out in the tip just as the tip's own are, named `<module>:<func-id>`. Its conformance tests are in the tip's suite too, and are kept up to date there
 - Putting a change in a lower module costs no more than putting it in the tip, and saves nothing either
-- Moving specs between modules of the chain renders nothing. Moving specs into a module the code was never built on is the exception: no change to the code brings that module in, so the chain has to be regenerated from scratch - never done without the person agreeing
+- Moving specs between modules of the chain regenerates nothing. Moving specs into a module the code was never built on is the exception: no change to the code brings that module in, so the chain has to be regenerated from scratch - never done without the person agreeing
 
 ## What each kind of change sets off
 
@@ -31,7 +31,7 @@ The other rules say what a spec means. This one says what turri does with a chan
 - Test reqs and scenarios - a functional spec's conformance and acceptance scenarios, in its test plain file - reach the conformance tests only, never the code. A scenario changed alone regenerates no code
 - A functional spec regenerated again by name has its code taken out and built anew - never left as it was, even where it already does what the spec says; a pulse that changes nothing does not land. Its conformance tests, when it has them, are run on its new code once it lands: those that pass are kept as they are; one that fails is judged against the spec - what it checks that the spec leaves open, a path, a field, a message the old code chose, goes by the new code
 - What is conformance tested is the scenarios: each conformance and acceptance scenario of a functional spec gets at least one test, and nothing else is tested - a functional spec with an empty test plain file has no conformance tests. Its tests are written or changed once its code lands, whenever a scenario is added, changed or taken out, its text changes, it is regenerated again or taken out; one whose scenarios are all taken out loses its tests. It goes scenario by scenario, by scenario-id: a scenario added gets its tests, one changed has them rewritten, one taken out loses them, and an unchanged one keeps them - run on the new code when the functional spec's code changed. A scenario-id renamed with its text as it was has its tests relabelled, nothing rewritten; renamed with any other change, or moved between conformance and acceptance, it is one taken out and one added. To have something checked end to end, write it as a scenario
-- Definitions moved to a common module and reqs reordered are recorded, not rendered
+- Definitions moved to a common module and reqs reordered are recorded, not regenerated
 - A functional spec written on its happy path and hardened later - its validation, edge cases and errors added to it - is patched in place each time: growing a spec a step at a time costs no more than writing it whole up front
 - A module's first pulse, when it builds one functional spec - the project set up and the smallest thing that runs - lands on its unit tests with no review
 
