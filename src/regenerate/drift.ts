@@ -45,7 +45,8 @@ export interface TouchedSpec {
  *   change to what is built, never built again from scratch. A functional spec moved, and nothing else, is none.
  * - again: functional specs marked to regenerate again (`regenerate` with functionalities named): their code is built, and is regenerated again - rewritten
  *   or started over, doing what the spec says now - with what it replaces taken out.
- * - delete: functional specs taken out - a func-id the spec no longer has. One renamed is a delete and an add.
+ * - delete: functional specs taken out - a func-id the spec no longer has. One renamed with any other change is a delete
+ *   and an add; renamed and nothing else, turri renames it itself, and it is no job's (renames.ts).
  * - mechanical: none of those - no functional spec of any module of the chain touched: only reqs, or definitions no
  *   functional spec uses. Existing tests may change only mechanically, and no new ones are written.
  *
@@ -80,8 +81,9 @@ export interface ScenarioRef {
  *
  * - added: write its tests; changed: rewrite them to the scenario as it reads now; removed: delete the tests labelled
  *   with it; unchanged: its tests stay as they are.
- * - A scenario-id renamed, or a scenario moved between conformance and acceptance - its label changes - is one removed
- *   and one added. One moved between test plain files of the same functional spec is nothing.
+ * - A scenario-id renamed with any other change, or a scenario moved between conformance and acceptance - its label
+ *   changes - is one removed and one added; one renamed and nothing else turri relabels itself (renames.ts). One moved
+ *   between test plain files of the same functional spec is nothing.
  * - `codeChanged`: the functional spec's code moved under its unchanged scenarios - its text or a file it links changed
  *   (`text`), it was regenerated again (`again`), or a concept it uses changed (`concept`): their tests are run on the
  *   new code, and those that fail are fixed against the scenario.

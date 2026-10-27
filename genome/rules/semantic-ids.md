@@ -25,7 +25,9 @@ Every functional spec in `***functional specs***` and every scenario in a test p
 
 ## Stability
 - An id is an identity, not a label: a functional spec keeps its func-id for as long as it exists, even when its text changes
-- To turri, renaming a func-id is taking one functional spec out and adding another (`turri-regeneration.md`). Rename only when the person asks, then rename `func_id:` in every test plain file bound to it, and the file with it
+- A pure rename is cheap: a func-id renamed with nothing else changed - its body, its links and its scenarios as they were, only the `# <func-id>` heading and `func_id:` in its test plain files - is renamed by turri in its records and its tests' labels, and nothing is regenerated. The same holds for a scenario-id renamed with its text as it was
+- A rename together with any other change rebuilds: to turri it is one functional spec taken out and another added, its code built anew and its tests written anew (`turri-regeneration.md`). So rename in a ***plain diff of its own, never in the same edit as a change to the body or the scenarios
+- Rename only when the person asks, then rename `func_id:` in every test plain file bound to it, and the file with it
 - Never renumber or reorder ids: the order of the headings in the module is the order of its functional specs, and the id carries no order
 
 ## Naming a functional spec

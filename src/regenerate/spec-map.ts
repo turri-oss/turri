@@ -19,6 +19,7 @@ import { chainSpec, type MapCodebase, type MapPlan, type MapPulse } from "./loop
 import { modulesRoot, projectDirOf } from "./paths.ts";
 import { HISTORY_DIR } from "./lineage.ts";
 import { codeTree, hasScenarios, marksRegenerateAgain, readRecord, RECORD_FILE } from "./records.ts";
+import { pureRenames } from "./renames.ts";
 import { specFilesOf } from "./regenerate.ts";
 import { builtTips, resolveRequiresChain, type ChainEntry } from "./requires.ts";
 import { changesBetween, layoutOf, serializeTree, type SpecChange } from "./spec-steps.ts";
@@ -60,6 +61,8 @@ export interface MapItem {
   wasLine?: string;
   /** A functional spec's conformance tests: written for it as it reads now, for an earlier text, or for one taken out. */
   tests?: "now" | "older" | "removed";
+  /** A functional spec whose func-id was renamed, and nothing else: the func-id it is built under - turri renames it, regenerating nothing. */
+  renamedFrom?: string;
 }
 
 /** A functional spec's scenarios, each its scenario-id and its text. */
@@ -384,14 +387,19 @@ export function readSpecMapWithDeps(files: string[]): { pages: MapPage[]; deps: 
           return;
         }
         const projectDir = projectDirOf(entry.plainFile);
-        const record = home <= furthest ? readRecord(codebase.buildDir) : null;
+        // A pure rename not made yet is no work: shown as built, under its new func-id, with the one it is renamed from.
+        const renamed = home <= furthest ? pureRenames(readRecord(codebase.buildDir), readRecord(conformanceDirFor(codebase.moduleName, modulesRoot(projectDir))), spec, codebase.moduleName) : undefined;
+        const record = renamed?.code ?? null;
         // What the conformance tests are written for, in the codebase that holds its code: the tip's suite holds the chain's.
-        const testsRecord = home <= furthest ? readRecord(conformanceDirFor(codebase.moduleName, modulesRoot(projectDir))) : null;
+        const testsRecord = renamed?.tests ?? null;
         const tested = testsRecord === null ? null : { ...testsRecord, [FUNCTIONAL_REQUIREMENTS]: moduleTree(testsRecord, entry.moduleName, home === at)[FUNCTIONAL_REQUIREMENTS] };
         const paths = specFilesOf(entry.plainFile);
         for (const path of [...paths, ...depsOf(entry, codebase, conformanceDirFor(codebase.moduleName, modulesRoot(projectDir)))]) deps.add(path);
         const texts = paths.map((path, index) => ({ ...(index > 0 ? { label: importLabel(path, projectDir) } : {}), text: readText(path) }));
-        const items = pageItems({ module: entry.moduleName, own: home === at, spec, record, tested });
+        const renamedFrom = new Map((renamed?.renames ?? []).flatMap((rename) => (rename.kind === "func-id" && rename.module === entry.moduleName ? [[rename.to, rename.from] as const] : [])));
+        const items = pageItems({ module: entry.moduleName, own: home === at, spec, record, tested }).map((item) =>
+          item.funcId !== undefined && renamedFrom.has(item.funcId) && item.state !== "removed" ? { ...item, renamedFrom: renamedFrom.get(item.funcId)! } : item,
+        );
         const own = home === at ? ((spec[FUNCTIONAL_REQUIREMENTS] as unknown[] | undefined) ?? []) : ((spec[REQUIRED_FUNCTIONAL_SPECS] as Array<{ module?: string }> | undefined) ?? []).filter((item) => item.module === entry.moduleName);
         pages.push({ ...page, conformance: own.some(hasScenarios), imports: texts.slice(1).map((text) => text.label!), items: layOut(items, texts) });
       });

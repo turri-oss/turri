@@ -131,7 +131,7 @@ A requirement beyond the stack - storage, an outside service - is added on top o
 | `module-structure.md` | the file skeleton, frontmatter fields, section order, module kinds, section ownership |
 | `definitions.md` | concept syntax, predefined concepts, define before use, no circular definitions, granularity |
 | `func-specs.md` | a functional spec's shape - a `# <func-id>` heading and a free-text body - voice, the complexity limit, chronological order, no conflicts, how a functional spec is added - checked for size and conflicts before it is written in, with its test plain file - and where it goes, language agnosticism, testability |
-| `semantic-ids.md` | func-ids and scenario-ids: their syntax, unique in the module or the functional spec, a rename a functional spec taken out and another added, a functional spec named `<module>:<func-id>` |
+| `semantic-ids.md` | func-ids and scenario-ids: their syntax, unique in the module or the functional spec, a pure rename cheap and a rename with any other change a functional spec taken out and another added, a functional spec named `<module>:<func-id>` |
 | `test-plain-files.md` | test plain files in `tests/<module>/`, their two sections and their scenarios, keeping them in step with the functional specs, and writing scenarios once the person asks for tests - test reqs, the conformance testing script, then the scenarios |
 | `impl-reqs.md` | HOW not WHAT, unit tests live here, what belongs and what does not |
 | `test-reqs.md` | conformance tests only, what belongs, test types |

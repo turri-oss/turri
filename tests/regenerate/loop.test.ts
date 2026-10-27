@@ -775,6 +775,91 @@ describe("the work loop", () => {
       expect(code.ran).toHaveLength(built);
     });
 
+    describe("of a func-id or a scenario-id renamed", () => {
+      /** app built with a test of each scenario, labelled: the code, the tests and their records committed. */
+      async function built() {
+        writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye."]));
+        scenariosIn("say-hello");
+        scenariosIn("say-goodbye");
+        const code = runner();
+        const tests = conformanceRunner();
+        const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run: code.run, runConformance: tests.runConformance });
+        await loop.bringUp("app.plain");
+        await loop.drain();
+        writeFileSync(
+          join(testsDir(), "test_say.py"),
+          "# conformance tests of app:say-hello\n# acceptance scenario works of app:say-hello\n# conformance tests of app:say-hello-loudly\n" +
+            "# conformance tests of app:say-goodbye\n# acceptance scenario works of app:say-goodbye\n",
+        );
+        recordHistory(codeDir(), "the tests labelled");
+        return { loop, code, tests, pulses: () => code.ran.length + tests.ran.length };
+      }
+      const renamedTo = (from: string, to: string, text?: string) => {
+        rmSync(join(dir, "tests", "app", `${from}.plain`));
+        scenariosIn(to);
+        writePlain(dir, "app.plain", app([[to, text ?? "Say hello."], "Say goodbye."]));
+      };
+      const ids = (tree: Record<string, unknown> | null) => ((tree?.["functional specs"] as Array<{ id: string }> | undefined) ?? []).map((item) => item.id);
+
+      it("renames the records and relabels the tests itself - the code untouched, no pulse started", async () => {
+        const { loop, pulses } = await built();
+        const before = pulses();
+        const codeFile = readFileSync(join(codeDir(), "app.py"), "utf8");
+        renamedTo("say-hello", "greet");
+        expect(describeDrift(loop.drift("app.plain"))).toContain("  renames app:say-hello to app:greet - the records and the tests' labels only, nothing regenerated");
+        await loop.bringUp("app.plain", { specChange: true });
+        await loop.drain();
+        expect(pulses()).toBe(before);
+        expect(readFileSync(join(codeDir(), "app.py"), "utf8")).toBe(codeFile);
+        expect(ids(readRecord(codeDir()))).toEqual(["greet", "say-goodbye"]);
+        expect(ids(readRecord(testsDir()))).toEqual(["greet", "say-goodbye"]);
+        // On the whole key: say-hello-loudly is another functional spec's label, left as it is.
+        expect(readFileSync(join(testsDir(), "test_say.py"), "utf8")).toBe(
+          "# conformance tests of app:greet\n# acceptance scenario works of app:greet\n# conformance tests of app:say-hello-loudly\n" +
+            "# conformance tests of app:say-goodbye\n# acceptance scenario works of app:say-goodbye\n",
+        );
+        expect(execFileSync("git", ["--git-dir", join(dir, "plain_modules", "app", ".plaingit"), "log", "-1", "--format=%s"], { encoding: "utf8" })).toContain("renamed app:say-hello to app:greet");
+        expect(describeDrift(loop.drift("app.plain"))).toContain("Fully regenerated");
+      });
+
+      it("rebuilds a functional spec renamed and changed at once - a delete and an add", async () => {
+        const { loop, code } = await built();
+        const before = code.ran.length;
+        renamedTo("say-hello", "greet", "Say hello warmly.");
+        await loop.bringUp("app.plain", { specChange: true });
+        await loop.drain();
+        expect(code.ran.slice(before).map((job) => job.add)).toEqual([["greet"]]);
+      });
+
+      it("relabels the tests of a scenario-id renamed, and rewrites none", async () => {
+        const { loop, pulses } = await built();
+        const before = pulses();
+        scenariosIn("say-goodbye", "app", "# still-works\nIt works.");
+        await loop.bringUp("app.plain", { specChange: true });
+        await loop.drain();
+        expect(pulses()).toBe(before);
+        expect(readFileSync(join(testsDir(), "test_say.py"), "utf8")).toContain("# acceptance scenario still-works of app:say-goodbye\n");
+        expect(readFileSync(join(testsDir(), "test_say.py"), "utf8")).toContain("# acceptance scenario works of app:say-hello\n");
+        expect(JSON.stringify(readRecord(testsDir()))).toContain('"id":"still-works"');
+      });
+
+      it("rolls a rename that fails midway back whole, and halts rather than rebuild it", async () => {
+        const { loop, pulses } = await built();
+        const before = pulses();
+        const recordBefore = JSON.stringify(readRecord(codeDir()));
+        // The tests cannot be relabelled: the records are rewritten first, and put back with the rest.
+        execFileSync("chmod", ["444", join(testsDir(), "test_say.py")]);
+        renamedTo("say-hello", "greet");
+        await loop.bringUp("app.plain", { specChange: true });
+        await loop.drain();
+        expect(pulses()).toBe(before);
+        expect(JSON.stringify(readRecord(codeDir(), { onDisk: true }))).toBe(recordBefore);
+        expect(ids(readRecord(testsDir(), { onDisk: true }))).toEqual(["say-hello", "say-goodbye"]);
+        expect(readFileSync(join(testsDir(), "test_say.py"), "utf8")).toContain("of app:say-hello\n");
+        expect(loop.status()[0]!.why).toMatch(/^renaming app:say-hello to app:greet failed, and was rolled back/);
+      });
+    });
+
     it("say in the drift what is to write or change, a line a functional spec with its scenarios counted by case", async () => {
       writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye."]));
       scenariosIn("say-hello");

@@ -5,7 +5,7 @@ turri regenerates code, and the conformance tests that check it, from \*\*\*plai
 ## Language
 
 **Func-id**:
-A functional spec's name in its module: lowercase letters, digits and hyphens, unique in the module, given by the author and not by position. A renamed func-id is one functional spec taken out and another added.
+A functional spec's name in its module: lowercase letters, digits and hyphens, unique in the module, given by the author and not by position. A func-id renamed and nothing else - a pure rename - is renamed in the records and the tests' labels, nothing regenerated; renamed with any other change, it is one functional spec taken out and another added.
 _Avoid_: frid, functionality number, functionality id
 
 **Scenario-id**:

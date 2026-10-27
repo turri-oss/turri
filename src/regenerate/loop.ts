@@ -44,6 +44,7 @@ import { createSteering, MAX_STEERS, markTold, steer, waitingSteer, type JobStee
 import { projectDirOf } from "./paths.ts";
 import { changesBetween, parseTree, serializeTree, type SpecChange, type SpecStep } from "./spec-steps.ts";
 import { listFiles } from "./testing.ts";
+import { makeRenames, pureRenames, renameText } from "./renames.ts";
 import { casesOf, codeWork, stillWanted, whyNotWanted, type JobCases, type ScenarioCases, type TouchedSpec } from "./drift.ts";
 
 /**
@@ -129,6 +130,8 @@ export interface ModuleStatus {
   startOver?: { requires: string[]; codebases: string[]; old?: true };
   /** The stack it is built with - its config.turri.<stack>.yaml over config.turri.yaml - when one is. */
   stack?: string;
+  /** Pure renames turri makes once the running pulse ends - a func-id or a scenario-id, nothing else with it: nothing regenerated. */
+  renames?: string[];
 }
 
 interface ModuleState {
@@ -202,6 +205,8 @@ export interface DriftReport {
   /** Why nothing is regenerated there: halted, or its spec does not parse. */
   why?: string;
   startOver?: ModuleStatus["startOver"];
+  /** Pure renames not made yet - a func-id or a scenario-id, nothing else changed with it: made by turri, nothing regenerated. */
+  renames?: string[];
 }
 
 /** What is left to regenerate, as the conversation and the command line read it. */
@@ -212,7 +217,7 @@ export function describeDrift(reports: DriftReport[]): string {
   // the spec as it is, nothing regenerating or waiting, and nothing holding the codebase back. A pulse that did not
   // land leaves its work undone, so it shows as drift.
   // conformance: null is no drift, undefined none written here - either is regenerated; a case list is work left.
-  const regenerated = reports.every((report) => report.code === null && (report.conformance === null || report.conformance === undefined));
+  const regenerated = reports.every((report) => report.code === null && (report.conformance === null || report.conformance === undefined) && (report.renames ?? []).length === 0);
   const settled = reports.every((report) => report.running === undefined && report.why === undefined && report.startOver === undefined);
   const verdict = regenerated && settled ? "\nFully regenerated: every codebase is regenerated from the spec as it is, and nothing is regenerating." : "";
   return reports
@@ -223,6 +228,7 @@ export function describeDrift(reports: DriftReport[]): string {
       if (report.conformance === null) lines.push("  conformance tests: written for what is built - no drift");
       else if (report.conformance !== undefined) lines.push("  conformance tests: to write or change - written once the code is built, or now with conform", ...conformanceLines(report.module, report.conformance));
       else lines.push("  conformance tests: none written here");
+      for (const rename of report.renames ?? []) lines.push(`  renames ${rename} - the records and the tests' labels only, nothing regenerated`);
       if (report.running !== undefined) lines.push(`  regenerating now: pulse ${report.running.jobId} - ${report.running.title}`);
       if (report.why !== undefined) lines.push(`  ${report.why}`);
       if (report.startOver !== undefined) {
@@ -702,7 +708,10 @@ export function createWorkLoop(options: {
     const config = configForSpec(tip.plainFile);
     const limits = { specs: config.maxSpecsPerPulse ?? MAX_SPECS_PER_JOB, lines: config.maxLinesPerPulse ?? MAX_LINES_PER_JOB };
     const testPlainPath = track === "conformance" ? testPlainPathOf(spec.tree, tip.moduleName, tip.plainFile, dirname(specFile)) : undefined;
-    const input: PlanInput = { base: from, current, specFile, specText, steering, track, moduleName: tip.moduleName, limits, ...(separately ? { separately } : {}), ...(testPlainPath !== undefined ? { testPlainPath } : {}) };
+    // A pure rename is turri's to make before the next pulse, not a delete and an add: the work is planned from the code as renamed.
+    const renamed = track === "code" ? pureRenames(from, readRecord(testsDirOf(state)), spec.tree, tip.moduleName) : undefined;
+    const base = renamed !== undefined && renamed.renames.length > 0 && renamed.code !== null ? codeTree(renamed.code) : from;
+    const input: PlanInput = { base, current, specFile, specText, steering, track, moduleName: tip.moduleName, limits, ...(separately ? { separately } : {}), ...(testPlainPath !== undefined ? { testPlainPath } : {}) };
     const model = typeof options.plannerModel === "function" ? options.plannerModel() : options.plannerModel;
     const agents = options.planner === false ? undefined : (options.planner ?? llmChunkAgents({ cwd: options.cwd, model: model ?? state.model, label: `${basename(tip.plainFile)} planner` }));
     reportStage(`${tip.moduleName}: planning the ${track === "code" ? "work" : "conformance tests"} into pulses`);
@@ -1167,6 +1176,19 @@ export function createWorkLoop(options: {
       state.why = below.why;
       return;
     }
+    // A func-id or a scenario-id renamed, and nothing else with it: turri renames it in the records and relabels the tests
+    // itself, as one unit of work - no pulse, the code untouched. Failing, it is rolled back whole, and the codebase halts
+    // rather than build the functional spec anew.
+    const renamed = options.dryRun === true || readRecord(tip.buildDir) === null ? undefined : pureRenames(readRecord(tip.buildDir), readRecord(testsDirOf(state)), spec.tree, tip.moduleName);
+    if (renamed !== undefined && renamed.renames.length > 0) {
+      const made = makeRenames({ buildDir: tip.buildDir, testsDir: testsDirOf(state), moduleName: tip.moduleName, renamed, place: { project: projectRootOf(tip.buildDir), module: tip.moduleName } });
+      if (!made) {
+        state.halted = { why: `renaming ${renamed.renames.map(renameText).join(", ")} failed, and was rolled back - it is tried again once the spec changes, or the module is asked for again`, specKey };
+        state.why = state.halted.why;
+        record({ kind: "loop.halted", why: firstLine(state.halted.why, 300), track: "code" }, { project: projectRootOf(tip.buildDir), module: tip.moduleName });
+        return;
+      }
+    }
     // The module's code first, every job of it; then its conformance tests - once, for the module as built, with one
     // explorer and one run of the whole suite - and only then is anything built on it (waitingOn).
     const from = builtOf(state);
@@ -1274,9 +1296,12 @@ export function createWorkLoop(options: {
     ];
     const planned = listed.map((item) => item.entry);
     const tip = tipEntry(state);
+    // While a pulse runs, the renames made once it ends: shown as renames, never as a functional spec taken out and one added.
+    const renames = state.running !== undefined && state.running.planned.track === "code" && seen !== undefined ? pureRenames(readRecord(tip.buildDir), readRecord(testsDirOf(state)), seen, tip.moduleName).renames : [];
     const status: ModuleStatus = {
       module: tip.moduleName,
       plainFile: tip.plainFile,
+      ...(renames.length > 0 ? { renames: renames.map(renameText) } : {}),
       ...(state.stack?.name !== undefined ? { stack: state.stack.name } : {}),
       ...(state.running !== undefined
         ? {
@@ -1406,13 +1431,21 @@ export function createWorkLoop(options: {
               } catch (error) {
                 return { ...report, why: `its spec does not parse: ${error instanceof Error ? error.message : String(error)}` };
               }
-              const from = builtOf(state);
+              // A pure rename is no work: shown as one, and the work worked out as though it were made.
+              const record = readRecord(tip.buildDir);
+              const renamed = record === null ? undefined : pureRenames(record, readRecord(testsDirOf(state)), spec.tree, tip.moduleName);
+              if (renamed !== undefined && renamed.renames.length > 0) report.renames = renamed.renames.map(renameText);
+              const from = renamed?.code !== undefined && renamed.code !== null ? codeTree(renamed.code) : builtOf(state);
               const fresh = tip.requires === null && !started(tip);
               const code = codeWork(from, spec.tree);
               report.code = code.length === 0 ? null : casesOf(from, code, { fresh, module: tip.moduleName });
               if (conformanceWanted(state, spec)) {
-                const tested = testedOf(state);
-                const tests = workOf("conformance", tested, state, spec);
+                const tested = renamed?.tests ?? testedOf(state);
+                // Against the code record as renamed, when a rename is to be made: the tests follow it.
+                const tests =
+                  renamed !== undefined && renamed.renames.length > 0
+                    ? changesBetween(serializeTree(tested), serializeTree(conformanceTarget(renamed.code, tested, spec.tree)))
+                    : workOf("conformance", tested, state, spec);
                 report.conformance = tests.length === 0 ? null : casesOf(tested, tests, { module: tip.moduleName });
               }
               if (state.running !== undefined) report.running = { jobId: state.running.jobId, title: state.running.planned.title };
@@ -1943,6 +1976,7 @@ export function describeModules(statuses: ModuleStatus[], options: { for?: "chat
         // Steered, not stopped or planned again: what changed went to its agent.
         for (const why of status.running.steered ?? []) lines.push(`    ⇢ steered: ${why} - its agent was told, and it lands the ***plain as it is now there`);
       }
+      for (const rename of status.renames ?? []) lines.push(`  renames ${rename} once the running pulse ends - the records and the tests' labels, nothing regenerated`);
       status.planned.forEach((job, index) =>
         lines.push(
           job.afterCode === true

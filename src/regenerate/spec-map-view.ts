@@ -526,8 +526,10 @@ export function specMapLines(
     const untested = item.funcId !== undefined && item.state !== "removed" && !hasScenarioViews(item.scenarios) ? NOT_TESTED : "";
     const unused = item.unused === true && item === firstUnused ? NOT_USED : "";
     const said = `${untested}${unused}`;
-    const plain = `${item.funcId !== undefined ? `${item.funcId}  ` : ""}${first}${said}`;
-    const drawn = `${item.funcId !== undefined ? `${style.accent(item.funcId)}  ` : ""}${body}${said !== "" ? style.muted(said) : ""}`;
+    // A func-id renamed, nothing else: the one it is built under beside it - renamed, not regenerated.
+    const renamed = item.renamedFrom !== undefined ? ` (was ${item.renamedFrom})` : "";
+    const plain = `${item.funcId !== undefined ? `${item.funcId}${renamed}  ` : ""}${first}${said}`;
+    const drawn = `${item.funcId !== undefined ? `${style.accent(item.funcId)}${renamed !== "" ? style.muted(renamed) : ""}  ` : ""}${body}${said !== "" ? style.muted(said) : ""}`;
     // Wrapped, never cut short: what follows a `…` is what a person came to read. The lines after the first hang
     // under the item's text, past its bullet.
     const [head = "", ...rest] = hanging(drawn, plain, room);

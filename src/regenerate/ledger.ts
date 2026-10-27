@@ -87,6 +87,8 @@ export type LedgerEvent =
   // The work loop: what it planned, halted and stopped.
   | { kind: "loop.halted"; why: string; track: "code" | "conformance" }
   | { kind: "loop.stopped"; why: string }
+  // A pure rename made by turri itself - records and labels, no agent: a func-id, or a scenario-id of the functional spec `spec`.
+  | { kind: "loop.renamed"; what: "func-id" | "scenario-id"; from: string; to: string; spec: string }
   | { kind: "planner.failed"; step: "group" | "place" | "title"; error: string }
   | { kind: "planner.fellBack"; step: "group" | "place" | "title"; why: string }
   // The model: today's ModelEvent, and the error that ends a turn.
