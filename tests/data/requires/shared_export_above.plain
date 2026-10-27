@@ -1,0 +1,12 @@
+---
+requires:
+  - shared_export_top
+---
+
+***implementation reqs***
+
+- Above implementation requirement.
+
+***functional specs***
+
+- An above functionality.

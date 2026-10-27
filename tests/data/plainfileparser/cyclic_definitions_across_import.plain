@@ -1,0 +1,13 @@
+---
+import:
+    - required_concepts
+---
+
+***definitions***
+- :Concept: is the concept that :DependantConcept: builds on.
+
+***implementation reqs***
+- The :Concept: concept must be implemented.
+
+***functional specs***
+- Implement the :Concept: concept.

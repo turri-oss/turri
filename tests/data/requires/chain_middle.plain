@@ -1,0 +1,12 @@
+---
+requires:
+  - chain_base
+---
+
+***implementation reqs***
+
+- Middle implementation requirement.
+
+***functional specs***
+
+- A middle functionality.

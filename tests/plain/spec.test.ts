@@ -12,8 +12,7 @@ import {
   getFridsBefore,
   getNextFrid,
   getPreviousFrid,
-  getRenderRange,
-  getRenderRangeFrom,
+  getFridsRange,
   getSpecificationsForFrid,
   hasAcceptanceTests,
   iterateFunctionalSpecs,
@@ -190,12 +189,25 @@ describe("functional spec iterator", () => {
     expect(kept[FUNCTIONAL_REQUIREMENTS]).toEqual(["- Implement {{ variable_name }}."]);
   });
 
-  it("computes render ranges over the frid sequence", () => {
-    expect(getRenderRange("2,3", tree)).toEqual(["2", "3"]);
-    expect(getRenderRange("3", tree)).toEqual(["3"]);
-    expect(getRenderRangeFrom("3", tree)).toEqual(["3", "4"]);
-    expect(() => getRenderRange("9", tree)).toThrow(InvalidFridArgument);
-    expect(() => getRenderRange("3,1", tree)).toThrow(InvalidFridArgument);
+  it("takes a range of frids from its start through its end", () => {
+    expect(getFridsRange(tree, "2", "3")).toEqual(["2", "3"]);
+  });
+
+  it("takes a range without an end through the last frid", () => {
+    expect(getFridsRange(tree, "3")).toEqual(["3", "4"]);
+  });
+
+  it("rejects a range whose start is not a frid", () => {
+    expect(() => getFridsRange(tree, "9")).toThrow(InvalidFridArgument);
+    expect(() => getFridsRange(tree, "9")).toThrow("Invalid start functionality ID: 9");
+  });
+
+  it("rejects a range whose end is not a frid", () => {
+    expect(() => getFridsRange(tree, "1", "9")).toThrow("Invalid end functionality ID: 9");
+  });
+
+  it("rejects a range whose start comes after its end", () => {
+    expect(() => getFridsRange(tree, "3", "2")).toThrow("must be before");
   });
 });
 

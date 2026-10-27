@@ -1,0 +1,12 @@
+---
+requires:
+  - shared_export_base
+---
+
+***implementation reqs***
+
+- The functions of :KeyStore: are used to obtain keys.
+
+***functional specs***
+
+- A middle functionality.

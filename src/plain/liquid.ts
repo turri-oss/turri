@@ -100,14 +100,7 @@ export function createEnvironment(options: PlainLiquidOptions): Liquid {
 
         const templateSource = options.loadTemplateSource(name);
         if (templateSource === null) {
-          throw new Error(
-            `Template not found: ${name}\n` +
-              "The required template could not be found. Templates are searched in the following order " +
-              "(highest to lowest precedence):\n\n" +
-              "    1. The directory containing your .plain file\n" +
-              "    2. The directory specified by --template-dir (if provided)\n" +
-              "    3. The built-in 'standard_template_library' directory\n",
-          );
+          throw new Error(`Template not found: ${name}`);
         }
 
         // The reference implementation's loader: rstrip, then re-indent every line to match the

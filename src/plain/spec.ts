@@ -194,7 +194,7 @@ export function collectLinkedResources(
   frid: string | null = null,
 ): boolean {
   if (tree === null || typeof tree !== "object" || Array.isArray(tree)) {
-    throw new TypeError("[plain_source_tree must be a dictionary.");
+    throw new TypeError("plain_source_tree must be a dictionary.");
   }
 
   if (frid !== null && ![...getFrids(tree)].includes(frid)) {
@@ -401,7 +401,8 @@ export function getHashValue(specifications: unknown): string {
   return hashText(JSON.stringify(specifications, null, 4));
 }
 
-function getFridsRange(tree: MarshalledPlainSource, start: string, end?: string): string[] {
+/** The FRIDs from `start` through `end` inclusive, or through the last FRID when `end` is not given. */
+export function getFridsRange(tree: MarshalledPlainSource, start: string, end?: string): string[] {
   const frids = [...getFrids(tree)];
   start = String(start);
 
@@ -432,14 +433,4 @@ function getFridsRange(tree: MarshalledPlainSource, start: string, end?: string)
   }
 
   return frids.slice(startIdx, endIdx);
-}
-
-export function getRenderRange(renderRange: string, tree: MarshalledPlainSource): string[] {
-  const parts = renderRange.split(",");
-  const rangeEnd = parts.length === 2 ? parts[1]! : parts[0]!;
-  return getFridsRange(tree, parts[0]!, rangeEnd);
-}
-
-export function getRenderRangeFrom(start: string, tree: MarshalledPlainSource): string[] {
-  return getFridsRange(tree, start);
 }

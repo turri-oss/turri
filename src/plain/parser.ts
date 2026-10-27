@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync, type Dirent } from "node:fs";
-import { extname, isAbsolute, basename, resolve } from "node:path";
+import { extname, isAbsolute, basename, join, resolve } from "node:path";
 import { load as loadYaml } from "js-yaml";
 import {
   extractConceptsFromDefinition,
@@ -91,19 +91,18 @@ export function hasScheme(target: string): boolean {
 }
 
 /**
- * A link's file: found where resources are loaded from - the spec's own folder first, then the
- * other template folders - or else from the current directory, as the reference parser has it.
- * Links are relative to the spec, so a spec in a subfolder is checked where it is, wherever
- * turri was started.
+ * Port of loaders.resolve_linked_resource: a link's file, in the first of the folders resources are loaded from - the
+ * spec's own folder first, then the other template folders - where it exists, or null. Existence, not being a file,
+ * decides the match, as in `open_from`'s search. Links are relative to the spec, so a spec in a subfolder is checked
+ * where it is, wherever turri was started.
  */
-function linkedFile(target: string, dirs: string[]): string {
+export function resolveLinkedResource(dirs: string[], target: string): string | null {
   for (const dir of dirs) {
-    const candidate = resolve(dir, target);
-    consulted?.add(candidate);
+    const candidate = join(dir, target);
+    consulted?.add(resolve(candidate));
     if (existsSync(candidate)) return candidate;
   }
-  consulted?.add(resolve(target));
-  return target;
+  return null;
 }
 
 /**
@@ -164,13 +163,18 @@ export function checkSectionForLinkedResources(section: AnyNode, dirs: string[] 
       );
     }
 
-    const file = linkedFile(target, dirs);
-    if (!existsSync(file)) {
-      throw new PlainSyntaxError(`Plain syntax error: Link ${target} does not exist.`);
+    const file = resolveLinkedResource(dirs, target);
+    if (file === null) {
+      const searched = dirs.map((dir, index) => `  ${index + 1}. ${dir}`).join("\n");
+      throw new PlainSyntaxError(
+        `Plain syntax error: Link ${target} does not exist. ` +
+          "Linked resources are looked up relative to the following directories " +
+          `(highest to lowest precedence):\n${searched}`,
+      );
     }
 
     if (!statSync(file).isFile()) {
-      throw new PlainSyntaxError(`Plain syntax error: Link ${target} must be a file.`);
+      throw new PlainSyntaxError(`Plain syntax error: Link ${target} must be a file (resolved to ${file}).`);
     }
 
     if (children.length !== 1) {
@@ -293,7 +297,7 @@ export function isAcceptanceTestHeading(token: AnyNode): [boolean, string | null
   return [
     false,
     `Syntax error at line ${lineNumber(token)}: Invalid acceptance test heading (\`${content}\`). ` +
-      `Expected: \`${ACCEPTANCE_TEST_HEADING}.\``,
+      `Expected: \`${ACCEPTANCE_TEST_HEADING}\`.`,
   ];
 }
 
@@ -436,12 +440,14 @@ export function readPlainSourceMetadata(plainSourceText: string): FrontmatterPos
   let metadata: Record<string, unknown> = {};
   let content = plainSourceText;
 
-  const match = /^---[ \t]*\n([\s\S]*?)\n---[ \t]*(?:\n|$)/.exec(plainSourceText);
+  // python-frontmatter's boundary: a line of three or more dashes, the block between them possibly empty.
+  const match = /^-{3,}[ \t]*\n(?:([\s\S]*?)\n)?-{3,}[ \t]*(?:\n|$)/.exec(plainSourceText);
   if (match) {
     try {
       // python-frontmatter yields {} when the block does not parse to a mapping,
       // so a malformed directive block is ignored rather than fatal.
-      const loaded = loadYaml(match[1]!);
+      const block = match[1] ?? "";
+      const loaded = block.trim() === "" ? {} : loadYaml(block);
       metadata =
         loaded !== null && typeof loaded === "object" && !Array.isArray(loaded)
           ? (loaded as Record<string, unknown>)
@@ -551,6 +557,7 @@ export function parsePlainSource(
   templateDirs: string[],
   importedModules: string[],
   modulesTrace: string[],
+  moduleName?: string,
 ): PlainFileParseResult {
   plainSourceText = normalizeLineEndings(plainSourceText);
 
@@ -571,7 +578,7 @@ export function parsePlainSource(
     );
   }
 
-  const [, loadedTemplates] = getLoadedTemplates(templateDirs, plainSourceText);
+  const [, loadedTemplates] = getLoadedTemplates(templateDirs, plainSourceText, moduleName);
   const plainSourceContent = restoreStrippedLines(plainSourceText, plainSourceObj.content);
   const plainSourceFullText = renderPlainSource(plainSourceContent, loadedTemplates, codeVariables);
 
@@ -630,7 +637,7 @@ export function parsePlainSource(
 
       if (specificationHeading === DEFINITIONS && currentSpecificationHeading !== null) {
         throw new PlainSyntaxError(
-          `Plain syntax error: Syntax error at line ${lineNumber(token)}: Definitions specification must be the first specification in the section  (\`${tokenText}\`)`,
+          `Plain syntax error: Syntax error at line ${lineNumber(token)}: Definitions specification must be the first specification in the section (\`${tokenText}\`)`,
         );
       }
 
@@ -649,7 +656,7 @@ export function parsePlainSource(
       plainSource[currentSpecificationHeading]!.children.push(...(token.children ?? []));
     } else {
       throw new PlainSyntaxError(
-        `Plain syntax error: Syntax error at line ${lineNumber(token)}: Invalid source structure  (\`${tokenText}\`)`,
+        `Plain syntax error: Syntax error at line ${lineNumber(token)}: Invalid source structure (\`${tokenText}\`)`,
       );
     }
   }
@@ -668,13 +675,49 @@ export function parsePlainSource(
     }
   }
 
+  const definedConcepts = new Set<string>();
   const definitionsSection = plainSource[DEFINITIONS];
   if (definitionsSection) {
     for (const token of definitionsSection.children) {
       const [newConcepts] = extractConceptsFromDefinition(renderToMarkdown(token));
       for (const concept of newConcepts) {
+        definedConcepts.add(concept);
         const index = requiredConcepts.indexOf(concept);
         if (index !== -1) requiredConcepts.splice(index, 1);
+      }
+    }
+  }
+
+  if (EXPORTED_CONCEPTS_DIRECTIVE in plainSourceObj.metadata) {
+    const tracedModule = modulesTrace[modulesTrace.length - 1];
+    const subject = tracedModule ? `Module '${tracedModule}'` : "Module";
+
+    for (const entry of plainSourceObj.metadata[EXPORTED_CONCEPTS_DIRECTIVE] as string[]) {
+      const [exportedConcepts, errors] = extractConceptsFromDefinition(entry);
+      if (errors.length > 0) {
+        throw new PlainSyntaxError(
+          `Plain syntax error: ${subject} exports an invalid concept (\`${entry}\`). ` +
+            "Expected a concept token, e.g. :ConceptName:.",
+        );
+      }
+
+      for (const exportedConcept of exportedConcepts) {
+        if (DEFAULT_CONCEPTS.has(exportedConcept)) {
+          throw new PlainSyntaxError(
+            `Plain syntax error: ${subject} cannot export default concept ${exportedConcept}. ` +
+              "Only user-defined concepts can be exported.",
+          );
+        }
+
+        if (!definedConcepts.has(exportedConcept)) {
+          let message = `Plain syntax error: ${subject} exports undefined concept ${exportedConcept}.`;
+          if (REQUIRES_DIRECTIVE in plainSourceObj.metadata) {
+            message +=
+              " An exported concept must be defined in this module's definitions or in an " +
+              "imported module; a concept inherited through requires cannot be re-exported.";
+          }
+          throw new PlainSyntaxError(message);
+        }
       }
     }
   }
@@ -703,8 +746,8 @@ export function readModulePlainSource(moduleName: string, templateDirs: string[]
   if (blob !== null) {
     throw new UnsupportedBase64Content(
       `Module '${moduleName}' contains a base64-encoded blob (${blob.length} characters) ` +
-        "inlined in the specification. This is not supported." +
-        "Remove the base64 data from the .plain file or if necessary," +
+        "inlined in the specification. This is not supported. " +
+        "Remove the base64 data from the .plain file or if necessary, " +
         "include the binary file path in the specification.",
     );
   }
@@ -720,18 +763,28 @@ export function parsePlainFile(
   modulesTrace: string[],
 ): PlainFileParseResult {
   const plainSourceText = readModulePlainSource(moduleName, templateDirs);
-  return parsePlainSource(plainSourceText, codeVariables, templateDirs, importedModules, [
-    ...modulesTrace,
+  return parsePlainSource(
+    plainSourceText,
+    codeVariables,
+    templateDirs,
+    importedModules,
+    [...modulesTrace, moduleName],
     moduleName,
-  ]);
+  );
 }
 
+/**
+ * Parse every required module, deepest first, without validating it - each with code variables of its own - and
+ * return the definitions the directly required modules export. A module listed again right after it was walked is
+ * not parsed again, and what it exports is still visible to this module. `exports` records what each module walked
+ * exports, so a repeat can find it.
+ */
 export function processRequiredModules(
   requiredModules: string[],
-  codeVariables: Record<string, Record<string, string>>,
   templateDirs: string[],
   allRequiredModules: string[],
   modulesTrace: string[],
+  exports: Map<string, AnyNode[]> = new Map(),
 ): AnyNode[] {
   const exportedDefinitions: AnyNode[] = [];
 
@@ -741,10 +794,12 @@ export function processRequiredModules(
     }
 
     if (allRequiredModules.length > 0 && moduleName === allRequiredModules[allRequiredModules.length - 1]) {
+      // Already walked as an earlier entry; its exports are still visible to this module.
+      exportedDefinitions.push(...(exports.get(moduleName) ?? []));
       continue;
     }
 
-    const result = parsePlainFile(moduleName, codeVariables, templateDirs, [], []);
+    const result = parsePlainFile(moduleName, {}, templateDirs, [], []);
 
     if (result.requiredModules.length === 0) {
       if (allRequiredModules.length > 0) {
@@ -754,13 +809,12 @@ export function processRequiredModules(
         );
       }
     } else {
-      processRequiredModules(result.requiredModules, codeVariables, templateDirs, allRequiredModules, [
-        ...modulesTrace,
-        moduleName,
-      ]);
+      processRequiredModules(result.requiredModules, templateDirs, allRequiredModules, [...modulesTrace, moduleName], exports);
     }
 
-    exportedDefinitions.push(...exportedDefinitionsOf(result));
+    const own = exportedDefinitionsOf(result);
+    exports.set(moduleName, own);
+    exportedDefinitions.push(...own);
 
     allRequiredModules.push(moduleName);
   }
@@ -768,22 +822,15 @@ export function processRequiredModules(
   return exportedDefinitions;
 }
 
-/** The definitions a required module exports: those of its `exported_concepts`, with the definitions they use. */
+/**
+ * The definitions a required module exports: those of its `exported_concepts`, with the definitions they use. What
+ * it may export is checked as it is parsed (`parsePlainSource`).
+ */
 export function exportedDefinitionsOf(result: PlainFileParseResult): AnyNode[] {
   if (!(EXPORTED_CONCEPTS_DIRECTIVE in result.plainSourceObj.metadata)) return [];
-  const exportedConcepts: string[] = [];
-  for (const concept of result.plainSourceObj.metadata[EXPORTED_CONCEPTS_DIRECTIVE] as unknown[]) {
-    if (typeof concept === "string" && DEFAULT_CONCEPTS.has(concept)) {
-      throw new PlainSyntaxError(
-        `Plain syntax error: Default concept cannot be exported: ${concept}. Only user-defined concepts can be exported.`,
-      );
-    }
-    if (typeof concept === "string") {
-      exportedConcepts.push(...extractConceptsFromDefinition(concept)[0]);
-    } else {
-      throw new PlainSyntaxError(`Plain syntax error: Invalid exported concept: ${concept}.`);
-    }
-  }
+  const exportedConcepts = (result.plainSourceObj.metadata[EXPORTED_CONCEPTS_DIRECTIVE] as string[]).flatMap(
+    (concept) => extractConceptsFromDefinition(concept)[0],
+  );
 
   return exportedConcepts.flatMap((exportedConcept) =>
     findConceptDefinitionsInPlainSource(exportedConcept, result.plainSource[DEFINITIONS] ?? null),
@@ -796,8 +843,8 @@ export function processExportedDefinitions(
 ): void {
   if (exportedDefinitions.length === 0) return;
 
+  if (!plainSource[DEFINITIONS]) plainSource[DEFINITIONS] = { children: [] };
   const definitions = plainSource[DEFINITIONS];
-  if (!definitions) return;
 
   for (const exportedDefinition of exportedDefinitions) {
     const exportedRendered = renderToMarkdown(exportedDefinition).trim();
@@ -865,6 +912,39 @@ export function plainFileParser(
     activeCache.set(key, parsed);
   }
   return parsed;
+}
+
+/**
+ * Port of plain_file.parse_module_chain: a module and every module in its `requires` chain, each as its name and its
+ * tree - every required module first, deepest ancestors first, then the module itself. A module reached through more
+ * than one `requires` path appears once, at its first (deepest) position.
+ */
+export function parseModuleChain(
+  plainSourceFileName: string,
+  templateDirs: string[],
+  options: ParseOptions = {},
+): Array<[string, MarshalledPlainSource]> {
+  return withParseCache(() => {
+    const [moduleName, tree, requiredModules] = plainFileParser(plainSourceFileName, templateDirs, options);
+    const chain: Array<[string, MarshalledPlainSource]> = [];
+    const walked = new Set<string>();
+    const walk = (names: string[]) => {
+      for (const name of names) {
+        if (walked.has(name)) continue;
+        const [requiredName, requiredTree, itsRequires] = plainFileParser(
+          `${name}${PLAIN_SOURCE_FILE_EXTENSION}`,
+          templateDirs,
+        );
+        walk(itsRequires);
+        if (walked.has(requiredName)) continue;
+        walked.add(requiredName);
+        chain.push([requiredName, requiredTree]);
+      }
+    };
+    walk(requiredModules);
+    chain.push([moduleName, tree]);
+    return chain;
+  });
 }
 
 /**
@@ -1026,7 +1106,7 @@ function parseModule(
     result.requiredModules.length > 0,
   );
 
-  const exportedDefinitions = processRequiredModules(result.requiredModules, {}, templateDirs, [], []);
+  const exportedDefinitions = processRequiredModules(result.requiredModules, templateDirs, [], []);
   processExportedDefinitions(result.plainSource, exportedDefinitions);
   processAcceptanceTests(result.plainSource);
   checkForLinkedResources(result.plainSource, templateDirs);

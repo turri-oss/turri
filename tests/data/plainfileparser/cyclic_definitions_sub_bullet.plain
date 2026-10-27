@@ -1,0 +1,11 @@
+***definitions***
+- :Order: is a purchase.
+  - It is placed by a :Customer:.
+- :Customer: is a buyer with :Order: items.
+- :Receipt: records an :Order:.
+
+***implementation reqs***
+- The :Receipt: concept must be implemented.
+
+***functional specs***
+- Implement the :Receipt: concept.

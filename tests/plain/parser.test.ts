@@ -1,4 +1,6 @@
 import { readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   normalizeLineEndings,
@@ -67,7 +69,7 @@ code block
 \`\`\`
 `;
     expect(() => parsePlainSource(plainSource, {}, [], [], [])).toThrow(
-      "Syntax error at line 3: Invalid source structure  (`code block`)",
+      "Syntax error at line 3: Invalid source structure (`code block`)",
     );
   });
 
@@ -140,14 +142,28 @@ description: 'Plain file with frontmatter'
     ).toThrow("Only relative links are allowed");
   });
 
+  it("lists the folders it searched for a missing link", () => {
+    const folder = dataPath("data/plainfile");
+    let message = "";
+    try {
+      plainFileParser("plain_source_with_missing_link.plain", [folder]);
+    } catch (error) {
+      expect(error).toBeInstanceOf(PlainSyntaxError);
+      message = (error as Error).message;
+    }
+    expect(message).toContain("resources/missing_resource.yaml does not exist");
+    expect(message).toContain("highest to lowest precedence");
+    expect(message).toContain(folder);
+  });
+
   it("parses reference links", () => {
     const [, plainSections] = plainFileParser("task_manager_with_reference_links.plain", [
       dataPath("data/plainfile"),
     ]);
 
     const assertedResources = [
-      "tests/data/plainfile/task_list_ui_specification.yaml",
-      "tests/data/plainfile/add_new_task_modal_specification.yaml",
+      "task_list_ui_specification.yaml",
+      "add_new_task_modal_specification.yaml",
     ];
     const functionalSpecs = getSpecificationItems(plainSections, FUNCTIONAL_REQUIREMENTS)!;
 
@@ -168,15 +184,33 @@ description: 'Plain file with frontmatter'
     expect(functionalSpecs[1]!.linked_resources).toEqual([
       {
         text: "task_list_ui_specification.yaml",
-        target: "tests/data/plainfile/task_list_ui_specification.yaml",
+        target: "task_list_ui_specification.yaml",
       },
     ]);
     expect(functionalSpecs[2]!.linked_resources).toEqual([
       {
         text: "add_new_task_modal_specification.yaml",
-        target: "tests/data/plainfile/add_new_task_modal_specification.yaml",
+        target: "add_new_task_modal_specification.yaml",
       },
     ]);
+  });
+
+  it("resolves links against the folder of the plain file, wherever it is run from", () => {
+    const folder = resolve(dataPath("data/plainfile"));
+    const before = process.cwd();
+    process.chdir(tmpdir());
+    try {
+      const [, plainSections] = plainFileParser("task_manager_with_reference_links.plain", [folder]);
+      const functionalSpecs = getSpecificationItems(plainSections, FUNCTIONAL_REQUIREMENTS)!;
+      expect(functionalSpecs[1]!.linked_resources).toEqual([
+        { text: "task_list_ui_specification.yaml", target: "task_list_ui_specification.yaml" },
+      ]);
+      expect(functionalSpecs[2]!.linked_resources).toEqual([
+        { text: "add_new_task_modal_specification.yaml", target: "add_new_task_modal_specification.yaml" },
+      ]);
+    } finally {
+      process.chdir(before);
+    }
   });
 
   it("rejects an invalid specification order", () => {
@@ -484,7 +518,7 @@ description: 'Plain file with frontmatter'
 
     it("accepts valid definitions and rejects malformed ones", () => {
       expect(() => parse("concept_validation_definition.plain")).not.toThrow();
-      expect(() => parse("concept_validation_noconcepts.plain")).toThrow(PlainSyntaxError);
+      expect(() => parse("concept_validation_noconcepts.plain")).toThrow("Invalid definition specification text");
     });
 
     it("checks concept usage", () => {
@@ -495,7 +529,7 @@ description: 'Plain file with frontmatter'
     });
 
     it("rejects redefinition", () => {
-      expect(() => parse("concept_validation_redefinition.plain")).toThrow(PlainSyntaxError);
+      expect(() => parse("concept_validation_redefinition.plain")).toThrow("Concepts were defined multiple times");
     });
 
     it("allows non-concept usage", () => {
@@ -523,11 +557,28 @@ description: 'Plain file with frontmatter'
       expect(() => parse("required_concepts_partial_duplicate.plain")).toThrow(PlainSyntaxError);
     });
 
-    it("resolves exported concepts", () => {
-      expect(() => parse("exported_concepts_example.plain")).not.toThrow();
-      expect(() => parse("exported_concepts_nested_example.plain")).not.toThrow();
-      expect(() => parse("exported_concepts_missing_example.plain")).toThrow(PlainSyntaxError);
-      expect(() => parse("exported_concepts_transitive_example.plain")).toThrow(PlainSyntaxError);
+    it.each([
+      "exported_concepts_example.plain",
+      "exported_concepts_imported_exported.plain",
+      "exported_concepts_multiple_per_bullet.plain",
+      "exported_concepts_nested_example.plain",
+    ])("accepts the exported concepts of %s", (fixture) => {
+      expect(() => parse(fixture)).not.toThrow();
+    });
+
+    it.each([
+      ["exported_concepts_defaults_exported.plain", "cannot export default concept"],
+      ["exported_concepts_inherited_reexported.plain", "cannot be re-exported"],
+      ["exported_concepts_malformed.plain", "exports an invalid concept"],
+      ["exported_concepts_missing_definition_example.plain", "'exported_concepts_missing_definition' exports"],
+      ["exported_concepts_missing_definition.plain", "exports undefined concept"],
+      ["exported_concepts_multiple_per_bullet_undefined.plain", "exports undefined concept"],
+      ["exported_concepts_no_definitions.plain", "exports undefined concept"],
+      ["exported_concepts_not_declared_example.plain", "not defined"],
+      ["exported_concepts_transitive_example.plain", "not defined"],
+    ])("rejects the exported concepts of %s, saying it %s", (fixture, expected) => {
+      expect(() => parse(fixture)).toThrow(PlainSyntaxError);
+      expect(() => parse(fixture)).toThrow(expected);
     });
   });
 
@@ -557,6 +608,57 @@ description: 'Plain file with frontmatter'
       { markdown: "- :Concept4: is a concept that depends on the :Concept3: concept." },
       { markdown: "- :Concept6: is a concept that depends on the :Concept1: and :Concept4: concepts." },
     ]);
+  });
+
+  describe("cyclic definitions", () => {
+    const parse = (name: string) => plainFileParser(name, [dataPath("data/plainfileparser")]);
+    const messageOf = (name: string) => {
+      try {
+        parse(name);
+      } catch (error) {
+        expect(error).toBeInstanceOf(PlainSyntaxError);
+        return (error as Error).message;
+      }
+      throw new Error(`${name} parsed`);
+    };
+
+    it("rejects a cycle in the definitions", () => {
+      expect(messageOf("cyclic_definitions.plain")).toMatch(/cycle\(s\) in concept definitions/);
+    });
+
+    it("reports every definition on the cycle, and none off it", () => {
+      const message = messageOf("cyclic_definitions_long.plain");
+      for (const definition of ["- :A: uses :B:.", "- :B: uses :C:.", "- :C: uses :A:."]) expect(message).toContain(definition);
+      expect(message).not.toContain("- :D: is on its own.");
+    });
+
+    it("finds a cycle across an import", () => {
+      const message = messageOf("cyclic_definitions_across_import.plain");
+      expect(message).toContain("Found 1 cycle");
+      expect(message).toContain("- :DependantConcept: is a concept that depends on the :Concept: concept.");
+      expect(message).toContain("- :Concept: is the concept that :DependantConcept: builds on.");
+    });
+
+    it("finds a cycle through a sub-bullet", () => {
+      const message = messageOf("cyclic_definitions_sub_bullet.plain");
+      expect(message).toContain("Cycle 1: :Order: -> :Customer: -> :Order:");
+      expect(message).toContain("- :Order: is a purchase.\n  - It is placed by a :Customer:.");
+      expect(message).not.toContain(":Receipt:");
+    });
+  });
+
+  it("sorts definitions topologically across an import", () => {
+    const [, plainSource] = plainFileParser("required_concepts_module.plain", [dataPath("data/plainfileparser")]);
+    expect(plainSource[DEFINITIONS]).toEqual([
+      { markdown: "- :Concept: is a concept." },
+      { markdown: "- :DependantConcept: is a concept that depends on the :Concept: concept." },
+    ]);
+  });
+
+  it("names the module in a Liquid syntax error", () => {
+    expect(() => plainFileParser("unterminated_output.plain", [dataPath("data/templates")])).toThrow(
+      "Plain syntax error: Invalid Liquid at unterminated_output:",
+    );
   });
 
   it("rejects a non .plain extension", () => {

@@ -1,0 +1,12 @@
+---
+requires:
+  - invalid_ancestor_base
+---
+
+***implementation reqs***
+
+- Top implementation requirement.
+
+***functional specs***
+
+- A top functionality.

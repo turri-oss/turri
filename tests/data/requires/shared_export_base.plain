@@ -1,0 +1,16 @@
+---
+exported_concepts:
+  - :KeyStore:
+---
+
+***definitions***
+
+- :KeyStore: holds encryption keys.
+
+***implementation reqs***
+
+- Base implementation requirement.
+
+***functional specs***
+
+- :KeyStore: stores a key.

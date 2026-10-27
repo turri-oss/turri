@@ -1,0 +1,11 @@
+***definitions***
+- :A: uses :B:.
+- :B: uses :C:.
+- :C: uses :A:.
+- :D: is on its own.
+
+***implementation reqs***
+- The :D: concept must be implemented.
+
+***functional specs***
+- Implement the :D: concept.
