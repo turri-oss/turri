@@ -104,13 +104,12 @@ If **no pair** is conflicting:
 COMPATIBLE
 ```
 
-If **one or more pairs** are conflicting, emit `CONFLICTING` followed by one line per conflicting pair, in `Sᵢ x Sⱼ` form (using the identifiers from the input, with `i < j`), sorted lexicographically:
+If **one or more pairs** are conflicting, emit `CONFLICTING` followed by one line per conflicting pair, in `<a> x <b>` form (the identifiers from step 1, the one that comes first in the input on the left), sorted lexicographically:
 
 ```
 CONFLICTING
-S1 x S4
-S2 x S3
-S3 x S5
+add-task x import-tasks
+list-tasks x S2
 ```
 
 Rules for the output:
@@ -118,6 +117,6 @@ Rules for the output:
 - Do **not** list compatible pairs.
 - Do **not** include reasoning, checklist categories, or fixes — the caller decides what to do with each conflict (typically: invoke `resolve-spec-conflict` on each pair).
 - If the input contained fewer than two specs, emit `COMPATIBLE` (nothing to compare).
-- Identifiers must match exactly what the caller provided (or the `S1`, `S2`, … fallback assigned in step 1).
+- Identifiers must match exactly what step 1 settled: the func-ids, the caller's own labels, or the `S1`, `S2`, … fallback for a draft.
 
 The internal pairwise analysis informs the verdict but must not appear in the output.

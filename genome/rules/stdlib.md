@@ -10,7 +10,6 @@ turri ships a standard library of import modules that settle everything about a 
 ---
 import:
   - stdlib/backend/python-flask
-  - stdlib/backend/conformance/python-flask
 ---
 ```
 
@@ -24,7 +23,7 @@ import:
 
 - When the person wants a backend, a frontend, a command-line tool or a library, import the stack that fits instead of writing its implementation reqs yourself.
 - Pick the stack from what the person said, the project's other modules, and what the module talks to. With nothing to go on: `stdlib/backend/python-fastapi`, `stdlib/frontend/react-vite`, `stdlib/cli/python-typer`, `stdlib/library/python`.
-- Import the conformance template only when the module has conformance tests - the person asked for them, and the project's config does not turn them off (`conformance-tests: false`). Without it the module has no test reqs, and no conformance tests are written or run for it. Turning them on later is adding that one import.
+- Import the stack alone. Nothing about testing exists until the person asks for it: the first time they ask for tests in a module, import the stack's conformance template, `stdlib/<kind>/conformance/<stack>` - the module's test reqs - then write the conformance testing script if the project has none for the stack, then the scenarios, in that order (*Writing scenarios* in `test-plain-files.md`).
 - Read the templates a module imports before writing its specs - the folder is named below - and write no requirement they already make (see `concise-specs.md`).
 - Write a functional spec's errors in the templates' terms: a backend's failure by its status and `error.code` - `not_found`, `conflict`, `validation_error`, `unauthenticated`, `forbidden`, or a code of the module's own - and a command-line tool's by its exit code and message.
 - Add a requirement on top for what the module needs beyond its stack - storage, an outside service, a library it must use. When the module differs from its stack on something the stack settles - another framework, another layout - write the stack yourself instead: an import cannot be taken back in part. For a language with no stack of the kind wanted, import its `stdlib/lang/<language>` and write the rest.
@@ -34,5 +33,5 @@ import:
 
 - It defines no concepts: its requirements are on the predefined `:Implementation:`, `:UnitTests:` and `:ConformanceTests:` only, so it never collides with the module's own definitions.
 - It holds no storage: a module with a database says which, and how it is reached, on top.
-- It holds no testing scripts. The module still needs its unit testing script, and its conformance testing script when it has conformance tests - written with the `implement-unit-testing-script` and `implement-conformance-testing-script` skills for the stack's language and test framework. Each runs the static checks of what it tests - the formatter, linter and type checker its language template names, on the code or on the conformance tests - and they count as the tests do.
+- It holds no testing scripts. The module still needs its unit testing script, written with the `implement-unit-testing-script` skill for the stack's language and test framework; its conformance testing script is written with `implement-conformance-testing-script` when its first tests are asked for. Each runs the static checks of what it tests - the formatter, linter and type checker its language template names, on the code or on the conformance tests - and they count as the tests do.
 - It names its stack's toolchain - Python 3.12, Node.js 24, Java 21, Go 1.25, Rust - which the agents use from the machine turri runs on; they install none, so `turri doctor` says when the machine lacks it.
