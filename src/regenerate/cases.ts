@@ -85,11 +85,12 @@ export function conformanceCasesBlock(cases: JobCases): string[] {
       "  conformance testing script, which brings the tests together with the code, runs them - then write what follows.",
     );
   }
-  if (cases.add.length > 0) lines.push(`- New - write its conformance tests: ${named(cases.add)}.`);
+  if (cases.add.length > 0) lines.push(`- New - write a test for each of its scenarios: ${named(cases.add)}.`);
   if (cases.patch.length > 0) {
     lines.push(
-      `- Changed - its text, its acceptance tests, or a concept it uses: ${named(cases.patch)}.`,
-      "  Its conformance tests exist: rewrite them to what it says now. The tests of everything else stay as they are.",
+      `- Changed - its text, its scenarios, or a concept it uses: ${named(cases.patch)}.`,
+      "  Its conformance tests exist: bring them in line with its scenarios as they are now - a test for each, a",
+      "  scenario taken out losing its tests. The tests of everything else stay as they are.",
     );
   }
   if (cases.again.length > 0) {
@@ -104,7 +105,7 @@ export function conformanceCasesBlock(cases: JobCases): string[] {
       "  The tests of everything else stay as they are.",
     );
   }
-  if (cases.delete.length > 0) lines.push(`- Taken out - remove its conformance tests: ${named(cases.delete)}.`);
+  if (cases.delete.length > 0) lines.push(`- Taken out, or its scenarios all taken out - remove its conformance tests: ${named(cases.delete)}.`);
   if (cases.mechanical) {
     lines.push(
       "- No functional spec is touched: the change is to the test reqs, or to definitions or implementation reqs alone.",

@@ -16,7 +16,7 @@ import type { SpecGap } from "./regenerate/notes.ts";
  * Each write is atomic: the file is written beside it and renamed over it, so a reader never sees half of one.
  */
 
-export const REPORT_SCHEMA_VERSION = 1;
+export const REPORT_SCHEMA_VERSION = 2;
 
 /** What the usage of some model calls adds up to, as the report gives it. */
 export interface UsageTotals {
@@ -80,7 +80,6 @@ export interface RunReportOptions {
   specFile: string;
   projectDir: string;
   buildDir?: string;
-  conformanceTests: string;
   /** Whether the code and its tests are reviewed once they pass. */
   review?: boolean;
   /** Whether the coding agent and the reviewer had can_it_fail. */
@@ -342,7 +341,6 @@ export function startRunReport(options: RunReportOptions): RunReporter {
       spec_file: resolve(options.specFile),
       project_dir: projectRoot,
       build_dir: options.buildDir !== undefined ? resolve(options.buildDir) : null,
-      conformance_tests: options.conformanceTests,
       review: options.review ?? null,
       mutation_testing: options.mutationTesting ?? null,
       models: {

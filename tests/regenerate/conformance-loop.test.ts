@@ -67,7 +67,6 @@ vi.mock("../../src/pi.ts", async (importOriginal) => {
           tests_reach_it: "The script runs the tests from a copy of the build: app.py is in the current directory when they run.",
           interfaces: [{ module: "app", id: testedFuncId, how: "Run `python3 app.py` from the build folder; it writes to stdout and exits." }],
           environment: "Nothing around it: no variables, services or files - every run starts from the same state.",
-          plan: [{ module: "app", id: testedFuncId, tests: "Run the app as a subprocess and check what it prints to stdout, and its exit code, as the spec says. Acceptance test 1: run it, assert it prints hello and exits 0." }],
         });
         return "Done.";
       }
@@ -110,7 +109,7 @@ vi.mock("../../src/pi.ts", async (importOriginal) => {
         pingPong += 1;
         await tool("write").execute("id", {
           path: "test_conformance_hello.py",
-          content: `# conformance tests of functionality ${testedFuncId}\nimport unittest\n\nclass Hello(unittest.TestCase):\n    def test_side(self):\n        self.fail("depends on artifact ${pingPong % 2 === 0 ? "alpha" : "beta"}")\n`,
+          content: `# conformance tests of app:${testedFuncId}\nimport unittest\n\nclass Hello(unittest.TestCase):\n    def test_side(self):\n        self.fail("depends on artifact ${pingPong % 2 === 0 ? "alpha" : "beta"}")\n`,
         });
         return "Done.";
       }
@@ -120,7 +119,7 @@ vi.mock("../../src/pi.ts", async (importOriginal) => {
           path: "test_acceptance_hello.py",
           content:
             "import subprocess, sys, unittest\n\nclass Acceptance(unittest.TestCase):\n" +
-            "    # acceptance test 1 of functionality print-hello: Running the app prints hello and exits 0.\n" +
+            "    # acceptance scenario prints-hello of app:print-hello\n" +
             "    def test_prints_hello_and_exits_0(self):\n" +
             "        run = subprocess.run([sys.executable, 'app.py'], capture_output=True, text=True)\n" +
             "        self.assertEqual((run.stdout.strip(), run.returncode), ('hello', 0))\n",
@@ -129,7 +128,8 @@ vi.mock("../../src/pi.ts", async (importOriginal) => {
         await tool("write").execute("id", {
           path: "test_conformance_hello.py",
           content:
-            `# conformance tests of functionality ${testedFuncId}\n${touchesTests ? `# fix ${(touches += 1)}\n` : ""}${staticBad && !prompt.includes("Exit 80") ? "# BAD\n" : ""}${hangsFirst && !prompt.includes("a test is what is wrong") ? "# WAIT_FOREVER\n" : ""}import subprocess, sys, unittest\n\nclass Hello(unittest.TestCase):\n` +
+            `# conformance tests of app:${testedFuncId}\n${touchesTests ? `# fix ${(touches += 1)}\n` : ""}${staticBad && !prompt.includes("Exit 80") ? "# BAD\n" : ""}${hangsFirst && !prompt.includes("a test is what is wrong") ? "# WAIT_FOREVER\n" : ""}import subprocess, sys, unittest\n\nclass Hello(unittest.TestCase):\n` +
+            `    # conformance scenario checks of app:${testedFuncId}\n` +
             "    def test_prints_hello(self):\n" +
             "        out = subprocess.run([sys.executable, 'app.py'], capture_output=True, text=True).stdout\n" +
             `        self.assertEqual(out.strip(), '${firstTestWrong && !prompt.includes("a test is what is wrong") ? "Hello!" : "hello"}')\n`,
@@ -201,7 +201,7 @@ describe("the conformance step", { timeout: 180_000 }, () => {
     expect(result.codeChanged).toBe(true);
     expect(readFileSync(join(codeDir, "app.py"), "utf8")).toBe("print('hello')\n");
 
-    // In order: the explorer, the conformance agent (sent back once for the acceptance test it left
+    // In order: the explorer, the conformance agent (sent back once for the acceptance scenario it left
     // out), the judge, who says the code is wrong, and the coding agent, who fixes it.
     // ...and, once the suite and the unit tests pass, the review gate.
     expect(asked.map((turn) => turn.role)).toEqual(["explorer", "conformance agent", "conformance agent", "judge", "coding agent", "reviewer"]);
@@ -211,16 +211,16 @@ describe("the conformance step", { timeout: 180_000 }, () => {
     expect(review).toContain("<the tests this run wrote - a diff of the tests folder from where the run started>");
     expect(review).toContain("test_acceptance_hello.py");
     expect(review).toContain("never mocks, stubs or replaces any part of the software under test");
-    expect(review).toContain("<acceptance test 1 of functionality print-hello>\nRunning the app prints hello and exits 0.");
+    expect(review).toContain("<scenario>\nacceptance scenario prints-hello of app:print-hello:\nRunning the app prints hello and exits 0.\n</scenario>");
     const [explorer, writer, , judge, coder] = asked;
     expect(explorer!.prompt).toContain("They will not see your replies");
     // The test author is given how to invoke it, and may read the code - never write it.
-    // The whole exploration: how to run it, how the functionality is reached, what it needs, and a plan.
+    // The whole exploration: how to run it, how the functionality is reached, and what it needs - what to test is the scenarios'.
     expect(writer!.prompt).toContain("## How each functionality is reached\n\n### app print-hello\n\nRun `python3 app.py` from the build folder; it writes to stdout and exits.");
-    expect(writer!.prompt).toContain("## Plan for the conformance tests\n\n### app print-hello\n\nRun the app as a subprocess");
+    expect(writer!.prompt).not.toContain("Plan for the conformance tests");
     expect(writer!.prompt).toContain(`You have read access to the code, in ${codeDir}, with your file tools - read, grep, find, ls - but`);
     expect(writer!.prompt).toContain("not write access: you write tests, never code.");
-    expect(writer!.prompt).toContain("acceptance test 1 of functionality print-hello: Running the app prints hello and exits 0.");
+    expect(writer!.prompt).toContain("acceptance scenario prints-hello of app:print-hello:\nRunning the app prints hello and exits 0.");
     expect(judge!.prompt).toContain("Decide what is wrong: the code, the tests, the specification itself, the run's environment, or the testing script.");
     expect(judge!.prompt).toContain("<how to read the specification>");
     expect(judge!.prompt).toMatch(/<failing run exit="1"/);
@@ -235,7 +235,7 @@ describe("the conformance step", { timeout: 180_000 }, () => {
     // The harness's own runs decide: failing until the code is fixed, then the suite and the unit tests pass.
     expect(result.runs.at(-1)!.exitCode).toBe(0);
     expect(new Set(result.runs.map((run) => run.command))).toEqual(new Set(["test_scripts/run_conformance_tests_python.sh"]));
-    expect(readFileSync(join(root, "plain_modules", "app", "tests", "test_acceptance_hello.py"), "utf8")).toContain("# acceptance test 1 of functionality print-hello:");
+    expect(readFileSync(join(root, "plain_modules", "app", "tests", "test_acceptance_hello.py"), "utf8")).toContain("# acceptance scenario prints-hello of app:print-hello");
   });
 
   it("stops at the harness's first run when the conformance testing script cannot find its toolchain - no turn back to the conformance agent", async () => {
@@ -292,7 +292,8 @@ describe("the conformance step", { timeout: 180_000 }, () => {
   });
 
   it("raises a spec conflict only after the same two functionalities are named three times, sending the tests back in between", async () => {
-    rmSync(join(root, "tests", "app", "print-hello.plain"));
+    // A conformance scenario the stub carries out at once: no turn back for a label.
+    writeFileSync(join(root, "tests", "app", "print-hello.plain"), testPlainFile("app", "print-hello", { conformance: ["# checks\nIt prints hello."] }));
     writePlain(root, "app.plain", APP + "# say-goodbye\nThe app prints goodbye.\n\n# print-hello\nThe app prints hello.\n");
     testedFuncId = "print-hello";
     judgeSays = () => ({ culprit: "spec", functionalities: [{ module: "app", id: "print-hello" }, { module: "app", id: "say-goodbye" }], reason: "One says it prints goodbye, the other hello." });
@@ -510,21 +511,21 @@ describe("the conformance step", { timeout: 180_000 }, () => {
     expect(made.filter(([opts]) => opts.label?.endsWith("test reviewer")).length - reviewersBefore).toBe(1);
   });
 
-  it("for a spec change, labels, shows and reviews the acceptance tests of the functionalities it touches", async () => {
+  it("for a spec change, labels, shows and reviews the scenarios of the functionalities it touches", async () => {
     const diff = "--- a/app.plain\n+++ b/app.plain\n@@ -1 +1 @@\n-The app prints hi.\n+The app prints hello.\n";
     const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), funcId: "print-hello", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests"), diff });
     expect(result.passed).toBe(true);
     const writer = asked.find((turn) => turn.role === "conformance agent")!;
-    expect(writer.prompt).toContain("The acceptance tests of the functional specs the change touches:\n<acceptance tests>\n");
-    expect(writer.prompt).toContain("Running the app prints hello and exits 0.");
-    // Its first tests leave the acceptance test out: sent back to label it, as a functionality's own run does.
+    expect(writer.prompt).toContain("The scenarios of the functional specs the change touches, as they are now:\n<acceptance tests>\n");
+    expect(writer.prompt).toContain("acceptance scenario prints-hello of app:print-hello:\nRunning the app prints hello and exits 0.");
+    // Its first tests leave the acceptance scenario out: sent back to label it, as a functionality's own run does.
     expect(asked.some((turn) => turn.role === "conformance agent" && turn.prompt.includes("are not labelled yet"))).toBe(true);
     const review = asked.find((turn) => turn.role === "reviewer")!.prompt;
     expect(review).toContain("the functionalities of module `app` the change touches (print-hello)");
-    expect(review).toContain("<acceptance test 1 of functionality print-hello>\nRunning the app prints hello and exits 0.");
+    expect(review).toContain("<scenario>\nacceptance scenario prints-hello of app:print-hello:\nRunning the app prints hello and exits 0.\n</scenario>");
   });
 
-  it("for a spec change, gives the judge and the explorer the acceptance tests of every functionality it touches, labelled - not only the last one's", async () => {
+  it("for a spec change, gives the judge and the explorer the scenarios of every functionality it touches, labelled - not only the last one's", async () => {
     acceptanceTests("take-no-arguments", "# no-arguments\nRunning the app with no arguments exits 0.");
     writePlain(root, "app.plain", APP + "# print-hello\nThe app prints hello.\n\n# take-no-arguments\nThe app takes no arguments.\n");
     const diff =
@@ -533,7 +534,7 @@ describe("the conformance step", { timeout: 180_000 }, () => {
     // The judge is given the very spec the explorer is (`specContext`); the stubbed explorer plans one functionality, so no judge is reached.
     const explorer = asked.find((turn) => turn.role === "explorer")!.prompt;
     expect(explorer).toContain(
-      "<acceptance tests>\nacceptance test 1 of functionality print-hello: Running the app prints hello and exits 0.\n\nacceptance test 1 of functionality take-no-arguments: Running the app with no arguments exits 0.\n</acceptance tests>",
+      "<acceptance tests>\nacceptance scenario prints-hello of app:print-hello:\nRunning the app prints hello and exits 0.\n\nacceptance scenario no-arguments of app:take-no-arguments:\nRunning the app with no arguments exits 0.\n</acceptance tests>",
     );
   });
 
@@ -558,7 +559,7 @@ describe("the conformance step", { timeout: 180_000 }, () => {
     writesNothing = true;
     const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), funcId: "print-hello", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") });
     expect(result.passed).toBe(false);
-    expect(result.unlabelled).toEqual(expect.arrayContaining([expect.stringContaining('No test file is labelled "conformance tests of functionality print-hello"')]));
+    expect(result.unlabelled).toEqual(expect.arrayContaining([expect.stringContaining('No test file is labelled "conformance tests of app:print-hello"')]));
     const writers = asked.filter((turn) => turn.role === "conformance agent");
     expect(writers).toHaveLength(4);
     expect(writers[1]!.prompt).toContain("There are no tests in your tests folder - nothing ran.");
@@ -575,7 +576,7 @@ describe("the conformance step", { timeout: 180_000 }, () => {
       mkdirSync(testsDir(), { recursive: true });
       writeFileSync(
         join(testsDir(), "test_conformance_hello.py"),
-        "# conformance tests of functionality print-hello\n# acceptance test 1 of functionality print-hello: Running the app prints hello and exits 0.\n" +
+        "# conformance tests of app:print-hello\n# acceptance scenario prints-hello of app:print-hello\n" +
           "import subprocess, sys, unittest\n\nclass Hello(unittest.TestCase):\n    def test_prints_hello(self):\n" +
           "        out = subprocess.run([sys.executable, 'app.py'], capture_output=True, text=True).stdout\n        self.assertEqual(out.strip(), 'hello')\n",
       );
@@ -626,7 +627,7 @@ describe("the conformance step", { timeout: 180_000 }, () => {
     expect(result.passed).toBe(true);
     expect(asked.filter((turn) => turn.role === "reviewer")).toHaveLength(2);
     expect(asked.filter((turn) => turn.role === "arbiter")).toHaveLength(1);
-    expect(asked.find((turn) => turn.role === "arbiter")!.prompt).toContain("You are the arbiter of the conformance tests of functionality print-hello");
+    expect(asked.find((turn) => turn.role === "arbiter")!.prompt).toContain("You are the arbiter of the conformance tests of functional spec app:print-hello");
     expect(result.reviewWaived).toEqual([{ file: "test_acceptance_hello.py", kind: "bad", what: "It could log more.", blocking: false }]);
     // The tests' notes, beside them - never the code's, which the coding agents read.
     expect(readFileSync(join(root, "plain_modules", "app", "tests", ".turri-notes.md"), "utf8")).toContain("the arbiter let go what the conformance test review raised");

@@ -193,7 +193,7 @@ describe("when a build stops", () => {
 
     const conformance = describeStop({ moduleName: "app", funcId: "add-task", at: "conformance" });
     expect(conformance).toContain("still disagree about what the spec means");
-    expect(conformance).toContain("acceptance tests");
+    expect(conformance).toContain("add scenarios to its test plain file");
     expect(conformance).toContain("test reqs");
 
     const regression = describeStop({ moduleName: "app", funcId: "add-task", at: "regression", repairs: 20 });

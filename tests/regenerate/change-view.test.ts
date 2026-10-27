@@ -67,6 +67,23 @@ describe("a job's change as its agent is given it", () => {
     expect(diff).not.toContain("It is loud.");
   });
 
+  it("lays out a conformance job's changed scenarios as a diff of the functional spec's test plain file, after the module's", () => {
+    const change: SpecChange = {
+      id: "f", section: "functional specs", kind: "change", position: 1,
+      before: item("One.", { id: "one", conformance_tests: [], acceptance_tests: [{ id: "loud", text: "It is loud." }] }),
+      after: item("One.", { id: "one", conformance_tests: [], acceptance_tests: [{ id: "loud", text: "It is very loud." }] }),
+    };
+    const diff = changeDiff([change], "app.plain", { module: "app", pathOf: (funcId) => `tests/app/${funcId}.plain` });
+    const block = diff.slice(diff.indexOf("diff --git a/tests/app/one.plain b/tests/app/one.plain"));
+    expect(block).toContain("--- a/tests/app/one.plain\n+++ b/tests/app/one.plain");
+    expect(block).toContain("-It is loud.");
+    expect(block).toContain("+It is very loud.");
+    expect(block).toContain("-func_id: one\n");
+    expect(diff.indexOf("diff --git a/app.plain")).toBeLessThan(diff.indexOf("diff --git a/tests/app/one.plain"));
+    // Without a module to lay them out for - a code job - no test plain file is shown.
+    expect(changeDiff([change], "app.plain")).not.toContain("tests/app/one.plain");
+  });
+
   it("shows a required module's functional spec under the functional specs heading its file has, never the parser's key for it", () => {
     const diff = changeDiff([add("required functional specs", 1, "- The :Engine: starts.")], "app.plain");
     expect(diff).toContain(" ***functional specs***\n+- The :Engine: starts.");

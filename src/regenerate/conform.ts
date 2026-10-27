@@ -125,7 +125,7 @@ export async function renderSpecDiffConformance(options: RenderSpecDiffConforman
   });
 
   // What the codebase now has conformance tests for, as their labels say.
-  const tested = () => funcIds.filter((funcId) => missingTestLabels(conformanceDir, funcId, []).length === 0);
+  const tested = () => funcIds.filter((funcId) => missingTestLabels(conformanceDir, moduleName, { funcId, conformance: [], acceptance: [] }).length === 0);
   // A gap is the person's to decide, whether the tests passed or not.
   const base = { moduleName, buildDir, conformanceDir, diff: applied, conformance, specGaps: gapsSince(gapsFrom, [buildDir, conformanceDir]) };
 

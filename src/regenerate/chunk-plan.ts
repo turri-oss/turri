@@ -8,7 +8,7 @@ import { firstLine, record } from "./ledger.ts";
 import { steeringBlock, type Steering } from "./steer.ts";
 import { marksRegenerateAgain } from "./records.ts";
 import { validateConcepts } from "../plain/concepts.ts";
-import { applyChanges, changesBetween, inconsistencies, layoutOf, makeStep, parseTree, serializeTree, type SpecChange, type SpecStep } from "./spec-steps.ts";
+import { applyChanges, changesBetween, inconsistencies, layoutOf, makeStep, parseTree, serializeTree, type SpecChange, type SpecStep, type TestPlainPath } from "./spec-steps.ts";
 
 /**
  * The queue's work, cut into jobs of a size worth rendering.
@@ -58,11 +58,8 @@ export interface PlanInput {
    * in one job, as far as the guardrail (`max-lines-per-pulse`) lets.
    */
   separately?: boolean;
-  /**
-   * For the conformance tests: the functional specs asked for together, a group a request - `conform` called for 1-3, then
-   * for 4-6. Never two groups in one job; the functional specs in none are tested together, as before.
-   */
-  groups?: string[][];
+  /** For the conformance tests: where each functional spec's test plain file is, as a step's ***plain diff names it. */
+  testPlainPath?: TestPlainPath;
   /** How big a pulse may be - the config's `max-specs-per-pulse` and `max-lines-per-pulse`; unset, MAX_SPECS_PER_JOB and MAX_LINES_PER_JOB. */
   limits?: PulseLimits;
 }
@@ -134,7 +131,8 @@ export function stepsOf(input: PlanInput, draft: DraftJob[]): Array<DraftJob & {
     const changes = job.changes.map((id) => byId.get(id)!);
     sofar.push(...changes);
     const after = applyChanges(serializeTree(input.base), sofar);
-    const step = makeStep(job.title, job.reason, changes, before, after, input.specFile, layout);
+    const testPlain = input.track === "conformance" && input.testPlainPath !== undefined && input.moduleName !== undefined ? { module: input.moduleName, pathOf: input.testPlainPath } : undefined;
+    const step = makeStep(job.title, job.reason, changes, before, after, input.specFile, layout, testPlain);
     before = after;
     return { ...job, step };
   });
@@ -471,9 +469,8 @@ function anchored(draft: DraftJob[], net: SpecChange[]): DraftJob[] {
 
 /**
  * How the conformance tests are cut, with no agent: every functional spec tested in one job - those of one module
- * together - a new job begun where the next functional spec was asked for in another group (`groups`: conform called for
- * 1-3, then for 4-6), or would take the job's functional specs and the definitions they bring past `maxLines`; or,
- * `separately`, a job a functional spec, as the person asked.
+ * together - a new job begun where the next functional spec would take the job's functional specs and the definitions
+ * they bring past `maxLines`; or, `separately`, a job a functional spec, as the person asked.
  * `size`: the movable lines of the last group of a grouping, its definitions placed.
  */
 function conformanceGroups(
@@ -482,16 +479,13 @@ function conformanceGroups(
   maxLines: number,
   size: (groups: Array<{ specs: number[]; title: string }>) => number,
   titleOfSpec: (number: number) => string,
-  /** The group a functional spec was asked for in - none, -1: a job never takes two. */
-  askedIn: (spec: NewSpec) => number = () => -1,
 ): Array<{ specs: number[]; title: string }> {
   const groups: Array<{ specs: number[] }> = [];
   for (const spec of specs) {
     const last = groups.at(-1);
     const first = last !== undefined ? specs.find((other) => other.number === last.specs[0]) : undefined;
     const sameModule = first !== undefined && first.module === spec.module;
-    const sameAsk = first !== undefined && askedIn(first) === askedIn(spec);
-    if (!separately && last !== undefined && sameModule && sameAsk) {
+    if (!separately && last !== undefined && sameModule) {
       const trial = [...groups.slice(0, -1), { specs: [...last.specs, spec.number] }].map((group) => ({ ...group, title: "" }));
       if (size(trial) <= maxLines) {
         last.specs.push(spec.number);
@@ -601,10 +595,6 @@ async function cut(input: PlanInput, agents?: ChunkAgents, notes?: string[]): Pr
           return movableSize(trial.at(-1)!);
         },
         (number) => titleOf(bySpec.get(number)!),
-        (spec) => {
-          const funcId = funcIdOf(bySpec.get(spec.number)!);
-          return funcId === undefined ? -1 : (input.groups ?? []).findIndex((group) => group.includes(funcId));
-        },
       )
     : grouped !== undefined && holds
       ? grouped.groups

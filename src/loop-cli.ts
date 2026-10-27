@@ -22,7 +22,6 @@ import { tryItCommand } from "./regenerate/delivery.ts";
 import { describeDiagnosis, diagnoseFailure } from "./regenerate/diagnose.ts";
 import { createJobRegistry, pulseName, type Job } from "./regenerate/jobs.ts";
 import type { SpecGap } from "./regenerate/notes.ts";
-import { conformanceChooser } from "./regenerate/choose-conformance.ts";
 import { createWorkLoop, describeModules, functionalityCompletion, promptOf, type DriftReport, type ModuleStatus, type WorkLoop } from "./regenerate/loop.ts";
 import { MODULES_DIR, projectDirOf } from "./regenerate/paths.ts";
 import { exportModule } from "./regenerate/release.ts";
@@ -81,7 +80,6 @@ export async function runLoop(options: {
           specFile: plainFile,
           projectDir,
           ...(buildDir !== undefined ? { buildDir } : {}),
-          conformanceTests: conformanceLabel(project.conformanceTests),
           review: project.review === true,
           mutationTesting: project.mutationTesting !== false,
           models: reportModels(project, model),
@@ -141,9 +139,6 @@ async function runLoopReporting(
     ...(model !== undefined ? { modelFor: () => model } : {}),
     ...(planner !== undefined ? { plannerModel: planner } : {}),
     ...(options.dryRun === true ? { dryRun: true } : {}),
-    // Under conformance-tests: chosen or module, the chooser decides as a pulse ends, as in the chat - on the harness
-    // model, else the coding model: never pi's own default, which may be one this account cannot reach.
-    onChoose: conformanceChooser({ model: () => planner ?? model, ...(options.dryRun === true ? { dryRun: true } : {}) }),
   });
   report?.attach({
     jobs: () => registry.list(),
@@ -229,7 +224,7 @@ export function moduleStates(reports: DriftReport[]): ModuleState[] {
           ? "start_over_needed"
           : report.why !== undefined
             ? "halted"
-            : report.code === null && (report.conformance === null || report.conformance === undefined) && report.scheduled.length === 0
+            : report.code === null && (report.conformance === null || report.conformance === undefined)
               ? "complete"
               : "incomplete";
     const why =
@@ -275,11 +270,6 @@ function exportCode(plainFile: string, dir: string): Record<string, unknown> {
   }
 }
 
-/** `conformance-tests:` as the report says it - not set is false. */
-function conformanceLabel(setting: ProjectConfig["conformanceTests"]): string {
-  return setting === true ? "all" : setting === "chosen" || setting === "module" ? setting : "false";
-}
-
 /** The models of the three roles as this run uses them: the coding model given, the others as they fall back - each with the level it thinks at. */
 function reportModels(project: ProjectConfig, model: string | undefined): Record<"harness" | "coding" | "judge", { model?: string; thinking?: string }> {
   const coding = splitModelSpec(model);
@@ -299,11 +289,11 @@ function reportModels(project: ProjectConfig, model: string | undefined): Record
 
 /**
  * The options every command that regenerates takes for a headless run: `--report` and `--build-dir`, and the config's
- * own keys (configKeyOptions) - `--harness-model`, `--coding-model` (`--model`), `--judge-model`, `--review`, `--mutation-testing` and, where
- * `conformance` is true, `--conformance-tests` - read as if config.turri.yaml had them. Exits on a value it cannot read.
+ * own keys (configKeyOptions) - `--harness-model`, `--coding-model` (`--model`), `--judge-model`, `--review` and
+ * `--mutation-testing` - read as if config.turri.yaml had them. Exits on a value it cannot read.
  */
-export function headlessOptions(options: Record<string, string | undefined>, conformance: boolean): { report?: string; buildDir?: string } {
-  configKeyOptions(options, { conformance, review: true });
+export function headlessOptions(options: Record<string, string | undefined>): { report?: string; buildDir?: string } {
+  configKeyOptions(options, { review: true });
   const report = optionValue(options, "report");
   const buildDir = optionValue(options, "build-dir");
   return { ...(report !== undefined ? { report } : {}), ...(buildDir !== undefined ? { buildDir } : {}) };

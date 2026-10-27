@@ -49,19 +49,17 @@ coding-model:                             # the model every agent runs on, and h
   model: anthropic/claude-sonnet-5
   thinking: medium
 judge-model: anthropic/claude-opus-5-5    # the judge and the test review (default: coding-model)
-conformance-tests: true            # write and run conformance tests where there are test reqs (default: false)
 ```
 
-The same file names the [testing scripts](regenerating.md#the-testing-scripts); every key is in [the project config](config.md). `turri regenerate`, `change-plain` and `conform` take five of its keys on the command line too - `--harness-model`, `--coding-model` (`--model` is the same), `--judge-model`, `--review` and, but for `conform`, `--conformance-tests`. Each is read as if the file had it, in its place: it takes that key's value, and every key keeps its place in the order the config resolves them in - a `models:` entry still wins over `harness-model`, `coding-model` or `judge-model`, the planner and the conformance chooser run on the harness model, the judge falls back on the coding model. So a run with the options is the same as one, or a chat, with those keys in `config.turri.yaml` - and a `config.yaml` the project has is left as it is. A project whose parts are on different stacks keeps each stack's settings in `config.turri.<stack>.yaml` beside it ([stacks](config.md#stacks)). Choose the one to build with `--stack <name>` - on any command: `regenerate`, `conform`, `change-plain`, `glimpse`, `release`, `cultivate` - or `TURRI_STACK`: `turri regenerate backend.plain --stack backend`. With none chosen, `config.turri.yaml` alone is used; a stack the project has no file for is refused.
+The same file names the [testing scripts](regenerating.md#the-testing-scripts); every key is in [the project config](config.md). `turri regenerate`, `change-plain` and `conform` take four of its keys on the command line too - `--harness-model`, `--coding-model` (`--model` is the same), `--judge-model` and `--review`. Each is read as if the file had it, in its place: it takes that key's value, and every key keeps its place in the order the config resolves them in - a `models:` entry still wins over `harness-model`, `coding-model` or `judge-model`, the planner runs on the harness model, the judge falls back on the coding model. So a run with the options is the same as one, or a chat, with those keys in `config.turri.yaml` - and a `config.yaml` the project has is left as it is. A project whose parts are on different stacks keeps each stack's settings in `config.turri.<stack>.yaml` beside it ([stacks](config.md#stacks)). Choose the one to build with `--stack <name>` - on any command: `regenerate`, `conform`, `change-plain`, `glimpse`, `release`, `cultivate` - or `TURRI_STACK`: `turri regenerate backend.plain --stack backend`. With none chosen, `config.turri.yaml` alone is used; a stack the project has no file for is refused.
 
 Useful options - `turri regenerate --help` lists all of them:
 
 | | |
 | --- | --- |
-| `--harness-model <provider/id>` | `harness-model`: the planner and the conformance chooser |
+| `--harness-model <provider/id>` | `harness-model`: the planner |
 | `--coding-model <provider/id>` | `coding-model` (`--model` too): the agents that build - with `:level` for how hard it thinks (`provider/id:high`); not given, the harness model's |
 | `--judge-model <provider/id>` | `judge-model`: the judge and the test review; not given, the coding model |
-| `--conformance-tests <all\|chosen\|module\|false>` | `conformance-tests`, with its values (`true` is `all`) |
 | `--review <true\|false>` | `review`: whether the code and its tests are reviewed once they pass |
 | `--mutation-testing <true\|false>` | `mutation-testing`: whether the coding agent and the reviewer have `can_it_fail` |
 | `--stack <name>` | build with the stack's `config.turri.<name>.yaml` over `config.turri.yaml`; default, `TURRI_STACK`, else none |
@@ -73,7 +71,7 @@ Useful options - `turri regenerate --help` lists all of them:
 
 An option a command does not take is refused, not ignored.
 
-`turri regenerate` queues the jobs the chat's `regenerate` does - a \*\*\*plain diff that brings what is built in line, when it no longer matches \*\*\*plain, then one regenerate functionality job per functional spec not built, each with its conformance job - and runs them all to the end, the queue master reworking them as in the chat (see [a whole module](regenerating.md#a-whole-module)). Conformance tests follow `conformance-tests:` in `config.turri.yaml`, or `--conformance-tests`.
+`turri regenerate` queues the jobs the chat's `regenerate` does - a \*\*\*plain diff that brings what is built in line, when it no longer matches \*\*\*plain, then one regenerate functionality job per functional spec not built, then the conformance jobs of the functional specs with scenarios - and runs them all to the end, the queue master reworking them as in the chat (see [a whole module](regenerating.md#a-whole-module)). What is conformance tested is the scenarios: a functional spec with an empty test plain file is not.
 
 ## In the morning
 
@@ -104,15 +102,14 @@ A module that `requires` others is built in its own codebase on top of theirs: t
 
 ```jsonc
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "turri": { "version": "0.1.1", "git_commit": "48dacfc…", "git_dirty": false },  // commit: null outside a clone
   "command": ["regenerate", "app.plain", "--model", "…", "--report", "report.json"],
   "spec_file": "/work/app.plain", "project_dir": "/work", "build_dir": "/work/out",  // build_dir: null without one
-  "conformance_tests": "all",                                                       // all | chosen | module | false
   "review": false,
   "mutation_testing": true,
   "models": {
-    "harness": { "model": "…", "thinking": "medium" },  // the planner, the chooser
+    "harness": { "model": "…", "thinking": "medium" },  // the planner
     "coding":  { "model": "…", "thinking": "low" },
     "judge":   { "model": "…", "thinking": "medium" },
     "observed": { "coding": ["provider/id:low"], "planner": ["provider/id:medium"] }  // what each role really ran on
@@ -129,7 +126,7 @@ A module that `requires` others is built in its own codebase on top of theirs: t
       "llm_calls": 0, "agent_turns": 0, "compactions": 0, "provider_retries": 0, "provider_stalls": 0, "turns_stopped": 0, "model_seconds": 0
     },
     "in_pulses": { },       // the pulses' usage added up - the same fields
-    "outside_pulses": { },  // the planner, the conformance chooser, a failed pulse's diagnosis
+    "outside_pulses": { },  // the planner, a failed pulse's diagnosis
     "by_model": { "provider/id:low": { } },
     "by_role": { "coding": { }, "reviewer": { }, "planner": { } },
     "by_pulse_kind": { "code": { }, "conformance": { } }
@@ -202,7 +199,7 @@ A benchmark or CI task runs it with no terminal and nothing to ask, so give it e
 ```bash
 turri regenerate app.plain --harness-model amazon-bedrock/eu.anthropic.claude-opus-5-5 \
   --coding-model amazon-bedrock/eu.anthropic.claude-sonnet-5-5 \
-  --conformance-tests all --review false --judge-model amazon-bedrock/eu.anthropic.claude-opus-5-5 \
+  --review false --judge-model amazon-bedrock/eu.anthropic.claude-opus-5-5 \
   --start-over --build-dir /out/build --report /out/report.json < /dev/null
 ```
 

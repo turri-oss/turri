@@ -411,3 +411,26 @@ describe("a linked resource that changed", () => {
     expect(diff).not.toContain("ccc");
   });
 });
+
+describe("a conformance step's ***plain diff", () => {
+  const before = { "functional specs": [item("One.", { id: "one", conformance_tests: [{ id: "runs", text: "It runs." }], acceptance_tests: [] })] } as MarshalledPlainSource;
+  const after = { "functional specs": [item("One.", { id: "one", conformance_tests: [{ id: "runs", text: "It runs and exits 0." }], acceptance_tests: [{ id: "greets", text: "It greets." }] })] } as MarshalledPlainSource;
+
+  it("has the test plain file of each functional spec whose scenarios changed, rebuilt from the trees, under the file's path", () => {
+    const changes = changesOf(before, after);
+    const step = makeStep("one", "", changes, serializeTree(before), serializeTree(after), "app.plain", undefined, { module: "app", pathOf: (funcId) => `tests/app/${funcId}.plain` });
+    expect(step.textDiff).toContain("--- a/tests/app/one.plain\n+++ b/tests/app/one.plain");
+    expect(step.textDiff).toContain("-It runs.\n+It runs and exits 0.");
+    expect(step.textDiff).toContain(" ***acceptance tests***\n+\n+# greets\n+It greets.");
+    // The module's file has the functional spec alone, unchanged: its scenarios are in its test plain file.
+    expect(step.textDiff).not.toContain("a/app.plain");
+  });
+
+  it("is never given to a code step, whose trees carry no scenarios", () => {
+    const code = { "functional specs": [item("One.", { id: "one" })] } as MarshalledPlainSource;
+    const now = { "functional specs": [item("One, loudly.", { id: "one" })] } as MarshalledPlainSource;
+    const step = makeStep("one", "", changesOf(code, now), serializeTree(code), serializeTree(now), "app.plain");
+    expect(step.textDiff).not.toContain("tests/app");
+    expect(step.textDiff).not.toContain("func_id");
+  });
+});

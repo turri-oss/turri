@@ -15,7 +15,7 @@ import { adoptLegacyConfig, AGENT_ROLES, CONFIG_FILE, chosenStack, projectConfig
 /** When a change takes effect. Nothing turri reads needs a restart: what is fixed at its start is changed live. */
 export type Effect = "now" | "next-message" | "next-pulse" | "next-plan" | "next-test-run" | "next-landing" | "next-regenerate" | "next-start";
 
-export type SettingKind = "boolean" | "choice" | "number" | "model" | "list" | "path" | "budget";
+export type SettingKind = "boolean" | "choice" | "number" | "model" | "list" | "path";
 
 export interface Setting {
   /** As written in the file - a nested one by its path: `models.coding`, `models.coding.turn-limit`, `agent-env.files`. */
@@ -26,7 +26,7 @@ export interface Setting {
   /** What it is when it is not set. */
   unset: string;
   effect: Effect;
-  /** The words it takes (choice), or the values offered first (number, budget, list). */
+  /** The words it takes (choice), or the values offered first (number, list). */
   options?: string[];
   /** The least a number may be. */
   min?: number;
@@ -53,7 +53,6 @@ const ROLE_ABOUT: Record<(typeof AGENT_ROLES)[number] | "default", string> = {
   default: "every role not named",
   chat: "the conversation - as harness-model, which it wins over",
   sentinel: "the sentinel: checks every finished pulse and tests the release",
-  chooser: "chooses what gets conformance tests under turri regenerate",
   planner: "cuts the work into pulses",
   diagnosis: "looks into a pulse that failed for good",
   release: "the release agent",
@@ -93,8 +92,6 @@ export function settings(rules: string[] = []): Setting[] {
     { key: "coding-model", about: "the model that writes the code", kind: "model", unset: "harness-model", effect: "next-pulse" },
     { key: "judge-model", about: "the judge and the test review of a conformance run", kind: "model", unset: "coding-model", effect: "next-pulse" },
     { key: "module", about: "the .plain file turri regenerate builds when none is named", kind: "path", unset: "the folder's .plain files", effect: "next-regenerate", projectOnly: true },
-    { key: "conformance-tests", about: "which functional specs get conformance tests", kind: "choice", options: ["all", "chosen", "module", "false"], unset: "all, where a module has test reqs", effect: "next-plan" },
-    { key: "conformance-budget", about: "under conformance-tests: chosen or module, how many may be chosen - a count or a share", kind: "budget", options: ["10%", "30%", "50%", "5", "10"], unset: "no limit", effect: "next-plan" },
     { key: "review", about: "whether the code and its tests are reviewed once they pass", kind: "boolean", unset: "true", effect: "next-pulse" },
     { key: "mutation-testing", about: "whether the coding agent and the reviewer can put a bug in the code for one test run (can_it_fail)", kind: "boolean", unset: "true", effect: "next-pulse" },
     { key: "allow-to-stop-jobs", about: "whether turri stops a running pulse the ***plain has moved on from", kind: "boolean", unset: "true", effect: "now" },
@@ -162,12 +159,6 @@ export function parseValue(setting: Setting, typed: string, known?: (model: stri
       const number = Number(text);
       if (!Number.isInteger(number) || number < (setting.min ?? 0)) return { error: `${setting.key} is a whole number of at least ${setting.min ?? 0}.` };
       return { value: number };
-    }
-    case "budget": {
-      if (/^\d+$/.test(text)) return { value: Number(text) };
-      const share = /^(\d+(?:\.\d+)?)\s*%$/.exec(text);
-      if (share !== null && Number(share[1]) <= 100) return { value: `${share[1]}%` };
-      return { error: `${setting.key} is a count, such as 5, or a share, such as 30%.` };
     }
     case "model": {
       const { model, thinking } = splitModelSpec(text);

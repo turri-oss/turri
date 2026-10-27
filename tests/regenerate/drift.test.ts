@@ -26,7 +26,7 @@ const shop = (overrides: Partial<Record<string, unknown>> = {}): MarshalledPlain
     "test reqs": [item("- :ConformanceTests: use pytest.")],
     "functional specs": [
       spec("sign-up", "A :Customer: signs up.", ["Signing up twice fails."]),
-      spec("place-order", "A :Customer: places an :Order:."),
+      { ...spec("place-order", "A :Customer: places an :Order:."), conformance_tests: [scenario("refused", "An :Order: of nothing is refused.")] },
       spec("show-price", "The :Price: of an :Order: is shown.", ["A price of 10 shows as 10.00."]),
     ],
     ...overrides,
@@ -156,9 +156,20 @@ describe("the conformance work", () => {
     expect(work.some((change) => change.section === "test reqs")).toBe(true);
   });
 
-  it("holds only the functional specs chosen, each with its func-id", () => {
-    const target = conformanceTarget(codeTree(shop()), null, shop(), (funcId) => funcId === "show-price");
-    expect(fs(target).map((entry) => entry.id)).toEqual(["show-price"]);
+  it("holds only the functional specs with scenarios - one with an empty test plain file is not tested", () => {
+    const now = shop();
+    fs(now)[1]!.conformance_tests = [];
+    expect(fs(conformanceTarget(codeTree(shop()), null, now)).map((entry) => entry.id)).toEqual(["sign-up", "show-price"]);
+  });
+
+  it("takes out the tests of a functional spec whose scenarios were all taken out, as a delete of its tests alone", () => {
+    const tested = conformanceTarget(codeTree(shop()), null, shop());
+    const now = shop();
+    fs(now)[2]!.acceptance_tests = [];
+    expect(codeWork(codeTree(shop()), now)).toEqual([]);
+    const cases = casesOf(tested, conformanceWork(tested, codeTree(shop()), now));
+    expect(cases.delete.map((entry) => entry.funcId)).toEqual(["show-price"]);
+    expect([...cases.add, ...cases.patch, ...cases.again]).toEqual([]);
   });
 
   it("never goes ahead of the code: a functional spec not built yet has no conformance work", () => {

@@ -7,11 +7,11 @@ import { createJobRegistry } from "../../src/regenerate/jobs.ts";
 import type { JobCases } from "../../src/regenerate/drift.ts";
 import { moduleLanes } from "../../src/regenerate/lanes.ts";
 import { createWorkLoop, describeDrift, describeModules, skipsReview, type JobRunner } from "../../src/regenerate/loop.ts";
-import { codeTree, conformanceTarget, readRecord, writeCodeRecord, writeTestsRecord } from "../../src/regenerate/records.ts";
+import { codeTree, readRecord, writeCodeRecord, writeTestsRecord } from "../../src/regenerate/records.ts";
 import { recordHistory } from "../../src/regenerate/lineage.ts";
 import { copyRequiredCode } from "../../src/regenerate/requires.ts";
 import { snapshotSpec } from "../../src/regenerate/regenerate.ts";
-import { syncTestPlainFiles, testPlainFile, writePlain } from "../test-plain.ts";
+import { testPlainFile, writePlain } from "../test-plain.ts";
 
 let dir: string;
 let cwd: string;
@@ -19,7 +19,7 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "turri-loop-"));
   cwd = process.cwd();
   process.chdir(dir);
-  writeFileSync(join(dir, "config.yaml"), "conformance-tests: false\n");
+  writeFileSync(join(dir, "config.yaml"), "");
 });
 afterEach(() => {
   process.chdir(cwd);
@@ -37,9 +37,11 @@ const block = (spec: Spec) => {
 };
 const app = (specs: Spec[], reqs = "is Python.") => `***implementation reqs***\n\n- :Implementation: ${reqs}\n\n***test reqs***\n\n- :ConformanceTests: use pytest.\n\n***functional specs***\n\n${specs.map(block).join("\n\n")}\n`;
 const codeDir = (module = "app") => join(dir, "plain_modules", module, "code");
-/** A functional spec's test plain file with acceptance scenarios: what makes it tested under conformance-tests: chosen. */
-const acceptedIn = (funcId: string, module = "app") =>
-  writeFileSync(join(dir, "tests", module, `${funcId}.plain`), testPlainFile(module, funcId, { acceptance: ["# prints-hello\nIt prints hello."] }));
+/** A functional spec's test plain file with a scenario - an acceptance one unless given: what makes it tested. */
+const scenariosIn = (funcId: string, module = "app", scenario = "# works\nIt works.") => {
+  mkdirSync(join(dir, "tests", module), { recursive: true });
+  writeFileSync(join(dir, "tests", module, `${funcId}.plain`), testPlainFile(module, funcId, { acceptance: [scenario] }));
+};
 
 /** A runner that lands what it is given, as a render does: the record, committed. Held while `hold` is set. */
 function runner() {
@@ -69,7 +71,7 @@ function runner() {
 
 describe("releasing after each pulse", () => {
   it("releases what each pulse landed as its last stage, under release-after-pulse - before the next pulse starts", async () => {
-    writeFileSync(join(dir, "config.yaml"), "conformance-tests: false\nrelease-after-pulse: true\n");
+    writeFileSync(join(dir, "config.yaml"), "release-after-pulse: true\n");
     writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye.", "Count to ten."]));
     const { ran, run } = runner();
     const events: string[] = [];
@@ -106,7 +108,7 @@ describe("releasing after each pulse", () => {
     expect(release).not.toHaveBeenCalled();
 
     rmSync(join(dir, "plain_modules"), { recursive: true, force: true });
-    writeFileSync(join(dir, "config.yaml"), "conformance-tests: false\nrelease-after-pulse: true\n");
+    writeFileSync(join(dir, "config.yaml"), "release-after-pulse: true\n");
     gate.land = false;
     loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run, release });
     await loop.bringUp("app.plain");
@@ -115,7 +117,7 @@ describe("releasing after each pulse", () => {
   });
 
   it("keeps what a pulse landed when its release fails, and says so", async () => {
-    writeFileSync(join(dir, "config.yaml"), "conformance-tests: false\nrelease-after-pulse: true\n");
+    writeFileSync(join(dir, "config.yaml"), "release-after-pulse: true\n");
     writePlain(dir, "app.plain", app(["Say hello."]));
     const { run } = runner();
     const registry = createJobRegistry();
@@ -389,7 +391,7 @@ describe("the work loop", () => {
   });
 
   it("lets the running job land under allow-to-stop-jobs: false, and regenerates what changed since on top of it", async () => {
-    writeFileSync(join(dir, "config.yaml"), "conformance-tests: false\nallow-to-stop-jobs: false\n");
+    writeFileSync(join(dir, "config.yaml"), "allow-to-stop-jobs: false\n");
     writePlain(dir, "app.plain", app(["Say hello."]));
     const { ran, gate, holdNext, run } = runner();
     const registry = createJobRegistry();
@@ -563,10 +565,10 @@ describe("the work loop", () => {
 
     /** A conformance job that records what it wrote the tests for, as the real one does - or does not pass. */
     function conformanceRunner() {
-      const ran: Array<{ add: string[]; patch: string[] }> = [];
+      const ran: Array<{ add: string[]; patch: string[]; delete: string[] }> = [];
       const gate = { pass: true };
       const runConformance: JobRunner = async (job) => {
-        ran.push({ add: job.planned.cases.add.map((spec) => spec.funcId), patch: job.planned.cases.patch.map((spec) => spec.funcId) });
+        ran.push({ add: job.planned.cases.add.map((spec) => spec.funcId), patch: job.planned.cases.patch.map((spec) => spec.funcId), delete: job.planned.cases.delete.map((spec) => spec.funcId) });
         if (!gate.pass) return { landed: false, report: "the tests do not pass" };
         mkdirSync(testsDir(job.moduleName), { recursive: true });
         writeFileSync(join(testsDir(job.moduleName), "test_app.py"), "# conformance\n", { flag: "a" });
@@ -581,6 +583,8 @@ describe("the work loop", () => {
       // The running pulse is let finish: what comes after it is planned ahead, from what it will land.
       writeFileSync(join(dir, "config.yaml"), "allow-to-stop-jobs: false\n");
       writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye."]));
+      scenariosIn("say-hello");
+      scenariosIn("say-goodbye");
       const code = runner();
       const tests = conformanceRunner();
       // The conformance pulse is held while it writes, so the spec can change under it.
@@ -594,7 +598,6 @@ describe("the work loop", () => {
         registry: createJobRegistry(),
         cwd: dir,
         planner: false,
-        conformanceOn: () => true,
         run: code.run,
         runConformance: async (job, onDelta) => {
           deleted.push(...job.planned.cases.delete.map((spec) => spec.funcId));
@@ -625,8 +628,10 @@ describe("the work loop", () => {
       expect(tested).not.toContain('"Say goodbye."');
     });
 
-    it("are written once the module's code is built - every code job of it landed - in one job for the module, with the config on", async () => {
+    it("are written once the module's code is built - every code job of it landed - in one job for the functional specs with scenarios", async () => {
       writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye."]));
+      scenariosIn("say-hello");
+      scenariosIn("say-goodbye");
       const code = runner();
       const tests = conformanceRunner();
       const order: string[] = [];
@@ -634,7 +639,6 @@ describe("the work loop", () => {
         registry: createJobRegistry(),
         cwd: dir,
         planner: false,
-        conformanceOn: () => true,
         run: async (job, onDelta) => (order.push(`code ${job.planned.cases.add.map((spec) => spec.funcId).join(",")}`), code.run(job, onDelta)),
         runConformance: async (job, onDelta) => (order.push(`tests ${job.planned.cases.add.map((spec) => spec.funcId).join(",")}`), tests.runConformance(job, onDelta)),
       });
@@ -645,31 +649,45 @@ describe("the work loop", () => {
       const tested = readRecord(testsDir())!;
       expect(JSON.stringify(tested)).toContain("Say goodbye.");
       expect(JSON.stringify(tested)).toContain("use pytest.");
+      // What they are written for carries the scenarios: a scenario changed is conformance work.
+      expect(JSON.stringify(tested)).toContain("It works.");
     });
 
-    it("are not written with the config off, until the conversation asks for them - then only for the functional specs it names", async () => {
+    it("are written for a functional spec with scenarios and none for one whose test plain file is empty", async () => {
       writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye."]));
+      scenariosIn("say-goodbye");
       const code = runner();
       const tests = conformanceRunner();
-      const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, conformanceOn: () => false, run: code.run, runConformance: tests.runConformance });
+      const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run: code.run, runConformance: tests.runConformance });
       await loop.bringUp("app.plain");
-      await loop.drain();
-      expect(tests.ran).toEqual([]);
-      await loop.conformance("app.plain", { funcIds: ["app:say-goodbye"] });
       await loop.drain();
       expect(tests.ran.map((job) => job.add)).toEqual([["say-goodbye"]]);
       expect(JSON.stringify(readRecord(testsDir()))).not.toContain("Say hello.");
-      // Nothing more to write: they are written for what was asked.
-      await loop.conformance("app.plain", { funcIds: ["app:say-goodbye"] });
+      // Asked again, there is nothing to write: it says so, and starts nothing.
+      const [status] = await loop.conformance("app.plain", { funcIds: ["app:say-goodbye"] });
       await loop.drain();
       expect(tests.ran).toHaveLength(1);
+      expect(status!.conformanceNote).toBe("the conformance tests of app are written for every functional spec with scenarios, as built: there is nothing to write");
+    });
+
+    it("write none in a module whose functional specs have no scenarios", async () => {
+      writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye."]));
+      const code = runner();
+      const tests = conformanceRunner();
+      const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run: code.run, runConformance: tests.runConformance });
+      await loop.bringUp("app.plain");
+      await loop.drain();
+      expect(code.ran).toHaveLength(2);
+      expect(tests.ran).toEqual([]);
+      expect(existsSync(join(testsDir(), ".turri.json"))).toBe(false);
     });
 
     it("rewrite a functional spec's tests once its changed code lands, and write none for what only changed its test reqs in the code", async () => {
       writePlain(dir, "app.plain", app(["Say hello."]));
+      scenariosIn("say-hello");
       const code = runner();
       const tests = conformanceRunner();
-      const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, conformanceOn: () => true, run: code.run, runConformance: tests.runConformance });
+      const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run: code.run, runConformance: tests.runConformance });
       await loop.bringUp("app.plain");
       await loop.drain();
       writePlain(dir, "app.plain", app([["say-hello", "Say hello loudly."]]));
@@ -685,114 +703,58 @@ describe("the work loop", () => {
       expect(tests.ran.at(-1)).toMatchObject({ add: [], patch: [] });
     });
 
-    it("under conformance-tests: chosen, are written for a functional spec with acceptance tests, and for the rest only once they are chosen - and kept", async () => {
+    it("are written again for a scenario changed alone - a conformance pulse, and no code pulse", async () => {
       writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye."]));
-      acceptedIn("say-hello");
+      scenariosIn("say-hello");
+      scenariosIn("say-goodbye");
       const code = runner();
       const tests = conformanceRunner();
-      const registry = createJobRegistry();
-      const loop = createWorkLoop({ registry, cwd: dir, planner: false, conformanceOn: () => true, conformanceChosen: () => true, run: code.run, runConformance: tests.runConformance });
+      const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run: code.run, runConformance: tests.runConformance });
       await loop.bringUp("app.plain");
       await loop.drain();
-      // Only the one with acceptance tests is tested: nothing chose the other, and the conversation is never asked to.
-      expect(tests.ran.map((job) => job.add)).toEqual([["say-hello"]]);
-      expect(registry.list().map((job) => job.report ?? "").join("\n")).not.toContain("call conform");
-
-      await loop.conformance("app.plain", { funcIds: ["app:say-goodbye"] });
+      const codeJobs = code.ran.length;
+      scenariosIn("say-hello", "app", "# loud\nIt says hello loudly.");
+      await loop.bringUp("app.plain", { specChange: true });
       await loop.drain();
-      expect(tests.ran.map((job) => job.add)).toEqual([["say-hello"], ["say-goodbye"]]);
-      // Chosen once, kept: its changed text has its tests rewritten, with nothing asked again.
-      writePlain(dir, "app.plain", app(["Say hello.", ["say-goodbye", "Say goodbye politely."]]));
-      await loop.bringUp("app.plain");
-      await loop.drain();
-      expect(tests.ran.at(-1)).toMatchObject({ patch: ["say-goodbye"] });
+      expect(code.ran).toHaveLength(codeJobs);
+      expect(tests.ran.slice(1)).toEqual([{ add: [], patch: ["say-hello"], delete: [] }]);
+      expect(JSON.stringify(readRecord(testsDir()))).toContain("It says hello loudly.");
     });
 
-    it("under conformance-tests: chosen, ask the chooser as each code pulse ends, of what it regenerated - scheduled before anything is built on it, and said in its report", async () => {
-      writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye.", "Say thanks."]));
-      acceptedIn("say-hello");
+    it("are taken out for a functional spec whose scenarios are all taken out - its code left as it is", async () => {
+      writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye."]));
+      scenariosIn("say-hello");
+      scenariosIn("say-goodbye");
       const code = runner();
       const tests = conformanceRunner();
-      const registry = createJobRegistry();
-      const told: Array<{ funcIds: string[]; when: string }> = [];
-      const loop = createWorkLoop({
-        registry,
-        cwd: dir,
-        planner: false,
-        conformanceOn: () => true,
-        conformanceChoosing: () => "pulse",
-        run: code.run,
-        runConformance: tests.runConformance,
-        onChoose: async (_plainFile, specs, _budget, when) => {
-          told.push({ funcIds: specs.map((touched) => touched.funcId), when });
-          return specs.some((touched) => touched.funcId === "say-goodbye") ? { funcIds: ["say-goodbye"], why: "callers rely on the goodbye" } : { funcIds: [], why: "an internal detail" };
-        },
-      });
+      const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run: code.run, runConformance: tests.runConformance });
       await loop.bringUp("app.plain");
       await loop.drain();
-      // Asked after each code pulse, of what that pulse regenerated - never of the one with acceptance tests.
-      expect(told).toEqual([
-        { funcIds: ["say-goodbye"], when: "pulse" },
-        { funcIds: ["say-thanks"], when: "pulse" },
-      ]);
-      expect(tests.ran.map((job) => job.add)).toEqual([["say-hello", "say-goodbye"]]);
-      const reports = registry.list().map((job) => job.report ?? "");
-      expect(reports).toContainEqual(expect.stringContaining("conformance: app:say-goodbye chosen - callers rely on the goodbye"));
-      expect(reports).toContainEqual(expect.stringContaining("conformance: none of app:say-thanks chosen - an internal detail"));
+      const codeJobs = code.ran.length;
+      writeFileSync(join(dir, "tests", "app", "say-goodbye.plain"), testPlainFile("app", "say-goodbye"));
+      await loop.bringUp("app.plain", { specChange: true });
+      await loop.drain();
+      expect(code.ran).toHaveLength(codeJobs);
+      expect(tests.ran.slice(1)).toEqual([{ add: [], patch: [], delete: ["say-goodbye"] }]);
+      expect(JSON.stringify(readRecord(testsDir()))).not.toContain("Say goodbye.");
     });
 
-    it("under conformance-tests: module, ask the chooser once the whole module is regenerated - what to test, and in which pulses", async () => {
-      writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye.", "Say thanks."]));
+    it("say in the drift what is to write or change, a line a functional spec with why", async () => {
+      writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye."]));
+      scenariosIn("say-hello");
+      scenariosIn("say-goodbye");
       const code = runner();
       const tests = conformanceRunner();
-      const told: Array<{ funcIds: string[]; when: string }> = [];
-      const loop = createWorkLoop({
-        registry: createJobRegistry(),
-        cwd: dir,
-        planner: false,
-        conformanceOn: () => true,
-        conformanceChoosing: () => "module",
-        run: code.run,
-        runConformance: tests.runConformance,
-        onChoose: async (_plainFile, specs, _budget, when) => (told.push({ funcIds: specs.map((touched) => touched.funcId), when }), { funcIds: ["say-hello", "say-thanks"], groups: [["say-hello"], ["say-thanks"]], why: "two separate contracts" }),
-      });
+      const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run: code.run, runConformance: tests.runConformance });
       await loop.bringUp("app.plain");
       await loop.drain();
-      // Once, with the whole module in view, after its last code pulse.
-      expect(code.ran).toHaveLength(3);
-      expect(told).toEqual([{ funcIds: ["say-hello", "say-goodbye", "say-thanks"], when: "module" }]);
-      // In the pulses it planned.
-      expect(tests.ran.map((job) => job.add)).toEqual([["say-hello"], ["say-thanks"]]);
-    });
-
-    it("under conformance-budget:, offer the chooser only what the module's budget has left, every earlier choice counted - and schedule no more", async () => {
-      writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye.", "Say thanks.", "Say sorry."]));
-      acceptedIn("say-hello");
-      writeFileSync(join(dir, "config.yaml"), "conformance-budget: 2\n");
-      const code = runner();
-      const tests = conformanceRunner();
-      const told: Array<{ funcIds: string[]; budget?: number }> = [];
-      const loop = createWorkLoop({
-        registry: createJobRegistry(),
-        cwd: dir,
-        planner: false,
-        conformanceOn: () => true,
-        conformanceChosen: () => true,
-        run: code.run,
-        runConformance: tests.runConformance,
-        // It answers with more than it may: only the first that fit are scheduled.
-        onChoose: async (_plainFile, specs, budget) => (told.push({ funcIds: specs.map((touched) => touched.funcId), ...(budget !== undefined ? { budget } : {}) }), { funcIds: ["say-goodbye", "say-thanks", "say-sorry"] }),
-      });
-      code.holdNext();
-      await loop.bringUp("app.plain");
-      // One chosen ahead of the code: it counts.
-      await loop.conformance("app.plain", { funcIds: ["app:say-sorry"] });
-      code.gate.release!();
-      await loop.drain();
-      // Asked after say-goodbye's pulse with what is left; after say-thanks', the budget is spent and it is not asked.
-      expect(told).toEqual([{ funcIds: ["say-goodbye"], budget: 1 }]);
-      // say-hello, with acceptance tests, does not count against it; say-sorry and the one that fit do.
-      expect(tests.ran.map((job) => job.add)).toEqual([["say-hello", "say-goodbye", "say-sorry"]]);
+      expect(describeDrift(loop.drift("app.plain"))).toContain("conformance tests: written for what is built - no drift");
+      scenariosIn("say-hello", "app", "# loud\nIt says hello loudly.");
+      writeFileSync(join(dir, "tests", "app", "say-goodbye.plain"), testPlainFile("app", "say-goodbye"));
+      const text = describeDrift(loop.drift("app.plain"));
+      expect(text).toContain("conformance tests: to write or change - written once the code is built, or now with conform\n");
+      expect(text).toContain("    app:say-hello     its text or its scenarios changed\n");
+      expect(text).toContain("    app:say-goodbye   taken out - its tests go");
     });
 
     const base = (spec: string) => `***implementation reqs***\n\n- :Implementation: is Python.\n\n***test reqs***\n\n- :ConformanceTests: use pytest.\n\n***functional specs***\n\n# ${slug(spec)}\n${spec}\n`;
@@ -801,6 +763,8 @@ describe("the work loop", () => {
     it("are written and pass for a module before one built on it starts - which starts from its code and its conformance tests", async () => {
       writePlain(dir, "base.plain", base("Users register."));
       writePlain(dir, "top.plain", top("The home page says hello."));
+      scenariosIn("users-register", "base");
+      scenariosIn("the-home-page-says-hello", "top");
       const order: string[] = [];
       const code = runner();
       const tests = conformanceRunner();
@@ -808,7 +772,6 @@ describe("the work loop", () => {
         registry: createJobRegistry(),
         cwd: dir,
         planner: false,
-        conformanceOn: () => true,
         run: async (job, onDelta) => (order.push(`code ${job.moduleName}`), code.run(job, onDelta)),
         runConformance: async (job, onDelta) => {
           order.push(`tests ${job.moduleName}`);
@@ -826,10 +789,11 @@ describe("the work loop", () => {
     it("that do not pass halt their module - no more of its code - and every module built on it", async () => {
       writePlain(dir, "base.plain", base("Users register."));
       writePlain(dir, "top.plain", top("The home page says hello."));
+      scenariosIn("users-register", "base");
       const code = runner();
       const tests = conformanceRunner();
       tests.gate.pass = false;
-      const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, conformanceOn: () => true, run: code.run, runConformance: tests.runConformance });
+      const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run: code.run, runConformance: tests.runConformance });
       await loop.bringUp("top.plain");
       await loop.drain();
       expect(code.ran.map((job) => job.module)).toEqual(["base"]);
@@ -838,109 +802,70 @@ describe("the work loop", () => {
       expect(above!.why).toMatch(/^waiting for base: its conformance tests did not pass/);
     });
 
-    it("named in the conversation one after the other, are written for every one named - never taking out the tests of those named before", async () => {
+    it("refuse a functional spec with no scenarios, one the spec does not have, and a module none of whose has scenarios - and start nothing", async () => {
       writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye."]));
       const code = runner();
       const tests = conformanceRunner();
-      const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, conformanceOn: () => false, run: code.run, runConformance: tests.runConformance });
-      await loop.bringUp("app.plain");
-      await loop.drain();
-      await loop.conformance("app.plain", { funcIds: ["app:say-hello"] });
-      await loop.drain();
-      await loop.conformance("app.plain", { funcIds: ["app:say-goodbye"] });
-      await loop.drain();
-      const tested = JSON.stringify(readRecord(testsDir()));
-      expect(tested).toContain("Say hello.");
-      expect(tested).toContain("Say goodbye.");
-      expect(tests.ran.flatMap((job) => job.add)).toEqual(["say-hello", "say-goodbye"]);
+      const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run: code.run, runConformance: tests.runConformance });
+      await expect(loop.conformance("app.plain")).rejects.toThrow(/^No functional spec of app has scenarios - every test plain file of it is empty, so there is nothing to test: write the conformance or acceptance scenarios first/);
+      scenariosIn("say-hello");
+      await expect(loop.conformance("app.plain", { funcIds: ["app:say-goodbye"] })).rejects.toThrow(/^app:say-goodbye has no scenarios - its test plain file is empty, so there is nothing to test: write the conformance or acceptance scenarios first, with change_plain.*Nothing was started\.$/);
+      await expect(loop.conformance("app.plain", { funcIds: ["app:say-hello", "app:say-thanks"] })).rejects.toThrow("app has no functional spec app:say-thanks. Nothing was started.");
+      expect(code.ran).toEqual([]);
+      expect(tests.ran).toEqual([]);
     });
 
-    it("asked for the whole module while its code is still to build, are listed last as planned once it is built - and asked again, say they were on already", async () => {
+    it("of functional specs with scenarios are listed last as planned once the code is built - and conform with nothing to write says so", async () => {
       writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye.", "Say thanks."]));
+      for (const funcId of ["say-hello", "say-goodbye", "say-thanks"]) scenariosIn(funcId);
       const code = runner();
       const tests = conformanceRunner();
-      const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, conformanceOn: () => false, run: code.run, runConformance: tests.runConformance });
+      const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run: code.run, runConformance: tests.runConformance });
       code.holdNext();
-      const [before] = await loop.bringUp("app.plain");
-      expect(before!.planned.map((job) => job.track)).toEqual(["code", "code"]);
-      const [status] = await loop.conformance("app.plain");
+      const [status] = await loop.bringUp("app.plain");
       expect(status!.planned.map((job) => `${job.track} ${job.title}`)).toEqual(["code Say goodbye.", "code Say thanks.", "conformance conformance tests"]);
-      expect(describeModules([status!])).toContain("  3. conformance tests - planned once the code is built");
-      expect(status!.conformanceNote).toBeUndefined();
-      // Not a pulse yet: the regeneration lists the code's alone.
-      expect(loop.mapPlan().codebases[0]!.pulses.map((pulse) => pulse.track)).toEqual(["code", "code", "code"]);
-      const [again] = await loop.conformance("app.plain", { funcIds: ["app:say-hello", "app:say-goodbye"] });
-      expect(describeModules([again!])).toContain("conformance tests were on for the whole of app already: they are planned into pulses once its code is built");
-      code.gate.release!();
-      await loop.drain();
-      expect(tests.ran.map((job) => job.add)).toEqual([["say-hello", "say-goodbye", "say-thanks"]]);
-      expect(loop.status()[0]!.planned).toEqual([]);
-    });
-
-    it("scheduled ahead of their code, are written once the module's code is built - after its last code job, the groups together", async () => {
-      writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye.", "Say thanks.", "Say sorry."]));
-      const code = runner();
-      const tests = conformanceRunner();
-      const order: string[] = [];
-      const loop = createWorkLoop({
-        registry: createJobRegistry(),
-        cwd: dir,
-        planner: false,
-        conformanceOn: () => false,
-        run: async (job, onDelta) => (order.push(`code ${job.planned.cases.add.map((spec) => spec.funcId).join(",")}`), code.run(job, onDelta)),
-        runConformance: async (job, onDelta) => (order.push(`tests ${job.planned.cases.add.map((spec) => spec.funcId).join(",")}`), tests.runConformance(job, onDelta)),
-      });
-      code.holdNext();
-      await loop.bringUp("app.plain");
-      // Scheduled while the first code job runs: shown at once, after the module's last code job.
-      const [status] = await loop.conformance("app.plain", { funcIds: ["app:say-hello", "app:say-goodbye"] });
-      await loop.conformance("app.plain", { funcIds: ["app:say-sorry"] });
-      const planned = loop.status()[0]!.planned;
-      expect(status!.planned.map((job) => job.waitsFor)).toEqual([undefined, undefined, undefined, ["say-hello", "say-goodbye"]]);
-      expect(planned.map((job) => `${job.track} ${job.title}`)).toEqual(["code Say goodbye.", "code Say thanks.", "code Say sorry.", "conformance app:say-hello, app:say-goodbye", "conformance app:say-sorry"]);
+      expect(describeModules([status!])).toContain("  3. conformance tests of app:say-hello, app:say-goodbye, app:say-thanks - planned once the code is built");
       // The regeneration numbers them among the code's pulses, by the functional specs they are for.
       expect(loop.mapPlan().codebases[0]!.pulses.map((pulse) => [pulse.number, pulse.track, pulse.specs])).toEqual([
         [1, "code", undefined],
         [2, "code", undefined],
         [3, "code", undefined],
-        [4, "code", undefined],
-        [5, "conformance", ["app:say-hello", "app:say-goodbye"]],
-        [6, "conformance", ["app:say-sorry"]],
+        [4, "conformance", ["app:say-hello", "app:say-goodbye", "app:say-thanks"]],
       ]);
       code.gate.release!();
       await loop.drain();
-      expect(order).toEqual(["code say-hello", "code say-goodbye", "code say-thanks", "code say-sorry", "tests say-hello,say-goodbye,say-sorry"]);
-      expect(JSON.stringify(readRecord(testsDir()))).not.toContain("Say thanks.");
+      expect(tests.ran.map((job) => job.add)).toEqual([["say-hello", "say-goodbye", "say-thanks"]]);
+      expect(loop.status()[0]!.planned).toEqual([]);
+      const [again] = await loop.conformance("app.plain");
+      expect(again!.conformanceNote).toBe("the conformance tests of app are written for every functional spec with scenarios, as built: there is nothing to write");
     });
 
-    it("asked for, are written for every functional spec in one job - or one a functional spec when the person asked for that", async () => {
+    it("are written for every functional spec in one job - or one a functional spec when the person asked for that", async () => {
       writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye.", "Say thanks."]));
+      for (const funcId of ["say-hello", "say-goodbye", "say-thanks"]) scenariosIn(funcId);
       const code = runner();
       const tests = conformanceRunner();
-      const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, conformanceOn: () => false, run: code.run, runConformance: tests.runConformance });
+      const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run: code.run, runConformance: tests.runConformance });
       await loop.bringUp("app.plain");
       await loop.drain();
-      await loop.conformance("app.plain", { funcIds: ["app:say-hello"], separately: true });
-      await loop.drain();
-      await loop.conformance("app.plain");
-      await loop.drain();
-      expect(tests.ran.map((job) => job.add)).toEqual([["say-hello"], ["say-goodbye", "say-thanks"]]);
+      expect(tests.ran.map((job) => job.add)).toEqual([["say-hello", "say-goodbye", "say-thanks"]]);
 
       writePlain(dir, "app.plain", app([["say-hello", "Say hello loudly."], ["say-goodbye", "Say goodbye loudly."], ["say-thanks", "Say thanks loudly."]]));
       await loop.bringUp("app.plain");
       await loop.conformance("app.plain", { separately: true });
       await loop.drain();
-      expect(tests.ran.slice(2).map((job) => job.patch)).toEqual([["say-hello"], ["say-goodbye"], ["say-thanks"]]);
+      expect(tests.ran.slice(1).map((job) => job.patch)).toEqual([["say-hello"], ["say-goodbye"], ["say-thanks"]]);
     });
 
-    it("scheduled together, are planned as their group with no agent asked - the code's work still is", async () => {
+    it("are planned with no agent asked - the code's work still is", async () => {
       writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye.", "Say thanks."]));
+      scenariosIn("say-hello");
+      scenariosIn("say-goodbye");
       const code = runner();
       const tests = conformanceRunner();
       const asked: number[][] = [];
       const planner = { group: async (specs: Array<{ number: number }>) => (asked.push(specs.map((spec) => spec.number)), undefined), place: async () => undefined };
-      const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner, conformanceOn: () => false, run: code.run, runConformance: tests.runConformance });
-      await loop.conformance("app.plain", { funcIds: ["app:say-hello", "app:say-goodbye"] });
+      const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner, run: code.run, runConformance: tests.runConformance });
       await loop.bringUp("app.plain");
       await loop.drain();
       expect(tests.ran.map((job) => job.add)).toEqual([["say-hello", "say-goodbye"]]);
@@ -954,7 +879,7 @@ describe("the work loop", () => {
       let release!: () => void;
       const held = new Promise<void>((resolve) => (release = resolve));
       const planner = { group: async () => (await held, undefined), place: async () => undefined };
-      const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner, conformanceOn: () => false, run: code.run });
+      const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner, run: code.run });
       const brought = loop.bringUp("app.plain");
       await vi.waitFor(() => expect(loop.status()[0]?.planned[0]).toMatchObject({ planning: true, track: "code", title: "the work" }));
       expect(loop.planned()[0]!.note).toMatch(/^Being planned into pulses now/);
@@ -964,25 +889,25 @@ describe("the work loop", () => {
       expect(loop.status()[0]!.planned).toEqual([]);
     });
 
-    describe("under conformance-tests: false, with none asked for", () => {
+    describe("kept up to date as the code changes", () => {
       /** Each conformance pulse, by what it does to each functional spec. */
       const pulses: Array<{ add: string[]; patch: string[]; again: string[]; delete: string[] }> = [];
       const funcIds = (specs: Array<{ funcId: string }>) => specs.map((spec) => spec.funcId);
       /** When set, a conformance pulse passes on the tests as they are: it records them, and writes no test file. */
       let asTheyAre = false;
 
-      /** The module built from `specs`, with conformance tests for `tested` alone - as an earlier request left them - and its loop. */
+      /** The module built from `specs`, with scenarios - and so conformance tests - for `tested` alone, and its loop. */
       async function builtWithTests(specs: Spec[], tested: string[]) {
         pulses.length = 0;
         asTheyAre = false;
         writePlain(dir, "app.plain", app(specs));
+        for (const funcId of tested) scenariosIn(funcId);
         const code = runner();
         const tests = conformanceRunner();
         const loop = createWorkLoop({
           registry: createJobRegistry(),
           cwd: dir,
           planner: false,
-          conformanceOn: () => false,
           run: code.run,
           runConformance: async (job, onDelta) => {
             const cases = job.planned.cases;
@@ -995,15 +920,9 @@ describe("the work loop", () => {
         });
         await loop.bringUp("app.plain");
         await loop.drain();
-        if (tested.length > 0) {
-          const built = readRecord(codeDir())!;
-          // As the spec has them, with their scenarios: what a conformance pulse records.
-          const spec = snapshotSpec(join(dir, "app.plain"), { cwd: dir }).tree;
-          writeTestsRecord(testsDir(), conformanceTarget(built, null, spec, (funcId) => tested.includes(funcId)));
-          recordHistory(codeDir(), "conformance tests");
-        }
-        // Building it wrote no tests: conformance is off.
-        expect(pulses).toEqual([]);
+        // Building it wrote the tests of those with scenarios, in one pulse - none at all for a module with none.
+        expect(pulses).toEqual(tested.length > 0 ? [{ add: tested, patch: [], again: [], delete: [] }] : []);
+        pulses.length = 0;
         return { loop, code, tests };
       }
       const testedIds = () => ((readRecord(testsDir())?.["functional specs"] as Array<{ id: string }> | undefined) ?? []).map((item) => item.id);
@@ -1027,7 +946,7 @@ describe("the work loop", () => {
         expect(JSON.stringify(readRecord(testsDir()))).toContain("Say hello loudly.");
       });
 
-      it("writes no tests for a functional spec that has none, though another of the module has", async () => {
+      it("writes no tests for a functional spec that has no scenarios, though another of the module has", async () => {
         const { loop } = await builtWithTests(["Say hello.", "Say goodbye."], ["say-goodbye"]);
         await loop.regenerateAgain("app.plain", ["app:say-hello"]);
         await loop.drain();
@@ -1045,7 +964,7 @@ describe("the work loop", () => {
         expect(testedIds()).toEqual(["say-hello"]);
       });
 
-      it("starts no conformance pulse in a module with no conformance tests", async () => {
+      it("starts no conformance pulse in a module with no scenarios", async () => {
         const { loop } = await builtWithTests(["Say hello.", "Say goodbye."], []);
         await loop.regenerateAgain("app.plain", ["app:say-hello"]);
         writePlain(dir, "app.plain", app([["say-hello", "Say hello loudly."], "Say goodbye."]));
@@ -1057,14 +976,13 @@ describe("the work loop", () => {
 
       it("clears the mark of a functional spec regenerated again once its tests pass on the new code, no test file changed", async () => {
         const { loop } = await builtWithTests(["Say hello.", "Say goodbye."], ["say-hello"]);
-        mkdirSync(testsDir(), { recursive: true });
-        writeFileSync(join(testsDir(), "test_app.py"), "# conformance tests of say-hello\n");
+        writeFileSync(join(testsDir(), "test_app.py"), "# conformance tests of app:say-hello\n");
         asTheyAre = true;
         await loop.regenerateAgain("app.plain", ["app:say-hello"]);
         await loop.drain();
         expect(pulses).toEqual([{ add: [], patch: [], again: ["say-hello"], delete: [] }]);
         expect(marked()).toBe(false);
-        expect(readFileSync(join(testsDir(), "test_app.py"), "utf8")).toBe("# conformance tests of say-hello\n");
+        expect(readFileSync(join(testsDir(), "test_app.py"), "utf8")).toBe("# conformance tests of app:say-hello\n");
       });
 
       it("keeps the mark of a functional spec regenerated again while its tests fail on the new code - the pulse does not land", async () => {
@@ -1080,6 +998,8 @@ describe("the work loop", () => {
 
     it("of a functional spec regenerated again by name are kept while it regenerates, then written again for the new code", async () => {
       writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye."]));
+      scenariosIn("say-hello");
+      scenariosIn("say-goodbye");
       const code = runner();
       const tests = conformanceRunner();
       const order: string[] = [];
@@ -1088,7 +1008,6 @@ describe("the work loop", () => {
         registry,
         cwd: dir,
         planner: false,
-        conformanceOn: () => true,
         run: async (job, onDelta) => (order.push(`code ${job.planned.cases.again.map((spec) => spec.funcId).join(",")}`), code.run(job, onDelta)),
         runConformance: async (job, onDelta) => (
           order.push(`tests -${job.planned.cases.delete.map((spec) => spec.funcId).join(",")} again ${job.planned.cases.again.map((spec) => spec.funcId).join(",")}`),
@@ -1116,29 +1035,20 @@ describe("the work loop", () => {
       expect(JSON.stringify(readRecord(testsDir()))).not.toContain("regenerate_again");
     });
 
-    it("refuse functional specs the spec does not have - no code job builds them - and schedule nothing", async () => {
-      writePlain(dir, "app.plain", app(["Say hello."]));
-      const code = runner();
-      const tests = conformanceRunner();
-      const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, conformanceOn: () => false, run: code.run, runConformance: tests.runConformance });
-      await expect(loop.conformance("app.plain", { funcIds: ["app:say-hello", "app:say-thanks"] })).rejects.toThrow(/app has no functional spec app:say-thanks:.*Nothing was scheduled/);
-      await loop.bringUp("app.plain");
-      await loop.drain();
-      expect(tests.ran).toEqual([]);
-    });
-
     it("do not start when the code record does not have a functional spec they test, as they test it - checked as the job starts", async () => {
       writePlain(dir, "app.plain", app(["Say hello."]));
       const code = runner();
       const tests = conformanceRunner();
       const registry = createJobRegistry();
-      const loop = createWorkLoop({ registry, cwd: dir, planner: false, conformanceOn: () => false, run: code.run, runConformance: tests.runConformance });
+      const loop = createWorkLoop({ registry, cwd: dir, planner: false, run: code.run, runConformance: tests.runConformance });
       await loop.bringUp("app.plain");
       await loop.drain();
       // Something else holds the module's lanes, so the conformance job is planned now and starts later - by when the record says otherwise.
       let release!: () => void;
       const held = new Promise<void>((resolve) => (release = resolve));
       registry.start({ kind: "other", summary: "holds the module", lanes: moduleLanes(join(dir, "app.plain")), run: async () => (await held, { report: "" }) });
+      // Its scenarios are written now: its tests are planned.
+      scenariosIn("say-hello");
       await loop.conformance("app.plain", { funcIds: ["app:say-hello"] });
       // Built from other text since - committed, as a regenerate leaves it - and the code job that would catch it up does not land.
       const record = readRecord(codeDir())!;
@@ -1154,10 +1064,11 @@ describe("the work loop", () => {
 
     it("halt on their own when they do not pass - the code goes on being built - until the spec or the code changes", async () => {
       writePlain(dir, "app.plain", app(["Say hello."]));
+      scenariosIn("say-hello");
       const code = runner();
       const tests = conformanceRunner();
       tests.gate.pass = false;
-      const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, conformanceOn: () => true, run: code.run, runConformance: tests.runConformance });
+      const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run: code.run, runConformance: tests.runConformance });
       await loop.bringUp("app.plain");
       await loop.drain();
       expect(tests.ran).toHaveLength(1);
@@ -1165,6 +1076,7 @@ describe("the work loop", () => {
       // The code goes on: a new functional spec is built, and - the code changed - its tests are tried again.
       tests.gate.pass = true;
       writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye."]));
+      scenariosIn("say-goodbye");
       await loop.bringUp("app.plain");
       await loop.drain();
       expect(code.ran).toHaveLength(2);
@@ -1175,13 +1087,14 @@ describe("the work loop", () => {
     describe("of a module another is built on", () => {
       const top = "---\nrequires:\n  - app\n---\n\n***implementation reqs***\n\n- :Implementation: is Python.\n\n***functional specs***\n\n# home-page\nThe home page says hello.\n";
 
+      /** app built with no scenarios, and so no conformance tests - written later, once scenarios are. */
       async function builtBelow() {
         writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye.", "Say thanks."]));
         writePlain(dir, "top.plain", top);
         const code = runner();
         const tests = conformanceRunner();
         const loop = () =>
-          createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, conformanceOn: () => true, conformanceChosen: () => true, run: code.run, runConformance: tests.runConformance });
+          createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run: code.run, runConformance: tests.runConformance });
         const first = loop();
         await first.bringUp("app.plain");
         await first.drain();
@@ -1193,6 +1106,8 @@ describe("the work loop", () => {
         const before = code.ran.length;
         // A pulse of top's was started - its codebase seeded with app's code - and stopped: nothing of its own built.
         copyRequiredCode(codeDir("app"), codeDir("top"), "top", "app");
+        scenariosIn("say-goodbye");
+        scenariosIn("say-thanks");
         const work = loop();
         const statuses = await work.conformance("app.plain", { funcIds: ["app:say-goodbye", "app:say-thanks"] });
         expect(statuses.map((status) => status.module)).toEqual(["app"]);
@@ -1213,6 +1128,8 @@ describe("the work loop", () => {
         await work.bringUp("top.plain");
         await work.drain();
         const before = code.ran.length;
+        scenariosIn("say-goodbye");
+        scenariosIn("say-thanks");
         const statuses = await work.conformance("app.plain", { funcIds: ["app:say-goodbye", "app:say-thanks"] });
         expect(statuses.map((status) => status.module)).toEqual(["app"]);
         // Gone whole, its history with it.
@@ -1225,18 +1142,20 @@ describe("the work loop", () => {
 
       it("touch nothing built on it when they are written already", async () => {
         const { loop } = await builtBelow();
+        scenariosIn("say-goodbye");
         const work = loop();
         await work.conformance("app.plain", { funcIds: ["app:say-goodbye"] });
         await work.drain();
         await work.bringUp("top.plain");
         await work.drain();
-        await expect(work.conformance("app.plain", { funcIds: ["app:say-goodbye"] })).rejects.toThrow("app's conformance tests for app:say-goodbye are written already. Nothing was scheduled.");
+        await expect(work.conformance("app.plain", { funcIds: ["app:say-goodbye"] })).rejects.toThrow("app's conformance tests for app:say-goodbye are written already. Nothing was started.");
         expect(JSON.stringify(readRecord(codeDir("top")))).toContain("The home page says hello.");
       });
 
-      it("asked ahead for a module above the one being regenerated, are written once its code is built - the module below left as it is", async () => {
+      it("of a module above the one being regenerated, are written once its code is built - the module below left as it is", async () => {
         writePlain(dir, "app.plain", app(["Say hello."]));
         writePlain(dir, "top.plain", top.replace("***functional specs***", "***test reqs***\n\n- :ConformanceTests: use pytest.\n\n***functional specs***"));
+        scenariosIn("home-page", "top");
         const code = runner();
         const tests = conformanceRunner();
         const order: string[] = [];
@@ -1244,7 +1163,6 @@ describe("the work loop", () => {
           registry: createJobRegistry(),
           cwd: dir,
           planner: false,
-          conformanceOn: () => false,
           run: async (job, onDelta) => (order.push(`code ${job.moduleName}`), code.run(job, onDelta)),
           runConformance: async (job, onDelta) => (order.push(`tests ${job.moduleName}`), tests.runConformance(job, onDelta)),
         });
@@ -1266,6 +1184,8 @@ describe("the work loop", () => {
         code.holdNext();
         await work.bringUp("top.plain");
         await vi.waitFor(() => expect(work.status().find((module) => module.module === "top")?.running).toBeDefined());
+        scenariosIn("say-goodbye");
+        scenariosIn("say-thanks");
         const statuses = await work.conformance("app.plain", { funcIds: ["app:say-goodbye", "app:say-thanks"] });
         expect(statuses.map((status) => status.module)).toEqual(["app"]);
         code.gate.release!();
@@ -1284,6 +1204,7 @@ describe("the work loop", () => {
         code.holdNext();
         await work.bringUp("top.plain");
         await vi.waitFor(() => expect(work.status().find((module) => module.module === "top")?.running).toBeDefined());
+        scenariosIn("say-goodbye");
         await work.conformance("app.plain", { funcIds: ["app:say-goodbye"] });
         code.gate.release!();
         await work.drain();
@@ -1551,7 +1472,7 @@ describe("drift", () => {
     writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye."]));
     const code = runner();
     const registry = createJobRegistry();
-    const loop = createWorkLoop({ registry, cwd: dir, planner: false, conformanceOn: () => false, run: code.run });
+    const loop = createWorkLoop({ registry, cwd: dir, planner: false, run: code.run });
     const { describeDrift } = await import("../../src/regenerate/loop.ts");
     // Nothing regenerated: all of it.
     const fresh = loop.drift("app.plain");

@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished } from "vitest";
-import { syncTestPlainFiles } from "../test-plain.ts";
+import { testPlainFile } from "../test-plain.ts";
 import { renderConformanceTests } from "../../src/regenerate/conformance.ts";
 import { renderSpecDiff } from "../../src/regenerate/regenerate.ts";
 import { findTestScripts, projectRootFor, requireTestScripts, withTestingScripts } from "../../src/regenerate/test-scripts.ts";
@@ -139,7 +139,8 @@ describe("the testing scripts, in an agent's prompt", () => {
       join(root, "app.plain"),
       "***implementation reqs***\n\n- Python.\n\n***test reqs***\n\n- Run with [the runner](test_scripts/run_conformance_tests_python.sh).\n\n***functional specs***\n\n# it-prints-hello\nIt prints hello.\n",
     );
-    syncTestPlainFiles(root);
+    mkdirSync(join(root, "tests", "app"), { recursive: true });
+    writeFileSync(join(root, "tests", "app", "it-prints-hello.plain"), testPlainFile("app", "it-prints-hello", { conformance: ["# says-hello\nIt prints hello."] }));
     const cwd = process.cwd();
     process.chdir(root);
     onTestFinished(() => process.chdir(cwd));

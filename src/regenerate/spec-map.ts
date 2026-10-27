@@ -10,13 +10,13 @@ import {
   TEST_REQUIREMENTS,
   type MarshalledPlainSource,
 } from "../plain/spec.ts";
-import { configForSpec, conformanceSwitchedOn, readProjectConfig } from "../config.ts";
+import { configForSpec, readProjectConfig } from "../config.ts";
 import { STDLIB_ROOT } from "../plain/stdlib.ts";
 import { conformanceDirFor } from "./conformance.ts";
 import { chainSpec, type MapCodebase, type MapPlan, type MapPulse } from "./loop.ts";
 import { modulesRoot, projectDirOf } from "./paths.ts";
 import { HISTORY_DIR } from "./lineage.ts";
-import { codeTree, marksRegenerateAgain, readRecord, RECORD_FILE } from "./records.ts";
+import { codeTree, hasScenarios, marksRegenerateAgain, readRecord, RECORD_FILE } from "./records.ts";
 import { specFilesOf } from "./regenerate.ts";
 import { builtTips, resolveRequiresChain, type ChainEntry } from "./requires.ts";
 import { changesBetween, layoutOf, serializeTree, type SpecChange } from "./spec-steps.ts";
@@ -66,7 +66,7 @@ export interface MapPage {
   imports: string[];
   /** The module it requires - whose code it is built on - when it requires one. */
   requires?: string;
-  /** Its conformance tests are on, as its config has it: `conformance-tests:` is not false. */
+  /** Whether any of its functional specs has scenarios, and so conformance tests to write: its test reqs are used. */
   conformance?: boolean;
   items: MapItem[];
   /** Its spec does not parse, or could not be read. */
@@ -340,7 +340,6 @@ export function readSpecMapWithDeps(files: string[]): { pages: MapPage[]; deps: 
           imports: [],
           items: [],
           ...(entry.requires !== null ? { requires: entry.requires } : {}),
-          conformance: conformanceOn(entry.plainFile),
         };
         const spec = specOf(home);
         if (spec instanceof Error) {
@@ -354,7 +353,8 @@ export function readSpecMapWithDeps(files: string[]): { pages: MapPage[]; deps: 
         for (const path of [...paths, ...depsOf(entry, codebase, conformanceDirFor(entry.moduleName, modulesRoot(projectDir)))]) deps.add(path);
         const texts = paths.map((path, index) => ({ ...(index > 0 ? { label: importLabel(path, projectDir) } : {}), text: readText(path) }));
         const items = pageItems({ module: entry.moduleName, own: home === at, spec, record, tested });
-        pages.push({ ...page, imports: texts.slice(1).map((text) => text.label!), items: layOut(items, texts) });
+        const own = home === at ? ((spec[FUNCTIONAL_REQUIREMENTS] as unknown[] | undefined) ?? []) : ((spec[REQUIRED_FUNCTIONAL_SPECS] as Array<{ module?: string }> | undefined) ?? []).filter((item) => item.module === entry.moduleName);
+        pages.push({ ...page, conformance: own.some(hasScenarios), imports: texts.slice(1).map((text) => text.label!), items: layOut(items, texts) });
       });
     }
     return pages;
@@ -374,15 +374,6 @@ function fingerprint(paths: string[]): string {
       }
     })
     .join("\n");
-}
-
-/** Whether a module's config has its conformance tests on: `conformance-tests:` is all (true) or chosen - off when not set. */
-function conformanceOn(plainFile: string): boolean {
-  try {
-    return conformanceSwitchedOn(configForSpec(plainFile).conformanceTests);
-  } catch {
-    return false;
-  }
 }
 
 function readText(path: string): string {
@@ -490,7 +481,7 @@ export function markSpecMap(pages: MapPage[], plan: MapPlan): MarkedPage[] {
     const stuckPulse = codebase?.stuck?.pulse;
     const failed: MapPulse | undefined = stuckPulse !== undefined ? { number: stuckPulse.number, title: "", track: "code", running: false, rowId: "", before: stuckPulse.before, after: stuckPulse.after } : undefined;
     const conformance = codebase?.pulses.find((pulse) => pulse.running && pulse.track === "conformance");
-    // Test reqs only where conformance tests are on: the loop's word for it - the config, or asked for this session - else the config's.
+    // Test reqs only where they are used: a functional spec of the module has scenarios.
     const conformanceIsOn = codebase?.conformance ?? page.conformance !== false;
     const items = page.items.filter((item) => item.state !== "test" || conformanceIsOn).map((item): MarkedItem => {
       const testing = conformance !== undefined && item.section === FUNCTIONAL_REQUIREMENTS && item.state !== "removed" && (() => {

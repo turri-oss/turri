@@ -54,7 +54,6 @@ describe("turri init-config", () => {
     await initConfig(dir);
     const written = readFileSync(join(dir, "config.turri.yaml"), "utf8");
     expect(readProjectConfig(dir)).toMatchObject({
-      conformanceTests: false,
       review: false,
       mutationTesting: true,
       allowToStopJobs: true,
@@ -86,13 +85,13 @@ describe("turri init-config", () => {
   });
 
   it("sets only the two models in a config.turri.yaml already there - everything else left as it was - unless told to write it all again", async () => {
-    writeFileSync(join(dir, "config.turri.yaml"), "module: app.plain\nharness-model:\n  model: old/one\n  thinking: high\nconformance-tests: false\n");
+    writeFileSync(join(dir, "config.turri.yaml"), "module: app.plain\nharness-model:\n  model: old/one\n  thinking: high\nmutation-testing: false\n");
     const result = await initConfig(dir, { vendor: "openai" });
     expect(result).toMatchObject({ written: true });
     expect(result.message).toContain("everything else in it left as it was");
     const text = readFileSync(join(dir, "config.turri.yaml"), "utf8");
     expect(text).toContain("module: app.plain");
-    expect(text).toContain("conformance-tests: false");
+    expect(text).toContain("mutation-testing: false");
     expect(text).not.toContain("old/one");
     const config = readProjectConfig(dir);
     expect(config.module).toBe("app.plain");
@@ -137,10 +136,10 @@ describe("turri init-config", () => {
     await initConfig(dir, { vendor: "openai" });
     expect(readProjectConfig(dir)).toMatchObject({ agentEnv: { files: [], vars: ["D365_TENANT_ID"] }, review: false });
     expect(readFileSync(join(dir, "config.turri.backend.yaml"), "utf8")).toBe("unittests-script: run_unittests_python.sh\n");
-    writeFileSync(join(dir, "config.yaml"), "conformance-tests: false\n");
+    writeFileSync(join(dir, "config.yaml"), "mutation-testing: false\n");
     await initConfig(dir, { vendor: "openai" });
-    // The file already there keeps its own conformance-tests, the quick start's.
-    expect(readProjectConfig(dir).conformanceTests).toBe(false);
+    // The file already there keeps its own mutation-testing, the quick start's - not config.yaml's.
+    expect(readProjectConfig(dir).mutationTesting).toBe(true);
   });
 
   it("writes the values turri falls back to, so a setting written out does as one left out", async () => {

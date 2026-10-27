@@ -69,11 +69,11 @@ describe("a spec change, as the coding agent reads it", () => {
     expect(prompt).not.toContain("+diff");
   });
 
-  it("is what the unit test review is shown too, told that behaviour is what a functional spec, an acceptance test or a req states", () => {
+  it("is what the unit test review is shown too, told that behaviour is what a functional spec or a req states", () => {
     const spec = reviewedSpec({ moduleName: "app", specifications: { definitions: [], "implementation reqs": [], "test reqs": [], "functional specs": [] } as never, funcIds: [], change: text });
     const prompt = unitReviewTask({ buildDir: "/code", what: "the spec change to module `app`", spec, forChange: true });
     expect(prompt).toContain(`<new in this work>\n<spec change>\n${text}\n</spec change>\n</new in this work>`);
-    expect(prompt).toContain("Behaviour is what a functional spec, an acceptance test or an implementation req states.");
+    expect(prompt).toContain("Behaviour is what a functional spec or an implementation req states.");
     expect(prompt).toContain("a page, a component or a record that only <definitions> name");
   });
 });

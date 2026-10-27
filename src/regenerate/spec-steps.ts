@@ -414,6 +414,58 @@ function itemText(line: string): string {
   ].join("\n");
 }
 
+/** An item as its module's file writes it: a functional spec under its `# <func-id>` heading - its scenarios are in its test plain file. */
+function fileItemText(line: string): string {
+  const item = JSON.parse(line) as { id?: string; markdown?: string };
+  return item.id !== undefined ? `# ${item.id}\n${item.markdown ?? ""}` : (item.markdown ?? line);
+}
+
+type ScenarioItem = { id?: string; text?: string };
+type ScenarioCarrier = { id?: string; [CONFORMANCE_TESTS]?: ScenarioItem[]; [ACCEPTANCE_TESTS]?: ScenarioItem[] };
+
+/** A functional spec's test plain file, as it would read: its binding, then its two sections, each scenario under its id. */
+export function testPlainFileText(module: string, item: ScenarioCarrier): string {
+  const section = (title: string, scenarios: ScenarioItem[] | undefined) =>
+    (scenarios ?? []).length === 0 ? title : `${title}\n\n${(scenarios ?? []).map((scenario) => `# ${scenario.id ?? ""}\n${(scenario.text ?? "").trim()}`).join("\n\n")}`;
+  return `---\nmodule: ${module}\nfunc_id: ${item.id ?? ""}\n---\n\n${section("***conformance tests***", item[CONFORMANCE_TESTS])}\n\n${section("***acceptance tests***", item[ACCEPTANCE_TESTS])}\n`;
+}
+
+/** Where a functional spec's test plain file is, by its func-id: the path a diff names it by. */
+export type TestPlainPath = (funcId: string) => string;
+
+/**
+ * The functional specs' test plain files a change between two serialized trees touches, each as a diff of its own,
+ * rebuilt from the trees as the module's file is: only the trees that carry scenarios - the conformance tests' - have
+ * any. A functional spec whose scenarios all went is shown with its file emptied.
+ */
+export function diffTestPlainFiles(before: string, after: string, module: string, pathOf: TestPlainPath): string {
+  const carriers = (serialized: string): Map<string, ScenarioCarrier> => {
+    const found = new Map<string, ScenarioCarrier>();
+    let section: string | undefined;
+    for (const line of serialized.split("\n")) {
+      if (line === "") continue;
+      const header = headerOf(line);
+      if (header !== undefined) {
+        section = header.key;
+        continue;
+      }
+      if (section !== FUNCTIONAL_REQUIREMENTS) continue;
+      const item = JSON.parse(line) as ScenarioCarrier;
+      if (item.id !== undefined && (item[CONFORMANCE_TESTS] !== undefined || item[ACCEPTANCE_TESTS] !== undefined)) found.set(item.id, item);
+    }
+    return found;
+  };
+  const was = carriers(before);
+  const now = carriers(after);
+  return [...new Set([...now.keys(), ...was.keys()])]
+    .map((funcId) => {
+      const text = (item: ScenarioCarrier | undefined) => testPlainFileText(module, item ?? { id: funcId });
+      const [from, to] = [text(was.get(funcId)), text(now.get(funcId))];
+      return from === to ? "" : gitDiff(from, to, 3, [pathOf(funcId), pathOf(funcId)]);
+    })
+    .join("");
+}
+
 /** A serialized tree as a person reads it, section by section. */
 export function treeText(serialized: string): string {
   const out: string[] = [];
@@ -432,7 +484,7 @@ export function treeText(serialized: string): string {
   return out.join("\n").trim();
 }
 
-/** What of an item a change touches: its text, its acceptance tests, its linked resources. */
+/** What of an item a change touches: its text, its scenarios, its linked resources. */
 function changedParts(before: string, after: string): string {
   if (headerOf(before) !== undefined || headerOf(after) !== undefined) return "the text";
   const x = JSON.parse(before) as Record<string, unknown>;
@@ -571,7 +623,7 @@ export function plainText(serialized: string, layout?: SpecLayout): string {
     if (line === "") continue;
     const header = headerOf(line);
     if (header !== undefined) sections.push({ key: header.key, items: [] });
-    else sections.at(-1)?.items.push(itemText(line));
+    else sections.at(-1)?.items.push(fileItemText(line));
   }
   const own = sections.filter((section) => section.key !== REQUIRED_FUNCTIONAL_SPECS && section.items.length > 0);
   if (layout === undefined) return own.map((section) => [`***${section.key}***`, "", ...section.items].join("\n")).join("\n\n");
@@ -664,7 +716,11 @@ function linkedBy(change: SpecChange, file: string): string {
   return `${what} in ${item.module !== undefined ? `${item.module}.plain` : file}`;
 }
 
-export function makeStep(title: string, reason: string, changes: SpecChange[], before: string, after: string, file: string, layout?: SpecLayout): SpecStep {
+/**
+ * A step of the work. `testPlain`: for the conformance tests' steps, the module and where its functional specs' test plain
+ * files are - a scenario changed shows as a diff of its test plain file, after the module's.
+ */
+export function makeStep(title: string, reason: string, changes: SpecChange[], before: string, after: string, file: string, layout?: SpecLayout, testPlain?: { module: string; pathOf: TestPlainPath }): SpecStep {
   return {
     title,
     reason,
@@ -674,7 +730,7 @@ export function makeStep(title: string, reason: string, changes: SpecChange[], b
     tree: parseTree(after),
     diff: diffTrees(before, after),
     // What a linked resource holds changed shows in the step's diff, after the spec's own.
-    textDiff: `${diffSpecText(before, after, file, layout)}${resourceDiff(changes, file)}`,
+    textDiff: `${diffSpecText(before, after, file, layout)}${testPlain !== undefined ? diffTestPlainFiles(before, after, testPlain.module, testPlain.pathOf) : ""}${resourceDiff(changes, file)}`,
     sections: [...new Set(changes.map((change) => change.section))],
   };
 }

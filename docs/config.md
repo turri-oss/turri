@@ -21,7 +21,7 @@ Each is written with how hard it thinks - `harness-model: openai/gpt-6-astra:med
 
 They are an example, not a requirement - any model [pi](https://pi.dev) supports works, signed in any way [pi](https://pi.dev) supports; `other` is the starting point for another provider. What we recommend is that split, a capable model to talk to and a smaller, cheaper one for the coding. Once written, it says what to do next: the key to set in your shell - or `/login` in turri, which [pi](https://pi.dev) keeps in `~/.pi/agent/auth.json` - and that the file belongs to that folder: turri reads the nearest `config.turri.yaml` upwards from where it starts, so one written anywhere else is not seen.
 
-Below them it writes every other setting out, each with what it does and the value turri uses for it - `review: false`, `turn-limit: 120`, `parallel-jobs` as this machine's cores make it - so the file says how the project is built, and you change one by changing it. The optional ones, which have no value of their own - the testing scripts (written in by the skill that writes them), `module`, `conformance-budget`, `judge-model`, `models` - are there commented out, each with an example: uncomment one to use it. A key taken out of the file is still read as the table below says.
+Below them it writes every other setting out, each with what it does and the value turri uses for it - `review: false`, `turn-limit: 120`, `parallel-jobs` as this machine's cores make it - so the file says how the project is built, and you change one by changing it. The optional ones, which have no value of their own - the testing scripts (written in by the skill that writes them), `module`, `test-dir`, `judge-model`, `models` - are there commented out, each with an example: uncomment one to use it. A key taken out of the file is still read as the table below says.
 
 Beside a `config.yaml` - another tool's, say - the new file takes from it the keys turri reads too, each in its place, its testing scripts above all, and says which it left (see [the old config.yaml](#the-old-configyaml)); `config.yaml` is left as it is. A `config.turri.yaml` already there keeps everything but its two models, which it sets - `--force` writes the whole file again - and a `config.yaml` turri read until then is copied to it first. It takes a folder other than the current one as its argument.
 
@@ -45,7 +45,7 @@ Each change says when it takes effect. None needs turri started again - what tur
 | now | `harness-model` and `models.chat` - the conversation switches to it; `parallel-jobs` - a pulse waiting for a slot starts if there is one now; `allow-to-stop-jobs` |
 | your next message | `rules-off` - for the conversation; a skill's agents from the next skill run |
 | the next pulse - one running keeps what it started with | `coding-model`, `judge-model`, every other `models.<role>`, `review`, `mutation-testing`, `turn-limit`, `compact-at`, `agent-env`, `toolchains`, `debug` |
-| the next time the work is planned | `conformance-tests`, `conformance-budget`, `max-specs-per-pulse`, `max-lines-per-pulse` |
+| the next time the work is planned | `max-specs-per-pulse`, `max-lines-per-pulse` |
 | the next test run - the running pulse's too | the testing scripts, `testing-scripts-run-on` |
 | the next pulse that lands - the running one too | `release-after-pulse`, `sentinel` |
 | the next regeneration that names no `.plain` file | `module` |
@@ -67,7 +67,6 @@ coding-model:                        # every render (default: harness-model)
 judge-model:                         # the verdicts of a conformance run (default: coding-model)
   model: amazon-bedrock/eu.anthropic.claude-sonnet-5
   thinking: medium
-conformance-tests: true              # write and run conformance tests where there are test reqs (default: false)
 unittests-script: test_scripts/run_unittests_python.sh
 conformance-tests-script: test_scripts/run_conformance_tests_python.sh
 testing-scripts-run-on: copy         # what the testing scripts run on: copy - a fresh copy (default: in-place - the code itself)
@@ -84,8 +83,6 @@ models:                              # each agent role's model, thinking and tur
 | `harness-model` | the model `turri` starts on - the one you talk to - and, in the conversation, the planner that cuts the work into jobs (on whatever model the chat is on when it plans); under `turri regenerate`, the planner too | [pi](https://pi.dev)'s configured model |
 | `coding-model` | every regeneration: functionalities, \*\*\*plain diffs, conformance tests, repairs, planning \*\*\*plain diffs, the explorer | `harness-model` |
 | `judge-model` | the judge and the test review of a conformance run | `coding-model` |
-| `conformance-tests` | `all` (or `true`): conformance tests for every functional spec of every module with test reqs, written once each module's code is built, before anything is built on it. `chosen`: for the functional specs chosen - every one with acceptance tests, and those the chooser picks as each code pulse ends, from what that pulse regenerated. `module`: the same, but the chooser is asked once, when the whole module is regenerated, and plans the conformance pulses too. Under both, the choice is made inside the pulse, before anything is built on the module, and the pulse's report says what was chosen and why; those the person asks for with `conform` are written too; once chosen, a functional spec keeps them, and they are rewritten when it changes - see [who chooses, and when](regenerating.md#conformance-tests-in-the-work-loop). `false`: no new ones written - until the conversation asks with `conform` - and the existing ones kept up to date: a functional spec that has conformance tests and is regenerated gets a conformance pulse for it alone once its code lands | `false` |
-| `conformance-budget` | under `conformance-tests: chosen` or `module`: how many of a module's functional specs may be chosen for conformance tests, beside those with acceptance tests - a count (`2`) or a share of its functional specs (`30%`, rounded up, at least one). Every choice for the module counts, whenever it was made; the chooser is told what is left, and can choose no more. Your own `conform` is not limited. A stack's `config.turri.<stack>.yaml` can set its own | no limit |
 | `review` | `true` or `false`: whether the code and its unit tests - and the conformance tests - are reviewed once they pass: two reviews at most, the second weighed by the arbiter; off, a job lands once its tests pass. A module's first pulse of one functional spec - the project set up and the smallest thing that runs - lands on its unit tests with no review - see [regenerating the code](regenerating.md#the-code-and-its-unit-tests-are-reviewed) | `false` |
 | `mutation-testing` | `true` or `false`: whether the coding agent and the reviewer have `can_it_fail` - one change put in the code for one run of the unit testing script, to see that a test catches it; on a copy of the code, or in place and put back after the run (see [regenerating the code](regenerating.md#checking-its-own-work)). `turri regenerate --mutation-testing false` for one run | `true` |
 | `rules-off` | a list of rule names - `integrations`, `concise-specs`, the files of `genome/rules/` without `.md` - left out of the conversation's prompt and every \*\*\*plain-writing agent's: a rule this project's own skills or AGENTS.md replace, such as one that says to probe a live API before any \*\*\*plain is written. `turri init-config` writes it with `integration-embedded`, `integration-embedded-testing` and `integration-standalone` - take them out when the project writes an integration against a REST API. The project's alone | none |
@@ -109,7 +106,7 @@ models:                              # each agent role's model, thinking and tur
 | `models` | each agent role's own model, thinking and turn limit - see [models per role](#models-per-role) | every role on `coding-model`, the conversation's side on `harness-model` |
 | `testing-scripts-run-on` | what the testing scripts run on - always on this machine, in your environment. `in-place`: the real build and tests folders, the script at its own path, from the project - so a script that finds a host codebase from its own path finds it. `copy`: a fresh copy of the code, staged in `plain_modules/.turri/scripts/`, with the script copied beside it. `can_it_fail` works on either: on a copy it changes the copy, in place the code itself for the one run, put back after it (see [the testing scripts](regenerating.md#the-testing-scripts)) | `in-place` |
 
-Keys are written with dashes; underscores are read the same (`conformance_tests`). A key turri does not know is ignored - another tool's `config.yaml`, read while it is the old file, may carry several - and so is a value of the wrong type, as if it were not there. `model:`, from before there were separate models, is read as `coding-model`.
+Keys are written with dashes; underscores are read the same (`mutation_testing`). A key turri does not know is ignored - another tool's `config.yaml`, read while it is the old file, may carry several - and so is a value of the wrong type, as if it were not there. `model:`, from before there were separate models, is read as `coding-model`.
 
 ## Models per role
 
@@ -120,7 +117,7 @@ Keys are written with dashes; underscores are read the same (`conformance_tests`
 | `default` | every role not named below - but the conversation's side |
 | `chat` | `turri`'s model - the same as `harness-model`, which it wins over |
 | `sentinel` | [the sentinel](sentinel.md): checks every finished pulse, and tests the release. Unnamed, the chat's model |
-| `chooser`, `planner` | the conversation's side: the conformance chooser of `turri regenerate`, the planner's agents. Unnamed, the chat's model |
+| `planner` | the conversation's side: the planner's agents. Unnamed, the chat's model |
 | `diagnosis` | the diagnosis of a job that failed for good: why it did not land, and what to do. Unnamed, the coding model the job ran on, thinking medium |
 | `release` | `turri release`'s agent and release-after-pulse's: it follows steps - a script, a start command - so it runs on the coding model, thinking low |
 | `coding` | the coding agent, the code fixer of a conformance run and the repair agent - the same as `coding-model`, which it wins over. `--model` on the command line, or a model chosen in the conversation (`engine`), wins over both |
@@ -134,7 +131,7 @@ Keys are written with dashes; underscores are read the same (`conformance_tests`
 
 What an entry leaves out it takes from `default`: `reviewer: { thinking: low }` runs the default model, thinking little. A turn limit is the role's own, else `default`'s, else `turn-limit:`, else two minutes. A stack's `config.turri.<stack>.yaml` lays its own `models:` over the project's, role by role - all but `chat`, the project's alone.
 
-A role whose thinking nothing names - neither its entry, `default`'s, nor a `:level` on the model it runs on - thinks as its kind of work needs: **low** for the agents that do the work (`coding`, `conformance`, `explorer`, `release`), which work from \*\*\*plain that leaves little to guess and take many turns, and **medium** for the ones that judge (`reviewer`, `test-reviewer`, `judge`, `arbiter`, `debugger`, `planner`, `chooser`, `diagnosis`), where a wrong call costs pulses. A judging role that falls back on the coding model takes its model alone, not its thinking. The conversation keeps its own level, as [pi](https://pi.dev) sets it.
+A role whose thinking nothing names - neither its entry, `default`'s, nor a `:level` on the model it runs on - thinks as its kind of work needs: **low** for the agents that do the work (`coding`, `conformance`, `explorer`, `release`), which work from \*\*\*plain that leaves little to guess and take many turns, and **medium** for the ones that judge (`reviewer`, `test-reviewer`, `judge`, `arbiter`, `debugger`, `planner`, `diagnosis`), where a wrong call costs pulses. A judging role that falls back on the coding model takes its model alone, not its thinking. The conversation keeps its own level, as [pi](https://pi.dev) sets it.
 
 The thinking level reaches the model as each provider takes it. OpenAI's models on Bedrock are sent it as their reasoning effort (`none`, `low`, `medium`, `high`, `xhigh`) by turri itself, as [pi](https://pi.dev) sends them none.
 
@@ -166,15 +163,13 @@ They are defaults. What is asked for wins over them:
 | coding | `turri --coding-model <m>`, `engine` in the conversation |
 | judge | - |
 
-`turri regenerate`, `conform` and `change-plain` read `--harness-model`, `--coding-model` (or `--model`), `--judge-model`, `--review` and `--conformance-tests` differently: as the keys themselves, as if the file had them. Each takes its key's value and its place in the order above - a `models:` entry still wins over it - so a headless run is the same as a chat with those keys in the file.
+`turri regenerate`, `conform` and `change-plain` read `--harness-model`, `--coding-model` (or `--model`), `--judge-model` and `--review` differently: as the keys themselves, as if the file had them. Each takes its key's value and its place in the order above - a `models:` entry still wins over it - so a headless run is the same as a chat with those keys in the file.
 
 A job keeps the model it was queued with: choosing another holds for what is queued after.
 
 ## Conformance tests
 
-`conformance-tests:` is the one switch, and the chat and every regeneration follow it. `false` writes no new conformance tests, and keeps the ones there are up to date: a functional spec that has conformance tests - it is in `tests/.turri.json` - and is added, changed, regenerated again or taken out in the code gets a conformance pulse once its code lands, for it alone, the whole suite run with it. A functional spec with none gets none, though others of its module have them, and a module with none gets no conformance pulse at all. No key is the same as `false`: conformance tests are off by default. `all` (or `true`) means on wherever a module has `***test reqs***` - a module without them has nothing to write conformance tests from, so it writes none, but still keeps the codebase's existing ones passing. Asked in the conversation (`conform`), or with `--conformance-tests all|chosen|module|false` on `turri regenerate` and `change-plain` - for that run, the file left as it is - a regeneration does otherwise.
-
-The chat writes `conformance-tests: false` into a new project unless you ask for tests.
+No key turns them on or off: what is tested is the functional specs with scenarios - the conformance and acceptance scenarios of each one's test plain file, `<test-dir>/<module>/<func-id>.plain` - in every module with `***test reqs***`. A functional spec with an empty test plain file is not tested, and a module with no functional spec with scenarios gets no conformance pulse at all - but keeps the codebase's existing tests passing. `test-dir` says where the test plain files are. To have a functional spec tested, write its scenarios: the chat writes them with `change_plain` when you ask for conformance tests (see [conformance tests](regenerating.md#conformance-tests)).
 
 ## The testing scripts
 
@@ -226,7 +221,7 @@ Their values never appear in what an agent is shown or what turri writes: each i
 One project can hold parts that share nothing but a common module - a Python backend and a React frontend side by side, each importing `base` from `template/`, neither requiring the other - each needing its own testing scripts. Each stack gets a file of its own beside `config.turri.yaml`, `config.turri.<stack>.yaml`, holding what differs for it - typically its testing scripts, its `toolchains:`, its models:
 
 ```
-config.turri.yaml            # the project's: harness-model, coding-model, conformance-tests
+config.turri.yaml            # the project's: harness-model, coding-model, review
 config.turri.backend.yaml    # the stack backend: its testing scripts
 config.turri.frontend.yaml   # the stack frontend: its testing scripts, and a coding model of its own
 backend.plain                # import: [base, python_fastapi_template]

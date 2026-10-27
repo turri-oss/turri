@@ -233,12 +233,16 @@ describe("the functional spec a job is building", () => {
 });
 
 describe("the spec text shown for a functionality", () => {
-  it("carries its acceptance scenarios, which the conformance tests are written from", async () => {
+  it("carries its scenarios of both kinds, each under its id, which the conformance tests carry out", async () => {
     const { buildingSpec } = await import("../../src/regenerate/conformance.ts");
-    const specifications = { "functional specs": ["One.", "A :Tuple: supports arithmetic."], acceptance_tests: [{ id: "adds", text: "1 + 1 is 2." }] };
+    const specifications = {
+      "functional specs": ["One.", "A :Tuple: supports arithmetic."],
+      conformance_tests: [{ id: "subtracts", text: "2 - 1 is 1." }],
+      acceptance_tests: [{ id: "adds", text: "1 + 1 is 2." }],
+    };
     expect(buildingSpec("rt_tuples", "tuple-arithmetic", 5, specifications as never)).toEqual({
-      label: "rt_tuples functionality tuple-arithmetic of 5",
-      text: "A :Tuple: supports arithmetic.\n\nacceptance tests:\n1 + 1 is 2.",
+      label: "rt_tuples:tuple-arithmetic, functional spec of 5",
+      text: "A :Tuple: supports arithmetic.\n\nconformance tests:\n# subtracts\n2 - 1 is 1.\n\nacceptance tests:\n# adds\n1 + 1 is 2.",
     });
   });
 });

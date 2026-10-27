@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { plainFileParser } from "../../src/plain/parser.ts";
 import { recordHistory } from "../../src/regenerate/lineage.ts";
 import { resolveTemplateDirs } from "../../src/regenerate/paths.ts";
-import { chainTree, codeTree, conformanceTarget, inheritedRecord, isOldRecord, notBuilt, readRecord, RECORD_FILE, writeCodeRecord } from "../../src/regenerate/records.ts";
+import { chainTree, codeTree, conformanceTarget, hasScenarios, inheritedRecord, isOldRecord, notBuilt, readRecord, RECORD_FILE, testedFuncIds, writeCodeRecord } from "../../src/regenerate/records.ts";
 import { writePlain } from "../test-plain.ts";
 import { listFiles } from "../../src/regenerate/testing.ts";
 
@@ -23,6 +23,8 @@ afterEach(() => {
 const items = (texts: string[]) => texts.map((markdown) => ({ markdown }));
 /** Functional specs, each with its func-id and no scenarios. */
 const specs = (entries: Array<[string, string]>) => entries.map(([id, markdown]) => ({ id, markdown, linked_resources: [], conformance_tests: [], acceptance_tests: [] }));
+/** Functional specs, each with its func-id and one acceptance scenario: what conformance tests are written for. */
+const tested = (entries: Array<[string, string]>) => specs(entries).map((item) => ({ ...item, acceptance_tests: [{ id: "works", text: `${item.markdown} It works.` }] }));
 
 describe("a codebase built on another's code", () => {
   const base = { definitions: items(["- :User: is a person."]), "implementation reqs": items(["- :Implementation: is Python."]), "functional specs": specs([["register", "A :User: registers."]]) };
@@ -90,22 +92,40 @@ describe("what the conformance tests are written for", () => {
   const code = { "functional specs": specs([["add-task", "Add a task."], ["list-tasks", "List the tasks."]]) };
 
   it("takes each functional spec the code is built from as the spec has it, in the spec's order, matched by func-id", () => {
-    const spec = { "functional specs": specs([["list-tasks", "List the tasks."], ["add-task", "Add a task."]]) };
+    const spec = { "functional specs": tested([["list-tasks", "List the tasks."], ["add-task", "Add a task."]]) };
     expect((conformanceTarget(code, null, spec)["functional specs"] as Array<{ id: string }>).map((item) => item.id)).toEqual(["list-tasks", "add-task"]);
   });
 
   it("keeps a functional spec's tests as they are while its code is behind its spec", () => {
-    const tests = { "functional specs": specs([["add-task", "Add a task."]]) };
-    const spec = { "functional specs": specs([["add-task", "Add a task, named."], ["list-tasks", "List the tasks."]]) };
-    expect(conformanceTarget(code, tests, spec)["functional specs"]).toEqual([...specs([["add-task", "Add a task."]]), ...specs([["list-tasks", "List the tasks."]])]);
+    const tests = { "functional specs": tested([["add-task", "Add a task."]]) };
+    const spec = { "functional specs": tested([["add-task", "Add a task, named."], ["list-tasks", "List the tasks."]]) };
+    expect(conformanceTarget(code, tests, spec)["functional specs"]).toEqual([...tested([["add-task", "Add a task."]]), ...tested([["list-tasks", "List the tasks."]])]);
   });
 
   it("takes out the tests of a functional spec only once the code has dropped it too", () => {
-    const tests = { "functional specs": specs([["add-task", "Add a task."], ["list-tasks", "List the tasks."]]) };
-    const spec = { "functional specs": specs([["add-task", "Add a task."]]) };
+    const tests = { "functional specs": tested([["add-task", "Add a task."], ["list-tasks", "List the tasks."]]) };
+    const spec = { "functional specs": tested([["add-task", "Add a task."]]) };
     expect((conformanceTarget(code, tests, spec)["functional specs"] as Array<{ id: string }>).map((item) => item.id)).toEqual(["add-task", "list-tasks"]);
     const dropped = { "functional specs": specs([["add-task", "Add a task."]]) };
     expect((conformanceTarget(dropped, tests, spec)["functional specs"] as Array<{ id: string }>).map((item) => item.id)).toEqual(["add-task"]);
+  });
+
+  it("leaves out a functional spec with no scenarios - an empty test plain file is not tested", () => {
+    const spec = { "functional specs": [...tested([["add-task", "Add a task."]]), ...specs([["list-tasks", "List the tasks."]])] };
+    expect((conformanceTarget(code, null, spec)["functional specs"] as Array<{ id: string }>).map((item) => item.id)).toEqual(["add-task"]);
+  });
+
+  it("takes out the tests of a functional spec whose scenarios were all taken out, its code built", () => {
+    const tests = { "functional specs": tested([["add-task", "Add a task."], ["list-tasks", "List the tasks."]]) };
+    const spec = { "functional specs": [...tested([["add-task", "Add a task."]]), ...specs([["list-tasks", "List the tasks."]])] };
+    expect((conformanceTarget(code, tests, spec)["functional specs"] as Array<{ id: string }>).map((item) => item.id)).toEqual(["add-task"]);
+  });
+
+  it("knows a functional spec with scenarios of either kind as tested", () => {
+    expect(hasScenarios(specs([["add-task", "Add a task."]])[0])).toBe(false);
+    expect(hasScenarios(tested([["add-task", "Add a task."]])[0])).toBe(true);
+    expect(hasScenarios({ ...specs([["add-task", "Add a task."]])[0], conformance_tests: [{ id: "adds", text: "It adds." }] })).toBe(true);
+    expect(testedFuncIds({ "functional specs": [...specs([["list-tasks", "List."]]), ...tested([["add-task", "Add."]])] })).toEqual(["add-task"]);
   });
 
   it("names the functional specs the code record does not have as the spec has them", () => {

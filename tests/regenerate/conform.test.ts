@@ -24,7 +24,7 @@ vi.mock("../../src/regenerate/conformance.ts", async (importOriginal) => {
       mkdirSync(options.conformanceDir, { recursive: true });
       const { digestFiles } = await import("../../src/regenerate/codebase.ts");
       const before = { code: digestFiles(options.buildDir), tests: digestFiles(options.conformanceDir) };
-      writeFileSync(join(options.conformanceDir, "check_1.sh"), "# conformance tests of functionality top-one\n# conformance tests of functionality base-one\nexit 0\n");
+      writeFileSync(join(options.conformanceDir, "check_1.sh"), "# conformance tests of top:top-one\n# conformance tests of base:base-one\nexit 0\n");
       const after = { code: digestFiles(options.buildDir), tests: digestFiles(options.conformanceDir) };
       return {
         ...(green === "now" ? { green: after } : green === "stale" ? { green: before } : {}),
@@ -40,7 +40,12 @@ const { renderSpecDiffConformance, describeSpecDiffConformance } = await import(
 const { readRecord, writeCodeRecord } = await import("../../src/regenerate/records.ts");
 const { plainFileParser } = await import("../../src/plain/parser.ts");
 const { resolveTemplateDirs } = await import("../../src/regenerate/paths.ts");
-const { writePlain } = await import("../test-plain.ts");
+const { testPlainFile, writePlain } = await import("../test-plain.ts");
+
+/** A functional spec given a conformance scenario in its test plain file: it has conformance tests to write. */
+function withScenario(module: string, funcId: string) {
+  writeFileSync(join(dir, "tests", module, `${funcId}.plain`), testPlainFile(module, funcId, { conformance: [`# works\n${funcId} works.`] }));
+}
 
 let dir: string;
 /** A module, its functional specs each a func-id and its text. */
@@ -185,7 +190,9 @@ describe("the work loop's conformance jobs", () => {
       recordHistory(job.buildDir, job.planned.title);
       return { landed: true, report: "built" };
     };
-    const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, conformanceOn: () => true, run: run as never });
+    withScenario("base", "base-one");
+    withScenario("base", "base-two");
+    const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run: run as never });
     await loop.bringUp(file("base"));
     await loop.drain();
 
@@ -198,6 +205,8 @@ describe("the work loop's conformance jobs", () => {
     expect(tested).toContain("Base one.");
     expect(tested).toContain("Base two.");
     expect(tested).toContain("Shell scripts.");
+    // What they are written for: the functional specs' scenarios with them.
+    expect(tested).toContain("base-two works.");
     expect(historyLog(buildOf("base"))).toContain("conformance tests:");
   });
 
@@ -216,7 +225,8 @@ describe("the work loop's conformance jobs", () => {
       recordHistory(job.buildDir, job.planned.title);
       return { landed: true, report: "built" };
     };
-    const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, conformanceOn: () => true, run: run as never });
+    withScenario("base", "base-one");
+    const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run: run as never });
     await loop.bringUp(file("base"));
     await loop.drain();
     // The module's code was built whole, then its conformance tests ran and did not pass.

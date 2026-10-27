@@ -644,7 +644,7 @@ describe("rendering a spec diff before any functional spec exists", () => {
 });
 
 describe("conformance for a spec change", () => {
-  it("follows the change whatever it touches - a definition, with no functional spec written yet", async () => {
+  it("adapts the tests there are to a change with no functional spec written yet - a definition - and writes none of its own", async () => {
     const before = "***implementation reqs***\n\n- Python.\n\n***test reqs***\n\n- :ConformanceTests: use unittest.\n";
     const after = "***definitions***\n\n- :User: is a person.\n\n" + before;
     writePlain(dir, "app.plain", before);
@@ -678,8 +678,9 @@ describe("conformance for a spec change", () => {
     const conformancePrompt = prompts.find((prompt) => prompt.includes("You are writing conformance tests"))!;
     // The conformance agent is shown the change section by section, as the coding agent was.
     expect(conformancePrompt).toContain('<definitions change="1 added">\nAdded:\n  - :User: is a person.\n</definitions>');
-    expect(conformancePrompt).toContain("The change is tested whatever it touches");
-    expect(conformancePrompt).toContain('"conformance tests of the spec"');
+    expect(conformancePrompt).toContain("adapt the tests there are");
+    expect(conformancePrompt).toContain("write no test that is not a scenario's");
+    expect(conformancePrompt).not.toContain("conformance tests of the spec");
     expect(result.passed).toBe(true);
   });
 });

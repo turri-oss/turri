@@ -21,8 +21,6 @@ import { projectDirOf } from "./regenerate/paths.ts";
  *   thinking: medium
  * judge-model:                                              # the judge and the test review (default: coding-model)
  *   model: google/gemini-3.1-pro
- * conformance-tests: chosen                                 # all, chosen (those with acceptance tests, and those the chooser picks after each pulse), module (the chooser picks, and plans, once the module is regenerated) or false (default: false)
- * conformance-budget: 30%                                   # under chosen or module: how many functional specs a module may have chosen, beside those with acceptance tests - a count or a share (default: no limit)
  * review: false                                             # review the code and its tests once they pass (default: true)
  * mutation-testing: false                                   # give the coding agent and the reviewer can_it_fail (default: true)
  * allow-to-stop-jobs: false                                 # stop a running job the spec moved on from (default: true)
@@ -238,7 +236,7 @@ export interface ModelChoice {
  * The code fixer of a conformance run and the repair agent are coding agents; the unit-test and conformance arbiters
  * are both `arbiter`.
  */
-export const AGENT_ROLES = ["chat", "sentinel", "chooser", "planner", "diagnosis", "release", "coding", "conformance", "explorer", "reviewer", "test-reviewer", "judge", "arbiter", "debugger"] as const;
+export const AGENT_ROLES = ["chat", "sentinel", "planner", "diagnosis", "release", "coding", "conformance", "explorer", "reviewer", "test-reviewer", "judge", "arbiter", "debugger"] as const;
 export type AgentRole = (typeof AGENT_ROLES)[number];
 
 /**
@@ -258,14 +256,13 @@ export const ROLE_THINKING: Partial<Record<AgentRole, ThinkingLevel>> = {
   arbiter: "medium",
   debugger: "medium",
   planner: "medium",
-  chooser: "medium",
   diagnosis: "medium",
 };
 
 /** The roles on the conversation's side: without their own entry they take the chat's model, not `default`. */
 // The release is not: it follows steps - a script, a start command - and runs on the coding model, thinking low. Nor
 // is the diagnosis: a post-mortem of a job that failed, read by the person - it runs on the coding model, thinking medium.
-const CHAT_SIDE: readonly AgentRole[] = ["chat", "sentinel", "chooser", "planner"];
+const CHAT_SIDE: readonly AgentRole[] = ["chat", "sentinel", "planner"];
 
 /** A role's model and thinking, and how long each of its turns may take, in seconds - each may be left out. */
 export interface RoleChoice extends ModelChoice {
@@ -422,20 +419,6 @@ export interface ProjectConfig {
    */
   judgeModel?: ModelChoice;
   /**
-   * Whether conformance tests are written and run, and for what. true (`all`): every functional spec the code is built
-   * from. "chosen": the ones with acceptance tests, and those the chooser picks from what each code pulse regenerated, as
-   * the pulse ends. "module": the same, but the chooser is asked once, when the whole module is regenerated - what to test,
-   * and in which pulses. Under both, those the person asks for with conform too, and a choice is kept once its tests land.
-   * false: none, unless the person asks. Unset: none, as with false.
-   */
-  conformanceTests?: boolean | "chosen" | "module";
-  /**
-   * Under `conformance-tests: chosen`: how many of a module's functional specs may be chosen for conformance tests, beside
-   * those with acceptance tests - a count, or a share of the module's functional specs (rounded up, at least one).
-   * Every choice for the module counts, whenever it was made; the person's own conform is not limited. Unset: no limit.
-   */
-  conformanceBudget?: { count: number } | { share: number };
-  /**
    * Whether the code and its unit tests - and the conformance tests - are reviewed once they pass: two reviews at
    * most, the second weighed by the arbiter. false: the work goes on once its tests pass. Unset: false.
    */
@@ -535,8 +518,6 @@ export const CONFIG_KEYS = {
   harnessModel: "harness-model",
   codingModel: "coding-model",
   judgeModel: "judge-model",
-  conformanceTests: "conformance-tests",
-  conformanceBudget: "conformance-budget",
   review: "review",
   mutationTesting: "mutation-testing",
   allowToStopJobs: "allow-to-stop-jobs",
@@ -563,36 +544,6 @@ export const CONFIG_KEYS = {
 
 function whatScriptsRunOn(value: unknown): "copy" | "in-place" | undefined {
   return value === "copy" || value === "in-place" ? value : undefined;
-}
-
-/** `conformance-tests:` - true or all, chosen, module, false. Anything else is not read. */
-function conformanceSetting(value: unknown): boolean | "chosen" | "module" | undefined {
-  if (typeof value === "boolean") return value;
-  const word = typeof value === "string" ? value.trim().toLowerCase() : undefined;
-  return word === "all" ? true : word === "chosen" ? "chosen" : word === "module" ? "module" : word === "false" ? false : word === "true" ? true : undefined;
-}
-
-/** Whether `conformance-tests:` turns the conformance tests on: all (true), chosen or module. Not set, they are off, as with false. */
-export function conformanceSwitchedOn(setting: ProjectConfig["conformanceTests"]): boolean {
-  return setting === true || setting === "chosen" || setting === "module";
-}
-
-/** When the chooser decides which functional specs get conformance tests: after each code pulse, once the module is regenerated, or never - every one, or none. */
-export function choosingWhen(setting: ProjectConfig["conformanceTests"]): "pulse" | "module" | undefined {
-  return setting === "chosen" ? "pulse" : setting === "module" ? "module" : undefined;
-}
-
-/** `conformance-budget:` - a whole number, or a share such as `30%`. Anything else is not read. */
-function budgetSetting(value: unknown): ProjectConfig["conformanceBudget"] {
-  if (typeof value === "number" && Number.isInteger(value) && value >= 0) return { count: value };
-  const share = typeof value === "string" ? /^\s*(\d+(?:\.\d+)?)\s*%\s*$/.exec(value) : null;
-  if (share !== null && Number(share[1]) <= 100) return { share: Number(share[1]) / 100 };
-  return undefined;
-}
-
-/** How many functional specs a module of `count` may have chosen under a budget: the count, or the share rounded up - at least one. */
-export function budgetFor(budget: NonNullable<ProjectConfig["conformanceBudget"]>, count: number): number {
-  return "count" in budget ? budget.count : Math.max(1, Math.ceil(budget.share * count));
 }
 
 function text(value: unknown): string | undefined {
@@ -627,12 +578,12 @@ function readStackedConfig(root: string, stack?: string): ProjectConfig {
 
 /**
  * What a command's own options say of the config's keys - `turri regenerate --harness-model`, `--coding-model`,
- * `--judge-model`, `--conformance-tests`, `--review`, `--mutation-testing` - read as if the file had them: each takes its key's value, and
+ * `--judge-model`, `--review`, `--mutation-testing` - read as if the file had them: each takes its key's value, and
  * every key keeps its place in the order, so a run is the same as one with them in config.turri.yaml - a `models:`
  * entry still winning over `harness-model`, `coding-model` or `judge-model`. A headless run needs no config file
  * edited. Never set in the conversation.
  */
-type RunOverrides = Partial<Pick<ProjectConfig, "harnessModel" | "codingModel" | "judgeModel" | "conformanceTests" | "review" | "mutationTesting">>;
+type RunOverrides = Partial<Pick<ProjectConfig, "harnessModel" | "codingModel" | "judgeModel" | "review" | "mutationTesting">>;
 
 let runOverrides: RunOverrides = {};
 
@@ -656,11 +607,6 @@ export function debugMode(project: string): boolean {
 /** Read a command's options as the config's keys for the rest of this process. */
 export function overrideConfig(overrides: RunOverrides): void {
   runOverrides = { ...overrides };
-}
-
-/** `--conformance-tests <value>`: the config's own values - all (or true), chosen, module, false. Undefined for anything else. */
-export function conformanceOption(value: string): ProjectConfig["conformanceTests"] | undefined {
-  return conformanceSetting(value);
 }
 
 /** `--review <value>`, `--mutation-testing <value>`: the config's own, true or false. Undefined for anything else. */
@@ -734,14 +680,11 @@ function readConfigFile(path: string): ProjectConfig {
   }
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return {};
   const raw = Object.fromEntries(Object.entries(parsed).map(([key, value]) => [key.replace(/_/g, "-"), value]));
-  const conformance = raw[CONFIG_KEYS.conformanceTests];
   return {
     module: text(raw[CONFIG_KEYS.module]),
     harnessModel: modelChoice(raw[CONFIG_KEYS.harnessModel]),
     codingModel: modelChoice(raw[CONFIG_KEYS.codingModel]) ?? modelChoice(raw.model),
     judgeModel: modelChoice(raw[CONFIG_KEYS.judgeModel]),
-    conformanceTests: conformanceSetting(conformance),
-    conformanceBudget: budgetSetting(raw[CONFIG_KEYS.conformanceBudget]),
     review: typeof raw[CONFIG_KEYS.review] === "boolean" ? (raw[CONFIG_KEYS.review] as boolean) : undefined,
     mutationTesting: typeof raw[CONFIG_KEYS.mutationTesting] === "boolean" ? (raw[CONFIG_KEYS.mutationTesting] as boolean) : undefined,
     allowToStopJobs: typeof raw[CONFIG_KEYS.allowToStopJobs] === "boolean" ? (raw[CONFIG_KEYS.allowToStopJobs] as boolean) : undefined,

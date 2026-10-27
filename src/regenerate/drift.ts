@@ -1,6 +1,6 @@
 import { DEFAULT_CONCEPTS, extractConceptsFromDefinition, extractConceptsFromSpecText } from "../plain/concepts.ts";
 import { DEFINITIONS, FUNCTIONAL_REQUIREMENTS, REQUIRED_FUNCTIONAL_SPECS, type MarshalledPlainSource } from "../plain/spec.ts";
-import { codeTree, conformanceTarget, marksRegenerateAgain, type Chosen } from "./records.ts";
+import { codeTree, conformanceTarget, marksRegenerateAgain } from "./records.ts";
 import { applyChanges, changesBetween, isMove, parseTree, resourcesChanged, serializeTree, type SpecChange } from "./spec-steps.ts";
 
 /**
@@ -10,7 +10,7 @@ import { applyChanges, changesBetween, isMove, parseTree, resourcesChanged, seri
  *
  * - Code work: from the code record to the spec as the code sees it.
  * - Conformance work: from the tests record to what the conformance tests are to be written for now -
- *   the chosen functional specs the code is built from.
+ *   the functional specs the code is built from that have scenarios.
  *
  * A job is a set of those changes. What it tells its agents follows from the functional specs it
  * touches - its cases - and a running job is stopped once the spec no longer wants what it makes.
@@ -22,8 +22,8 @@ export function codeWork(record: MarshalledPlainSource | null, spec: MarshalledP
 }
 
 /** Everything left to do in the conformance tests: from what the tests record says they are written for, to what they are to be now. */
-export function conformanceWork(tests: MarshalledPlainSource | null, code: MarshalledPlainSource | null, spec: MarshalledPlainSource, chosen?: Chosen): SpecChange[] {
-  return changesBetween(serializeTree(tests ?? {}), serializeTree(conformanceTarget(code, tests, spec, chosen)));
+export function conformanceWork(tests: MarshalledPlainSource | null, code: MarshalledPlainSource | null, spec: MarshalledPlainSource): SpecChange[] {
+  return changesBetween(serializeTree(tests ?? {}), serializeTree(conformanceTarget(code, tests, spec)));
 }
 
 /**

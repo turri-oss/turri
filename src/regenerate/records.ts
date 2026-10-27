@@ -57,6 +57,20 @@ function withoutEmpty(tree: MarshalledPlainSource): MarshalledPlainSource {
   return Object.fromEntries(Object.entries(tree).filter(([, value]) => !Array.isArray(value) || value.length > 0));
 }
 
+/**
+ * Whether a functional spec has scenarios - conformance or acceptance - and so is tested: one with an empty test plain
+ * file is not.
+ */
+export function hasScenarios(item: unknown): boolean {
+  const scenarios = (key: string) => ((item as Record<string, unknown> | null)?.[key] as unknown[] | undefined) ?? [];
+  return scenarios(CONFORMANCE_TESTS).length + scenarios(ACCEPTANCE_TESTS).length > 0;
+}
+
+/** The func-ids of a tree's own functional specs that have scenarios: those its conformance tests are written for. */
+export function testedFuncIds(tree: MarshalledPlainSource | null | undefined): string[] {
+  return itemsOf(tree, FUNCTIONAL_REQUIREMENTS).filter(hasScenarios).map((item) => item.id ?? "");
+}
+
 /** A functional spec as the code sees it: without its scenarios, which are the conformance tests' alone. */
 function withoutScenarios(item: Item): Item {
   const { [CONFORMANCE_TESTS]: _conformance, [ACCEPTANCE_TESTS]: _acceptance, ...rest } = item;
@@ -85,7 +99,7 @@ interface DigestedResource {
   digest?: string;
 }
 
-/** Every linked resource in a tree, wherever an item has them - a functional spec, its acceptance tests, a definition, a req. */
+/** Every linked resource in a tree, wherever an item has them - a functional spec, its scenarios, a definition, a req. */
 function mapResources(value: unknown, map: (resource: DigestedResource) => DigestedResource): unknown {
   if (Array.isArray(value)) return value.map((entry) => mapResources(entry, map));
   if (value === null || typeof value !== "object") return value;
@@ -188,14 +202,11 @@ export function inheritedRecord(source: MarshalledPlainSource, sourceModule: str
   });
 }
 
-/** Which functional specs are to have conformance tests, by func-id. Default: every one. */
-export type Chosen = (funcId: string) => boolean;
-
 /**
  * What the conformance tests are to be written for, now: of the functional specs the code is built
- * from, those chosen, each as the spec has it now with its scenarios - and the code's
+ * from, those with scenarios, each as the spec has it now with its scenarios - and the code's
  * definitions and implementation reqs, with the test reqs as the spec has them now. In the spec's order, a functional
- * spec matched to the code and the tests by its func-id.
+ * spec matched to the code and the tests by its func-id. One whose scenarios are all taken out loses its tests.
  *
  * Conformance follows the code, never goes ahead of it: a functional spec whose code is not caught up
  * with the spec - its text in the code record is not the spec's, the code record does not have it at
@@ -204,7 +215,7 @@ export type Chosen = (funcId: string) => boolean;
  * (`regenerateAgain`) differ from the target once the code lands: written against the code it replaced, they are
  * conformance work again, though the spec's text never changed.
  */
-export function conformanceTarget(code: MarshalledPlainSource | null, tests: MarshalledPlainSource | null, spec: MarshalledPlainSource, chosen: Chosen = () => true): MarshalledPlainSource {
+export function conformanceTarget(code: MarshalledPlainSource | null, tests: MarshalledPlainSource | null, spec: MarshalledPlainSource): MarshalledPlainSource {
   const built = new Map(itemsOf(code, FUNCTIONAL_REQUIREMENTS).map((item) => [item.id, item]));
   const now = itemsOf(spec, FUNCTIONAL_REQUIREMENTS);
   const inSpec = new Set(now.map((item) => item.id));
@@ -214,7 +225,7 @@ export function conformanceTarget(code: MarshalledPlainSource | null, tests: Mar
   for (const current of now) {
     const have = built.get(current.id);
     if (have !== undefined && have.markdown.trim() === current.markdown.trim() && !marksRegenerateAgain(have)) {
-      if (chosen(current.id ?? "")) specs.push(current);
+      if (hasScenarios(current)) specs.push(current);
       continue;
     }
     // The code is behind the spec here - built from other text, not built, or being regenerated again: its tests stay

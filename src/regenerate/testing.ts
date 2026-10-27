@@ -325,8 +325,8 @@ export function draftPrompt(): string {
   return [
     "You have not written anything yet: the code folder is as it was when you started.",
     "",
-    "If the change needs code - anything it adds to or changes in a functional spec, an implementation req or an",
-    "acceptance test - stop planning and write it now: your best guess at what the change asks, the code and its",
+    "If the change needs code - anything it adds to or changes in a functional spec, a definition or an implementation",
+    "req - stop planning and write it now: your best guess at what the change asks, the code and its",
     "unit tests, as a draft. If you are sure it needs no code at all - it only rewords, describes or renames - say so",
     "in one line, and why.",
     "Where the specification leaves something open, pick the most likely reading, write it, and note the assumption",

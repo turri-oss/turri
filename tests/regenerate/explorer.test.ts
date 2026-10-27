@@ -30,7 +30,6 @@ const whole = (id: string) => ({
   tests_reach_it: long("the script builds orders-app 1.0.0 from package.json; the tests import it and start dist/server.js themselves"),
   interfaces: [{ module: "orders", id, how: long("POST /api/orders with a JSON order: items, customer") }],
   environment: long("a storage service at http://localhost:6000, a fresh bucket per test"),
-  plan: [{ module: "orders", id, tests: long("place one order and check it is listed once") }],
 });
 
 let dir: string;
@@ -46,24 +45,16 @@ const explore = (given = scope) =>
   exploreInvocation({ buildDir: dir, spec: { moduleName: "orders", text: "***functional specs***\n\n# take-order\nTake an order." }, scope: given, label: "orders take-order" });
 
 describe("an exploration", () => {
-  it("is whole only with how to build and run it, what it needs, and how the functionality under test is reached and tested", () => {
-    const exploration = (id: string) => ({ ...whole(id), buildAndRun: whole(id).build_and_run, testsReachIt: whole(id).tests_reach_it, interfaces: whole(id).interfaces.map((i) => ({ module: i.module, funcId: i.id, how: i.how })), plan: whole(id).plan.map((p) => ({ module: p.module, funcId: p.id, tests: p.tests })) });
+  it("is whole only with how to build and run it, what it needs, and how the functionality under test is reached - what to test is the scenarios'", () => {
+    const exploration = (id: string) => ({ ...whole(id), buildAndRun: whole(id).build_and_run, testsReachIt: whole(id).tests_reach_it, interfaces: whole(id).interfaces.map((i) => ({ module: i.module, funcId: i.id, how: i.how })) });
     expect(explorationProblems(exploration("take-order"), scope, "orders")).toEqual([]);
     const problems = explorationProblems(exploration("wrong"), scope, "orders");
     expect(problems.join("\n")).toMatch(/interfaces does not say how orders take-order is reached/);
-    expect(problems.join("\n")).toMatch(/plan has no tests for orders take-order/);
+    expect(problems.join("\n")).not.toMatch(/plan/);
     expect(explorationProblems({ ...exploration("take-order"), buildAndRun: "node dist/server.js" }, scope, "orders").join("\n")).toMatch(/build_and_run says too little/);
-    // A spec change's: some of this module reached and planned - by ids that exist.
+    // A spec change's: some of this module reached - by ids that exist.
     expect(explorationProblems(exploration("take-order"), { functionalities: scope.functionalities }, "orders")).toEqual([]);
     expect(explorationProblems(exploration("not-there"), { functionalities: scope.functionalities }, "orders").join("\n")).toMatch(/orders not-there is not a functionality/);
-  });
-
-  it("plans every acceptance test, by number - a plan that leaves one out is sent back", () => {
-    const withPlan = (tests: string) => ({ ...whole("take-order"), buildAndRun: whole("take-order").build_and_run, testsReachIt: whole("take-order").tests_reach_it, interfaces: whole("take-order").interfaces.map((i) => ({ module: i.module, funcId: i.id, how: i.how })), plan: [{ module: "orders", funcId: "take-order", tests }] });
-    const acceptance = [{ module: "orders", funcId: "take-order", count: 2 }];
-    const problems = explorationProblems(withPlan(long("place one order and check it is listed once")), scope, "orders", acceptance);
-    expect(problems.join("\n")).toMatch(/plan does not carry out acceptance test 1, acceptance test 2 of orders take-order: name each "acceptance test N"/);
-    expect(explorationProblems(withPlan(long("Acceptance test 1: POST /api/orders, assert one object. Acceptance test 2: place two, cancel one, list again.")), scope, "orders", acceptance)).toEqual([]);
   });
 });
 
@@ -87,7 +78,7 @@ describe("the explorer", () => {
 
   it("is sent back when it hands over one line - as happened - and what it wrote is kept when it never completes it", async () => {
     // A full account written in the reply, then a thin one handed over, again and again.
-    const thin = { build_and_run: "node dist/orders-app-1.0.0.js", interfaces: [], environment: "", plan: [] };
+    const thin = { build_and_run: "node dist/orders-app-1.0.0.js", interfaces: [], environment: "" };
     turns.push(
       { reply: "### API Endpoints\n* Orders: `POST /api/orders` with a JSON order body." },
       { reply: "", submit: thin },
@@ -99,7 +90,6 @@ describe("the explorer", () => {
     expect(prompts[1]).toContain("You have not called submit_exploration.");
     expect(prompts[2]).toContain("What you handed over is not complete");
     expect(prompts[2]).toContain("interfaces does not say how orders take-order is reached");
-    expect(prompts[2]).toContain("plan has no tests for orders take-order");
     expect(prompts).toHaveLength(4);
     // Nothing it found is lost: the account, and what it wrote as it worked.
     expect(text).toContain("node dist/orders-app-1.0.0.js");
@@ -113,16 +103,17 @@ describe("the explorer", () => {
     expect(prompts).toHaveLength(1);
     expect(text).toContain("## How to build and run it\n\nnpm ci && npm run build");
     expect(text).toContain("## How each functionality is reached\n\n### orders take-order\n\nPOST /api/orders");
-    expect(text).toContain("## Plan for the conformance tests\n\n### orders take-order\n\nplace one order");
+    expect(text).not.toContain("Plan for the conformance tests");
     expect(text).not.toContain("What the explorer wrote as it worked");
   });
 
-  it("is told the test author does not see its replies, only what it hands over, and to plan the tests from the spec", async () => {
+  it("is told the test author does not see its replies, only what it hands over, and that what to test is the scenarios', not its", async () => {
     turns.push({ reply: "", submit: whole("take-order") });
     await explore();
-    expect(prompts[0]).toContain("for the conformance tests of functionality orders take-order");
+    expect(prompts[0]).toContain("for the conformance tests of functional spec orders take-order");
     expect(prompts[0]).toContain("what you hand over with\nsubmit_exploration is what they start from");
-    expect(prompts[0]).toContain("the plan's expectations come from the");
+    expect(prompts[0]).toContain("What to test is not yours to say: the tests carry out the functional specs' scenarios");
+    expect(prompts[0]).not.toContain("- plan:");
   });
 
   it("counts entries it names in its own words for the functionality under test - as happened, 115 times", async () => {
@@ -132,7 +123,6 @@ describe("the explorer", () => {
       submit: {
         ...own,
         interfaces: [{ module: "orders_module", id: "orders-api", how: own.interfaces[0]!.how }],
-        plan: [{ id: "test-orders-functionality", tests: own.plan[0]!.tests }],
       },
     });
     const text = await explore();
@@ -142,7 +132,7 @@ describe("the explorer", () => {
   });
 
   it("hands over three times at most, however incomplete - each hand-over ends its turn", async () => {
-    const thin = { build_and_run: "node server.js", interfaces: [], environment: "", plan: [] };
+    const thin = { build_and_run: "node server.js", interfaces: [], environment: "" };
     for (let n = 0; n < 6; n += 1) turns.push({ reply: `turn ${n}`, submit: thin });
     await explore();
     expect(prompts).toHaveLength(3);
@@ -157,7 +147,7 @@ describe("the explorer", () => {
 
   it("in a spec diff's run, is told which ids exist when it makes one up", async () => {
     const own = whole("take-order");
-    turns.push({ reply: "", submit: { ...own, plan: [{ module: "orders", id: "orders-tests", tests: own.plan[0]!.tests }] } }, { reply: "", submit: own });
+    turns.push({ reply: "", submit: { ...own, interfaces: [...own.interfaces, { module: "orders", id: "orders-tests", how: own.interfaces[0]!.how }] } }, { reply: "", submit: own });
     await explore({ functionalities: scope.functionalities });
     expect(prompts[1]).toContain("orders orders-tests is not a functionality: give module and func-id as the specification has them - orders take-order.");
   });

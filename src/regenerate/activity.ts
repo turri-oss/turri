@@ -245,7 +245,7 @@ export function describeUsage(usage: UsageReport | undefined): string {
 const store = new AsyncLocalStorage<ActivitySink>();
 
 /**
- * Something an agent did with its model, wherever it ran - in a pulse or not, the planner and the chooser too: what a
+ * Something an agent did with its model, wherever it ran - in a pulse or not, the planner too: what a
  * headless run's report adds up (run-report.ts). A call is one model response; a turn, one request of the harness's
  * to an agent, as many calls as it takes; a compaction, its work summed up - a call of its own. A provider retry is a
  * request the provider failed for a moment, waited out and tried again - by pi, or by turri after pi gave up; a provider

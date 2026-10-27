@@ -234,21 +234,22 @@ describe("cutting the queue's work into jobs", () => {
   };
   const manyReqs = (count: number, what: string) => Array.from({ length: count }, (_, n) => `- :Implementation: ${what} rule ${n + 1}, which runs on\n  over a second line.`);
 
-  it("never puts two groups the conformance tests were planned in - the first three, then the next three - in one job", async () => {
-    const six = [...SPECS, "A :User: reports a :Comment:."];
-    const ids = six.map(idOf);
-    const current = { definitions: DEFS.map(item), "functional specs": six.map((markdown) => fspec(markdown)) } as never;
-    const from = { ...input({}, current), track: "conformance" as const, groups: [ids.slice(0, 3), ids.slice(3)] };
+  it("shows a conformance step's scenarios as a diff of each functional spec's test plain file, after the module's - never in the module's file", async () => {
+    const withScenario = (markdown: string) => ({ ...fspec(markdown), conformance_tests: [], acceptance_tests: [{ id: "works", text: `${markdown} It works.` }] });
+    const current = { definitions: DEFS.map(item), "functional specs": SPECS.slice(0, 2).map(withScenario) } as never;
+    const from = { ...input({}, current), track: "conformance" as const, moduleName: "app", testPlainPath: (funcId: string) => `tests/app/${funcId}.plain` };
     const plan = await planChunks(from, counted().given);
-    expect(checkDraft(from, plan)).toEqual([]);
-    expect(plan).toHaveLength(2);
-    const [first, second] = stepsOf(from, plan);
-    expect(first!.step.textDiff).toContain("+A :User: writes a :Comment:.");
-    expect(first!.step.textDiff).not.toContain("deletes their");
-    expect(second!.step.textDiff).toContain("+A :User: deletes their :Comment:.");
-    expect(second!.step.textDiff).toContain("+A :User: reports a :Comment:.");
-    // Without groups: one job, as before.
-    expect(await planChunks({ ...from, groups: undefined }, counted().given)).toHaveLength(1);
+    const [only] = stepsOf(from, plan);
+    const diff = only!.step.textDiff;
+    const [moduleFile, ...testPlainFiles] = diff.split(/^(?=diff --git )/m);
+    expect(moduleFile).toContain(`+# ${IDS[0]}\n+A visitor registers a :User:.`);
+    expect(moduleFile).not.toContain("It works.");
+    expect(testPlainFiles.map((file) => file.split("\n")[0])).toEqual([`diff --git a/tests/app/${IDS[0]}.plain b/tests/app/${IDS[0]}.plain`, `diff --git a/tests/app/${IDS[1]}.plain b/tests/app/${IDS[1]}.plain`]);
+    // New to the tests: shown against the empty test plain file it was.
+    expect(testPlainFiles[0]).toContain(" ***acceptance tests***\n+\n+# works\n+A visitor registers a :User:. It works.");
+    // A code step has no test plain file: its trees carry no scenarios.
+    const code = await planChunks({ ...from, track: "code" as const, current: tree({ definitions: DEFS, specs: SPECS.slice(0, 2) }) }, counted().given);
+    expect(stepsOf({ ...from, track: "code" as const, current: tree({ definitions: DEFS, specs: SPECS.slice(0, 2) }) }, code).map((job) => job.step.textDiff).join("")).not.toContain("tests/app/");
   });
 
   it("writes the conformance tests of every functional spec in one job, asking no agent - however many reqs come with them, as the test reqs a module imports once cut five functional specs into five", async () => {
@@ -425,12 +426,12 @@ describe("titling the pulses no agent titled", () => {
 
   it("gives a conformance plan's pulses the agent's titles - told what each tests", async () => {
     const current = { definitions: DEFS.map(item), "functional specs": SPECS.map((markdown) => fspec(markdown)) } as never;
-    const from = { ...input({}, current), track: "conformance" as const, groups: [IDS.slice(0, 2), IDS.slice(2)] };
+    const from = { ...input({}, current), track: "conformance" as const, separately: true };
     const { asked, given } = titling((group) => `Tests ${group.number}`);
     const plan = await planChunks(from, given);
     expect(checkDraft(from, plan)).toEqual([]);
-    expect(plan.map((job) => job.title)).toEqual(["Tests 1", "Tests 2"]);
-    expect(asked).toEqual([{ groups: [{ number: 1, specs: SPECS.slice(0, 2) }, { number: 2, specs: SPECS.slice(2) }], track: "conformance" }]);
+    expect(plan.map((job) => job.title)).toEqual(SPECS.map((_, index) => `Tests ${index + 1}`));
+    expect(asked).toEqual([{ groups: SPECS.map((spec, index) => ({ number: index + 1, specs: [spec] })), track: "conformance" }]);
     const { titlePrompt } = await import("../../src/regenerate/chunk-plan.ts");
     expect(titlePrompt(asked[0]!.groups, "conformance")).toContain("writes and runs the conformance tests");
     expect(titlePrompt(asked[0]!.groups, "conformance")).toContain("At most 10 words and 70 characters");

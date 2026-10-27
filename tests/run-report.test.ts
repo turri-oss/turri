@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { syncTestPlainFiles } from "./test-plain.ts";
-import { conformanceOption, overrideConfig, projectModels, readProjectConfig, booleanOption, roleModel } from "../src/config.ts";
+import { overrideConfig, projectModels, readProjectConfig, booleanOption, roleModel } from "../src/config.ts";
 import { configKeyOptions, parseArgs } from "../src/cli-options.ts";
 import { headlessOptions, moduleStates } from "../src/loop-cli.ts";
 import { reportModelEvent, reportUsage } from "../src/regenerate/activity.ts";
@@ -37,7 +37,6 @@ function report(file = join(dir, "report.json")) {
     command: ["regenerate", "app.plain"],
     specFile: join(dir, "app.plain"),
     projectDir: dir,
-    conformanceTests: "off",
     models: { harness: { model: "p/big", thinking: "medium" }, coding: { model: "p/small", thinking: "low" }, judge: { model: "p/big", thinking: "medium" } },
     onExit: false,
   });
@@ -168,7 +167,7 @@ describe("how the run report says the run ended", () => {
       child,
       [
         `import { startRunReport } from ${JSON.stringify(resolve("src/run-report.ts"))};`,
-        `startRunReport({ file: ${JSON.stringify(file)}, command: ["regenerate"], specFile: "app.plain", projectDir: ${JSON.stringify(dir)}, conformanceTests: "off", models: { harness: {}, coding: {}, judge: {} } });`,
+        `startRunReport({ file: ${JSON.stringify(file)}, command: ["regenerate"], specFile: "app.plain", projectDir: ${JSON.stringify(dir)}, models: { harness: {}, coding: {}, judge: {} } });`,
         `process.on("SIGTERM", () => process.exit(143));`,
         `console.log("ready");`,
         `setInterval(() => {}, 1000);`,
@@ -186,7 +185,7 @@ describe("how the run report says the run ended", () => {
     const written = JSON.parse(readFileSync(file, "utf8"));
     expect(written.outcome).toMatchObject({ status: "interrupted", signal: "SIGTERM", exit_code: 143 });
     expect(written.finished_at).not.toBeNull();
-    expect(written.schema_version).toBe(1);
+    expect(written.schema_version).toBe(2);
   });
 });
 
@@ -389,16 +388,15 @@ describe("a headless run's options", () => {
     error.mockRestore();
   });
 
-  it("reads --harness-model, --coding-model, --judge-model, --conformance-tests and --review as the config's keys, the config's order kept", () => {
-    writeFileSync(join(dir, "config.yaml"), "conformance-tests: false\nreview: true\njudge-model: p/old\nmodels:\n  judge: { model: p/own-judge, thinking: high }\nunittests-script: run_unittests.sh\n");
-    const options = { "harness-model": "p/harness", model: "p/coding:low", "judge-model": "p/judge", "conformance-tests": "all", review: "false", report: "r.json" };
-    expect(headlessOptions(options, true)).toEqual({ report: "r.json" });
+  it("reads --harness-model, --coding-model, --judge-model and --review as the config's keys, the config's order kept", () => {
+    writeFileSync(join(dir, "config.yaml"), "review: true\njudge-model: p/old\nmodels:\n  judge: { model: p/own-judge, thinking: high }\nunittests-script: run_unittests.sh\n");
+    const options = { "harness-model": "p/harness", model: "p/coding:low", "judge-model": "p/judge", review: "false", report: "r.json" };
+    expect(headlessOptions(options)).toEqual({ report: "r.json" });
     const config = readProjectConfig(dir);
     expect(config).toMatchObject({
       harnessModel: { model: "p/harness" },
       codingModel: { model: "p/coding", thinking: "low" },
       judgeModel: { model: "p/judge" },
-      conformanceTests: true,
       review: false,
       unittestsScript: "run_unittests.sh",
     });
@@ -408,9 +406,16 @@ describe("a headless run's options", () => {
   });
 
   it("takes the config's own values, and only those", () => {
-    expect(["all", "true", "chosen", "module", "false"].map(conformanceOption)).toEqual([true, true, "chosen", "module", false]);
-    expect(conformanceOption("off")).toBeUndefined();
     expect(["true", "false", "off"].map(booleanOption)).toEqual([true, false, undefined]);
+  });
+
+  it("takes no --conformance-tests: what is tested is the functional specs with scenarios", () => {
+    const exit = exits();
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(() => parseArgs(["app.plain", "--conformance-tests", "all"], [], "usage", ["--report"])).toThrow("exit 1");
+    expect(error.mock.calls.at(-1)?.[0]).toContain("No such option: --conformance-tests");
+    exit.mockRestore();
+    error.mockRestore();
   });
 
   it("reads --mutation-testing as the config's mutation-testing, over what the file says, and refuses anything but true or false", () => {
@@ -426,9 +431,8 @@ describe("a headless run's options", () => {
   it("refuses a value it cannot read", () => {
     const exit = exits();
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
-    expect(() => headlessOptions({ "conformance-tests": "sometimes" }, true)).toThrow("exit 1");
-    expect(() => headlessOptions({ review: "maybe" }, true)).toThrow("exit 1");
-    expect(() => headlessOptions({ report: undefined }, true)).toThrow("exit 1");
+    expect(() => headlessOptions({ review: "maybe" })).toThrow("exit 1");
+    expect(() => headlessOptions({ report: undefined })).toThrow("exit 1");
     exit.mockRestore();
     error.mockRestore();
   });
@@ -446,10 +450,10 @@ describe("turri regenerate, unattended", () => {
     // Now it requires base, which its code was not built on.
     spec("app", ["App one."], "base");
 
-    // The whole command a benchmark runs: every model, conformance tests and review given on the command line.
+    // The whole command a benchmark runs: every model and review given on the command line.
     const command = [
       "regenerate", "app.plain", "--harness-model", "nowhere/big", "--coding-model", "nowhere/small",
-      "--conformance-tests", "all", "--review", "false", "--judge-model", "nowhere/judge",
+      "--review", "false", "--judge-model", "nowhere/judge",
       "--build-dir", "out/build", "--report", "out/report.json",
     ];
     const run = spawnSync(process.execPath, [TURRI, ...command], {
@@ -468,7 +472,8 @@ describe("turri regenerate, unattended", () => {
       coding: { model: "nowhere/small", thinking: "low" },
       judge: { model: "nowhere/judge", thinking: "medium" },
     });
-    expect(written).toMatchObject({ conformance_tests: "all", review: false });
+    expect(written).toMatchObject({ review: false });
+    expect(written).not.toHaveProperty("conformance_tests");
     expect(written.build_dir_export).toMatchObject({ exported: true, module: "app" });
     expect(readdirSync(join(dir, "out", "build"))).toEqual(["main.py"]);
     expect(written.outcome).toMatchObject({ status: "incomplete", exit_code: 1, modules: [{ module: "app", state: "start_over_needed" }] });

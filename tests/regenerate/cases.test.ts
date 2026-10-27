@@ -13,10 +13,10 @@ describe("what a job's agents are told, case by case, and nothing more", () => {
   /** Each case alone, and the words that are its own in each block: a job holding only it gets those, and no other case's. */
   const only: Array<{ name: string; cases: JobCases; code: string; review?: string; conformance?: string }> = [
     { name: "fresh", cases: { ...none, fresh: true }, code: "Nothing is built yet", conformance: "There are no conformance tests yet" },
-    { name: "new", cases: { ...none, add: [one] }, code: "- New - build each", review: "- New:", conformance: "- New - write its conformance tests" },
-    { name: "changed", cases: { ...none, patch: [one] }, code: "- Changed - its text, or a concept it uses", review: "- Changed:", conformance: "- Changed - its text, its acceptance tests" },
+    { name: "new", cases: { ...none, add: [one] }, code: "- New - build each", review: "- New:", conformance: "- New - write a test for each of its scenarios" },
+    { name: "changed", cases: { ...none, patch: [one] }, code: "- Changed - its text, or a concept it uses", review: "- Changed:", conformance: "- Changed - its text, its scenarios, or a concept it uses" },
     { name: "regenerated again", cases: { ...none, again: [one] }, code: "- Regenerated again - its code and unit tests are built", review: "- Regenerated again:", conformance: "- Regenerated again - its code was built anew" },
-    { name: "taken out", cases: { ...none, delete: [one] }, code: "- Taken out - remove its code", review: "- Taken out:", conformance: "- Taken out - remove its conformance tests" },
+    { name: "taken out", cases: { ...none, delete: [one] }, code: "- Taken out - remove its code", review: "- Taken out:", conformance: "- Taken out, or its scenarios all taken out - remove its conformance tests" },
     { name: "mechanical", cases: { ...none, mechanical: true }, code: "- No functional spec is touched", conformance: "- No functional spec is touched" },
   ];
 
@@ -99,9 +99,9 @@ describe("what a job's agents are told, by its cases", () => {
   it("tells the conformance agent the same, for its tests - a fresh tests folder, new, changed and taken out, and mechanical", () => {
     const all = text(conformanceCasesBlock({ ...none, fresh: true, add: [{ funcId: "one", text: "One." }], patch: [{ funcId: "two", text: "Two." }], delete: [{ funcId: "three", text: "Three." }] }));
     expect(all).toContain("There are no conformance tests yet: set the tests folder up first");
-    expect(all).toContain("New - write its conformance tests: `one` (One.)");
-    expect(all).toContain("rewrite them to what it says now");
-    expect(all).toContain("Taken out - remove its conformance tests: `three` (Three.)");
+    expect(all).toContain("New - write a test for each of its scenarios: `one` (One.)");
+    expect(all).toContain("bring them in line with its scenarios as they are now");
+    expect(all).toContain("Taken out, or its scenarios all taken out - remove its conformance tests: `three` (Three.)");
     const mechanical = text(conformanceCasesBlock({ ...none, mechanical: true }));
     expect(mechanical).toContain("the change is to the test reqs, or to definitions or implementation reqs alone");
     expect(mechanical).toContain("Write no new tests.");
@@ -129,7 +129,7 @@ describe("what a job's agents are told, by its cases", () => {
       diff: "+One.",
       cases: { ...none, add: [{ funcId: "one", text: "One." }] },
     } as never);
-    expect(prompt).toContain("New - write its conformance tests: `one` (One.)");
+    expect(prompt).toContain("New - write a test for each of its scenarios: `one` (One.)");
     const review = testReviewTask({ buildDir: "/b", conformanceDir: "/t", spec: { moduleName: "app", text: "<spec>" } as never, functionalities: [], forChange: true, invocation: "run it", cases: { ...none, mechanical: true } });
     expect(review).toContain("Raise no missing test");
     expect(review).toContain("And, of every test the run changed:");

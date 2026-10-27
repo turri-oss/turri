@@ -297,7 +297,6 @@ export function withModels(text: string, lines: [string, string]): string {
  * must stay what the code falls back to - tests/init-config.test.ts holds them to the constants they mirror.
  */
 export const DEFAULTS = {
-  conformanceTests: false,
   review: false,
   mutationTesting: true,
   allowToStopJobs: true,
@@ -330,11 +329,6 @@ export function quickStartConfig(vendor: Vendor = "other", bedrock?: BedrockChoi
     "# Every other setting is written out below with the value turri uses for it, so the file says how the project is",
     "# built: change one to change it. The optional ones, which have no value of their own, are commented out - uncomment",
     "# one to use it. docs/config.md has them all.",
-    "",
-    "# Conformance tests: all (or true) - every functional spec of a module with test reqs; chosen - those with acceptance",
-    "# tests and those the chooser picks as each pulse ends; module - the chooser picks, and plans them, once the whole",
-    "# module is regenerated; false - none written or run. Those you ask for are written under any of them.",
-    `conformance-tests: ${DEFAULTS.conformanceTests}`,
     "",
     "# Whether the code and its tests are reviewed once they pass - two reviews at most, the second weighed by the arbiter.",
     `review: ${DEFAULTS.review}`,
@@ -411,10 +405,6 @@ export function quickStartConfig(vendor: Vendor = "other", bedrock?: BedrockChoi
     "# per module in it: tests/<module>/<func-id>.plain. Without it, tests.",
     "# test-dir: tests",
     "",
-    "# Optional, under conformance-tests: chosen or module: how many functional specs of a module may be chosen - a count or a share.",
-    "# Without it, any number.",
-    "# conformance-budget: 30%",
-    "",
     "# Optional: the judge and test review of a conformance run, when not on coding-model. A model is provider/id,",
     "# provider/id:thinking, or { model, thinking } - thinking is off, minimal, low, medium, high, xhigh or max.",
     `# judge-model: ${strong}:high`,
@@ -425,7 +415,6 @@ export function quickStartConfig(vendor: Vendor = "other", bedrock?: BedrockChoi
     `#   default: ${coding}`,
     `${column(`#   chat: ${harness}`, 72)}# the conversation - as harness-model, which it wins over`,
     `${column(`#   sentinel: ${harness}`, 72)}# the sentinel: checks every finished pulse and tests the release`,
-    role("chooser", harness, "chooses what gets conformance tests under turri regenerate"),
     role("planner", harness, "cuts the work into pulses"),
     role("diagnosis", harness, "looks into a pulse that failed for good"),
     role("release", coding, "turri release's agent, and release-after-pulse's"),

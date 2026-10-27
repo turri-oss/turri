@@ -1,4 +1,4 @@
-import { booleanOption, conformanceOption, overrideConfig, splitModelSpec } from "./config.ts";
+import { booleanOption, overrideConfig, splitModelSpec } from "./config.ts";
 
 /**
  * The command line of turri's commands: their words, and the options that stand for the config's own keys - kept apart
@@ -49,20 +49,17 @@ export function optionValue(options: Record<string, string | undefined>, name: s
 
 /**
  * The options that stand for the config's own keys - `--harness-model`, `--coding-model` (`--model`), `--judge-model`
- * and, as asked, `--review`, `--mutation-testing` and `--conformance-tests` - read as if config.turri.yaml had them, in their place in the
+ * and, as asked, `--review` and `--mutation-testing` - read as if config.turri.yaml had them, in their place in the
  * order the config resolves them in (overrideConfig): a run, or doctor, with them is the same as one with them in the
  * file. Exits on a value it cannot read.
  */
-export function configKeyOptions(options: Record<string, string | undefined>, take: { conformance?: boolean; review?: boolean } = {}): void {
+export function configKeyOptions(options: Record<string, string | undefined>, take: { review?: boolean } = {}): void {
   const flag = (name: string): boolean | undefined => {
     const given = take.review === true ? optionValue(options, name) : undefined;
     const value = given !== undefined ? booleanOption(given) : undefined;
     if (given !== undefined && value === undefined) failOption(`--${name} takes true or false, not ${given}`);
     return value;
   };
-  const tests = take.conformance === true ? optionValue(options, "conformance-tests") : undefined;
-  const setting = tests !== undefined ? conformanceOption(tests) : undefined;
-  if (tests !== undefined && setting === undefined) failOption(`--conformance-tests takes all, chosen, module or false, not ${tests}`);
   const review = flag("review");
   const mutationTesting = flag("mutation-testing");
   const model = (name: string, key: "harnessModel" | "codingModel" | "judgeModel") => {
@@ -73,7 +70,6 @@ export function configKeyOptions(options: Record<string, string | undefined>, ta
     ...model("harness-model", "harnessModel"),
     ...model("model", "codingModel"),
     ...model("judge-model", "judgeModel"),
-    ...(setting !== undefined ? { conformanceTests: setting } : {}),
     ...(review !== undefined ? { review } : {}),
     ...(mutationTesting !== undefined ? { mutationTesting } : {}),
   });

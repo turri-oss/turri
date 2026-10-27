@@ -72,7 +72,7 @@ export function changedUnitTests(buildDir: string, atStart: Map<string, string>)
  */
 export function unitReviewTask(options: {
   buildDir: string;
-  /** What the work built: "functionality 3 of module `m`", "the spec change to module `m`". */
+  /** What the work built: "functional spec `m:add-task`", "the spec change to module `m`". */
   what: string;
   /** The specification it built, as the coding agent had it, what is new in this work apart (`reviewedSpec`). */
   spec: string;
@@ -158,7 +158,7 @@ export function unitReviewTask(options: {
                 "This work is the <spec change> in <new in this work>, section by section: what it adds or changes is what needs",
                 "testing, and the tests it changed still have to test the rest as they did. A change that adds no behaviour - a",
                 "description, a renamed concept, a reworded spec - needs no new test.",
-                "Behaviour is what a functional spec, an acceptance test or an implementation req states. A definition says what",
+                "Behaviour is what a functional spec or an implementation req states. A definition says what",
                 "a word means: a page, a component or a record that only <definitions> name, and no functional spec or",
                 "implementation req of this codebase asks for, has no code yet, and a test for it is not missing.",
               ]
@@ -420,8 +420,8 @@ async function reviewLoop(
         workdir: options.buildDir,
         read: [options.buildDir],
         uphold: [
-          "- uphold it when because of it a behaviour this work's specification states - in a functional spec, an",
-          "  acceptance test or an implementation req - is not implemented, is implemented other than it says, is not tested, or a",
+          "- uphold it when because of it a behaviour this work's specification states - in a functional spec or an",
+          "  implementation req - is not implemented, is implemented other than it says, is not tested, or a",
           "  test cannot fail when that behaviour breaks. Then the reviewer is right, and the coding agent fixes it.",
         ],
         changed,
