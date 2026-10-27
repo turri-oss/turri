@@ -521,7 +521,7 @@ describe("the conformance step", { timeout: 180_000 }, () => {
     // Its first tests leave the acceptance scenario out: sent back to label it, as a functionality's own run does.
     expect(asked.some((turn) => turn.role === "conformance agent" && turn.prompt.includes("are not labelled yet"))).toBe(true);
     const review = asked.find((turn) => turn.role === "reviewer")!.prompt;
-    expect(review).toContain("the functionalities of module `app` the change touches (print-hello)");
+    expect(review).toContain("the functionalities the change touches (app:print-hello)");
     expect(review).toContain("<scenario>\nacceptance scenario prints-hello of app:print-hello:\nRunning the app prints hello and exits 0.\n</scenario>");
   });
 

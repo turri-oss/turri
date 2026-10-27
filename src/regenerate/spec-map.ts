@@ -385,9 +385,11 @@ export function readSpecMapWithDeps(files: string[]): { pages: MapPage[]; deps: 
         }
         const projectDir = projectDirOf(entry.plainFile);
         const record = home <= furthest ? readRecord(codebase.buildDir) : null;
-        const tested = readRecord(conformanceDirFor(entry.moduleName, modulesRoot(projectDir)));
+        // What the conformance tests are written for, in the codebase that holds its code: the tip's suite holds the chain's.
+        const testsRecord = home <= furthest ? readRecord(conformanceDirFor(codebase.moduleName, modulesRoot(projectDir))) : null;
+        const tested = testsRecord === null ? null : { ...testsRecord, [FUNCTIONAL_REQUIREMENTS]: moduleTree(testsRecord, entry.moduleName, home === at)[FUNCTIONAL_REQUIREMENTS] };
         const paths = specFilesOf(entry.plainFile);
-        for (const path of [...paths, ...depsOf(entry, codebase, conformanceDirFor(entry.moduleName, modulesRoot(projectDir)))]) deps.add(path);
+        for (const path of [...paths, ...depsOf(entry, codebase, conformanceDirFor(codebase.moduleName, modulesRoot(projectDir)))]) deps.add(path);
         const texts = paths.map((path, index) => ({ ...(index > 0 ? { label: importLabel(path, projectDir) } : {}), text: readText(path) }));
         const items = pageItems({ module: entry.moduleName, own: home === at, spec, record, tested });
         const own = home === at ? ((spec[FUNCTIONAL_REQUIREMENTS] as unknown[] | undefined) ?? []) : ((spec[REQUIRED_FUNCTIONAL_SPECS] as Array<{ module?: string }> | undefined) ?? []).filter((item) => item.module === entry.moduleName);

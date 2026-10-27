@@ -332,15 +332,16 @@ describe("the functional specs conformance tested", () => {
     expect(testedOf(app)).toEqual({ app: ["app-one"] });
   });
 
-  it("holds only each module's own functional specs in a chain", () => {
+  it("reads each module's from the tests record of the codebase that holds the chain, by module", () => {
     spec("base", ["Base one.", "Base two."]);
     const app = spec("app", ["App one.", "App two."], "base");
     const chain = resolveRequiresChain(app, [], undefined, { allowNoFunctionalities: true });
     writeCodeRecord(chain[1]!.buildDir, chainSpec(chain).tree);
+    // base's own codebase, left behind: what its tests record says no longer counts.
     testsFor("base", [item("Base one.")]);
-    // app's tests hold base's second too, copied up with its code: it is base's, not app's.
+    // app's suite holds base's second too: it is base's, not app's.
     testsFor("app", [item("App two.")], [item("Base two.", { module: "base" })]);
-    expect(testedOf(app)).toEqual({ base: ["base-one"], app: ["app-two"] });
+    expect(testedOf(app)).toEqual({ base: ["base-two"], app: ["app-two"] });
   });
 
   it("is empty for every module where nothing is built", () => {

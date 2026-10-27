@@ -768,7 +768,7 @@ export function buildConformancePrompt(input: ConformancePromptInput): string {
  */
 export function scenariosBlock(module: string, specs: TestedSpec[]): string | null {
   const kind = (name: "conformance" | "acceptance") =>
-    specs.flatMap((spec) => scenariosOf(spec).filter((scenario) => scenario.kind === name).map((scenario) => scenarioText(module, spec.funcId, scenario)));
+    specs.flatMap((spec) => scenariosOf(spec).filter((scenario) => scenario.kind === name).map((scenario) => scenarioText(spec.module ?? module, spec.funcId, scenario)));
   const conformance = kind("conformance");
   const acceptance = kind("acceptance");
   const blocks = [

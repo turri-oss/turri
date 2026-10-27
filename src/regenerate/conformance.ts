@@ -336,7 +336,7 @@ export async function renderConformanceTests(
   const own = (forChange ? funcIds : funcIds.slice(0, funcIds.indexOf(funcId!) + 1)).map((id) => ({ module: moduleName, funcId: id }));
   const scope: ConflictScope = {
     functionalities: [...required.map((spec) => ({ module: spec.module, funcId: spec.funcId })), ...own],
-    ...(forChange ? {} : { tested: { module: moduleName, funcId: funcId! } }),
+    ...(forChange ? { touchedModules: [...new Set(touched.map((item) => item.module ?? moduleName))] } : { tested: { module: moduleName, funcId: funcId! } }),
   };
   /** How many times each spec conflict has been raised in this run, by the two functionalities it names. */
   const conflicts = new Map<string, string[]>();
@@ -574,7 +574,7 @@ export async function renderConformanceTests(
         // A spec change: every functionality it touches, as a functionality's own run would have it - every one missing
         // asked for in one request, checked whole again after each answer, so none is asked for in place of another.
         const pending = touched
-          .map((item) => ({ funcId: item.funcId, missing: missingTestLabels(conformanceDir, moduleName, item) }))
+          .map((item) => ({ funcId: item.funcId, ...(item.module !== undefined ? { module: item.module } : {}), missing: missingTestLabels(conformanceDir, moduleName, item) }))
           .filter((item) => item.missing.length > 0);
         if (pending.length > 0) {
           if (labelAsks >= LABEL_ASKS) {
@@ -583,7 +583,7 @@ export async function renderConformanceTests(
             break;
           }
           labelAsks += 1;
-          stage(`labelling the tests of the scenarios of ${pending.map((item) => `${moduleName}:${item.funcId}`).join(", ")}, which the change touches`);
+          stage(`labelling the tests of the scenarios of ${pending.map((item) => `${item.module ?? moduleName}:${item.funcId}`).join(", ")}, which the change touches`);
           response = await askConformance(labelsPromptFor(moduleName, pending, listFiles(conformanceDir).length === 0), options.onDelta);
           continue;
         }
@@ -1057,11 +1057,17 @@ export function touchedFunctionalities(tree: MarshalledPlainSource, funcIds: str
     const spec = testedSpecOf(getSpecificationsForFrid(tree, funcId)[0], funcId);
     return spec.conformance.length + spec.acceptance.length > 0 ? spec : undefined;
   };
-  // The job's cases say which: what it adds, changes or regenerates again, of the module's own.
+  // The job's cases say which: what it adds, changes or regenerates again - the modules' below first, in the chain's
+  // order, as the tip's suite holds their tests too, then the module's own.
   if (cases !== undefined) {
     const own = (touched: { module?: string }) => touched.module === undefined || touched.module === moduleName;
-    const named = new Set([...cases.add, ...cases.patch, ...cases.again].filter(own).map((touched) => touched.funcId));
-    return funcIds.filter((funcId) => named.has(funcId)).flatMap((funcId) => tested(funcId) ?? []);
+    const touched = [...cases.add, ...cases.patch, ...cases.again];
+    const named = new Set(touched.filter(own).map((spec) => spec.funcId));
+    const below = new Set(touched.filter((spec) => !own(spec)).map((spec) => `${spec.module}:${spec.funcId}`));
+    const inherited = getInheritedFunctionalSpecs(tree)
+      .filter((spec) => below.has(`${spec.module}:${spec.funcId}`) && spec.conformanceTests.length + spec.acceptanceTests.length > 0)
+      .map((spec): TestedSpec => ({ funcId: spec.funcId, module: spec.module, conformance: spec.conformanceTests, acceptance: spec.acceptanceTests }));
+    return [...inherited, ...funcIds.filter((funcId) => named.has(funcId)).flatMap((funcId) => tested(funcId) ?? [])];
   }
   // Else what the diff's lines touch: a functional spec's text, or one of its scenarios'.
   const bare = (line: string) => line.trim().replace(/^-\s+/, "").replace(/\s+/g, " ");

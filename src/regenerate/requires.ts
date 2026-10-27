@@ -5,7 +5,7 @@ import { getFrids, getInheritedFunctionalSpecs } from "../plain/spec.ts";
 import { buildDirUnder, modulesRoot, projectDirOf } from "./paths.ts";
 import { notesPath } from "./notes.ts";
 import { resolveTemplateDirs } from "./paths.ts";
-import { inheritedRecord, readRecord, RECORD_FILE, writeCodeRecord } from "./records.ts";
+import { inheritedRecord, inheritedTestsRecord, readRecord, RECORD_FILE, writeCodeRecord, writeTestsRecord } from "./records.ts";
 import { head, historyLog, recordHistory } from "./lineage.ts";
 import { listFiles } from "./testing.ts";
 
@@ -288,6 +288,10 @@ export function copyRequiredCode(
     }
     // And their notes, which listFiles leaves out as it does the code's.
     if (existsSync(notesPath(testsFrom)) && !existsSync(notesPath(testsTo))) copyFileSync(notesPath(testsFrom), notesPath(testsTo));
+    // What they are written for comes with them, as what the new module inherits: its conformance suite is the chain's,
+    // kept up to date here from now on.
+    const tested = readRecord(testsFrom);
+    if (tested !== null) writeTestsRecord(testsTo, inheritedTestsRecord(tested, fromModule));
   }
   recordStart();
   return copied;

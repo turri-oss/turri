@@ -451,7 +451,7 @@ export async function planChunks(input: PlanInput, agents?: ChunkAgents, notes?:
  */
 function anchored(draft: DraftJob[], net: SpecChange[]): DraftJob[] {
   const sectionOf = new Map(net.map((change) => [change.id, change.section]));
-  const testsASpec = (job: DraftJob) => job.changes.some((id) => sectionOf.get(id) === FUNCTIONAL_REQUIREMENTS);
+  const testsASpec = (job: DraftJob) => job.changes.some((id) => sectionOf.get(id) === FUNCTIONAL_REQUIREMENTS || sectionOf.get(id) === REQUIRED_FUNCTIONAL_SPECS);
   if (!draft.some(testsASpec)) return draft;
   const jobs: DraftJob[] = [];
   let carried: string[] = [];
@@ -468,9 +468,10 @@ function anchored(draft: DraftJob[], net: SpecChange[]): DraftJob[] {
 }
 
 /**
- * How the conformance tests are cut, with no agent: every functional spec tested in one job - those of one module
- * together - a new job begun where the next functional spec would take the job's functional specs and the definitions
- * they bring past `maxLines`; or, `separately`, a job a functional spec, as the person asked.
+ * How the conformance tests are cut, with no agent: every functional spec tested in one job - those of the modules below
+ * and the codebase's own alike, the tip's suite holding the chain's - a new job begun where the next functional spec
+ * would take the job's functional specs and the definitions they bring past `maxLines`; or, `separately`, a job a
+ * functional spec, as the person asked.
  * `size`: the movable lines of the last group of a grouping, its definitions placed.
  */
 function conformanceGroups(
@@ -483,9 +484,7 @@ function conformanceGroups(
   const groups: Array<{ specs: number[] }> = [];
   for (const spec of specs) {
     const last = groups.at(-1);
-    const first = last !== undefined ? specs.find((other) => other.number === last.specs[0]) : undefined;
-    const sameModule = first !== undefined && first.module === spec.module;
-    if (!separately && last !== undefined && sameModule) {
+    if (!separately && last !== undefined) {
       const trial = [...groups.slice(0, -1), { specs: [...last.specs, spec.number] }].map((group) => ({ ...group, title: "" }));
       if (size(trial) <= maxLines) {
         last.specs.push(spec.number);
@@ -523,11 +522,16 @@ async function cut(input: PlanInput, agents?: ChunkAgents, notes?: string[]): Pr
   if (net.length === 0) return [];
   // What is grouped into jobs: the functional specs regenerated again - the modules' below first, as the codebase is
   // built on them - and the codebase's own, regenerated again or new at the end, in the spec's order.
-  const below = net.filter((change) => regeneratesAgain(change) && change.section === REQUIRED_FUNCTIONAL_SPECS).sort((a, b) => a.position - b.position);
-  // The conformance tests are written on the code as built: every functional spec added or changed is tested alike, wherever it is.
+  // The conformance tests are written on the code as built: every functional spec of the chain whose tests are added,
+  // changed or taken out is tested alike, wherever it is - so one edit, however mixed, is one pulse.
+  const testedIn = (section: string) => net.filter((change) => change.section === section).sort((a, b) => a.position - b.position);
+  const below =
+    input.track === "conformance"
+      ? testedIn(REQUIRED_FUNCTIONAL_SPECS)
+      : net.filter((change) => regeneratesAgain(change) && change.section === REQUIRED_FUNCTIONAL_SPECS).sort((a, b) => a.position - b.position);
   const own =
     input.track === "conformance"
-      ? net.filter((change) => change.section === FUNCTIONAL_REQUIREMENTS && change.kind !== "remove").sort((a, b) => a.position - b.position)
+      ? testedIn(FUNCTIONAL_REQUIREMENTS)
       : [...net.filter((change) => regeneratesAgain(change) && change.section === FUNCTIONAL_REQUIREMENTS), ...newSpecsOf(net, input.current)].sort((a, b) => a.position - b.position);
   const specs = [...below, ...own];
   const inSpecs = new Set(specs);
@@ -548,7 +552,7 @@ async function cut(input: PlanInput, agents?: ChunkAgents, notes?: string[]): Pr
   // 1. Which functional specs go together.
   reportStage(`planning the queue: which of the ${specs.length} functional spec${specs.length === 1 ? "" : "s"} to build go together`);
   const numbered: NewSpec[] = specs.map((change, index) => {
-    const required = change.section === REQUIRED_FUNCTIONAL_SPECS ? (JSON.parse(change.after!) as { module?: string }) : undefined;
+    const required = change.section === REQUIRED_FUNCTIONAL_SPECS ? (JSON.parse(change.after ?? change.before!) as { module?: string }) : undefined;
     return {
       number: index + 1,
       text: textOf(change),

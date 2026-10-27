@@ -216,45 +216,74 @@ export function inheritedRecord(source: MarshalledPlainSource, sourceModule: str
  * conformance work again, though the spec's text never changed.
  */
 export function conformanceTarget(code: MarshalledPlainSource | null, tests: MarshalledPlainSource | null, spec: MarshalledPlainSource): MarshalledPlainSource {
-  const built = new Map(itemsOf(code, FUNCTIONAL_REQUIREMENTS).map((item) => [item.id, item]));
-  const now = itemsOf(spec, FUNCTIONAL_REQUIREMENTS);
-  const inSpec = new Set(now.map((item) => item.id));
-  const tested = itemsOf(tests, FUNCTIONAL_REQUIREMENTS);
-  const testedById = new Map(tested.map((item) => [item.id, item]));
-  const specs: Item[] = [];
-  for (const current of now) {
-    const have = built.get(current.id);
-    if (have !== undefined && have.markdown.trim() === current.markdown.trim() && !marksRegenerateAgain(have)) {
-      if (hasScenarios(current)) specs.push(current);
-      continue;
+  // The codebase's own functional specs, and - in their own section - those of the modules below it: the tip's
+  // conformance suite holds the tests of the whole chain.
+  const section = (heading: string): Item[] => {
+    const built = new Map(itemsOf(code, heading).map((item) => [identityOf(item), item]));
+    const now = itemsOf(spec, heading);
+    const inSpec = new Set(now.map(identityOf));
+    const tested = itemsOf(tests, heading);
+    const testedById = new Map(tested.map((item) => [identityOf(item), item]));
+    const specs: Item[] = [];
+    for (const current of now) {
+      const have = built.get(identityOf(current));
+      if (have !== undefined && have.markdown.trim() === current.markdown.trim() && !marksRegenerateAgain(have)) {
+        if (hasScenarios(current)) specs.push(current);
+        continue;
+      }
+      // The code is behind the spec here - built from other text, not built, or being regenerated again: its tests stay
+      // as they are until it catches up.
+      const kept = testedById.get(identityOf(current));
+      if (kept !== undefined) specs.push(kept);
     }
-    // The code is behind the spec here - built from other text, not built, or being regenerated again: its tests stay
-    // as they are until it catches up.
-    const kept = testedById.get(current.id);
-    if (kept !== undefined) specs.push(kept);
-  }
-  // Taken out of the spec, its tests go once the code has dropped it too.
-  for (const kept of tested) if (!inSpec.has(kept.id) && built.has(kept.id)) specs.push(kept);
+    // Taken out of the spec, its tests go once the code has dropped it too.
+    for (const kept of tested) if (!inSpec.has(identityOf(kept)) && built.has(identityOf(kept))) specs.push(kept);
+    return specs;
+  };
   return withoutEmpty({
     [DEFINITIONS]: itemsOf(code, DEFINITIONS),
     [NON_FUNCTIONAL_REQUIREMENTS]: itemsOf(code, NON_FUNCTIONAL_REQUIREMENTS),
     [TEST_REQUIREMENTS]: itemsOf(spec, TEST_REQUIREMENTS),
-    [FUNCTIONAL_REQUIREMENTS]: specs,
+    [FUNCTIONAL_REQUIREMENTS]: section(FUNCTIONAL_REQUIREMENTS),
+    [REQUIRED_FUNCTIONAL_SPECS]: section(REQUIRED_FUNCTIONAL_SPECS),
+  });
+}
+
+/** A functional spec as a person names it: its func-id, with its module - the codebase's own, when the item names none. */
+export interface SpecRef {
+  module?: string;
+  funcId: string;
+}
+
+/**
+ * Of the functional specs given, those the code record does not have as `tree` has them - not built, or built from
+ * other text: no conformance test can be written for them yet. `tree` is a spec, or what conformance tests are written
+ * for; `module` the codebase's own, whose functional specs carry no module of their own.
+ */
+export function notBuilt(code: MarshalledPlainSource | null, tree: MarshalledPlainSource, specs: SpecRef[], module?: string): SpecRef[] {
+  const keyed = (items: Item[], own: boolean) => items.map((item): [string, Item] => [`${own ? (module ?? "") : (item.module ?? "")}:${item.id ?? ""}`, item]);
+  const all = (from: MarshalledPlainSource | null) => new Map([...keyed(itemsOf(from, FUNCTIONAL_REQUIREMENTS), true), ...keyed(itemsOf(from, REQUIRED_FUNCTIONAL_SPECS), false)]);
+  const built = all(code);
+  const wanted = all(tree);
+  return specs.filter((spec) => {
+    const key = `${spec.module ?? module ?? ""}:${spec.funcId}`;
+    const item = wanted.get(key);
+    const have = built.get(key);
+    return item === undefined || have === undefined || have.markdown.trim() !== item.markdown.trim();
   });
 }
 
 /**
- * Of the functional specs given, by func-id, those the code record does not have as `tree` has them - not built,
- * or built from other text: no conformance test can be written for them yet. `tree` is a spec, or what conformance
- * tests are written for.
+ * What a new module's conformance tests start from, copied up with the code below: that module's tests record, as a
+ * lower module's - what they were written against tagged with it, its functional specs among those inherited, each with
+ * the scenarios its tests carry out. The tip's suite holds the tests of the whole chain, and they are kept up to date there.
  */
-export function notBuilt(code: MarshalledPlainSource | null, tree: MarshalledPlainSource, funcIds: string[]): string[] {
-  const built = new Map(itemsOf(code, FUNCTIONAL_REQUIREMENTS).map((item) => [item.id, item]));
-  const wanted = new Map(itemsOf(tree, FUNCTIONAL_REQUIREMENTS).map((item) => [item.id, item]));
-  return funcIds.filter((funcId) => {
-    const item = wanted.get(funcId);
-    const have = built.get(funcId);
-    return item === undefined || have === undefined || have.markdown.trim() !== item.markdown.trim();
+export function inheritedTestsRecord(source: MarshalledPlainSource, sourceModule: string): MarshalledPlainSource {
+  return withoutEmpty({
+    [DEFINITIONS]: taggedWith(itemsOf(source, DEFINITIONS), sourceModule),
+    [NON_FUNCTIONAL_REQUIREMENTS]: taggedWith(itemsOf(source, NON_FUNCTIONAL_REQUIREMENTS), sourceModule),
+    [TEST_REQUIREMENTS]: itemsOf(source, TEST_REQUIREMENTS),
+    [REQUIRED_FUNCTIONAL_SPECS]: [...itemsOf(source, REQUIRED_FUNCTIONAL_SPECS), ...itemsOf(source, FUNCTIONAL_REQUIREMENTS).map((item) => ({ ...item, module: sourceModule }))],
   });
 }
 

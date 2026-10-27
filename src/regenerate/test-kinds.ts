@@ -22,9 +22,13 @@ export interface Scenario {
   text: string;
 }
 
-/** A functional spec's scenarios: those its conformance tests carry out. */
+/**
+ * A functional spec's scenarios: those its conformance tests carry out. `module`: a module below's - the tip's suite holds
+ * the tests of the whole chain - else the codebase's own.
+ */
 export interface TestedSpec {
   funcId: string;
+  module?: string;
   conformance: Scenario[];
   acceptance: Scenario[];
 }
@@ -59,7 +63,8 @@ function normalise(text: string): string {
  * What is missing from the labelling of a functional spec's tests: the file label, when no test file carries it, and each
  * scenario no test is labelled as carrying out.
  */
-export function missingTestLabels(testsDir: string, module: string, spec: TestedSpec): string[] {
+export function missingTestLabels(testsDir: string, codebase: string, spec: TestedSpec): string[] {
+  const module = spec.module ?? codebase;
   const text = normalise(
     listFiles(testsDir)
       .map((file) => {
@@ -86,9 +91,10 @@ export function missingTestLabels(testsDir: string, module: string, spec: Tested
  * Sent back when the labels of functional specs are missing - one, or every one a spec change touches: every one that
  * is missing, in one request, so none is asked for in place of another.
  */
-export function labelsPromptFor(module: string, items: Array<{ funcId: string; missing: string[] }>, empty = false): string {
+export function labelsPromptFor(codebase: string, items: Array<{ funcId: string; module?: string; missing: string[] }>, empty = false): string {
   const pending = items.filter((item) => item.missing.length > 0);
-  const names = pending.map((item) => `${module}:${item.funcId}`);
+  const names = pending.map((item) => `${item.module ?? codebase}:${item.funcId}`);
+  const module = pending[0]?.module ?? codebase;
   const which = names.length === 1 ? `functional spec ${names[0]}` : `functional specs ${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
   const first = pending[0]?.funcId ?? "<func-id>";
   return [

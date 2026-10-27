@@ -130,8 +130,11 @@ export function explorationProblems(
     const has = (list: Array<{ module: string; funcId: string }>) => list.some((item) => item.module === tested.module && item.funcId === tested.funcId);
     if (!has(reached)) problems.push(`interfaces does not say how ${refLabel(tested)} is reached: the command and its arguments, or the route, method, headers and the request and response fields.`);
   } else {
-    // A spec change's: what it touches is for the explorer to say, but some of this module has to be reached.
-    if (!reached.some((item) => item.module === moduleName)) problems.push(`interfaces says nothing of how \`${moduleName}\`'s functionalities the change touches are reached - one entry each.`);
+    // A spec change's: what it touches is for the explorer to say, but some of a module it touches has to be reached.
+    const modules = scope.touchedModules !== undefined && scope.touchedModules.length > 0 ? scope.touchedModules : [moduleName];
+    if (!reached.some((item) => modules.includes(item.module))) {
+      problems.push(`interfaces says nothing of how the functionalities of ${modules.map((module) => `\`${module}\``).join(" or ")} the change touches are reached - one entry each.`);
+    }
   }
   return problems;
 }
@@ -620,9 +623,9 @@ export function testReviewTask(options: {
   forChange?: boolean;
   invocation: string;
 }): string {
-  const scenarios = options.functionalities.flatMap((item) => scenariosOf(item).map((scenario) => ({ funcId: item.funcId, scenario })));
+  const scenarios = options.functionalities.flatMap((item) => scenariosOf(item).map((scenario) => ({ module: item.module ?? options.spec.moduleName, funcId: item.funcId, scenario })));
   const whose = options.forChange
-    ? `the functionalities of module \`${options.spec.moduleName}\` the change touches (${options.functionalities.map((item) => item.funcId).join(", ") || "none"})`
+    ? `the functionalities the change touches (${options.functionalities.map((item) => `${item.module ?? options.spec.moduleName}:${item.funcId}`).join(", ") || "none"})`
     : `functional spec ${options.spec.moduleName}:${options.functionalities[0]?.funcId ?? ""}`;
   return [
     specPrimer({ testReqs: true }),
@@ -656,7 +659,7 @@ export function testReviewTask(options: {
           "  what it names, and asserting every expectation it states. A step left out, replaced by a stand-in, or said",
           "  to be impossible to run is missing, not done:",
           "",
-          ...scenarios.map(({ funcId, scenario }) => `<scenario>\n${scenarioText(options.spec.moduleName, funcId, scenario)}\n</scenario>`),
+          ...scenarios.map(({ module, funcId, scenario }) => `<scenario>\n${scenarioText(module, funcId, scenario)}\n</scenario>`),
           "",
         ]
       : []),
@@ -808,6 +811,8 @@ export interface ConflictScope {
   functionalities: FunctionalityRef[];
   /** The functionality under test, which every conflict raised must include. None for a spec diff. */
   tested?: FunctionalityRef;
+  /** For a spec diff: the modules whose functional specs it touches - a module below's, tested in the tip, among them. */
+  touchedModules?: string[];
 }
 
 const same = (a: FunctionalityRef, b: FunctionalityRef) => a.module === b.module && a.funcId === b.funcId;

@@ -109,22 +109,24 @@ function testPlainDiffs(changes: SpecChange[], testPlain: TestPlainView): string
   const scenarioCarrier = (line: string | undefined) => {
     if (line === undefined) return undefined;
     try {
-      const item = JSON.parse(line) as { id?: string; conformance_tests?: unknown[]; acceptance_tests?: unknown[] };
+      const item = JSON.parse(line) as { id?: string; module?: string; conformance_tests?: unknown[]; acceptance_tests?: unknown[] };
       return item.id !== undefined && (item.conformance_tests !== undefined || item.acceptance_tests !== undefined) ? item : undefined;
     } catch {
       return undefined;
     }
   };
   return changes
-    .filter((change) => change.section === FUNCTIONAL_REQUIREMENTS)
+    // A module below's functional specs too: the tip's conformance suite holds the chain's.
+    .filter((change) => change.section === FUNCTIONAL_REQUIREMENTS || change.section === REQUIRED_FUNCTIONAL_SPECS)
     .flatMap((change) => {
       const [was, now] = [scenarioCarrier(change.kind === "add" ? undefined : change.before), scenarioCarrier(change.kind === "remove" ? undefined : change.after)];
       const funcId = now?.id ?? was?.id;
       if (funcId === undefined) return [];
-      const before = testPlainFileText(testPlain.module, (was ?? { id: funcId }) as never).split("\n").slice(0, -1);
-      const after = testPlainFileText(testPlain.module, (now ?? { id: funcId }) as never).split("\n").slice(0, -1);
+      const module = now?.module ?? was?.module ?? testPlain.module;
+      const before = testPlainFileText(module, (was ?? { id: funcId }) as never).split("\n").slice(0, -1);
+      const after = testPlainFileText(module, (now ?? { id: funcId }) as never).split("\n").slice(0, -1);
       if (before.join("\n") === after.join("\n")) return [];
-      const path = testPlain.pathOf(funcId);
+      const path = testPlain.pathOf(funcId, module);
       return [[`diff --git a/${path} b/${path}`, `--- a/${path}`, `+++ b/${path}`, "@@ @@", ...before.map((line) => `-${line}`), ...after.map((line) => `+${line}`), ""].join("\n")];
     })
     .join("");

@@ -430,8 +430,8 @@ export function testPlainFileText(module: string, item: ScenarioCarrier): string
   return `---\nmodule: ${module}\nfunc_id: ${item.id ?? ""}\n---\n\n${section("***conformance tests***", item[CONFORMANCE_TESTS])}\n\n${section("***acceptance tests***", item[ACCEPTANCE_TESTS])}\n`;
 }
 
-/** Where a functional spec's test plain file is, by its func-id: the path a diff names it by. */
-export type TestPlainPath = (funcId: string) => string;
+/** Where a functional spec's test plain file is, by its func-id and - a module below's - its module: the path a diff names it by. */
+export type TestPlainPath = (funcId: string, module?: string) => string;
 
 /**
  * The functional specs' test plain files a change between two serialized trees touches, each as a diff of its own,
@@ -439,8 +439,8 @@ export type TestPlainPath = (funcId: string) => string;
  * any. A functional spec whose scenarios all went is shown with its file emptied.
  */
 export function diffTestPlainFiles(before: string, after: string, module: string, pathOf: TestPlainPath): string {
-  const carriers = (serialized: string): Map<string, ScenarioCarrier> => {
-    const found = new Map<string, ScenarioCarrier>();
+  const carriers = (serialized: string): Map<string, ScenarioCarrier & { module?: string }> => {
+    const found = new Map<string, ScenarioCarrier & { module?: string }>();
     let section: string | undefined;
     for (const line of serialized.split("\n")) {
       if (line === "") continue;
@@ -449,19 +449,23 @@ export function diffTestPlainFiles(before: string, after: string, module: string
         section = header.key;
         continue;
       }
-      if (section !== FUNCTIONAL_REQUIREMENTS) continue;
-      const item = JSON.parse(line) as ScenarioCarrier;
-      if (item.id !== undefined && (item[CONFORMANCE_TESTS] !== undefined || item[ACCEPTANCE_TESTS] !== undefined)) found.set(item.id, item);
+      // A module below's functional specs too, by module and func-id: the tip's conformance suite holds the chain's.
+      if (section === undefined || !FUNCTIONAL_SECTIONS.includes(section)) continue;
+      const item = JSON.parse(line) as ScenarioCarrier & { module?: string };
+      if (item.id !== undefined && (item[CONFORMANCE_TESTS] !== undefined || item[ACCEPTANCE_TESTS] !== undefined)) found.set(`${item.module ?? ""}:${item.id}`, item);
     }
     return found;
   };
   const was = carriers(before);
   const now = carriers(after);
   return [...new Set([...now.keys(), ...was.keys()])]
-    .map((funcId) => {
-      const text = (item: ScenarioCarrier | undefined) => testPlainFileText(module, item ?? { id: funcId });
-      const [from, to] = [text(was.get(funcId)), text(now.get(funcId))];
-      return from === to ? "" : gitDiff(from, to, 3, [pathOf(funcId), pathOf(funcId)]);
+    .map((key) => {
+      const item = now.get(key) ?? was.get(key)!;
+      const owner = item.module ?? module;
+      const text = (found: ScenarioCarrier | undefined) => testPlainFileText(owner, found ?? { id: item.id });
+      const [from, to] = [text(was.get(key)), text(now.get(key))];
+      const path = pathOf(item.id ?? "", owner);
+      return from === to ? "" : gitDiff(from, to, 3, [path, path]);
     })
     .join("");
 }

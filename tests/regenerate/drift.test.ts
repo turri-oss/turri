@@ -16,6 +16,8 @@ const spec = (id: string, markdown: string, tests: string[] = []) => ({
   acceptance_tests: tests.map((text, index) => ({ id: `${id}-${index + 1}`, text, linked_resources: [] })),
 });
 const scenario = (id: string, text: string) => ({ id, text, linked_resources: [] });
+/** Functional specs of the codebase's own, by func-id, as notBuilt takes and gives them. */
+const refs = (funcIds: string[]) => funcIds.map((funcId) => ({ funcId }));
 const item = (markdown: string) => ({ markdown });
 
 /** A small spec: two concepts, one using the other, and three functional specs. */
@@ -93,26 +95,26 @@ describe("what is not built yet, for the conformance tests", () => {
   const built = codeTree(shop());
 
   it("is nothing for functional specs the code record has as the spec has them", () => {
-    expect(notBuilt(built, shop(), ["sign-up", "place-order", "show-price"])).toEqual([]);
+    expect(notBuilt(built, shop(), refs(["sign-up", "place-order", "show-price"]))).toEqual(refs([]));
   });
 
   it("is a functional spec the code record does not have, or has built from other text", () => {
     const now = shop({ "functional specs": [...fs(shop()), spec("cancel-order", "A :Customer: cancels an :Order:.")] });
     fs(now)[1]!.markdown = "A :Customer: places an :Order: and pays for it.";
-    expect(notBuilt(built, now, ["sign-up", "place-order", "show-price", "cancel-order"])).toEqual(["place-order", "cancel-order"]);
-    expect(notBuilt(null, shop(), ["sign-up"])).toEqual(["sign-up"]);
+    expect(notBuilt(built, now, refs(["sign-up", "place-order", "show-price", "cancel-order"]))).toEqual(refs(["place-order", "cancel-order"]));
+    expect(notBuilt(null, shop(), refs(["sign-up"]))).toEqual(refs(["sign-up"]));
   });
 
   it("reads the functional specs of what conformance tests are written for by their func-id, not their place", () => {
     const tested = { "functional specs": [spec("show-price", "The :Price: of an :Order: is shown.")] } as MarshalledPlainSource;
-    expect(notBuilt(built, tested, ["show-price"])).toEqual([]);
-    expect(notBuilt(built, tested, ["sign-up"])).toEqual(["sign-up"]);
+    expect(notBuilt(built, tested, refs(["show-price"]))).toEqual(refs([]));
+    expect(notBuilt(built, tested, refs(["sign-up"]))).toEqual(refs(["sign-up"]));
   });
 
   it("ignores space around a functional spec's text", () => {
     const now = shop();
     fs(now)[0]!.markdown = "  A :Customer: signs up.  ";
-    expect(notBuilt(built, now, ["sign-up"])).toEqual([]);
+    expect(notBuilt(built, now, refs(["sign-up"]))).toEqual(refs([]));
   });
 });
 
@@ -337,6 +339,40 @@ describe("a job's cases", () => {
       ({ "required functional specs": [{ module: "base", id: "sign-in", markdown: "A :Customer: signs in.", ...(marked ? { [REGENERATE_AGAIN]: true } : {}) }] }) as MarshalledPlainSource;
     const cases = casesOf(required(true), codeWork(required(true), required(false)), { module: "shop" });
     expect(cases.again).toEqual([{ funcId: "sign-in", text: "A :Customer: signs in.", module: "base" }]);
+  });
+
+  describe("of the functional specs of a module below, built in the tip", () => {
+    const below = (specs: Array<{ id: string; markdown: string }>) => specs.map((entry) => ({ module: "base", ...entry, linked_resources: [] }));
+    const tip = (specs: Array<{ id: string; markdown: string }>, definitions = [item("- :Customer: is a person with an account.")]) =>
+      ({ definitions, "functional specs": [spec("place-order", "A :Customer: places an order.")], "required functional specs": below(specs) }) as MarshalledPlainSource;
+    const signUp = { id: "sign-up", markdown: "A :Customer: signs up." };
+    const signIn = { id: "sign-in", markdown: "A :Customer: signs in." };
+
+    it("adds, patches and deletes them as the tip's own are, each by its module and func-id - never mechanical", () => {
+      const built = codeTree(tip([signUp, signIn]));
+      const now = codeTree(tip([{ ...signUp, markdown: "A :Customer: signs up with an email." }, { id: "sign-out", markdown: "A :Customer: signs out." }]));
+      const cases = casesOf(built, codeWork(built, now), { module: "shop" });
+      expect(cases.add).toEqual([{ funcId: "sign-out", text: "A :Customer: signs out.", module: "base" }]);
+      expect(cases.patch).toEqual([{ funcId: "sign-up", text: "A :Customer: signs up with an email.", module: "base" }]);
+      expect(cases.delete).toEqual([{ funcId: "sign-in", text: "A :Customer: signs in.", module: "base" }]);
+      expect(cases.mechanical).toBe(false);
+    });
+
+    it("is mechanical only when no functional spec of any module of the chain is touched", () => {
+      const built = codeTree(tip([signUp]));
+      const cases = casesOf(built, codeWork(built, { ...tip([signUp]), "implementation reqs": [item("- :Implementation: is Python.")] }), { module: "shop" });
+      expect(cases.mechanical).toBe(true);
+    });
+
+    it("patches an inherited functional spec that uses a concept redefined, before the tip's own", () => {
+      const built = codeTree(tip([signUp, { id: "list-plans", markdown: "Every plan is listed." }]));
+      const now = codeTree(tip([signUp, { id: "list-plans", markdown: "Every plan is listed." }], [item("- :Customer: is a person with a verified account.")]));
+      const cases = casesOf(built, codeWork(built, now), { module: "shop" });
+      expect(cases.patch).toEqual([
+        { funcId: "sign-up", text: "A :Customer: signs up.", module: "base" },
+        { funcId: "place-order", text: "A :Customer: places an order.", module: "shop" },
+      ]);
+    });
   });
 
   it("patches a functional spec once when it changed and a concept it uses did too, all of them in order", () => {

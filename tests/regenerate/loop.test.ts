@@ -1084,6 +1084,50 @@ describe("the work loop", () => {
       expect(JSON.stringify(readRecord(testsDir()))).toContain("Say goodbye.");
     });
 
+    describe("of the functional specs of a module below, in the tip", () => {
+      const tip = "---\nrequires:\n  - base\n---\n\n***implementation reqs***\n\n- :Implementation: is Python.\n\n***test reqs***\n\n- :ConformanceTests: use pytest.\n\n***functional specs***\n\n# home-page\nThe home page says hello.\n";
+
+      it("are written and kept up to date in the tip's suite: a scenario of one changed, or one regenerated again, is a conformance pulse there", async () => {
+        writePlain(dir, "base.plain", app(["Say hello."]));
+        writePlain(dir, "top.plain", tip);
+        scenariosIn("say-hello", "base");
+        const code = runner();
+        const tests = conformanceRunner();
+        const pulses: Array<{ module: string; patch: string[]; again: string[] }> = [];
+        const named = (specs: Array<{ module?: string; funcId: string }>) => specs.map((spec) => `${spec.module ?? "?"}:${spec.funcId}`);
+        const loop = createWorkLoop({
+          registry: createJobRegistry(),
+          cwd: dir,
+          planner: false,
+          run: code.run,
+          runConformance: async (job, onDelta) => {
+            pulses.push({ module: job.moduleName, patch: named(job.planned.cases.patch), again: named(job.planned.cases.again) });
+            return tests.runConformance(job, onDelta);
+          },
+        });
+        await loop.bringUp("top.plain");
+        await loop.drain();
+        // base's tests written in base, then carried up with its code - and what they are written for with them.
+        expect(pulses.map((pulse) => pulse.module)).toEqual(["base"]);
+        const inherited = () => JSON.stringify(readRecord(testsDir("top"))?.["required functional specs"] ?? []);
+        expect(inherited()).toContain("It works.");
+
+        scenariosIn("say-hello", "base", "# works\nIt works, and says so.");
+        await loop.bringUp("top.plain", { specChange: true });
+        await loop.drain();
+        expect(pulses.slice(1)).toEqual([{ module: "top", patch: ["base:say-hello"], again: [] }]);
+        expect(inherited()).toContain("It works, and says so.");
+        // base's own codebase, left behind, is not touched.
+        expect(JSON.stringify(readRecord(testsDir("base")))).not.toContain("says so");
+
+        await loop.regenerateAgain("base.plain", ["base:say-hello"]);
+        expect(inherited()).toContain("regenerate_again");
+        await loop.drain();
+        expect(pulses.slice(2)).toEqual([{ module: "top", patch: [], again: ["base:say-hello"] }]);
+        expect(inherited()).not.toContain("regenerate_again");
+      });
+    });
+
     describe("of a module another is built on", () => {
       const top = "---\nrequires:\n  - app\n---\n\n***implementation reqs***\n\n- :Implementation: is Python.\n\n***functional specs***\n\n# home-page\nThe home page says hello.\n";
 
@@ -1525,10 +1569,11 @@ describe("modules no longer brought up", () => {
     writeFileSync(join(codeDir("top"), "top.py"), "# started\n");
     gate.release!();
     await loop.drain();
-    // base's second functional spec is built in top, where base's code is regenerated now - not in base.
+    // base's second functional spec is built in top, where base's code is regenerated now - not in base: added there, as
+    // top's own is.
     expect(ran.map((job) => [job.module, job.add])).toEqual([
       ["base", ["register"]],
-      ["top", ["home-page"]],
+      ["top", ["log-in", "home-page"]],
     ]);
     expect(loop.planned()).toEqual([]);
     expect(loop.status().find((module) => module.module === "base")!.why).toMatch(/^left behind/);

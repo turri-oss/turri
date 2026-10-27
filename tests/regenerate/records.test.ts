@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { plainFileParser } from "../../src/plain/parser.ts";
 import { recordHistory } from "../../src/regenerate/lineage.ts";
 import { resolveTemplateDirs } from "../../src/regenerate/paths.ts";
-import { chainTree, codeTree, conformanceTarget, hasScenarios, inheritedRecord, isOldRecord, notBuilt, readRecord, RECORD_FILE, testedFuncIds, writeCodeRecord } from "../../src/regenerate/records.ts";
+import { chainTree, codeTree, conformanceTarget, hasScenarios, inheritedRecord, inheritedTestsRecord, isOldRecord, notBuilt, readRecord, RECORD_FILE, testedFuncIds, writeCodeRecord } from "../../src/regenerate/records.ts";
 import { writePlain } from "../test-plain.ts";
 import { listFiles } from "../../src/regenerate/testing.ts";
 
@@ -20,6 +20,8 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+/** Functional specs of the codebase's own, by func-id, as notBuilt takes and gives them. */
+const refs = (funcIds: string[]) => funcIds.map((funcId) => ({ funcId }));
 const items = (texts: string[]) => texts.map((markdown) => ({ markdown }));
 /** Functional specs, each with its func-id and no scenarios. */
 const specs = (entries: Array<[string, string]>) => entries.map(([id, markdown]) => ({ id, markdown, linked_resources: [], conformance_tests: [], acceptance_tests: [] }));
@@ -128,9 +130,31 @@ describe("what the conformance tests are written for", () => {
     expect(testedFuncIds({ "functional specs": [...specs([["list-tasks", "List."]]), ...tested([["add-task", "Add."]])] })).toEqual(["add-task"]);
   });
 
+  it("takes in the functional specs of the modules below with scenarios, each by its module and func-id - the tip's suite holds the chain's", () => {
+    const below = (entries: Array<[string, string]>, scenarios = true) => (scenarios ? tested(entries) : specs(entries)).map((item) => ({ ...item, module: "base" }));
+    const built = { "required functional specs": below([["register", "A user registers."], ["log-in", "A user logs in."]], false), "functional specs": specs([["add-task", "Add a task."]]) };
+    const spec = { "required functional specs": [...below([["register", "A user registers."]]), ...below([["log-in", "A user logs in."]], false)], "functional specs": tested([["add-task", "Add a task."]]) };
+    const target = conformanceTarget(built, null, spec);
+    expect(target["required functional specs"]).toEqual(below([["register", "A user registers."]]));
+    expect((target["functional specs"] as Array<{ id: string }>).map((item) => item.id)).toEqual(["add-task"]);
+    // The code of one below behind its spec: its tests stay as they are.
+    const now = { ...spec, "required functional specs": below([["register", "A user registers twice."]]) };
+    expect(conformanceTarget(built, target, now)["required functional specs"]).toEqual(below([["register", "A user registers."]]));
+    expect(notBuilt(built, now, [{ module: "base", funcId: "register" }, { funcId: "add-task" }], "app")).toEqual([{ module: "base", funcId: "register" }]);
+  });
+
+  it("starts a module built on another from that one's tests record, as what it inherits", () => {
+    const below = { "test reqs": items(["- :ConformanceTests: use pytest."]), definitions: items(["- :User: is a person."]), "functional specs": tested([["register", "A :User: registers."]]) };
+    expect(inheritedTestsRecord(below, "base")).toEqual({
+      "test reqs": items(["- :ConformanceTests: use pytest."]),
+      definitions: [{ markdown: "- :User: is a person.", module: "base" }],
+      "required functional specs": tested([["register", "A :User: registers."]]).map((item) => ({ ...item, module: "base" })),
+    });
+  });
+
   it("names the functional specs the code record does not have as the spec has them", () => {
     const spec = { "functional specs": specs([["add-task", "Add a task."], ["list-tasks", "List every task."], ["delete-task", "Delete a task."]]) };
-    expect(notBuilt(code, spec, ["add-task", "list-tasks", "delete-task"])).toEqual(["list-tasks", "delete-task"]);
+    expect(notBuilt(code, spec, refs(["add-task", "list-tasks", "delete-task"]))).toEqual(refs(["list-tasks", "delete-task"]));
   });
 });
 

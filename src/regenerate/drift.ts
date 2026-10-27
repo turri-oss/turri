@@ -44,13 +44,14 @@ export interface TouchedSpec {
  * - patch: functional specs changed - their text, their scenarios, or a concept they use: a
  *   change to what is built, never built again from scratch. A functional spec moved, and nothing else, is none.
  * - again: functional specs marked to regenerate again (`regenerate` with functionalities named): their code is built, and is regenerated again - rewritten
- *   or started over, doing what the spec says now - with what it replaces taken out. A functional spec of a module
- *   this one requires, regenerated again here, is one too.
+ *   or started over, doing what the spec says now - with what it replaces taken out.
  * - delete: functional specs taken out - a func-id the spec no longer has. One renamed is a delete and an add.
- * - mechanical: none of those - only reqs, or definitions no functional spec uses. Existing tests may
- *   change only mechanically, and no new ones are written.
+ * - mechanical: none of those - no functional spec of any module of the chain touched: only reqs, or definitions no
+ *   functional spec uses. Existing tests may change only mechanically, and no new ones are written.
  *
- * A job can hold several of add, patch and delete at once: its prompt has a section for each.
+ * The functional specs of the modules below are cased as the codebase's own are, each with its module: the codebase at
+ * the tip of a chain holds their code. A job can hold several of add, patch and delete at once: its prompt has a section
+ * for each.
  */
 export interface JobCases {
   fresh: boolean;
@@ -68,6 +69,7 @@ interface FunctionalItem {
 }
 
 const functionalSpecs = (tree: MarshalledPlainSource): FunctionalItem[] => (tree[FUNCTIONAL_REQUIREMENTS] as FunctionalItem[] | undefined) ?? [];
+const inheritedSpecs = (tree: MarshalledPlainSource): FunctionalItem[] => (tree[REQUIRED_FUNCTIONAL_SPECS] as FunctionalItem[] | undefined) ?? [];
 
 const firstLine = (markdown: string) => markdown.trim().split("\n")[0]!.trim();
 
@@ -130,20 +132,21 @@ export function casesOf(before: MarshalledPlainSource, changes: SpecChange[], op
   const again: TouchedSpec[] = [];
   const removed: TouchedSpec[] = [];
   for (const change of changes) {
+    // A module below's functional specs are cased as the codebase's own are: the codebase at the tip holds their code.
+    if (change.section !== FUNCTIONAL_REQUIREMENTS && change.section !== REQUIRED_FUNCTIONAL_SPECS) continue;
+    const required = change.section === REQUIRED_FUNCTIONAL_SPECS;
     const was = itemOfLine(change.before);
     const is = itemOfLine(change.after);
     // Marked to regenerate again: regenerated again, whatever else changed in its text - its own or, required, another module's.
     if (change.kind === "change" && is !== undefined && marksRegenerateAgain(was)) {
-      if (change.section === FUNCTIONAL_REQUIREMENTS) again.push(touchedOf(is, false));
-      else if (change.section === REQUIRED_FUNCTIONAL_SPECS) again.push(touchedOf(is, true));
+      again.push(touchedOf(is, required));
       continue;
     }
-    if (change.section !== FUNCTIONAL_REQUIREMENTS) continue;
     // Moved, and nothing else: none.
     if (isMove(change)) continue;
-    if (change.kind === "add" && is !== undefined) add.push(touchedOf(is, false));
-    else if (change.kind === "remove" && was !== undefined) removed.push(touchedOf(was, false));
-    else if (change.kind === "change" && is !== undefined) patch.push(touchedOf(is, false));
+    if (change.kind === "add" && is !== undefined) add.push(touchedOf(is, required));
+    else if (change.kind === "remove" && was !== undefined) removed.push(touchedOf(was, required));
+    else if (change.kind === "change" && is !== undefined) patch.push(touchedOf(is, required));
   }
 
   // The concepts the job defines anew, changes or takes out.
@@ -155,19 +158,28 @@ export function casesOf(before: MarshalledPlainSource, changes: SpecChange[], op
       if (item !== undefined) for (const concept of definedBy(item.markdown)) redefined.add(concept);
     }
   }
+  // Every functional spec of the chain, as it is after the job and as it was: those of the modules below, then the
+  // codebase's own - the order every case lists them in.
+  const chainOf = (tree: MarshalledPlainSource) => [...inheritedSpecs(tree).map((item) => ({ item, required: true })), ...functionalSpecs(tree).map((item) => ({ item, required: false }))];
+  const chain = chainOf(after);
+  const keyOf = (spec: TouchedSpec) => `${spec.module ?? ""}:${spec.funcId}`;
   if (redefined.size > 0) {
-    const touched = new Set([...add, ...patch, ...again].filter((spec) => spec.module === options.module).map((spec) => spec.funcId));
+    const touched = new Set([...add, ...patch, ...again].map(keyOf));
     const definitionsAfter = (after[DEFINITIONS] as Array<{ markdown: string }> | undefined) ?? [];
     const definitionsBefore = (before[DEFINITIONS] as Array<{ markdown: string }> | undefined) ?? [];
-    for (const item of functionalSpecs(after)) {
-      if (touched.has(item.id)) continue;
+    for (const { item, required } of chain) {
+      const spec = touchedOf(item, required);
+      if (touched.has(keyOf(spec))) continue;
       const uses = new Set([...conceptsUsed(item.markdown, definitionsAfter), ...conceptsUsed(item.markdown, definitionsBefore)]);
-      if ([...redefined].some((concept) => uses.has(concept))) patch.push(touchedOf(item, false));
+      if ([...redefined].some((concept) => uses.has(concept))) patch.push(spec);
     }
-    // In the spec's order.
-    const order = new Map(functionalSpecs(after).map((item, index) => [item.id, index]));
-    patch.sort((a, b) => (order.get(a.funcId) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.funcId) ?? Number.MAX_SAFE_INTEGER));
   }
+  // In the chain's order: one taken out where it was.
+  const orderIn = (specs: Array<{ item: FunctionalItem; required: boolean }>) => new Map(specs.map(({ item, required }, index) => [keyOf(touchedOf(item, required)), index]));
+  const inOrder = (list: TouchedSpec[], order: Map<string, number>) => list.sort((a, b) => (order.get(keyOf(a)) ?? Number.MAX_SAFE_INTEGER) - (order.get(keyOf(b)) ?? Number.MAX_SAFE_INTEGER));
+  const order = orderIn(chain);
+  for (const list of [add, patch, again]) inOrder(list, order);
+  inOrder(removed, orderIn(chainOf(before)));
 
   return {
     fresh: options.fresh === true,

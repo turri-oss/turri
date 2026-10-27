@@ -19,14 +19,15 @@ The other rules say what a spec means. This one says what turri does with a chan
 
 - A chain's code lives in its tip - the furthest module built on it. The modules below it keep the code they were built with
 - A change to any module of the chain, the base's included, is regenerated in the tip's code - not in the module the change was made in
+- A functional spec of a module below is added, patched or taken out in the tip just as the tip's own are, named `<module>:<func-id>`. Its conformance tests are in the tip's suite too, and are kept up to date there
 - Putting a change in a lower module costs no more than putting it in the tip, and saves nothing either
 - Moving specs between modules of the chain renders nothing. Moving specs into a module the code was never built on is the exception: no change to the code brings that module in, so the chain has to be regenerated from scratch - never done without the person agreeing
 
 ## What each kind of change sets off
 
 - A functional spec added is built, with its unit tests; one changed is patched in place; one taken out has its code, and the tests only it had, removed
-- A definition changed patches every functional spec that uses its concept, directly or through other definitions. So does a change to a linked resource: the spec or definition linking it is changed though its text is not. A widely used definition is the costly edit - not a spec's position
-- Implementation reqs alone, or definitions no functional spec uses, are a mechanical change: the code adapts, and no test is written or changes what it asserts
+- A definition changed patches every functional spec of the chain that uses its concept, directly or through other definitions - a module below's as well as the tip's own. So does a change to a linked resource: the spec or definition linking it is changed though its text is not. A widely used definition is the costly edit - not a spec's position
+- Implementation reqs alone, or definitions no functional spec of the chain uses, are a mechanical change: the code adapts, and no test is written or changes what it asserts
 - Test reqs and scenarios - a functional spec's conformance and acceptance scenarios, in its test plain file - reach the conformance tests only, never the code. A scenario changed alone regenerates no code
 - A functional spec regenerated again by name has its code taken out and built anew - never left as it was, even where it already does what the spec says; a pulse that changes nothing does not land. Its conformance tests, when it has them, are run on its new code once it lands: those that pass are kept as they are; one that fails is judged against the spec - what it checks that the spec leaves open, a path, a field, a message the old code chose, goes by the new code
 - What is conformance tested is the scenarios: each conformance and acceptance scenario of a functional spec gets at least one test, and nothing else is tested - a functional spec with an empty test plain file has no conformance tests. Its tests are written or changed once its code lands, whenever a scenario is added, changed or taken out, its text changes, it is regenerated again or taken out; one whose scenarios are all taken out loses its tests. To have something checked end to end, write it as a scenario
