@@ -11,6 +11,7 @@ my-project/
   app.plain            # a root module: what the software does
   users.plain          # another module, perhaps one that `requires` app
   template/            # import modules: shared definitions and reqs
+  tests/               # test plain files: tests/<module>/<func-id>.plain, one a functional spec
   resources/           # files specs link to: schemas, API specs, sample data
   test_scripts/        # scripts that run the unit and conformance tests
   plain_modules/       # generated - code, tests, history; never edited by hand
@@ -25,9 +26,9 @@ A `.plain` file is one module: optional YAML frontmatter, then up to four sectio
 | `***definitions***` | the concepts, written `:CamelCase:` - every concept is defined before it is used | `- :Task: is a unit of work with a title and a due date.` |
 | `***implementation reqs***` | HOW it is built: stack, architecture, coding standards, and everything about unit tests | `- :Implementation: is written in Python 3.12.` |
 | `***test reqs***` | everything about the black-box conformance tests: framework, how they run, mocking | `- :ConformanceTests: use pytest and call the CLI as a subprocess.` |
-| `***functional specs***` | WHAT it does - observable, language-agnostic behaviour, one functionality per item, in the order they are built | `- A :User: can add a :Task:.` |
+| `***functional specs***` | WHAT it does - observable, language-agnostic behaviour, one functionality under each `# <func-id>` heading, in the order they are built | `# add-task` over `A :User: can add a :Task:.` |
 
-Under a functional spec, a nested `***acceptance tests***` list states how that one functionality is checked end to end.
+A functional spec is a `# <func-id>` heading - lowercase letters and digits in words joined by `-`, unique in its module - and its text under it, as free markdown: paragraphs, lists, code blocks. Each has a test plain file, `tests/<module>/<func-id>.plain` (the folder is `test-dir`), with `module:` and `func_id:` in its frontmatter, then `***conformance tests***` and `***acceptance tests***`, each scenario a `# <scenario-id>` heading and its text. A test plain file with no scenario in it says the functional spec is not tested yet; one is still needed. People and turri name a functional spec `<module>:<func-id>` - `todo:add-task`.
 
 The frontmatter connects modules:
 
@@ -43,6 +44,35 @@ Beyond that: \*\*\*plain links to files under `resources/` with markdown link sy
 
 **Section ownership is the rule that bites.** turri reads each kind of fact only from the section that owns it. A tech choice written into a functional spec, or a behaviour written into the implementation reqs, is not flagged - it is simply not read.
 
+## Tests, when they are asked for
+
+A test plain file holds the scenarios of one functional spec: `***conformance tests***` for its expected use - the main path, with valid input and the data there - and `***acceptance tests***` for the use that is not expected - invalid input, missing authentication, missing data. Scenarios alone decide what is tested: the conformance agent writes at least one test for each, labelled with its scenario-id, and none of its own. A functional spec whose test plain file is empty is not tested.
+
+```plain
+---
+module: todo
+func_id: add-task
+---
+
+***conformance tests***
+
+# add-valid-task
+Adding a :Task: named "Buy milk" to an empty :TaskList: shows one :Task: named "Buy milk".
+
+***acceptance tests***
+
+# reject-short-name
+Adding a :Task: named "Go" is rejected with the error "Name must be at least 3 characters".
+```
+
+Nothing about testing is written until the person asks for it: a module imports its stack alone, and a new functional spec gets its test plain file empty, in the same \*\*\*plain diff. The first time the person asks for tests in a module, turri does three things, in this order, each a change they see:
+
+1. **The test reqs** - the stack's conformance template, `stdlib/<kind>/conformance/<stack>`, or the module's own `***test reqs***` when it has no stack from the standard library.
+2. **The conformance testing script** - with `implement-conformance-testing-script`, when the project has none for the module's stack.
+3. **The scenarios** - for the functional specs the person named, conformance scenarios and, only when asked for, acceptance scenarios, written with `change_plain` with no further confirmation. Scenarios in one functional spec say nothing about another: the rest stay untested until they are asked for too.
+
+Scenarios that exist are kept in step with their functional specs: a functional spec changed has its scenarios reviewed in the same \*\*\*plain diff, and one split, moved, renamed or taken out takes its test plain file with it. The rules are in `test-plain-files.md`.
+
 ## The standard library
 
 turri ships a standard library of import modules in `stdlib/` that settle everything about a generic piece of software on one stack except what it does: its language and framework, layout, configuration, error handling, logging, shutdown, and how it is unit and conformance tested. A module's \*\*\*plain imports one and writes only its own concepts and functional specs:
@@ -51,12 +81,12 @@ turri ships a standard library of import modules in `stdlib/` that settle everyt
 ---
 import:
   - stdlib/backend/python-flask
-  - stdlib/backend/conformance/python-flask    # leave it out to skip conformance tests
 ---
 
 ***functional specs***
 
-- ...
+# <func-id>
+...
 ```
 
 | kind | stacks - each with `stdlib/<kind>/conformance/<stack>` beside it |
@@ -82,12 +112,12 @@ It is built in three layers, and a stack imports the other two:
 
 Each conformance template imports its kind's `conformance/common`: a backend's tests start the built service on a free port and reach it over HTTP only, checking a failure by status and `error.code`; a frontend's run the served build in Chromium through Playwright with the backend stood in; a command-line tool's run the built tool as a process; a library's go through its public entry point.
 
-- **Conformance tests apart.** \*\*\*plain without the conformance template has no test reqs, so no conformance tests are written or run for it. Turning them on later is adding that one import.
+- **Conformance tests apart.** A module imports its stack alone. The stack's conformance template is its test reqs: it is imported the first time the person asks for tests in the module, before the conformance testing script and the scenarios (see [tests](#tests-when-they-are-asked-for)).
 - **A reserved name.** An import that starts with `stdlib/` is always turri's template, never a file of the project's. A project with a module at such a path - `stdlib/backend/python-fastapi.plain` beside the project's \*\*\*plain, in its `template/` folder or in `PLAIN_TEMPLATE_DIRS` - gets an error saying the name is reserved, so which one the project's \*\*\*plain builds on never depends on what is on disk beside it.
 - **No concepts.** Its requirements are on the predefined `:Implementation:`, `:UnitTests:` and `:ConformanceTests:` only, so it never collides with \*\*\*plain's own definitions.
 - **Pinned to a toolchain.** It names its stack's toolchain - Python 3.12, Node.js 24, Java 21, Go 1.25, Rust - which the agents use from this machine; `turri doctor` says when the machine lacks it.
-- **Not storage, not the testing scripts.** A module with a database says which on top of its stack. It still needs its unit testing script, and a conformance testing script when it has conformance tests.
-- **Known to the agents.** The `stdlib` rule, in the system prompt of every agent that writes \*\*\*plain, says when to import which, and lists every template with what it is and the folder it is in, read from `stdlib/` when the rules load. The conversation imports a stack when the one chosen is in it, and its conformance template when conformance tests are on.
+- **Not storage, not the testing scripts.** A module with a database says which on top of its stack. It still needs its unit testing script, and a conformance testing script once its first tests are asked for.
+- **Known to the agents.** The `stdlib` rule, in the system prompt of every agent that writes \*\*\*plain, says when to import which, and lists every template with what it is and the folder it is in, read from `stdlib/` when the rules load. The conversation imports a stack when the one chosen is in it, and its conformance template once the person asks for tests.
 - **Only what this machine can build.** The agents use this machine's toolchains and install none, so a Go stack on a laptop without Go stops at its first build. Every agent that writes \*\*\*plain, and the conversation, are told which of the standard library's languages the machine can build now - Python needs `uv`, TypeScript and every frontend `node` and `npm`, Go `go`, Rust `cargo`, Java a JDK (`src/stack.ts`, `toolchainsBlock`) - and the conversation offers, and chooses, only stacks in those. A stack the person names in a language the machine lacks is not refused: they are told what to install first, and that `turri doctor` checks it.
 
 A requirement beyond the stack - storage, an outside service - is added on top of it. A module that differs from its stack on something the stack settles - another framework, another layout - writes its own instead: an import cannot be taken back in part.
@@ -100,11 +130,13 @@ A requirement beyond the stack - storage, an outside service - is added on top o
 | --- | --- |
 | `module-structure.md` | the file skeleton, frontmatter fields, section order, module kinds, section ownership |
 | `definitions.md` | concept syntax, predefined concepts, define before use, no circular definitions, granularity |
-| `func-specs.md` | voice, the complexity limit, chronological order, no conflicts, how a functional spec is added - checked for size and conflicts before it is written in - and where it goes, language agnosticism, testability, acceptance tests |
+| `func-specs.md` | a functional spec's shape - a `# <func-id>` heading and a free-text body - voice, the complexity limit, chronological order, no conflicts, how a functional spec is added - checked for size and conflicts before it is written in, with its test plain file - and where it goes, language agnosticism, testability |
+| `semantic-ids.md` | func-ids and scenario-ids: their syntax, unique in the module or the functional spec, a rename a functional spec taken out and another added, a functional spec named `<module>:<func-id>` |
+| `test-plain-files.md` | test plain files in `tests/<module>/`, their two sections and their scenarios, keeping them in step with the functional specs, and writing scenarios once the person asks for tests - test reqs, the conformance testing script, then the scenarios |
 | `impl-reqs.md` | HOW not WHAT, unit tests live here, what belongs and what does not |
 | `test-reqs.md` | conformance tests only, what belongs, test types |
 | `concise-specs.md` (+ two example banks) | keeping \*\*\*plain short enough for a person to review: no obvious lines, plain words, no uncheckable adjectives, no hedging |
-| `bullet-continuation.md` | bullets and continuation lines in every section |
+| `bullet-continuation.md` | bullets and continuation lines in the definitions, implementation reqs and test reqs |
 | `linked-resources.md` | a linked resource is one text file on disk, or a PNG or JPEG image for a model that reads images; protocol artifacts are linked, never transcribed |
 | `import-modules.md`, `requires-modules.md` | the two ways modules build on each other |
 | `exported-concepts.md`, `required-concepts.md` | which concepts cross module boundaries |
@@ -114,7 +146,7 @@ A requirement beyond the stack - storage, an outside service - is added on top o
 
 The ones that shape \*\*\*plain most:
 
-- **One functionality is at most ~200 lines of code.** A bigger one is split before it is written (`break-down-func-spec`) - the author judges its size by the signs in `func-specs.md`.
+- **One functional spec is at most ~200 lines of code.** A bigger one is split before it is written (`break-down-func-spec`) - the author judges its size by the signs in `func-specs.md`.
 - **Functional specs are in build order.** Each is regenerated on top of the ones before it - which is what a functional spec may assume, not what a change costs: a functional spec inserted anywhere is regenerated alone.
 - **They state facts, with a concrete subject.** "A :User: can add a :Task:" - not "Implement adding tasks", not "The system should…".
 - **Nothing a test cannot check.** No `robust`, `seamless`, `as appropriate`; state the checkable fact or cut the word.
@@ -131,7 +163,7 @@ Every skill in `genome/skills/` can be run from a conversation; most are also us
 | to… | skills |
 | --- | --- |
 | start a project | ask, in the conversation: turri writes it itself, with no skill |
-| add to \*\*\*plain | ask in the conversation: it writes a concept, a functional spec, a req, an acceptance test or a linked resource itself, by the rules in its prompt, as a \*\*\*plain diff |
+| add to \*\*\*plain | ask in the conversation: it writes a concept, a functional spec with its empty test plain file, a req or a linked resource itself, by the rules in its prompt, as a \*\*\*plain diff - and, once you ask for tests, the scenarios (see [tests](#tests-when-they-are-asked-for)) |
 | check what is written | `analyze-2-func-specs`, `analyze-func-specs`, `resolve-section-ownership` |
 | fix what is written | `break-down-func-spec`, `resolve-spec-conflict`, `debug-specs` |
 | restructure modules | `refactor-module`, `consolidate-concepts` |
@@ -146,6 +178,6 @@ Every skill in `genome/skills/` can be run from a conversation; most are also us
 turri validate app.plain     # or validate in a conversation
 ```
 
-It parses \*\*\*plain with this repo's own parser, resolves its imports and required modules, and reports every syntax, concept and structure error with its line - no model, no API key. The interview skills run it before a phase ends, and `change_plain` refuses a change that leaves a file that does not parse. Pass the project directory to check every module at once.
+It parses \*\*\*plain with this repo's own parser - each module with its test plain files - resolves its imports and required modules, and reports every syntax, concept and structure error with its line, every functional spec without a test plain file, and every test plain file outside its module's folder - no model, no API key. The interview skills run it before a phase ends, and `change_plain` refuses a change that leaves a file that does not pass. Pass the project directory to check every module at once.
 
 What `check` cannot see - a fact in the wrong section, a functional spec that is too big, two that conflict, wording no test can check - is what the rules, the skills and the reviewers are for.

@@ -55,7 +55,7 @@ func_id: add-task
 - It goes under `***conformance tests***` when every step is expected use, and under `***acceptance tests***` when any step is not; write one only when the person asks for it
 
 ## Keeping test plain files in step
-Only the scenarios there are are kept in step: a change to a functional spec never calls for new ones. In the same ***plain diff as the change:
+Only scenarios that exist are kept in step: a change to a functional spec never calls for new ones. In the same ***plain diff as the change:
 - A new functional spec gets its test plain file, empty
 - A functional spec whose body changes has its scenarios, if it has any, reviewed: one that no longer follows from it is changed or taken out, and your reply says so
 - A functional spec split into several: each part gets its own test plain file, and each scenario moves to the part it tests
