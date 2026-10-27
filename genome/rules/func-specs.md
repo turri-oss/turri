@@ -1,10 +1,16 @@
 ---
-description: Rules for writing ***functional specs*** and ***acceptance tests*** in .plain files
+description: Rules for writing ***functional specs*** in .plain files
 ---
 
 # Rules for writing `***functional specs***`
 
 When writing or editing a `***functional specs***` section in a `.plain` file, always follow these rules:
+
+## Shape
+- Each functional spec is a `# <func-id>` heading followed by its body; the func-id follows `semantic-ids.md`
+- The body is free text that describes the behaviour: its first line states it, and prose or `- ` bullets under that line add the detail
+- No body line starts with `# ` (that starts the next functional spec) or with `***`
+- A functional spec's test scenarios live in its test plain file, never in this section (see `test-plain-files.md`)
 
 ## Voice
 - Write each functional spec as a **statement of fact** — present tense, indicative mood — describing what the software *is* or *does* once built, not as a command telling a developer what to build
@@ -18,11 +24,14 @@ BAD — imperative commands, or the vague "The system":
 ```plain
 ***functional specs***
 
-- Implement the entry point for :App:.
+# entry-point
+Implement the entry point for :App:.
 
-- The system shows :TaskList:.
+# show-task-list
+The system shows :TaskList:.
 
-- Add :Task:.
+# add-task
+Add :Task:.
 ```
 
 GOOD — statements of fact with concrete subjects:
@@ -30,11 +39,14 @@ GOOD — statements of fact with concrete subjects:
 ```plain
 ***functional specs***
 
-- :App: has an entry point.
+# entry-point
+:App: has an entry point.
 
-- The :TaskList: is displayed.
+# show-task-list
+The :TaskList: is displayed.
 
-- A :User: can add a :Task:. Only valid :Task: items are added.
+# add-task
+A :User: can add a :Task:. Only valid :Task: items are added.
 ```
 
 ## Conciseness
@@ -86,7 +98,8 @@ Every new functional spec - one or a batch - is checked before it is written int
 1. Draft it, then trim it per `concise-specs.md` to the shortest wording that keeps every fact
 2. Judge its size against the complexity limit; when it is too big, split it with `break-down-func-spec` and check each part from step 1
 3. Check it for conflicts with **one** `analyze-func-specs` call over the new spec and every existing functional spec in the file and its `requires` chain - never pair by pair. Resolve each conflicting pair it reports with `resolve-spec-conflict`, then run it again over what changed until it is compatible
-4. Only then write it in, where it belongs (see Placement)
+4. Pick its func-id per `semantic-ids.md`, unique in the module - and in the batch
+5. Only then write it in, where it belongs (see Placement), as its `# <func-id>` heading and body, with its test plain file, empty, in the same ***plain diff (see `test-plain-files.md`)
 
 A batch is checked one spec at a time, in order: each spec's conflict check includes the specs of the batch already written in. Never write the whole batch in first and check it afterwards - a bad spec already in the file skews every later check. A few specs are no reason to skip a check.
 
@@ -106,17 +119,16 @@ Put a new spec where it fits the module as it reads, not at the end by default:
 
 ## Disambiguation
 - Each functional spec must be unambiguous — the renderer should have only one reasonable interpretation
-- If a single line is not enough to fully disambiguate the behavior, use **nested sub-bullets** to add detail
-- Nested lines clarify the parent spec — they do not introduce separate functionality
-- Even with nested detail, the spec must still imply ≤ 200 lines of code
+- If the statement line is not enough to fully disambiguate the behavior, add `- ` bullets or sentences under it to add detail
+- The detail clarifies the statement - it does not introduce separate behaviour
+- Even with the detail, the spec must still imply ≤ 200 lines of code
 
 ## Testability
 - Every functional spec must describe behavior that can be verified through an observable interface
 - State the triggering input or action and the deterministic outcome a test can observe
 - Include relevant outputs, state changes, errors, or externally visible side effects
 - Do not rely on generated implementation details as the only way to verify the behavior
-- If a black-box conformance test cannot be derived from the spec, make the behavior more explicit
-- Testability does not require an acceptance test; acceptance tests are reserved for full workflows
+- If a black-box conformance scenario could not be written from the spec, make the behavior more explicit
 
 ## Deterministic interface
 - Specs must be detailed enough that a developer can use the built software without reading the generated code
@@ -128,42 +140,25 @@ Put a new spec where it fits the module as it reads, not at the end by default:
 - `requires` modules only pass on functional specs and `exported_concepts` — never implementation reqs, so do not rely on implementation reqs to convey behavior
 - Behavior that downstream modules need must be expressed in functional specs, not elsewhere
 
-## Acceptance tests
-- Nest `***acceptance tests***` under a functional spec when verification criteria are needed
-- Each acceptance test must be a **full workflow test** — a specific scenario that exercises the functional spec end-to-end, not a unit-level check of a single field or condition
-- Do not restate the obvious behavior from the functional spec — simple, direct verifications are already auto-generated as conformance tests. Acceptance tests must go beyond that: multi-step workflows, interactions between concepts, edge-case scenarios, or end-to-end sequences that prove the feature works in a realistic context
-- Each acceptance test must be a direct logical consequence of the parent spec — it illustrates, not extends
-- Acceptance tests must describe concrete, verifiable outcomes — not vague qualities
-- Acceptance tests must not contradict, narrow, or extend beyond the parent spec
-
-```plain
-Functional spec:
-- :Resource: items are returned sorted by creation date in descending order.
-
-Good - follows from the spec:
-- After three :Resource: items are created one after another, listing them returns the last one created first.
-
-Bad - contradicts it (the spec says descending):
-- The first :Resource: listed is the oldest.
-
-Bad - extends it (the spec says nothing about a limit):
-- At most 50 :Resource: items are listed.
-```
+## Test scenarios live in test plain files
+- A module never holds a `***conformance tests***` or `***acceptance tests***` section, nested or top-level
+- A functional spec's conformance and acceptance scenarios go into its test plain file, `tests/<module>/<func-id>.plain`, and are written only when the person asks for tests (see *Writing scenarios* in `test-plain-files.md`)
+- A functional spec and its test plain file change together, in the same ***plain diff: a new one gets its test plain file, empty; a changed one has its scenarios, if any, reviewed; a split, moved, renamed or deleted one takes its test plain file with it (see *Keeping test plain files in step* in `test-plain-files.md`)
 
 ## Format
 
 ```plain
 ***functional specs***
 
-- :App: has an entry point.
+# entry-point
+:App: has an entry point.
 
-- A :User: can add a :Task:. Only valid :Task: items are added.
+# add-task
+A :User: can add a :Task:. Only valid :Task: items are added.
 
-- A :User: can send a :Message: to a :Conversation:.
-  - A :Message: must have non-empty content.
-  - The :Message: is appended to the end of the :Conversation:.
-  - All :Participant: members of the :Conversation: can see the new :Message:.
-
-  ***acceptance tests***
-  - Sending a :Message: to a :Conversation: with three participants should make the message visible to all three.
+# send-message
+A :User: can send a :Message: to a :Conversation:.
+- A :Message: must have non-empty content.
+- The :Message: is appended to the end of the :Conversation:.
+- All :Participant: members of the :Conversation: can see the new :Message:.
 ```

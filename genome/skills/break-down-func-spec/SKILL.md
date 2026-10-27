@@ -35,12 +35,13 @@ The functional spec to break down, plus the full `.plain` file it belongs to.
    - Independently meaningful (makes sense on its own with previous specs as context)
    - Self-contained (does not require a later spec to be useful)
    - Within the 200 LOC limit
-5. **Draft the replacement specs** — write the smaller specs in chronological order. The first replacement spec typically sets up the foundation, and subsequent ones layer behavior on top.
+5. **Draft the replacement specs** — write the smaller specs in chronological order, each with its own func-id per `semantic-ids.md`; the replacement that keeps the original's main behaviour may keep the original's func-id. The first replacement spec typically sets up the foundation, and subsequent ones layer behavior on top.
 6. **Verify functional completeness** — this is critical. The replacement specs taken together must cover **100% of the functionality** described in the original spec. Walk through every behavior, condition, and detail in the original and confirm it appears in exactly one of the replacement specs. Nothing may be lost, weakened, or left implicit. If any functionality from the original is missing, add it to the appropriate replacement spec or create an additional one.
 7. **Verify each replacement spec** — judge each against the complexity limit, and split again any that is still too large.
 8. **Check for conflicts** — run `analyze-func-specs` **once** with the full set of replacement specs plus every existing spec in the file and its `requires` chain. The batched analyzer reports every conflicting pair (replacement × existing and replacement × replacement) in one call — do not loop over pairs. Resolve each reported pair with `resolve-spec-conflict`, then re-run `analyze-func-specs` over the touched set until the verdict is `COMPATIBLE`.
-9. **Replace in the file** — remove the original spec and insert the replacement specs in its position, preserving chronological order.
-10. **Read the file again** to confirm correct placement and syntax.
+9. **Replace in the file** — remove the original functional spec (heading and body) and insert the replacement specs in its position, each as a `# <func-id>` heading with its body, preserving chronological order.
+10. **Bring the test plain files in step**, in the same ***plain diff - every replacement gets its test plain file, each scenario of the original's moves to the replacement it tests, and the original's file is deleted when its func-id is gone (*Keeping test plain files in step* in `test-plain-files.md`). No scenario is written for a replacement that the original's did not have.
+11. **Read the file again** to confirm correct placement and syntax.
 
 ## Splitting Strategies
 
@@ -52,18 +53,22 @@ If the spec bundles multiple independently testable actions, split each into its
 ```plain
 ***functional specs***
 
-- A :User: can create, edit, and delete :Recipe: items, with validation on all fields.
+# manage-recipes
+A :User: can create, edit, and delete :Recipe: items, with validation on all fields.
 ```
 
 **After:**
 ```plain
 ***functional specs***
 
-- A :User: can create a :Recipe:. Only valid :Recipe: items can be created.
+# create-recipe
+A :User: can create a :Recipe:. Only valid :Recipe: items can be created.
 
-- A :User: can edit an existing :Recipe:. Validation rules apply to the edited fields.
+# edit-recipe
+A :User: can edit an existing :Recipe:. Validation rules apply to the edited fields.
 
-- A :User: can delete a :Recipe:.
+# delete-recipe
+A :User: can delete a :Recipe:.
 ```
 
 ### Strategy 2: Separate Setup from Behavior
@@ -74,18 +79,22 @@ If the spec introduces a new construct and immediately defines complex behavior 
 ```plain
 ***functional specs***
 
-- The :MealPlan: screen displays a weekly grid of :Slot: items, allows drag-and-drop reordering, and shows nutritional totals per day.
+# meal-plan-screen
+The :MealPlan: screen displays a weekly grid of :Slot: items, allows drag-and-drop reordering, and shows nutritional totals per day.
 ```
 
 **After:**
 ```plain
 ***functional specs***
 
-- The :MealPlan: screen displays a weekly grid of :Slot: items.
+# meal-plan-grid
+The :MealPlan: screen displays a weekly grid of :Slot: items.
 
-- A :User: can reorder :Slot: items within a day on the :MealPlan: screen using drag-and-drop.
+# reorder-slots
+A :User: can reorder :Slot: items within a day on the :MealPlan: screen using drag-and-drop.
 
-- The :MealPlan: screen displays nutritional totals for each day.
+# daily-nutrition-totals
+The :MealPlan: screen displays nutritional totals for each day.
 ```
 
 ### Strategy 3: Separate Core Logic from Cross-Cutting Concerns
@@ -96,18 +105,22 @@ If the spec mixes primary functionality with error handling, retries, caching, p
 ```plain
 ***functional specs***
 
-- :Ingredient: data is fetched from the external API with pagination, retry on transient errors, and caching for 10 minutes.
+# fetch-ingredients
+:Ingredient: data is fetched from the external API with pagination, retry on transient errors, and caching for 10 minutes.
 ```
 
 **After:**
 ```plain
 ***functional specs***
 
-- :Ingredient: data is fetched from the external API.
+# fetch-ingredients
+:Ingredient: data is fetched from the external API.
 
-- :Ingredient: data is fetched from the external API in pages.
+# fetch-ingredients-paged
+:Ingredient: data is fetched from the external API in pages.
 
-- Fetching :Ingredient: data is retried on transient errors.
+# retry-ingredient-fetch
+Fetching :Ingredient: data is retried on transient errors.
 ```
 
 ### Strategy 4: Separate Conditional Paths
@@ -118,20 +131,24 @@ If the spec describes different modes or branches, give each its own spec.
 ```plain
 ***functional specs***
 
-- :MealPlan: generation depends on :DietType:. Standard plans use round-robin assignment. Restrictive plans filter out excluded ingredients first, then apply round-robin. Custom plans allow manual slot-by-slot selection.
+# generate-meal-plan
+:MealPlan: generation depends on :DietType:. Standard plans use round-robin assignment. Restrictive plans filter out excluded ingredients first, then apply round-robin. Custom plans allow manual slot-by-slot selection.
 ```
 
 **After:**
 ```plain
 ***functional specs***
 
-- A standard :MealPlan: is generated using round-robin :Recipe: assignment.
+# generate-standard-plan
+A standard :MealPlan: is generated using round-robin :Recipe: assignment.
 
-- A restrictive :MealPlan: is generated.
-  - Excluded :Ingredient: items are filtered out first.
-  - Round-robin :Recipe: assignment is then applied.
+# generate-restrictive-plan
+A restrictive :MealPlan: is generated.
+- Excluded :Ingredient: items are filtered out first.
+- Round-robin :Recipe: assignment is then applied.
 
-- A :User: can manually assign :Recipe: items to :Slot: items for a custom :MealPlan:.
+# assign-custom-plan
+A :User: can manually assign :Recipe: items to :Slot: items for a custom :MealPlan:.
 ```
 
 ### Strategy 5: Build UI Incrementally
@@ -142,18 +159,22 @@ If the spec describes a full screen, split into layout + individual interactive 
 ```plain
 ***functional specs***
 
-- The :Dashboard: screen shows a summary card with stats, a scrollable list of recent :MealPlan: items, a floating action button to create a new plan, and a bottom navigation bar.
+# dashboard-screen
+The :Dashboard: screen shows a summary card with stats, a scrollable list of recent :MealPlan: items, a floating action button to create a new plan, and a bottom navigation bar.
 ```
 
 **After:**
 ```plain
 ***functional specs***
 
-- The :Dashboard: screen shows a summary card with :MealFrameStats:.
+# dashboard-summary-card
+The :Dashboard: screen shows a summary card with :MealFrameStats:.
 
-- The :Dashboard: screen shows a scrollable list of recent :MealPlan: items.
+# dashboard-recent-plans
+The :Dashboard: screen shows a scrollable list of recent :MealPlan: items.
 
-- The :Dashboard: screen includes a button to create a new :MealPlan:.
+# dashboard-new-plan-button
+The :Dashboard: screen includes a button to create a new :MealPlan:.
 ```
 
 ### Strategy 6: Extract a Reusable Technical Component
@@ -166,18 +187,21 @@ Define the component concept in `***definitions***` (per `definitions.md`) befor
 ```plain
 ***functional specs***
 
-- A :Report: is exported to PDF, laying out multi-page tables with repeating headers, page numbers, and charts rendered from :Report: data.
+# export-report-pdf
+A :Report: is exported to PDF, laying out multi-page tables with repeating headers, page numbers, and charts rendered from :Report: data.
 ```
 
 **After:**
 ```plain
 ***functional specs***
 
-- :PdfRenderer: lays out multi-page tables from structured content.
-  - Table headers repeat at the top of each page.
-  - Each page shows its page number.
+# pdf-renderer-tables
+:PdfRenderer: lays out multi-page tables from structured content.
+- Table headers repeat at the top of each page.
+- Each page shows its page number.
 
-- A :Report: is exported to PDF using :PdfRenderer:, embedding charts rendered from :Report: data.
+# export-report-pdf
+A :Report: is exported to PDF using :PdfRenderer:, embedding charts rendered from :Report: data.
 ```
 
 The extracted component spec and the rewritten original must together still cover 100% of the original functionality (step 6): the original must **reference** the component, never re-describe it. Keep the component's technology and architecture choices in `***implementation reqs***`, not in the functional spec. If the component is a self-contained subsystem or will be reused across modules, promote it to its own module - one that `requires` it, following `requires-modules.md`, or with `refactor-module` - instead of a sibling spec.
@@ -186,7 +210,7 @@ The extracted component spec and the rewritten original must together still cove
 
 The replacement specs take the position of the original spec. Earlier specs remain unchanged. The first replacement spec should make sense given only the specs above it. Each subsequent replacement spec can reference behavior from the ones before it.
 
-If the original spec had acceptance tests, redistribute them to the most appropriate replacement spec — or drop tests that no longer apply to a single smaller spec and rewrite them.
+The original's test plain file is split the same way: each scenario moves to the replacement it tests, and one that no longer fits a single replacement is rewritten to fit the one it tests most. A replacement no scenario moves to gets an empty test plain file (see `test-plain-files.md`).
 
 ## Validation Checklist
 
@@ -202,4 +226,4 @@ If the original spec had acceptance tests, redistribute them to the most appropr
 - [ ] Replacement specs are language-agnostic
 - [ ] Replacement specs trimmed per `concise-specs.md` — a split is not a licence to re-add prose
 - [ ] All external interfaces remain explicit
-- [ ] Acceptance tests (if any) have been redistributed or rewritten
+- [ ] Test plain files follow the split: one per replacement, every original scenario moved or rewritten, none bound to a func-id that no longer exists

@@ -16,6 +16,7 @@ This rule covers the project as a whole. Section content is owned by the per-sec
 ```text
 *.plain                  # root modules: what the software does
 template/*.plain         # import modules: shared definitions and reqs
+tests/<module>/<func-id>.plain  # test plain files: the scenarios of each functional spec
 resources/               # files specs link to: schemas, API specs, fixtures
 test_scripts/            # unit and conformance runners, found by turri (not linked)
 config.turri.yaml        # the project's build decisions: models, conformance tests, the scripts in use
