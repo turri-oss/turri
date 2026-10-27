@@ -59,7 +59,7 @@ describe("what the chat's agent is told about the project's config.yaml", () => 
 
 describe("what the chat's agent is told about this machine", () => {
   it("says which wall is up, the toolchains each module's implementation reqs need and which this machine lacks, and what its testing scripts lack", async () => {
-    writeFileSync(join(root, "game.plain"), "***implementation reqs***\n\n- :Implementation: is written in Odin.\n\n***functional specs***\n\n- Draw a square.\n");
+    writeFileSync(join(root, "game.plain"), "***implementation reqs***\n\n- :Implementation: is written in Odin.\n\n***functional specs***\n\n# draw-a-square\nDraw a square.\n");
     mkdirSync(join(root, "test_scripts"), { recursive: true });
     writeFileSync(join(root, "test_scripts", "run_unittests_odin.sh"), "#!/bin/bash\nexport ODIN_ROOT=$(/usr/libexec/no_such_odin_home)\nodin test .\n");
     const block = machineBlock(root);

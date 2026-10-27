@@ -11,6 +11,7 @@ my-project/
   app.plain            # a root module: what the software does
   users.plain          # another module, perhaps one that `requires` app
   template/            # import modules: shared definitions and reqs
+  tests/               # test plain files: tests/<module>/<func-id>.plain, one a functional spec
   resources/           # files specs link to: schemas, API specs, sample data
   test_scripts/        # scripts that run the unit and conformance tests
   plain_modules/       # generated - code, tests, history; never edited by hand
@@ -25,9 +26,9 @@ A `.plain` file is one module: optional YAML frontmatter, then up to four sectio
 | `***definitions***` | the concepts, written `:CamelCase:` - every concept is defined before it is used | `- :Task: is a unit of work with a title and a due date.` |
 | `***implementation reqs***` | HOW it is built: stack, architecture, coding standards, and everything about unit tests | `- :Implementation: is written in Python 3.12.` |
 | `***test reqs***` | everything about the black-box conformance tests: framework, how they run, mocking | `- :ConformanceTests: use pytest and call the CLI as a subprocess.` |
-| `***functional specs***` | WHAT it does - observable, language-agnostic behaviour, one functionality per item, in the order they are built | `- A :User: can add a :Task:.` |
+| `***functional specs***` | WHAT it does - observable, language-agnostic behaviour, one functionality under each `# <func-id>` heading, in the order they are built | `# add-task` over `A :User: can add a :Task:.` |
 
-Under a functional spec, a nested `***acceptance tests***` list states how that one functionality is checked end to end.
+A functional spec is a `# <func-id>` heading - lowercase letters and digits in words joined by `-`, unique in its module - and its text under it, as free markdown: paragraphs, lists, code blocks. Each has a test plain file, `tests/<module>/<func-id>.plain` (the folder is `test-dir`), with `module:` and `func_id:` in its frontmatter, then `***conformance tests***` and `***acceptance tests***`, each scenario a `# <scenario-id>` heading and its text. A test plain file with no scenario in it says the functional spec is not tested yet; one is still needed. People and turri name a functional spec `<module>:<func-id>` - `todo:add-task`.
 
 The frontmatter connects modules:
 
@@ -56,7 +57,8 @@ import:
 
 ***functional specs***
 
-- ...
+# <func-id>
+...
 ```
 
 | kind | stacks - each with `stdlib/<kind>/conformance/<stack>` beside it |

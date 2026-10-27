@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished } from "vitest";
+import { writePlain } from "../test-plain.ts";
 import { plainFileParser } from "../../src/plain/parser.ts";
 import { projectDirOf } from "../../src/regenerate/paths.ts";
 import { resolveTemplateDirs } from "../../src/regenerate/paths.ts";
@@ -17,13 +18,13 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-const spec = "***implementation reqs***\n\n- Python, as [the notes](resources/notes.md) say.\n\n***functional specs***\n\n- It prints hello.\n";
+const spec = "***implementation reqs***\n\n- Python, as [the notes](resources/notes.md) say.\n\n***functional specs***\n\n# it-prints-hello\nIt prints hello.\n";
 
 describe("a spec kept in a folder of its own, named from the one above", () => {
   beforeEach(() => {
     mkdirSync(join(root, "plain", "resources"), { recursive: true });
     writeFileSync(join(root, "plain", "resources", "notes.md"), "notes\n");
-    writeFileSync(join(root, "plain", "hubspot.plain"), spec);
+    writePlain(join(root, "plain"), "hubspot.plain", spec);
     writeFileSync(join(root, "plain", "config.yaml"), "conformance-tests: false\n");
     writeTestScripts(join(root, "plain"));
   });
@@ -47,7 +48,7 @@ describe("a spec kept in a folder of its own, named from the one above", () => {
 
 describe("a spec at the root of its project", () => {
   it("is built where it always was", () => {
-    writeFileSync(join(root, "app.plain"), spec.replace(", as [the notes](resources/notes.md) say", ""));
+    writePlain(root, "app.plain", spec.replace(", as [the notes](resources/notes.md) say", ""));
     mkdirSync(join(root, "plain_modules"));
     expect(projectDirOf("app.plain")).toBe(root);
     // No marker anywhere: its own folder.

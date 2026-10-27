@@ -44,8 +44,8 @@ describe("a project, against this machine", () => {
   afterEach(() => rmSync(project, { recursive: true, force: true }));
 
   it("says which toolchains its modules' implementation reqs name and this machine lacks", () => {
-    writeFileSync(join(project, "api.plain"), "***implementation reqs***\n\n- :Implementation: is written in Python with FastAPI.\n\n***functional specs***\n\n- Serve.\n");
-    writeFileSync(join(project, "game.plain"), "***implementation reqs***\n\n- :Implementation: is written in Zig.\n\n***functional specs***\n\n- Draw.\n");
+    writeFileSync(join(project, "api.plain"), "***implementation reqs***\n\n- :Implementation: is written in Python with FastAPI.\n\n***functional specs***\n\n# serve\nServe.\n");
+    writeFileSync(join(project, "game.plain"), "***implementation reqs***\n\n- :Implementation: is written in Zig.\n\n***functional specs***\n\n# draw\nDraw.\n");
     const checks = checkProject(project, { has: (command) => command === "python3" });
     expect(checks).toEqual([
       { level: "ok", name: "api", detail: "has Python" },
@@ -54,7 +54,7 @@ describe("a project, against this machine", () => {
   });
 
   it("counts Java as missing when java is found with no JDK behind it - macOS's stub that only asks to install one", () => {
-    writeFileSync(join(project, "server.plain"), "***implementation reqs***\n\n- :Implementation: is written in Java 21 with Spring Boot.\n\n***functional specs***\n\n- Serve.\n");
+    writeFileSync(join(project, "server.plain"), "***implementation reqs***\n\n- :Implementation: is written in Java 21 with Spring Boot.\n\n***functional specs***\n\n# serve\nServe.\n");
     const has = (command: string) => command === "java";
     expect(checkProject(project, { has, jdk: () => false })).toEqual([
       { level: "missing", name: "server", detail: "its implementation reqs need Java (java, spring boot), which this machine lacks", fix: expect.stringContaining("install Java") },
