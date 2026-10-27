@@ -10,4 +10,5 @@ requires:
 - The :DependantConcept: concept must be implemented.
 
 ***functional specs***
-- Implement a wrapper for the :DependantConcept: concept.
+# implement-a-wrapper-for-the
+Implement a wrapper for the :DependantConcept: concept.

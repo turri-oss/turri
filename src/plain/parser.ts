@@ -25,6 +25,7 @@ import {
   parseMarkdown,
   removeQuotes,
   renderToMarkdown,
+  renderTokens,
   traverse,
   type AnyNode,
   type LinkedResource,
@@ -35,26 +36,60 @@ import {
   ACCEPTANCE_TEST_HEADING,
   ALLOWED_IMPORT_SPECIFICATION_HEADINGS,
   ALLOWED_SPECIFICATION_HEADINGS,
+  CONFORMANCE_TESTS,
+  CONFORMANCE_TEST_HEADING,
   DEFINITIONS,
   FUNCTIONAL_REQUIREMENTS,
+  LIST_SECTION_HEADINGS,
   NON_FUNCTIONAL_REQUIREMENTS,
+  TEST_PLAIN_FILES,
   TEST_REQUIREMENTS,
+  getFunctionalSpecs,
   getSpecificationItems,
+  isSemanticId,
   REQUIRED_FUNCTIONAL_SPECS,
+  type CodeVariable,
+  type FunctionalSpecItem,
   type InheritedSpecificationItem,
   type MarshalledPlainSource,
   type SpecificationItem,
+  type TestPlainFileBinding,
 } from "./spec.ts";
+import { bindTestPlainFiles, checkTestPlainFiles } from "./project.ts";
 
 export const IMPORT_DIRECTIVE = "import";
 export const REQUIRES_DIRECTIVE = "requires";
+export const PREVIOUS_SYNTAX_HINT =
+  "A functionality is a `# <func-id>` heading followed by its body; the previous syntax is not supported.";
 export const REQUIRED_CONCEPTS_DIRECTIVE = "required_concepts";
 export const EXPORTED_CONCEPTS_DIRECTIVE = "exported_concepts";
 
 export const PLAIN_SOURCE_FILE_EXTENSION = ".plain";
 
-/** definitions / implementation reqs / test reqs always exist as keys; functional specs does not. */
-export type ParsedPlainSource = Record<string, Section | null | undefined>;
+/** A functional spec as it is read: its func-id and the blocks of its body. */
+export interface Functionality {
+  id: string;
+  lineNumber: number;
+  /** Every block after its heading, up to the next heading or section marker, in source order. */
+  body: AnyNode[];
+  linkedResources: LinkedResource[];
+}
+
+/**
+ * definitions / implementation reqs / test reqs always exist as keys, each a section of list items; functional specs
+ * does not, and is a list of functional specs when it does.
+ */
+export type ParsedPlainSource = Record<string, Section | Functionality[] | null | undefined>;
+
+/** A list section of a parsed module. */
+export function sectionOf(plainSource: ParsedPlainSource, heading: string): Section | null | undefined {
+  return plainSource[heading] as Section | null | undefined;
+}
+
+/** The functional specs of a parsed module, none when it has no section for them. */
+export function functionalitiesOf(plainSource: ParsedPlainSource): Functionality[] {
+  return (plainSource[FUNCTIONAL_REQUIREMENTS] as Functionality[] | null | undefined) ?? [];
+}
 
 function newPlainSource(): ParsedPlainSource {
   return {
@@ -151,15 +186,19 @@ export function linksIn(section: AnyNode): Array<{ text: string; target: string;
   return [...traverse(section, "link")].map((link) => ({ text: String(link.children?.[0]?.value ?? ""), target: String(link.url ?? ""), node: link }));
 }
 
-export function checkSectionForLinkedResources(section: AnyNode, dirs: string[] = []): void {
+/**
+ * The links in the blocks, each checked to be a relative path to an existing file that is not a .plain file.
+ * `where` names the place of the links in error messages, e.g. " in test plain file 'tests/m/f.plain', scenario `s`".
+ */
+export function findLinkedResources(nodes: AnyNode[], dirs: string[] = [], where = ""): LinkedResource[] {
   const linkedResources: LinkedResource[] = [];
 
-  for (const { text, target, node: link } of linksIn(section)) {
+  for (const { text, target, node: link } of nodes.flatMap((node) => linksIn(node))) {
     const children = link.children ?? [];
 
     if (hasScheme(target) || isAbsolute(target)) {
       throw new PlainSyntaxError(
-        `Plain syntax error: Only relative links are allowed (text: ${text}, target: ${target}).`,
+        `Plain syntax error: Only relative links are allowed${where} (text: ${text}, target: ${target}).`,
       );
     }
 
@@ -167,25 +206,23 @@ export function checkSectionForLinkedResources(section: AnyNode, dirs: string[] 
     if (file === null) {
       const searched = dirs.map((dir, index) => `  ${index + 1}. ${dir}`).join("\n");
       throw new PlainSyntaxError(
-        `Plain syntax error: Link ${target} does not exist. ` +
+        `Plain syntax error: Link ${target}${where} does not exist. ` +
           "Linked resources are looked up relative to the following directories " +
           `(highest to lowest precedence):\n${searched}`,
       );
     }
 
     if (!statSync(file).isFile()) {
-      throw new PlainSyntaxError(`Plain syntax error: Link ${target} must be a file (resolved to ${file}).`);
+      throw new PlainSyntaxError(`Plain syntax error: Link ${target}${where} must be a file (resolved to ${file}).`);
     }
 
     if (children.length !== 1) {
-      throw new PlainSyntaxError(
-        `Plain syntax error: Link must have text specified (link: ${target}).`,
-      );
+      throw new PlainSyntaxError(`Plain syntax error: Link${where} must have text specified (link: ${target}).`);
     }
 
     if (extname(basename(target)) === ".plain") {
       throw new PlainSyntaxError(
-        `Referenced resource '${target}' is a .plain file. ` +
+        `Referenced resource '${target}'${where} is a .plain file. ` +
           "Referencing .plain files through Linked Resources is not supported. " +
           "Please use the import section to include definitions or implementation/test requirements from another module.",
       );
@@ -194,34 +231,37 @@ export function checkSectionForLinkedResources(section: AnyNode, dirs: string[] 
     linkedResources.push({ text, target });
   }
 
+  return linkedResources;
+}
+
+export function checkSectionForLinkedResources(section: AnyNode, dirs: string[] = []): void {
+  const linkedResources = findLinkedResources([section], dirs);
   if (linkedResources.length > 0) section.linked_resources = linkedResources;
 }
 
 export function checkForLinkedResources(plainSource: ParsedPlainSource, dirs: string[] = []): void {
-  for (const heading of ALLOWED_SPECIFICATION_HEADINGS) {
-    const section = plainSource[heading];
-    if (!section) continue;
-    for (const requirement of section.children) {
-      checkSectionForLinkedResources(requirement, dirs);
-      for (const acceptanceTest of requirement[ACCEPTANCE_TESTS] ?? []) {
-        checkSectionForLinkedResources(acceptanceTest, dirs);
-      }
-    }
+  for (const heading of LIST_SECTION_HEADINGS) {
+    for (const requirement of sectionOf(plainSource, heading)?.children ?? []) checkSectionForLinkedResources(requirement, dirs);
+  }
+  for (const functionality of functionalitiesOf(plainSource)) {
+    functionality.linkedResources = findLinkedResources(functionality.body, dirs);
   }
 }
 
+/** Put `{{ name }}` placeholders back into the section text and record the code variables it uses. */
 export function processSectionCodeVariables(
-  section: SpecificationItem,
+  section: { code_variables?: CodeVariable[] } & Record<string, unknown>,
   codeVariables: Record<string, Record<string, string>>,
+  textKey = "markdown",
 ): void {
-  if (!("markdown" in section)) return;
+  if (!(textKey in section)) return;
 
   const codeVariablesArray: Array<{ name: string; value: string }> = [];
   for (const [key, value] of Object.entries(codeVariables)) {
-    if (!section.markdown.includes(key)) continue;
+    if (!String(section[textKey]).includes(key)) continue;
 
     const variableName = Object.keys(value)[0]!;
-    section.markdown = section.markdown.split(key).join(`{{ ${variableName} }}`);
+    section[textKey] = String(section[textKey]).split(key).join(`{{ ${variableName} }}`);
     codeVariablesArray.push({ name: variableName, value: value[variableName]! });
   }
 
@@ -234,7 +274,7 @@ export function processCodeVariables(
 ): void {
   for (const heading of ALLOWED_SPECIFICATION_HEADINGS) {
     for (const requirement of getSpecificationItems(marshalled, heading) ?? []) {
-      processSectionCodeVariables(requirement, codeVariables);
+      processSectionCodeVariables(requirement as unknown as Record<string, unknown>, codeVariables);
     }
   }
 }
@@ -246,8 +286,7 @@ export function hasFunctionalSpecsSection(plainSource: ParsedPlainSource): boole
 
 /** Number of functionalities under ***functional specs*** (0 if absent or empty). */
 export function countFunctionalities(plainSource: ParsedPlainSource): number {
-  const section = plainSource[FUNCTIONAL_REQUIREMENTS];
-  return section ? section.children.length : 0;
+  return functionalitiesOf(plainSource).length;
 }
 
 export function validateFunctionalitiesHaveImplementationReqs(
@@ -255,7 +294,7 @@ export function validateFunctionalitiesHaveImplementationReqs(
   moduleName: string,
   hasRequires = false,
 ): void {
-  const implementationReqs = plainSource[NON_FUNCTIONAL_REQUIREMENTS];
+  const implementationReqs = sectionOf(plainSource, NON_FUNCTIONAL_REQUIREMENTS);
   const hasImplementationReqs = Boolean(implementationReqs && implementationReqs.children.length > 0);
 
   if (hasImplementationReqs) return;
@@ -271,125 +310,21 @@ export function validateFunctionalitiesHaveImplementationReqs(
   throw new PlainSyntaxError(message);
 }
 
-/**
- * Is this token an `acceptance tests` heading?
- *
- * True only for a paragraph holding exactly one emphasis, holding exactly one strong,
- * holding exactly one text node whose content is the heading. Anything that looks like
- * a heading but reads differently comes back as a problem string rather than false, so
- * the caller can reject a near miss instead of silently keeping it.
- */
-export function isAcceptanceTestHeading(token: AnyNode): [boolean, string | null] {
-  if (token.type !== "paragraph") return [false, null];
-
-  const children = token.children ?? [];
-  if (children.length !== 1 || children[0]!.type !== "emphasis") return [false, null];
-
-  const emphasisChildren = children[0]!.children ?? [];
-  if (emphasisChildren.length !== 1 || emphasisChildren[0]!.type !== "strong") return [false, null];
-
-  const strongChildren = emphasisChildren[0]!.children ?? [];
-  if (strongChildren.length !== 1 || strongChildren[0]!.type !== "text") return [false, null];
-
-  const content = String(strongChildren[0]!.value ?? "").trim();
-  if (content === ACCEPTANCE_TEST_HEADING) return [true, null];
-
-  return [
-    false,
-    `Syntax error at line ${lineNumber(token)}: Invalid acceptance test heading (\`${content}\`). ` +
-      `Expected: \`${ACCEPTANCE_TEST_HEADING}\`.`,
-  ];
-}
-
-/** Find an acceptance tests heading anywhere in a subtree. */
-export function findAcceptanceTestHeading(token: AnyNode): AnyNode | null {
-  const [isHeading] = isAcceptanceTestHeading(token);
-  if (isHeading) return token;
-
-  for (const child of token.children ?? []) {
-    const found = findAcceptanceTestHeading(child);
-    if (found !== null) return found;
-  }
-
-  return null;
-}
-
-/**
- * Pull the acceptance tests out of one functionality.
- *
- * A functionality with acceptance tests has three children: its own text, the
- * `***acceptance tests***` heading, and the list of tests. The heading and list are
- * lifted onto `acceptance_tests` and removed from the children.
- */
-export function processSingleAcceptanceTestRequirement(functionalRequirement: AnyNode): void {
-  const newChildren: AnyNode[] = [];
-  const children = functionalRequirement.children ?? [];
-  let acceptanceTestsFoundAlready = false;
-
-  for (let index = 0; index < children.length; index += 1) {
-    const child = children[index]!;
-    const [isHeading, problem] = isAcceptanceTestHeading(child);
-
-    if (problem) {
-      // A near-miss heading: `acceptance test` instead of `acceptance tests`, or some
-      // other block written where the tests were meant to go.
-      throw new PlainSyntaxError(`Plain syntax error: ${problem}`);
-    }
-
-    if (!isHeading) {
-      newChildren.push(child);
-      continue;
-    }
-
-    if (acceptanceTestsFoundAlready) {
-      throw new PlainSyntaxError(
-        `Plain syntax error: Syntax error at line ${lineNumber(child)}: Duplicate 'acceptance tests' ` +
-          "heading found within the same functionality. Only one block of acceptance tests is allowed per functionality.",
-      );
-    }
-
-    const nextToken = children[index + 1];
-    if (nextToken === undefined) {
-      newChildren.push(child);
-      continue;
-    }
-
-    index += 1;
-    if (nextToken.type === "list") {
-      if (functionalRequirement[ACCEPTANCE_TESTS] === undefined) {
-        functionalRequirement[ACCEPTANCE_TESTS] = [];
-      }
-      for (const listItem of nextToken.children ?? []) {
-        functionalRequirement[ACCEPTANCE_TESTS]!.push(listItem);
-      }
-      acceptanceTestsFoundAlready = true;
-    } else {
-      // Not followed by a list: keep both tokens.
-      newChildren.push(child);
-      newChildren.push(nextToken);
-    }
-  }
-
-  functionalRequirement.children = newChildren;
-}
-
-export function processAcceptanceTests(plainSource: ParsedPlainSource): void {
-  if (!(FUNCTIONAL_REQUIREMENTS in plainSource)) return;
-  const frs = plainSource[FUNCTIONAL_REQUIREMENTS];
-  if (!frs) return;
-
-  for (const functionalRequirement of frs.children) {
-    if (functionalRequirement.children === undefined) continue;
-    processSingleAcceptanceTestRequirement(functionalRequirement);
-  }
+export function marshallFunctionality(functionality: Functionality): FunctionalSpecItem {
+  return {
+    id: functionality.id,
+    markdown: renderTokens(functionality.body),
+    linked_resources: functionality.linkedResources,
+    [CONFORMANCE_TESTS]: [],
+    [ACCEPTANCE_TESTS]: [],
+  };
 }
 
 export function marshallPlainSource(input: ParsedPlainSource): MarshalledPlainSource {
   const plainSource: MarshalledPlainSource = {};
 
-
-  for (const heading of ALLOWED_SPECIFICATION_HEADINGS) {
-    const section = input[heading];
+  for (const heading of LIST_SECTION_HEADINGS) {
+    const section = sectionOf(input, heading);
     if (!section) continue;
 
     const listOfRequirements: SpecificationItem[] = [];
@@ -400,20 +335,14 @@ export function marshallPlainSource(input: ParsedPlainSource): MarshalledPlainSo
       if (requirement.linked_resources) {
         requirementSection.linked_resources = requirement.linked_resources;
       }
-
-      const acceptanceTests = requirement[ACCEPTANCE_TESTS];
-      if (acceptanceTests !== undefined) {
-        requirementSection[ACCEPTANCE_TESTS] = acceptanceTests.map((acceptanceTest) => {
-          const section: SpecificationItem = { markdown: renderToMarkdown(acceptanceTest).trim() };
-          if (acceptanceTest.linked_resources) section.linked_resources = acceptanceTest.linked_resources;
-          return section;
-        });
-      }
-
       listOfRequirements.push(requirementSection);
     }
 
     plainSource[heading] = listOfRequirements;
+  }
+
+  if (FUNCTIONAL_REQUIREMENTS in input) {
+    plainSource[FUNCTIONAL_REQUIREMENTS] = functionalitiesOf(input).map(marshallFunctionality);
   }
 
   return plainSource;
@@ -488,6 +417,168 @@ export function readPlainSourceMetadata(plainSourceText: string): FrontmatterPos
   return { metadata, content };
 }
 
+/** `Syntax error at line N in module 'm'`, without the parts that are not known. */
+export function syntaxErrorAt(line: number | null | undefined, moduleName: string | null | undefined): string {
+  let where = "Syntax error";
+  if (line !== null && line !== undefined) where += ` at line ${line}`;
+  if (moduleName) where += ` in module '${moduleName}'`;
+  return where;
+}
+
+export const TEST_PLAIN_FILE_SECTION_HEADINGS = [CONFORMANCE_TEST_HEADING, ACCEPTANCE_TEST_HEADING];
+
+/** Throw when a `***conformance tests***` or `***acceptance tests***` marker is anywhere in a spec plain file. */
+export function checkNoTestSections(plainSourceFullText: string, moduleName?: string | null): void {
+  plainSourceFullText.split("\n").forEach((line, index) => {
+    for (const heading of TEST_PLAIN_FILE_SECTION_HEADINGS) {
+      if (line.trim() === `***${heading}***`) {
+        throw new PlainSyntaxError(
+          `Plain syntax error: ${syntaxErrorAt(index + 1, moduleName)}: The \`${heading}\` section is not ` +
+            "allowed in a spec plain file; test scenarios live in test plain files.",
+        );
+      }
+    }
+  });
+}
+
+/** The name in a `***name***` paragraph, or null when the paragraph is not a section marker. */
+export function sectionMarker(token: AnyNode): string | null {
+  const paragraphChildren = token.children ?? [];
+  if (paragraphChildren.length !== 1 || paragraphChildren[0]!.type !== "emphasis") return null;
+  const emphasisChildren = paragraphChildren[0]!.children ?? [];
+  if (emphasisChildren.length !== 1 || emphasisChildren[0]!.type !== "strong") return null;
+  return String((emphasisChildren[0]!.children ?? [])[0]?.value ?? "");
+}
+
+/** Whether a block is an ATX heading - `# text` - as mistletoe's `Heading`; a setext one is not. */
+function isAtxHeading(token: AnyNode): boolean {
+  return token.type === "heading" && token.sourceLine === undefined;
+}
+
+/**
+ * Add the sections of the rendered spec plain file to `plainSource`.
+ *
+ * A list section holds a section whose children are its list items; `functional specs` holds a list of
+ * functionalities, one per `# <func-id>` heading, each with every block up to the next heading or section marker.
+ * Throw on the first structural error.
+ */
+export function readSections(plainSource: ParsedPlainSource, document: AnyNode, moduleName?: string | null): void {
+  let currentSpecificationHeading: string | null = null;
+  let currentFunctionality: Functionality | null = null;
+  const processedSpecificationHeadings = new Set<string>();
+  // Func-id to the line of its heading.
+  const functionalityLines = new Map<string, number>();
+
+  const closeFunctionality = () => {
+    if (currentFunctionality !== null && currentFunctionality.body.length === 0) {
+      throw new PlainSyntaxError(
+        `Plain syntax error: ${syntaxErrorAt(currentFunctionality.lineNumber, moduleName)}: ` +
+          `Functionality \`${currentFunctionality.id}\` has no body.`,
+      );
+    }
+  };
+
+  for (const token of document.children ?? []) {
+    const tokenText = getRawText(token).trim();
+    const where = syntaxErrorAt(lineNumber(token), moduleName);
+    const inFunctionalSpecs = currentSpecificationHeading === FUNCTIONAL_REQUIREMENTS;
+    if (isAtxHeading(token)) {
+      if (!inFunctionalSpecs) {
+        throw new PlainSyntaxError(
+          `Plain syntax error: ${where}: A \`# <func-id>\` heading is allowed only in the ` +
+            `${FUNCTIONAL_REQUIREMENTS} section (\`${tokenText}\`).`,
+        );
+      }
+      if (token.depth !== 1) {
+        throw new PlainSyntaxError(
+          `Plain syntax error: ${where}: Invalid heading level ${token.depth as number} (\`${tokenText}\`). ` +
+            "A functionality heading is `# <func-id>`.",
+        );
+      }
+      if (!isSemanticId(tokenText)) {
+        throw new PlainSyntaxError(
+          `Plain syntax error: ${where}: Invalid func-id (\`${tokenText}\`). A func-id is lowercase letters ` +
+            "and digits, with single hyphens between them.",
+        );
+      }
+      if (functionalityLines.has(tokenText)) {
+        throw new PlainSyntaxError(
+          `Plain syntax error: ${where}: Duplicate func-id \`${tokenText}\`; it is first used at line ` +
+            `${functionalityLines.get(tokenText)}.`,
+        );
+      }
+      closeFunctionality();
+      functionalityLines.set(tokenText, lineNumber(token));
+      currentFunctionality = { id: tokenText, lineNumber: lineNumber(token), body: [], linkedResources: [] };
+      functionalitiesOf(plainSource).push(currentFunctionality);
+    } else if (token.type === "paragraph") {
+      const specificationHeading = sectionMarker(token);
+      if (specificationHeading === null) {
+        if (!inFunctionalSpecs) {
+          throw new PlainSyntaxError(`Plain syntax error: ${where}: Invalid specification (\`${tokenText}\`)`);
+        }
+        if (currentFunctionality === null) {
+          throw new PlainSyntaxError(
+            `Plain syntax error: ${where}: Content before the first \`# <func-id>\` heading in the ` +
+              `${FUNCTIONAL_REQUIREMENTS} section (\`${tokenText}\`). ${PREVIOUS_SYNTAX_HINT}`,
+          );
+        }
+        currentFunctionality.body.push(token);
+        continue;
+      }
+
+      if (!ALLOWED_SPECIFICATION_HEADINGS.includes(specificationHeading)) {
+        throw new PlainSyntaxError(
+          `Plain syntax error: ${where}: Invalid specification heading (\`${specificationHeading}\`). ` +
+            `Allowed headings: ${ALLOWED_SPECIFICATION_HEADINGS.join(", ")}`,
+        );
+      }
+
+      if (processedSpecificationHeadings.has(specificationHeading)) {
+        throw new PlainSyntaxError(
+          `Plain syntax error: ${where}: Duplicate specification heading (\`${specificationHeading}\`)`,
+        );
+      }
+
+      if (specificationHeading === DEFINITIONS && currentSpecificationHeading !== null) {
+        throw new PlainSyntaxError(
+          `Plain syntax error: ${where}: Definitions specification must be the first specification in ` +
+            `the section (\`${tokenText}\`)`,
+        );
+      }
+
+      closeFunctionality();
+      currentFunctionality = null;
+      currentSpecificationHeading = specificationHeading;
+      if (specificationHeading === FUNCTIONAL_REQUIREMENTS) {
+        plainSource[specificationHeading] = [];
+      } else if (plainSource[specificationHeading] == null) {
+        plainSource[specificationHeading] = { children: [] };
+      }
+
+      processedSpecificationHeadings.add(specificationHeading);
+    } else if (token.type === "list" && !inFunctionalSpecs) {
+      if (currentSpecificationHeading === null) {
+        throw new PlainSyntaxError(`Plain syntax error: ${where}: Missing specification heading (\`${tokenText}\`)`);
+      }
+      sectionOf(plainSource, currentSpecificationHeading)!.children.push(...(token.children ?? []));
+    } else if (inFunctionalSpecs) {
+      // The body of a functionality is free text: a list at any indentation, a code block, or any other block.
+      if (currentFunctionality === null) {
+        throw new PlainSyntaxError(
+          `Plain syntax error: ${where}: Content before the first \`# <func-id>\` heading in the ` +
+            `${FUNCTIONAL_REQUIREMENTS} section (\`${tokenText}\`). ${PREVIOUS_SYNTAX_HINT}`,
+        );
+      }
+      currentFunctionality.body.push(token);
+    } else {
+      throw new PlainSyntaxError(`Plain syntax error: ${where}: Invalid source structure (\`${tokenText}\`)`);
+    }
+  }
+
+  closeFunctionality();
+}
+
 function processImports(
   plainSource: ParsedPlainSource,
   imports: string[],
@@ -515,8 +606,8 @@ function processImports(
       );
     }
 
-    for (const section of Object.values(result.plainSource)) {
-      for (const item of section?.children ?? []) importedFrom.set(item, result.importedFrom.get(item) ?? moduleName);
+    for (const heading of LIST_SECTION_HEADINGS) {
+      for (const item of sectionOf(result.plainSource, heading)?.children ?? []) importedFrom.set(item, result.importedFrom.get(item) ?? moduleName);
     }
 
     for (const heading of Object.keys(result.plainSource)) {
@@ -530,7 +621,7 @@ function processImports(
       if (plainSource[heading] == null) {
         plainSource[heading] = result.plainSource[heading] ?? null;
       } else if (result.plainSource[heading] != null) {
-        plainSource[heading]!.children.push(...result.plainSource[heading]!.children);
+        sectionOf(plainSource, heading)!.children.push(...sectionOf(result.plainSource, heading)!.children);
       }
     }
 
@@ -582,101 +673,16 @@ export function parsePlainSource(
   const plainSourceContent = restoreStrippedLines(plainSourceText, plainSourceObj.content);
   const plainSourceFullText = renderPlainSource(plainSourceContent, loadedTemplates, codeVariables);
 
+  checkNoTestSections(plainSourceFullText, moduleName);
+
+  // Blank lines are kept as the reference keeps them, parsed inside its renderer: one BlankLine token per blank line.
   const plainFile = parseMarkdown(plainSourceFullText);
   removeQuotes(plainFile);
 
-  let currentSpecificationHeading: string | null = null;
-  const processedSpecificationHeadings = new Set<string>();
-
-  for (const token of plainFile.children ?? []) {
-    const tokenText = getRawText(token).trim();
-
-    if (token.type === "paragraph") {
-      const paragraphChildren = token.children ?? [];
-      const emphasisChildren =
-        paragraphChildren.length > 0 && paragraphChildren[0]!.type === "emphasis"
-          ? (paragraphChildren[0]!.children ?? [])
-          : [];
-
-      if (
-        !(
-          paragraphChildren.length === 1 &&
-          paragraphChildren[0]!.type === "emphasis" &&
-          emphasisChildren.length === 1 &&
-          emphasisChildren[0]!.type === "strong"
-        )
-      ) {
-        throw new PlainSyntaxError(
-          `Plain syntax error: Syntax error at line ${lineNumber(token)}: Invalid specification (\`${tokenText}\`)`,
-        );
-      }
-
-      const specificationHeading = String((emphasisChildren[0]!.children ?? [])[0]?.value ?? "");
-
-      if (specificationHeading === ACCEPTANCE_TEST_HEADING) {
-        throw new PlainSyntaxError(
-          `Plain syntax error: Syntax error at line ${lineNumber(token)}: ${ACCEPTANCE_TEST_HEADING} heading should be nested under specific functional spec.`,
-        );
-      }
-
-      if (!ALLOWED_SPECIFICATION_HEADINGS.includes(specificationHeading)) {
-        throw new PlainSyntaxError(
-          `Plain syntax error: Syntax error at line ${lineNumber(token)}: Invalid specification heading (\`${specificationHeading}\`). Allowed headings: ${ALLOWED_SPECIFICATION_HEADINGS.join(", ")}`,
-        );
-      }
-
-      if (specificationHeading === FUNCTIONAL_REQUIREMENTS && !(specificationHeading in plainSource)) {
-        plainSource[specificationHeading] = null;
-      }
-
-      if (processedSpecificationHeadings.has(specificationHeading)) {
-        throw new PlainSyntaxError(
-          `Plain syntax error: Syntax error at line ${lineNumber(token)}: Duplicate specification heading (\`${specificationHeading}\`)`,
-        );
-      }
-
-      if (specificationHeading === DEFINITIONS && currentSpecificationHeading !== null) {
-        throw new PlainSyntaxError(
-          `Plain syntax error: Syntax error at line ${lineNumber(token)}: Definitions specification must be the first specification in the section (\`${tokenText}\`)`,
-        );
-      }
-
-      currentSpecificationHeading = specificationHeading;
-      if (plainSource[currentSpecificationHeading] == null) {
-        plainSource[currentSpecificationHeading] = { children: [] };
-      }
-
-      processedSpecificationHeadings.add(currentSpecificationHeading);
-    } else if (token.type === "list") {
-      if (currentSpecificationHeading === null) {
-        throw new PlainSyntaxError(
-          `Plain syntax error: Syntax error at line ${lineNumber(token)}: Missing specification heading (\`${tokenText}\`)`,
-        );
-      }
-      plainSource[currentSpecificationHeading]!.children.push(...(token.children ?? []));
-    } else {
-      throw new PlainSyntaxError(
-        `Plain syntax error: Syntax error at line ${lineNumber(token)}: Invalid source structure (\`${tokenText}\`)`,
-      );
-    }
-  }
-
-  // Acceptance tests belong under functional specs only.
-  for (const nonFunctionalHeading of [DEFINITIONS, NON_FUNCTIONAL_REQUIREMENTS, TEST_REQUIREMENTS]) {
-    const section = plainSource[nonFunctionalHeading];
-    if (!section) continue;
-    for (const child of section.children) {
-      const nested = findAcceptanceTestHeading(child);
-      if (nested !== null) {
-        throw new PlainSyntaxError(
-          `Plain syntax error: Syntax error at line ${lineNumber(nested)}: ${ACCEPTANCE_TEST_HEADING} heading should be nested under specific functional spec.`,
-        );
-      }
-    }
-  }
+  readSections(plainSource, plainFile, moduleName);
 
   const definedConcepts = new Set<string>();
-  const definitionsSection = plainSource[DEFINITIONS];
+  const definitionsSection = sectionOf(plainSource, DEFINITIONS);
   if (definitionsSection) {
     for (const token of definitionsSection.children) {
       const [newConcepts] = extractConceptsFromDefinition(renderToMarkdown(token));
@@ -833,7 +839,7 @@ export function exportedDefinitionsOf(result: PlainFileParseResult): AnyNode[] {
   );
 
   return exportedConcepts.flatMap((exportedConcept) =>
-    findConceptDefinitionsInPlainSource(exportedConcept, result.plainSource[DEFINITIONS] ?? null),
+    findConceptDefinitionsInPlainSource(exportedConcept, sectionOf(result.plainSource, DEFINITIONS) ?? null),
   );
 }
 
@@ -844,7 +850,7 @@ export function processExportedDefinitions(
   if (exportedDefinitions.length === 0) return;
 
   if (!plainSource[DEFINITIONS]) plainSource[DEFINITIONS] = { children: [] };
-  const definitions = plainSource[DEFINITIONS];
+  const definitions = sectionOf(plainSource, DEFINITIONS)!;
 
   for (const exportedDefinition of exportedDefinitions) {
     const exportedRendered = renderToMarkdown(exportedDefinition).trim();
@@ -867,6 +873,18 @@ export interface ParseOptions {
    * product interview has so far given it definitions and reqs.
    */
   allowNoFunctionalities?: boolean;
+  /**
+   * The project's test folder: the module's chain is parsed with its test plain files, `<testDir>/<module>` for each
+   * module of the chain - turri hands the reference one test folder per module - and their scenarios are bound to
+   * the functional specs they name. turri's: the reference takes the test folders themselves.
+   */
+  testDir?: string;
+  /**
+   * With `testDir`: every functional spec of the chain must have a test plain file, which may hold no scenario
+   * (`MissingTestPlainFileError` for the first one that has none). On unless set to false - turri always asks for
+   * them, where the reference does only when the project names a conformance testing script.
+   */
+  requireTestPlainFiles?: boolean;
 }
 
 export function plainFileParser(
@@ -874,16 +892,17 @@ export function plainFileParser(
   templateDirs: string[],
   options: ParseOptions = {},
 ): [string, MarshalledPlainSource, string[]] {
-  const key = `${options.allowNoFunctionalities ? "any" : "renderable"}\0${process.cwd()}\0${templateDirs.join("\0")}\0${plainSourceFileName}`;
+  const tests = options.testDir === undefined ? "" : `${resolve(options.testDir)}${options.requireTestPlainFiles === false ? "" : "!"}`;
+  const key = `${options.allowNoFunctionalities ? "any" : "renderable"}\0${process.cwd()}\0${templateDirs.join("\0")}\0${plainSourceFileName}\0${tests}`;
   if (activeCache === undefined) {
     // Between calls: the parse from before, while nothing it could have read has changed since.
-    const fingerprint = filesFingerprint(templateDirs);
+    const fingerprint = filesFingerprint(templateDirs, options.testDir);
     const kept = lastParses.get(key);
     if (stillHolds(kept, fingerprint)) {
       if (kept.error !== undefined) throw kept.error;
       return structuredClone(kept.parsed!);
     }
-    const result = parseNoting(() => parseModule(plainSourceFileName, templateDirs, new Map(), options));
+    const result = parseNoting(() => parseWithTestPlainFiles(plainSourceFileName, templateDirs, new Map(), options));
     // A spec that does not parse does not parse again until it, or a file it links, changes: it is not parsed again to say so.
     if (fingerprint !== undefined) remember(key, { fingerprint, linked: result.linked, linkedStamp: linkedStamp(result.linked), ...(result.error !== undefined ? { error: result.error } : { parsed: structuredClone(result.parsed!) }) });
     if (result.error !== undefined) throw result.error;
@@ -892,10 +911,10 @@ export function plainFileParser(
   let parsed = activeCache.get(key);
   if (parsed === undefined) {
     // Nothing changes while `run` runs: each folder set's fingerprint is taken once.
-    const dirsKey = templateDirs.join("\0");
+    const dirsKey = `${templateDirs.join("\0")}\0${options.testDir ?? ""}`;
     let fingerprint = activeCache.fingerprints.get(dirsKey);
     if (!activeCache.fingerprints.has(dirsKey)) {
-      fingerprint = filesFingerprint(templateDirs);
+      fingerprint = filesFingerprint(templateDirs, options.testDir);
       activeCache.fingerprints.set(dirsKey, fingerprint);
     }
     const kept = lastParses.get(key);
@@ -904,7 +923,7 @@ export function plainFileParser(
       parsed = structuredClone(kept.parsed!);
     } else {
       const modules = activeCache.modules;
-      const result = parseNoting(() => parseModule(plainSourceFileName, templateDirs, modules, options));
+      const result = parseNoting(() => parseWithTestPlainFiles(plainSourceFileName, templateDirs, modules, options));
       if (fingerprint !== undefined) remember(key, { fingerprint, linked: result.linked, linkedStamp: linkedStamp(result.linked), ...(result.error !== undefined ? { error: result.error } : { parsed: structuredClone(result.parsed!) }) });
       if (result.error !== undefined) throw result.error;
       parsed = result.parsed!;
@@ -992,9 +1011,11 @@ function remember(key: string, entry: KeptParse): void {
   while (lastParses.size > KEPT_PARSES) lastParses.delete(lastParses.keys().next().value!);
 }
 
-function filesFingerprint(templateDirs: string[]): string | undefined {
+function filesFingerprint(templateDirs: string[], testDir?: string): string | undefined {
   try {
     const parts: string[] = [];
+    // Every .plain file under the test folder, by name and text: a scenario written, changed or removed is seen.
+    if (testDir !== undefined) for (const path of plainFilesUnder(resolve(testDir))) parts.push(`${path}:${readFileSync(path, "utf8")}`);
     for (const dir of [process.cwd(), ...templateDirs]) {
       let entries: Dirent[];
       try {
@@ -1018,6 +1039,77 @@ function filesFingerprint(templateDirs: string[]): string | undefined {
 
 type ParsedModule = [string, MarshalledPlainSource, string[]];
 
+/** Every .plain file under a folder, at any depth, sorted; none when it is not there. */
+function plainFilesUnder(dir: string): string[] {
+  let entries: Dirent[];
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const found: string[] = [];
+  for (const entry of entries.sort((a, b) => (a.name < b.name ? -1 : 1))) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) found.push(...plainFilesUnder(path));
+    else if (entry.name.endsWith(PLAIN_SOURCE_FILE_EXTENSION)) found.push(path);
+  }
+  return found;
+}
+
+/**
+ * A module parsed, and - with `options.testDir` - its chain's test plain files bound to it: the scenarios on its
+ * functional specs and on the ones it inherits, `TEST_PLAIN_FILES` naming each file and what it binds to.
+ */
+function parseWithTestPlainFiles(
+  plainSourceFileName: string,
+  templateDirs: string[],
+  cache: Map<string, ParsedModule>,
+  options: ParseOptions,
+): ParsedModule {
+  const [moduleName, tree, requiredModules] = parseModule(plainSourceFileName, templateDirs, cache, options);
+  if (options.testDir === undefined) return [moduleName, tree, requiredModules];
+
+  // The chain, deepest first, each tree a copy the scenarios are bound into.
+  const chain: Array<[string, MarshalledPlainSource]> = [];
+  const walked = new Set<string>();
+  const walk = (names: string[]) => {
+    for (const name of names) {
+      if (walked.has(name)) continue;
+      let parsed = cache.get(name);
+      if (parsed === undefined) {
+        parsed = parseModule(`${name}${PLAIN_SOURCE_FILE_EXTENSION}`, templateDirs, cache);
+        cache.set(name, parsed);
+      }
+      walk(parsed[2]);
+      if (walked.has(parsed[0])) continue;
+      walked.add(parsed[0]);
+      chain.push([parsed[0], structuredClone(parsed[1])]);
+    }
+  };
+  walk(requiredModules);
+  const own = structuredClone(tree);
+  chain.push([moduleName, own]);
+
+  const testDirs = chain.map(([name]) => join(options.testDir!, name));
+  const bound = bindTestPlainFiles(chain, testDirs, templateDirs, templateDirs[0] ?? ".");
+  if (options.requireTestPlainFiles !== false) checkTestPlainFiles(chain, bound);
+
+  // What the module inherits carries the scenarios bound in the module it is written in.
+  const boundItems = new Map<string, FunctionalSpecItem>();
+  for (const [name, chainTree] of chain) for (const item of getFunctionalSpecs(chainTree)) boundItems.set(`${name}\0${item.id}`, item);
+  const inherited = own[REQUIRED_FUNCTIONAL_SPECS] as InheritedSpecificationItem[] | undefined;
+  if (inherited !== undefined) {
+    own[REQUIRED_FUNCTIONAL_SPECS] = inherited.map((item) => {
+      const boundItem = boundItems.get(`${item.module}\0${item.id}`);
+      return boundItem === undefined ? item : { ...item, [CONFORMANCE_TESTS]: boundItem[CONFORMANCE_TESTS], [ACCEPTANCE_TESTS]: boundItem[ACCEPTANCE_TESTS] };
+    });
+  }
+  own[TEST_PLAIN_FILES] = Object.fromEntries(
+    bound.map((file): [string, TestPlainFileBinding] => [file.name, { module: file.parsed.module, func_id: file.parsed.funcId }]),
+  );
+  return [moduleName, own, requiredModules];
+}
+
 /**
  * The functional specs a module inherits through `requires`, bottom of the chain first.
  *
@@ -1035,7 +1127,7 @@ function inheritFunctionalSpecs(
   const inherited: InheritedSpecificationItem[] = [];
   const seen = new Set<string>();
   const add = (item: InheritedSpecificationItem) => {
-    const key = `${item.module}/${item.frid}`;
+    const key = `${item.module}/${item.id}`;
     if (seen.has(key)) return;
     seen.add(key);
     inherited.push(item);
@@ -1049,9 +1141,7 @@ function inheritFunctionalSpecs(
     }
     const [moduleName, tree] = parsed;
     for (const item of (tree[REQUIRED_FUNCTIONAL_SPECS] as InheritedSpecificationItem[] | undefined) ?? []) add(item);
-    (getSpecificationItems(tree, FUNCTIONAL_REQUIREMENTS) ?? []).forEach((item, index) =>
-      add({ ...item, module: moduleName, frid: String(index + 1) }),
-    );
+    for (const item of getFunctionalSpecs(tree)) add({ ...item, module: moduleName });
   }
   return inherited;
 }
@@ -1095,8 +1185,8 @@ function parseModule(
 
   if (!options.allowNoFunctionalities && countFunctionalities(result.plainSource) === 0) {
     throw new PlainSyntaxError(
-      `Plain syntax error: Module '${moduleName}' has an empty '${FUNCTIONAL_REQUIREMENTS}' section. ` +
-        "At least one functionality must be specified.",
+      `Plain syntax error: Module '${moduleName}' has a '${FUNCTIONAL_REQUIREMENTS}' section ` +
+        `without a \`# <func-id>\` heading. ${PREVIOUS_SYNTAX_HINT}`,
     );
   }
 
@@ -1108,7 +1198,6 @@ function parseModule(
 
   const exportedDefinitions = processRequiredModules(result.requiredModules, templateDirs, [], []);
   processExportedDefinitions(result.plainSource, exportedDefinitions);
-  processAcceptanceTests(result.plainSource);
   checkForLinkedResources(result.plainSource, templateDirs);
 
   const marshalled = marshallPlainSource(result.plainSource);

@@ -2,7 +2,6 @@ import { simpleCycles } from "./cycles.ts";
 import { PlainSyntaxError } from "./errors.ts";
 import { renderToMarkdown, type AnyNode, type Section } from "./markdown.ts";
 import {
-  ACCEPTANCE_TESTS,
   DEFINITIONS,
   FUNCTIONAL_REQUIREMENTS,
   NON_FUNCTIONAL_REQUIREMENTS,
@@ -155,12 +154,6 @@ export function validateConcepts(marshalled: MarshalledPlainSource): string[] {
     DEFINITIONS,
   ]) {
     errors.push(...validateConceptsInSpecGroup(specGroup, marshalled, treeBasedConcepts));
-  }
-
-  for (const funcSpec of getSpecificationItems(marshalled, FUNCTIONAL_REQUIREMENTS) ?? []) {
-    for (const test of funcSpec[ACCEPTANCE_TESTS] ?? []) {
-      errors.push(...validateConceptsInSpec(test, treeBasedConcepts, ACCEPTANCE_TESTS));
-    }
   }
 
   return errors;

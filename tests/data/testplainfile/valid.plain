@@ -1,0 +1,40 @@
+---
+module: task-manager
+func_id: add-task
+---
+
+> A comment before the first section.
+
+***conformance tests***
+
+# add-first-task
+Adding a :Task: named "Buy milk" to an empty :TaskList: shows one :Task: named "Buy milk".
+  - :App: prints `Added task 1: Buy milk`.
+
+# add-without-name
+
+given:
+  - an empty :TaskList:
+when:
+  - :User: runs `todo add`
+then:
+  - stderr is `Error: name is required`
+> A comment inside a body is dropped.
+  - exit status is 1
+
+
+# gherkin-shape
+Scenario: adding a task with a note
+  Given an empty :TaskList:
+  When :User: adds "Buy milk"
+
+  Then :TaskList: shows it
+
+# links-the-notes
+The output matches [the notes](notes.md).
+
+***acceptance tests***
+
+# add-then-list
+- :User: adds a :Task: named "Buy milk".
+- `todo list` shows `1 Buy milk`.

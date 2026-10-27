@@ -1,0 +1,11 @@
+***implementation reqs***
+
+- An implementation requirement.
+
+***functional specs***
+
+# implement-first
+Implement {% include "code_variable_template.plain", variable_name: "first" %}
+
+# implement-second
+Implement {% include "code_variable_template.plain", variable_name: "second" %}

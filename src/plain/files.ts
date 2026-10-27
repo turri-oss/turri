@@ -1,5 +1,5 @@
 import { readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { ParseError, TokenizationError } from "liquidjs";
 import { PlainSyntaxError } from "./errors.ts";
 import { createEnvironment } from "./liquid.ts";
@@ -22,6 +22,18 @@ export function findIn(dirs: string[], fileName: string): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Port of loaders.relative_resource_path: the path of `target` in `resourceDir`, relative to `baseDir`, with `/` as
+ * separator. The folder part is computed lexically and the target is appended as written (`..` kept), so joining
+ * the result onto `baseDir` names the same file as joining `target` onto `resourceDir`.
+ */
+export function relativeResourcePath(baseDir: string, resourceDir: string, target: string): string {
+  const relativeDir = relative(resolve(baseDir), resolve(resourceDir));
+  if (relativeDir === "") return target;
+  if (isAbsolute(relativeDir)) return join(resourceDir, target).split(sep).join("/");
+  return `${relativeDir.split(sep).join("/")}/${target}`;
 }
 
 const MAX_BASE64_BLOB_LENGTH = 8192;

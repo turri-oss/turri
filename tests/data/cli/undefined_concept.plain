@@ -1,0 +1,15 @@
+***definitions***
+
+- :App: is a console application.
+
+***implementation reqs***
+
+- :App: is written in Python.
+
+***functional specs***
+
+# app-greets-the-user
+:App: greets the :User:.
+
+# app-says-goodbye-to-the
+:App: says goodbye to the :Visitor:.

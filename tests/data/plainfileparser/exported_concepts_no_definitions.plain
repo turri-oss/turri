@@ -7,4 +7,5 @@ exported_concepts:
 - :Implementation: is a simple wrapper.
 
 ***functional specs***
-- :Implementation: has an entry point.
+# implementation-has-an-entry-point
+:Implementation: has an entry point.

@@ -35,6 +35,14 @@ export class ImportedModuleWithFunctionalitiesError extends Error {
   }
 }
 
+/** A functional spec of the chain has no test plain file bound to it. */
+export class MissingTestPlainFileError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "MissingTestPlainFileError";
+  }
+}
+
 export class InvalidFridArgument extends Error {
   constructor(message: string) {
     super(message);

@@ -1,0 +1,15 @@
+***definitions***
+
+- :Task: is a thing to do.
+
+***implementation reqs***
+
+- :Implementation: is written in Python 3.12.
+
+***functional specs***
+
+# add-task
+A :Task: can be added with `todo add <name>`.
+
+# list-tasks
+Every :Task: is listed by `todo list`, one per line.

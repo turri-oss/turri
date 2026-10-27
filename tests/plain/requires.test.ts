@@ -40,7 +40,7 @@ function writeModule(
       "***definitions***\n\n" +
       definitions.map((definition) => `- ${definition}\n\n`).join("") +
       "***implementation reqs***\n\n- An implementation requirement.\n" +
-      (functionalSpec !== null ? `\n***functional specs***\n\n- ${functionalSpec}\n` : ""),
+      (functionalSpec !== null ? `\n***functional specs***\n\n# main\n${functionalSpec}\n` : ""),
   );
 }
 
@@ -193,7 +193,7 @@ describe("requires", () => {
 
     it("reports a required module's parse errors before the top module's concept errors", () => {
       const dir = tmp();
-      writeFileSync(join(dir, "Base.plain"), "***implementation reqs***\n\n- {% if %}\n\n***functional specs***\n\n- Base works.\n");
+      writeFileSync(join(dir, "Base.plain"), "***implementation reqs***\n\n- {% if %}\n\n***functional specs***\n\n# main\nBase works.\n");
       writeModule(dir, "Top", [], ["Base"], [], "Top uses :TopMissing:.");
       expect(() => plainFileParser("Top.plain", [dir])).toThrow(PlainSyntaxError);
       expect(() => plainFileParser("Top.plain", [dir])).toThrow("Invalid Liquid");

@@ -13,4 +13,5 @@ requires:
 
 ***functional specs***
 
-- :User: should be able to log in using their email and password.
+# user-should-be-able-to
+:User: should be able to log in using their email and password.

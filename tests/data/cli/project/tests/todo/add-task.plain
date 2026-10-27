@@ -1,0 +1,17 @@
+---
+module: todo
+func_id: add-task
+---
+
+***conformance tests***
+
+# add-first-task
+Running `todo add Buy milk` on an empty list prints `Added task 1: Buy milk` and exits with status 0.
+
+# add-without-name
+Running `todo add` prints `Error: name is required` to stderr and exits with status 1.
+
+***acceptance tests***
+
+# add-then-list
+Running `todo add Buy milk` and then `todo list` prints `1 Buy milk`.

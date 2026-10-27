@@ -2,78 +2,119 @@ import { createHash } from "node:crypto";
 import { InvalidFridArgument } from "./errors.ts";
 import type { LinkedResource } from "./markdown.ts";
 
-/** Port of plain_spec.py. */
+/**
+ * Port of plain_spec.py. The reference keeps its names for a functional spec's id - `frid`, `get_frids` - and so do
+ * the ports here: a frid is the functional spec's func-id, the `# <func-id>` heading it is written under.
+ */
 
 export const DEFINITIONS = "definitions";
 export const NON_FUNCTIONAL_REQUIREMENTS = "implementation reqs";
 export const TEST_REQUIREMENTS = "test reqs";
 export const FUNCTIONAL_REQUIREMENTS = "functional specs";
+export const CONFORMANCE_TESTS = "conformance_tests";
 export const ACCEPTANCE_TESTS = "acceptance_tests";
+export const CONFORMANCE_TEST_HEADING = "conformance tests";
 export const ACCEPTANCE_TEST_HEADING = "acceptance tests";
 /**
  * Where a module's tree carries the functional specs it inherits through `requires`: every
- * functional spec of every module it requires, transitively, bottom of the chain first.
- * Kept apart from its own, which are numbered 1, 2, 3 on their own.
+ * functional spec of every module it requires, transitively, bottom of the chain first, each
+ * with its module. turri's, not the reference parser's.
  */
 export const REQUIRED_FUNCTIONAL_SPECS = "required functional specs";
+/**
+ * Where a module's tree carries the test plain files bound to its chain, as the reference's parse output has them
+ * (`test_plain_files`): each file's path, from the module's folder, to the functional spec it binds to. turri's.
+ */
+export const TEST_PLAIN_FILES = "test plain files";
 
-export const ALLOWED_SPECIFICATION_HEADINGS = [
-  DEFINITIONS,
-  NON_FUNCTIONAL_REQUIREMENTS,
-  TEST_REQUIREMENTS,
-  FUNCTIONAL_REQUIREMENTS,
-  ACCEPTANCE_TEST_HEADING,
-];
+/** The sections whose content is a list of `- ` items. */
+export const LIST_SECTION_HEADINGS = [DEFINITIONS, NON_FUNCTIONAL_REQUIREMENTS, TEST_REQUIREMENTS];
 
-export const ALLOWED_IMPORT_SPECIFICATION_HEADINGS = [
-  DEFINITIONS,
-  NON_FUNCTIONAL_REQUIREMENTS,
-  TEST_REQUIREMENTS,
-];
+export const ALLOWED_SPECIFICATION_HEADINGS = [...LIST_SECTION_HEADINGS, FUNCTIONAL_REQUIREMENTS];
+
+export const ALLOWED_IMPORT_SPECIFICATION_HEADINGS = LIST_SECTION_HEADINGS;
+
+/**
+ * A func-id or scenario-id: segments of lowercase letters and digits, with one hyphen between segments. So a hyphen
+ * never starts or ends an id, two hyphens never touch, and an id is never only hyphens.
+ */
+export const SEMANTIC_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+export function isSemanticId(text: string): boolean {
+  return SEMANTIC_ID_PATTERN.test(text);
+}
 
 export interface CodeVariable {
   name: string;
   value: string;
 }
 
+/** An item of a list section: definitions, implementation reqs, test reqs. */
 export interface SpecificationItem {
   markdown: string;
   linked_resources?: LinkedResource[];
   code_variables?: CodeVariable[];
-  [ACCEPTANCE_TESTS]?: SpecificationItem[];
 }
 
-/** A functional spec inherited through `requires`, with the module it belongs to and its id there. */
-export interface InheritedSpecificationItem extends SpecificationItem {
+/** A conformance or acceptance scenario, bound to its functional spec from a test plain file. */
+export interface ScenarioItem {
+  id: string;
+  text: string;
+  linked_resources: LinkedResource[];
+  code_variables?: CodeVariable[];
+}
+
+/** A functional spec: its func-id, its body, its links, and the scenarios of its test plain files. */
+export interface FunctionalSpecItem {
+  id: string;
+  markdown: string;
+  linked_resources: LinkedResource[];
+  [CONFORMANCE_TESTS]: ScenarioItem[];
+  [ACCEPTANCE_TESTS]: ScenarioItem[];
+  code_variables?: CodeVariable[];
+}
+
+/** A functional spec inherited through `requires`, with the module it belongs to. */
+export interface InheritedSpecificationItem extends FunctionalSpecItem {
   module: string;
-  frid: string;
+}
+
+/** What `TEST_PLAIN_FILES` holds for each test plain file: the functional spec it binds to. */
+export interface TestPlainFileBinding {
+  module: string;
+  func_id: string;
+}
+
+/** A scenario as it is regenerated with: its scenario-id and its text, code variables put in place. */
+export interface ScenarioText {
+  id: string;
+  text: string;
 }
 
 /**
  * The functional specs a module inherits through `requires`, rendered: each with its
- * module, its id there, and its acceptance tests.
+ * module, its func-id, and its scenarios.
  */
 export function getInheritedFunctionalSpecs(
   tree: MarshalledPlainSource,
   replaceCodeVariables = true,
-): Array<{ module: string; frid: string; spec: string; acceptanceTests?: string[] }> {
+): Array<{ module: string; funcId: string; spec: string; conformanceTests: ScenarioText[]; acceptanceTests: ScenarioText[] }> {
   const items = (tree[REQUIRED_FUNCTIONAL_SPECS] as InheritedSpecificationItem[] | undefined) ?? [];
   return items.map((item) => {
     const codeVariables: Record<string, string> = {};
-    const tests = item[ACCEPTANCE_TESTS];
+    const scenarios = (list: ScenarioItem[] | undefined) =>
+      (list ?? []).map((scenario) => ({ id: scenario.id, text: getSpecificationItemMarkdown(scenario, codeVariables, replaceCodeVariables, "text") }));
     return {
       module: item.module,
-      frid: item.frid,
+      funcId: item.id,
       spec: getSpecificationItemMarkdown(item, codeVariables, replaceCodeVariables),
-      acceptanceTests: tests?.map((test) => getSpecificationItemMarkdown(test, codeVariables, replaceCodeVariables)),
+      conformanceTests: scenarios(item[CONFORMANCE_TESTS]),
+      acceptanceTests: scenarios(item[ACCEPTANCE_TESTS]),
     };
   });
 }
 
-/**
- * The marshalled tree: heading -> list of items. Flat: functionalities are numbered 1, 2, 3
- * in the order they appear. Nested sections with dotted ids ("2.3") are not supported.
- */
+/** The marshalled tree: heading -> list of items. Functional specs are named by their func-ids, in file order. */
 export interface MarshalledPlainSource {
   [heading: string]: unknown;
 }
@@ -86,12 +127,15 @@ export function getSpecificationItems(
   return Array.isArray(value) ? (value as SpecificationItem[]) : undefined;
 }
 
+/** The functional specs of a tree, in file order. */
+export function getFunctionalSpecs(tree: MarshalledPlainSource): FunctionalSpecItem[] {
+  const value = tree[FUNCTIONAL_REQUIREMENTS];
+  return Array.isArray(value) ? (value as FunctionalSpecItem[]) : [];
+}
+
+/** True if any functional spec of the tree has acceptance scenarios. */
 export function hasAcceptanceTests(tree: MarshalledPlainSource): boolean {
-  for (const requirement of getSpecificationItems(tree, FUNCTIONAL_REQUIREMENTS) ?? []) {
-    const tests = requirement[ACCEPTANCE_TESTS];
-    if (tests !== undefined && tests.length > 0) return true;
-  }
-  return false;
+  return getFunctionalSpecs(tree).some((item) => (item[ACCEPTANCE_TESTS] ?? []).length > 0);
 }
 
 export interface CollectedLinkedResource extends LinkedResource {
@@ -99,7 +143,7 @@ export interface CollectedLinkedResource extends LinkedResource {
 }
 
 export function collectSpecificationLinkedResources(
-  specification: SpecificationItem,
+  specification: { linked_resources?: LinkedResource[] },
   specificationHeading: string,
   linkedResourcesList: CollectedLinkedResource[],
 ): void {
@@ -140,57 +184,18 @@ export function collectSpecificationLinkedResources(
   }
 }
 
-export function collectLinkedResourcesInSection(
-  section: MarshalledPlainSource,
-  linkedResourcesList: CollectedLinkedResource[],
-  specificationsList: string[] | null,
-  includeAcceptanceTests: boolean,
-  frid: string | null,
-): boolean {
-  let toCollect = [DEFINITIONS, NON_FUNCTIONAL_REQUIREMENTS, TEST_REQUIREMENTS];
-  if (specificationsList && specificationsList.length > 0) {
-    toCollect = toCollect.filter((heading) => specificationsList.includes(heading));
-  }
-  for (const heading of toCollect) {
-    for (const requirement of getSpecificationItems(section, heading) ?? []) {
-      collectSpecificationLinkedResources(requirement, heading, linkedResourcesList);
-    }
-  }
-
-  const functionalRequirements = getSpecificationItems(section, FUNCTIONAL_REQUIREMENTS);
-  if (
-    functionalRequirements !== undefined &&
-    (!specificationsList ||
-      specificationsList.length === 0 ||
-      specificationsList.includes(FUNCTIONAL_REQUIREMENTS))
-  ) {
-    let count = 0;
-    for (const requirement of functionalRequirements) {
-      collectSpecificationLinkedResources(requirement, FUNCTIONAL_REQUIREMENTS, linkedResourcesList);
-
-      count += 1;
-      const currentFrid = String(count);
-
-      const tests = requirement[ACCEPTANCE_TESTS];
-      if (tests !== undefined && includeAcceptanceTests && (frid === null || frid === currentFrid)) {
-        for (const test of tests) {
-          collectSpecificationLinkedResources(test, FUNCTIONAL_REQUIREMENTS, linkedResourcesList);
-        }
-      }
-
-      // FRIDs increment, so once the requested one is reached nothing after it counts.
-      if (frid !== null && currentFrid === frid) return true;
-    }
-  }
-
-  return false;
-}
-
+/**
+ * Add the linked resources of the tree to `linkedResourcesList` and sort the list by link text.
+ *
+ * `specificationsList` limits the sections read; null or empty reads every section. The functional specs are read up
+ * to and including `frid`, or all of them when it is null. With `includeTestScenarios` the links of the conformance
+ * and acceptance scenarios are added too, for `frid` alone when one is given. Returns true when `frid` was reached.
+ */
 export function collectLinkedResources(
   tree: MarshalledPlainSource,
   linkedResourcesList: CollectedLinkedResource[],
   specificationsList: string[] | null,
-  includeAcceptanceTests: boolean,
+  includeTestScenarios: boolean,
   frid: string | null = null,
 ): boolean {
   if (tree === null || typeof tree !== "object" || Array.isArray(tree)) {
@@ -201,27 +206,41 @@ export function collectLinkedResources(
     throw new Error(`frid ${frid} does not exist.`);
   }
 
-  const result = collectLinkedResourcesInSection(
-    tree,
-    linkedResourcesList,
-    specificationsList,
-    includeAcceptanceTests,
-    frid,
+  const sectionsToCollect = ALLOWED_SPECIFICATION_HEADINGS.filter(
+    (heading) => heading in tree && (!specificationsList || specificationsList.length === 0 || specificationsList.includes(heading)),
   );
+  let fridReached = false;
+  for (const heading of sectionsToCollect) {
+    for (const specification of (tree[heading] as Array<SpecificationItem & Partial<FunctionalSpecItem>>) ?? []) {
+      collectSpecificationLinkedResources(specification, heading, linkedResourcesList);
+
+      if (heading !== FUNCTIONAL_REQUIREMENTS) continue;
+
+      if (includeTestScenarios && (frid === null || frid === specification.id)) {
+        for (const scenario of [...(specification[CONFORMANCE_TESTS] ?? []), ...(specification[ACCEPTANCE_TESTS] ?? [])]) {
+          collectSpecificationLinkedResources(scenario, FUNCTIONAL_REQUIREMENTS, linkedResourcesList);
+        }
+      }
+
+      if (specification.id === frid) {
+        fridReached = true;
+        break;
+      }
+    }
+  }
 
   linkedResourcesList.sort((a, b) => (a.text < b.text ? -1 : a.text > b.text ? 1 : 0));
 
-  return result;
+  return fridReached;
 }
 
 /**
- * The FRID iterator: one functionality ID per functional spec, 1, 2, 3 in order.
- * Everything that walks the spec one functionality at a time - rendering, ranges, context
+ * The FRID iterator: the func-ids of the tree's functional specs, in file order.
+ * Everything that walks the spec one functional spec at a time - rendering, ranges, context
  * building - is driven by this.
  */
 export function* getFrids(tree: MarshalledPlainSource): Generator<string> {
-  const functionalRequirements = getSpecificationItems(tree, FUNCTIONAL_REQUIREMENTS) ?? [];
-  for (let id = 1; id <= functionalRequirements.length; id += 1) yield String(id);
+  for (const functionality of getFunctionalSpecs(tree)) yield functionality.id;
 }
 
 export function getFirstFrid(tree: MarshalledPlainSource): string | null {
@@ -249,6 +268,7 @@ export function getPreviousFrid(tree: MarshalledPlainSource, frid: string): stri
   throw new Error(`Functionality ${frid} does not exist.`);
 }
 
+/** The func-ids that come before `targetFrid` in the specification, in order. */
 export function getFridsBefore(tree: MarshalledPlainSource, targetFrid: string): string[] {
   const before: string[] = [];
   for (const frid of getFrids(tree)) {
@@ -258,12 +278,17 @@ export function getFridsBefore(tree: MarshalledPlainSource, targetFrid: string):
   return before;
 }
 
+/**
+ * The text under `key` of the item, with its code variables recorded in `codeVariables` and, when
+ * `replaceCodeVariables` is set, their values put in place of the `{{ name }}` placeholders.
+ */
 export function getSpecificationItemMarkdown(
-  specificationItem: SpecificationItem,
+  specificationItem: { code_variables?: CodeVariable[] },
   codeVariables: Record<string, string>,
   replaceCodeVariables: boolean,
+  key = "markdown",
 ): string {
-  let markdown = specificationItem.markdown;
+  let markdown = String((specificationItem as Record<string, unknown>)[key]);
   for (const codeVariable of specificationItem.code_variables ?? []) {
     if (codeVariable.name in codeVariables) {
       if (codeVariables[codeVariable.name] !== codeVariable.value) {
@@ -287,109 +312,56 @@ export interface Specifications {
   [NON_FUNCTIONAL_REQUIREMENTS]: string[];
   [TEST_REQUIREMENTS]: string[];
   [FUNCTIONAL_REQUIREMENTS]: string[];
-  [ACCEPTANCE_TESTS]?: string[];
-}
-
-function getSpecificationsFromPlainSourceTree(
-  frid: string,
-  tree: MarshalledPlainSource,
-  definitions: string[],
-  nonFunctionalRequirements: string[],
-  testRequirements: string[],
-  functionalRequirements: string[],
-  acceptanceTests: string[],
-  codeVariables: Record<string, string>,
-  replaceCodeVariables: boolean,
-): string | null {
-  let returnFrid: string | null = null;
-
-  const requirements = getSpecificationItems(tree, FUNCTIONAL_REQUIREMENTS);
-  if (requirements !== undefined && requirements.length > 0) {
-    let count = 0;
-    for (const requirement of requirements) {
-      count += 1;
-      const currentFrid = String(count);
-
-      functionalRequirements.push(
-        getSpecificationItemMarkdown(requirement, codeVariables, replaceCodeVariables),
-      );
-
-      if (currentFrid === frid) {
-        for (const test of requirement[ACCEPTANCE_TESTS] ?? []) {
-          acceptanceTests.push(getSpecificationItemMarkdown(test, codeVariables, replaceCodeVariables));
-        }
-        returnFrid = currentFrid;
-        break;
-      }
-    }
-  }
-
-  if (returnFrid !== null) {
-    const prepend = (target: string[], heading: string) => {
-      const source = getSpecificationItems(tree, heading);
-      if (source === undefined) return;
-      target.unshift(
-        ...source.map((item) => getSpecificationItemMarkdown(item, codeVariables, replaceCodeVariables)),
-      );
-    };
-    prepend(definitions, DEFINITIONS);
-    prepend(nonFunctionalRequirements, NON_FUNCTIONAL_REQUIREMENTS);
-    prepend(testRequirements, TEST_REQUIREMENTS);
-  }
-
-  return returnFrid;
+  [CONFORMANCE_TESTS]: ScenarioText[];
+  [ACCEPTANCE_TESTS]: ScenarioText[];
 }
 
 /**
- * Build the rendering context for one functionality: every definition and
- * implementation/test req in scope, the functionalities up to and including this one,
- * and this one's acceptance tests.
+ * The specifications that build `frid`: every list section, the functional specs up to and including `frid`, and
+ * the conformance and acceptance scenarios of `frid` as `{id, text}` entries.
+ *
+ * Returns the specifications and the code variables they use (null when there are none). Throws when `frid` is not
+ * in the tree.
  */
 export function getSpecificationsForFrid(
   tree: MarshalledPlainSource,
   frid: string,
   replaceCodeVariables = true,
 ): [Specifications, Record<string, string> | null] {
-  const definitions: string[] = [];
-  const nonFunctionalRequirements: string[] = [];
-  const testRequirements: string[] = [];
-  const functionalRequirements: string[] = [];
-  const acceptanceTests: string[] = [];
+  const functionalities = getFunctionalSpecs(tree);
+  const position = functionalities.findIndex((item) => item.id === frid);
+  if (position === -1) throw new Error(`Functionality ${frid} does not exist.`);
+
   const codeVariables: Record<string, string> = {};
-
-  const result = getSpecificationsFromPlainSourceTree(
-    frid,
-    tree,
-    definitions,
-    nonFunctionalRequirements,
-    testRequirements,
-    functionalRequirements,
-    acceptanceTests,
-    codeVariables,
-    replaceCodeVariables,
-  );
-  if (result === null) throw new Error(`Functionality ${frid} does not exist.`);
-
-  const specifications: Specifications = {
-    [DEFINITIONS]: definitions,
-    [NON_FUNCTIONAL_REQUIREMENTS]: nonFunctionalRequirements,
-    [TEST_REQUIREMENTS]: testRequirements,
-    [FUNCTIONAL_REQUIREMENTS]: functionalRequirements,
+  const texts = (items: Array<{ code_variables?: CodeVariable[] }>, key = "markdown") =>
+    items.map((item) => getSpecificationItemMarkdown(item, codeVariables, replaceCodeVariables, key));
+  const scenarios = (items: ScenarioItem[]) => {
+    const scenarioTexts = texts(items, "text");
+    return items.map((item, index) => ({ id: item.id, text: scenarioTexts[index]! }));
   };
+  const listOf = (heading: string) => getSpecificationItems(tree, heading) ?? [];
 
-  if (acceptanceTests.length > 0) specifications[ACCEPTANCE_TESTS] = acceptanceTests;
+  const functionality = functionalities[position]!;
+  const specifications: Specifications = {
+    [DEFINITIONS]: texts(listOf(DEFINITIONS)),
+    [NON_FUNCTIONAL_REQUIREMENTS]: texts(listOf(NON_FUNCTIONAL_REQUIREMENTS)),
+    [TEST_REQUIREMENTS]: texts(listOf(TEST_REQUIREMENTS)),
+    [FUNCTIONAL_REQUIREMENTS]: texts(functionalities.slice(0, position + 1)),
+    [CONFORMANCE_TESTS]: scenarios(functionality[CONFORMANCE_TESTS] ?? []),
+    [ACCEPTANCE_TESTS]: scenarios(functionality[ACCEPTANCE_TESTS] ?? []),
+  };
 
   return [specifications, Object.keys(codeVariables).length > 0 ? codeVariables : null];
 }
 
-/** Iterate every functionality with the context that should be rendered for it. */
+/** Iterate every functional spec with the context that should be rendered for it. turri's, for a host. */
 export function* iterateFunctionalSpecs(
   tree: MarshalledPlainSource,
   replaceCodeVariables = true,
-): Generator<{ frid: string; specifications: Specifications; codeVariables: Record<string, string> | null }> {
-  for (const frid of getFrids(tree)) {
-    const [specifications, codeVariables] = getSpecificationsForFrid(tree, frid, replaceCodeVariables);
-    yield { frid, specifications, codeVariables };
+): Generator<{ funcId: string; specifications: Specifications; codeVariables: Record<string, string> | null }> {
+  for (const funcId of getFrids(tree)) {
+    const [specifications, codeVariables] = getSpecificationsForFrid(tree, funcId, replaceCodeVariables);
+    yield { funcId, specifications, codeVariables };
   }
 }
 
@@ -401,24 +373,20 @@ export function getHashValue(specifications: unknown): string {
   return hashText(JSON.stringify(specifications, null, 4));
 }
 
-/** The FRIDs from `start` through `end` inclusive, or through the last FRID when `end` is not given. */
+/** The func-ids from `start` through `end` inclusive, or through the last one when `end` is not given. */
 export function getFridsRange(tree: MarshalledPlainSource, start: string, end?: string): string[] {
   const frids = [...getFrids(tree)];
-  start = String(start);
+  // Python prints the list with repr.
+  const valid = `[${frids.map((frid) => `'${frid}'`).join(", ")}]`;
 
   if (!frids.includes(start)) {
-    throw new InvalidFridArgument(
-      `Invalid start functionality ID: ${start}. Valid IDs are: ${JSON.stringify(frids)}.`,
-    );
+    throw new InvalidFridArgument(`Invalid start functionality ID: ${start}. Valid IDs are: ${valid}.`);
   }
 
   let endIdx: number;
   if (end !== undefined) {
-    end = String(end);
     if (!frids.includes(end)) {
-      throw new InvalidFridArgument(
-        `Invalid end functionality ID: ${end}. Valid IDs are: ${JSON.stringify(frids)}.`,
-      );
+      throw new InvalidFridArgument(`Invalid end functionality ID: ${end}. Valid IDs are: ${valid}.`);
     }
     endIdx = frids.indexOf(end) + 1;
   } else {
@@ -427,9 +395,7 @@ export function getFridsRange(tree: MarshalledPlainSource, start: string, end?: 
 
   const startIdx = frids.indexOf(start);
   if (startIdx >= endIdx) {
-    throw new InvalidFridArgument(
-      `Start functionality ID: ${start} must be before end functionality ID: ${end}.`,
-    );
+    throw new InvalidFridArgument(`Start functionality ID: ${start} must be before end functionality ID: ${end}.`);
   }
 
   return frids.slice(startIdx, endIdx);

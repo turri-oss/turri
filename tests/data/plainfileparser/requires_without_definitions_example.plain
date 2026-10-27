@@ -7,4 +7,5 @@ requires:
 - The :Concept: concept must be reused.
 
 ***functional specs***
-- Implement a second wrapper for the :Concept: concept.
+# implement-a-second-wrapper-for
+Implement a second wrapper for the :Concept: concept.

@@ -1,0 +1,2 @@
+unittests-script: test_scripts/run_unittests.sh
+conformance-tests-script: test_scripts/run_conformance_tests.sh

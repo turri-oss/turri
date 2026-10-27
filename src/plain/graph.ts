@@ -4,7 +4,7 @@ import { resolveTemplateDirs } from "../regenerate/paths.ts";
 import { locateModule } from "../regenerate/requires.ts";
 import { resourceFile } from "../regenerate/resources.ts";
 import { DEFAULT_CONCEPT_DEFINITIONS, DEFAULT_CONCEPTS, definitionText, extractConceptsFromDefinition, findConcepts } from "./concepts.ts";
-import { lineNumber, renderToMarkdown, type AnyNode } from "./markdown.ts";
+import { lineNumber, renderToMarkdown, renderTokens, type AnyNode } from "./markdown.ts";
 import { attempt, namesIn, readModule } from "./module-concepts.ts";
 import {
   IMPORT_DIRECTIVE,
@@ -15,6 +15,8 @@ import {
   plainFileParser,
   readPlainSourceMetadata,
   REQUIRES_DIRECTIVE,
+  functionalitiesOf,
+  sectionOf,
   withParseCache,
 } from "./parser.ts";
 import { DEFINITIONS, FUNCTIONAL_REQUIREMENTS, NON_FUNCTIONAL_REQUIREMENTS, TEST_REQUIREMENTS } from "./spec.ts";
@@ -55,7 +57,7 @@ export interface PlainModuleNode {
 
 export type PlainSection = typeof DEFINITIONS | typeof NON_FUNCTIONAL_REQUIREMENTS | typeof TEST_REQUIREMENTS | typeof FUNCTIONAL_REQUIREMENTS;
 
-/** An item of a section, with what is nested under it - a functional spec with its acceptance tests. */
+/** An item of a section: a list item, or a functional spec - its heading's line, its body's text. */
 export interface PlainItemNode {
   /** `<file>:<line>`. */
   id: string;
@@ -65,14 +67,14 @@ export interface PlainItemNode {
   /** The line it starts on, from 1. */
   line: number;
   text: string;
-  /** A functional spec's functionality id: `1`, `2`, ... */
-  frid?: string;
+  /** A functional spec's func-id, its `# <func-id>` heading. */
+  funcId?: string;
   /** The concepts a definition defines. */
   defines: string[];
   /** The concepts it names, each with the definition it is - an item's id - or null for ***plain's own and one defined nowhere it can see. */
   uses: Array<{ concept: string; definition: string | null }>;
   /**
-   * The linked resources it names, a functional spec's acceptance tests' too - `[text](target)` as the parser reads
+   * The linked resources it names - `[text](target)` as the parser reads
    * them - with the file each is read from when regenerating, null when it is not there, and the line the link is on.
    */
   resources: Array<{ text: string; target: string; file: string | null; line: number }>;
@@ -155,25 +157,34 @@ export function plainGraph(projectDir: string): PlainGraph {
       }
 
       for (const section of SECTIONS) {
-        const own = (read.parsed?.plainSource[section]?.children ?? []).filter((item) => !read.parsed!.importedFrom.has(item));
-        own.forEach((item, index) => {
-          const text = renderToMarkdown(item).trim();
+        // An item of a list section is its list item; a functional spec is its `# <func-id>` heading and its body.
+        const own: Array<{ nodes: AnyNode[]; line: number; parsedLine: number; text: string; funcId?: string }> = [];
+        if (read.parsed !== undefined && section === FUNCTIONAL_REQUIREMENTS) {
+          for (const functionality of functionalitiesOf(read.parsed.plainSource)) {
+            const at = lineOf({ type: "heading", position: { start: { line: functionality.lineNumber, column: 1 }, end: { line: functionality.lineNumber, column: 1 } } }, node.file, lines, { needle: `# ${functionality.id}` });
+            own.push({ nodes: functionality.body, line: at, parsedLine: functionality.lineNumber, text: renderTokens(functionality.body), funcId: functionality.id });
+          }
+        } else {
+          for (const item of ((read.parsed && sectionOf(read.parsed.plainSource, section)?.children) ?? []).filter((item) => !read.parsed!.importedFrom.has(item))) {
+            own.push({ nodes: [item], line: lineOf(item, node.file, lines), parsedLine: lineNumber(item), text: renderToMarkdown(item).trim() });
+          }
+        }
+        for (const { nodes, line, parsedLine, text, funcId } of own) {
           const defines = section === DEFINITIONS ? extractConceptsFromDefinition(text)[0] : [];
           const named = [...new Set(findConcepts(text).map((found) => found.concept))].filter((concept) => !defines.includes(concept));
-          const id = idOf(item, node.file);
-          const line = lineOf(item, node.file, lines);
+          const id = `${node.file}:${line}`;
           // A link is on the line the parser has it on, moved as Liquid moved its item.
-          const resources = linksIn(item).map(({ text, target, node: link }) => ({
+          const resources = nodes.flatMap((item) => linksIn(item)).map(({ text, target, node: link }) => ({
             text,
             target,
             file: resourceFile(target, dirs),
-            line: lineOf(link, node.file, lines, { at: lineNumber(link) + line - lineNumber(item), needle: `](${target})`, from: line }),
+            line: lineOf(link, node.file, lines, { at: lineNumber(link) + line - parsedLine, needle: `](${target})`, from: line }),
           }));
           const uses = named.map((concept) => ({ concept, definition: DEFAULT_CONCEPTS.has(concept) ? null : (visible.get(concept) ?? null) }));
           for (const use of uses) concepts.get(`${use.concept}\0${use.definition ?? ""}`)?.usedBy.push(id);
-          items.push({ id, file: node.file, module: node.module, section, line, text, ...(section === FUNCTIONAL_REQUIREMENTS ? { frid: String(index + 1) } : {}), defines, uses, resources });
+          items.push({ id, file: node.file, module: node.module, section, line, text, ...(funcId !== undefined ? { funcId } : {}), defines, uses, resources });
           node.items.push(id);
-        });
+        }
       }
     }
     return { modules: [...modules.values()], items, concepts: [...concepts.values()] };

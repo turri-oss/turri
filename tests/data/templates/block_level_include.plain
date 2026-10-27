@@ -5,8 +5,7 @@
 
 ***functional specs***
 
-- Display "hello, world"
-
-  ***acceptance tests***
+# display-hello-world
+Display "hello, world"
   - Test {% include "test_hardest_problem.plain" %}
 >  - Test the function "cannot_solve_hardest_problem".

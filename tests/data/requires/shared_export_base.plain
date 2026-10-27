@@ -13,4 +13,5 @@ exported_concepts:
 
 ***functional specs***
 
-- :KeyStore: stores a key.
+# keystore-stores-a-key
+:KeyStore: stores a key.

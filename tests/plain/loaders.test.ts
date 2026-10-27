@@ -74,7 +74,7 @@ describe("loaders", () => {
 
   it("reports unterminated Liquid output as a plain syntax error naming the template", () => {
     expect(() => getLoadedTemplates([templates], fixture("unterminated_output"), "unterminated_output")).toThrow(
-      "Plain syntax error: Invalid Liquid at unterminated_output:3:",
+      "Plain syntax error: Invalid Liquid at unterminated_output:4:",
     );
   });
 
