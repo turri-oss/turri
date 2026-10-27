@@ -1,9 +1,10 @@
 import { existsSync } from "node:fs";
+import { refuseTestPlainFile } from "./test-plain-files.ts";
 import { basename, relative, resolve } from "node:path";
 import { defineTool, type ExtensionContext, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { CONFIG_FILE, readProjectConfig, stackConfigFile, stackForModule, stackNamed, stacksOf, withStack } from "./config.ts";
-import { checkPlainFile } from "./plain/check.ts";
+import { checkPlainFile, formatCheckResults } from "./plain/check.ts";
 import { describeDrift, describeModules, type ModuleStatus, type WorkLoop } from "./regenerate/loop.ts";
 import type { RenderWork } from "./regenerate/engine.ts";
 import { pulseName, type JobRegistry } from "./regenerate/jobs.ts";
@@ -190,7 +191,9 @@ function plainFileOf(cwd: string, given: { plain_file?: string; working_dir?: st
   const located = fromWorkingDir(cwd, given);
   const named = located.plain_file ?? readProjectConfig(located.base).module;
   if (named === undefined) throw new Error(`Name the .plain file to ${what}, or set module: in ${CONFIG_FILE}.`);
-  return resolve(located.base, named);
+  const plainFile = resolve(located.base, named);
+  refuseTestPlainFile(plainFile);
+  return plainFile;
 }
 
 /** Whether a /regenerate's words ask for the module from scratch: its code deleted, and all of it regenerated again. */
@@ -254,7 +257,8 @@ export function regenerateTool(options: LoopToolsOptions & { loop: (ctx: Extensi
       const plainFile = plainFileOf(options.cwd, given, "regenerate");
       return withCallStack(plainFile, given.stack, async () => {
         const check = checkPlainFile(plainFile);
-        if (!check.ok) throw new Error(`${relative(options.cwd, plainFile) || plainFile} does not parse, so nothing can be regenerated from it yet: ${check.error}`);
+        // The parser's message as it gives it, every functional spec without a test plain file, and turri's next step for the old syntax.
+        if (!check.ok) throw new Error(`${relative(options.cwd, plainFile) || plainFile} does not parse, so nothing can be regenerated from it yet:\n${formatCheckResults([check])}`);
         const again = given.functionalities ?? [];
         if (again.length > 0 && given.from_scratch !== undefined) throw new Error("Name functionalities or set from_scratch, not both: from scratch regenerates every one of them.");
         // Named functionalities are work on functionalities, as engine chooses a model for it; the rest, spec changes.

@@ -100,6 +100,7 @@ export function settings(rules: string[] = []): Setting[] {
     { key: "allow-to-stop-jobs", about: "whether turri stops a running pulse the ***plain has moved on from", kind: "boolean", unset: "true", effect: "now" },
     { key: "release-after-pulse", about: "whether every pulse that lands code releases it", kind: "boolean", unset: "false", effect: "next-landing" },
     { key: "sentinel", about: "whether a chat of its own checks every finished pulse, tests the release, and tells you what is wrong - ask: you are asked before it first opens", kind: "choice", options: ["ask", "true", "false"], unset: "ask", effect: "next-landing" },
+    { key: "test-dir", about: "the folder of the test plain files, a folder per module in it, by path from the project root", kind: "path", unset: "tests", effect: "now" },
     { key: "unittests-script", about: "the unit testing script, by path from the project root", kind: "path", unset: "the one run_unittests*.sh found", effect: "next-test-run" },
     { key: "conformance-tests-script", about: "the conformance testing script, by path from the project root", kind: "path", unset: "the one run_conformance_tests*.sh found", effect: "next-test-run" },
     { key: "prepare-environment-script", about: "run on the build before every conformance testing script run, by path from the project root - optional", kind: "path", unset: "the one prepare_environment*.sh found, else none", effect: "next-test-run" },
@@ -368,7 +369,7 @@ export function writeSetting(dir: string, key: string, value: unknown): string {
   return text;
 }
 
-/** The files a path setting is offered: the testing scripts in the root and test_scripts/, or the .plain files of the folder. */
+/** The files a path setting is offered: the testing scripts in the root and test_scripts/, the .plain files of the folder, or - the test folder - its folders. */
 export function pathOptions(dir: string, key: string): string[] {
   const list = (folder: string, test: (name: string) => boolean) => {
     try {
@@ -380,6 +381,14 @@ export function pathOptions(dir: string, key: string): string[] {
     }
   };
   if (key === "module") return list("", (name) => name.endsWith(".plain")).sort();
+  if (key === "test-dir") {
+    try {
+      const folders = readdirSync(dir).filter((name) => !name.startsWith(".") && name !== "plain_modules" && name !== "node_modules" && statSync(join(dir, name)).isDirectory());
+      return [...new Set(["tests", ...folders])].sort();
+    } catch {
+      return ["tests"];
+    }
+  }
   const prefix =
     key === "unittests-script" ? "run_unittests" : key === "conformance-tests-script" ? "run_conformance_tests" : "prepare_environment";
   const script = (name: string) => name.startsWith(prefix) && /\.(sh|ps1)$/.test(name);

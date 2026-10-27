@@ -59,22 +59,35 @@ Both sections are always there; either may be empty. turri hands the reference o
 ## Checking \*\*\*plain
 
 ```bash
-turri validate <file.plain>        # one spec
-turri validate .                   # every .plain file in a directory
+turri validate <file.plain>        # one module
+turri validate .                   # every .plain module in a directory
 turri validate <file.plain> --json
 ```
 
-It uses this repo's own parser, so it needs no external tool, no API key and no credits: it parses the file, resolves its imports and required modules, and reports every syntax, concept and structure error with the line it is on.
+It uses this repo's own parser, so it needs no external tool, no API key and no credits: it parses each module with its test plain files, resolves its imports and required modules, and reports every syntax, concept and structure error with the line it is on. A module that passes lists each functional spec with its test plain file and its scenarios:
 
 ```
-PASS  d365_export.plain  6 functionalities (1, 2, 3, 4, 5, 6), requires d365_restore_api
+PASS  todo.plain  3 functional specs, requires base
+        add-task     tests/todo/add-task.plain     2 conformance, 1 acceptance
+        list-tasks   tests/todo/list-tasks.plain   1 conformance
+        delete-task  tests/todo/delete-task.plain  no scenarios - not tested
 
 FAIL  broken.plain  PlainSyntaxError
-        Plain syntax error: Syntax error at line 3: Invalid specification heading
-        (`Nope:`). Allowed headings: definitions, implementation reqs, test reqs, ...
+        Plain syntax error: Syntax error at line 3 in module 'broken': Invalid specification heading
+        (`Nope:`). Allowed headings: definitions, implementation reqs, test reqs, functional specs
 ```
 
-The exit code is 0 only when every file passed. In a conversation the same check is `validate`.
+The parser's errors come one at a time, the first it meets, word for word as the reference gives them; for one the previous syntax makes - bullets as functional specs, acceptance tests in a module - turri adds its next step under it: ask it to convert the module, which it does one module at a time, asking before it writes anything. turri's own checks list everything they find at once: every functional spec of the chain without a test plain file (`list-tasks - add tests/todo/list-tasks.plain`), and - every run, of a file or a folder, checks its project's test folder - every test plain file that is not where it belongs, saying where it does:
+
+```
+FAIL  tests/  2 test plain files outside a module's folder
+        tests/add-task.plain - move it to tests/todo/ (its module: todo)
+        tests/todos/x.plain - no module todos; module: todo is in tests/todo/
+```
+
+A test plain file, or a test folder, is never taken for a module: `validate` - and `regenerate`, `conform`, `glimpse`, `drift`, `release`, `/regenerate` and the commands - refuse one, naming its module (`\`tests/todo/add-task.plain\` is a test plain file of \`todo\`; name \`todo.plain\`, or \`todo:add-task\` for that one functional spec`).
+
+The exit code is 0 only when every file passed. In a conversation the same check is `validate`; `change_plain` and `turri change-plain` run it on what a change touched - each module, an import module as the modules that import it, a test plain file as its module - and a change that does not pass is rolled back, a test plain file written outside its module's folder with it.
 
 ## Two rules of inheritance
 

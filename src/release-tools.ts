@@ -1,4 +1,5 @@
 import { isAbsolute, relative, resolve } from "node:path";
+import { refuseTestPlainFile } from "./test-plain-files.ts";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import {
@@ -133,6 +134,7 @@ export function createDeployTools(options: {
       const named = params.plain_file ?? options.defaultPlainFile();
       if (named === undefined) throw new Error("Which spec? config.turri.yaml names no module: pass plain_file.");
       const plainFile = resolve(options.cwd, named);
+      refuseTestPlainFile(plainFile);
       const target = deployTarget(plainFile, params.in_module);
       const guidance = params.guidance?.trim() || undefined;
       // Released already: the module's last commit is what the last release shipped. Nothing is exported or stopped -

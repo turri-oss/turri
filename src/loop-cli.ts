@@ -1,4 +1,5 @@
 import { sweepOrphanedGroups } from "./regenerate/shell.ts";
+import { refuseTestPlainFile } from "./test-plain-files.ts";
 import { createInterface } from "node:readline/promises";
 import { relative, resolve, sep } from "node:path";
 import {
@@ -51,6 +52,7 @@ export async function runLoop(options: {
   ask: (loop: WorkLoop) => Promise<ModuleStatus[]>;
 }): Promise<never> {
   const plainFile = resolve(options.plainFile);
+  refuseTestPlainFile(plainFile);
   // What a turri that was killed left running - commands' process groups - stopped before anything starts.
   const orphans = sweepOrphanedGroups();
   if (orphans > 0) console.log(`Stopped ${orphans} process group${orphans === 1 ? "" : "s"} a turri that was killed left running.`);

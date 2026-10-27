@@ -1,4 +1,5 @@
 import { closeSync, openSync, readSync, statSync } from "node:fs";
+import { refuseTestPlainFile } from "./test-plain-files.ts";
 import { join, resolve } from "node:path";
 import { configForSpec, modelSpec, projectModels, readProjectConfig } from "./config.ts";
 import { createDeployState } from "./release-tools.ts";
@@ -87,6 +88,7 @@ async function main() {
     process.exit(1);
   }
   const plainFile = resolve(named);
+  refuseTestPlainFile(plainFile);
   // A release follows steps - a script, a start command: the coding model does that well, thinking low.
   const model = args.model ?? modelSpec(projectModels(configForSpec(plainFile)).coding);
 

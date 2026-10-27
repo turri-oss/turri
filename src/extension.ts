@@ -1,5 +1,6 @@
 // Whether the terminal shows images, before anything draws: the banner's jellyfish is a picture or text.
 import "./terminal-images.ts";
+import { refuseTestPlainFile, testPlainFileRefusal } from "./test-plain-files.ts";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
@@ -1219,7 +1220,8 @@ export function moduleNamedFirst(cwd: string, words: string[]): { named?: string
 function plainFileNamed(cwd: string, word: string): string | undefined {
   for (const candidate of [word, `${word}.plain`]) {
     const path = resolve(cwd, candidate);
-    if (path.endsWith(".plain") && existsSync(path)) return path;
+    // A test plain file names no module: it is refused where the module is taken.
+    if (path.endsWith(".plain") && existsSync(path) && testPlainFileRefusal(path) === undefined) return path;
   }
   return undefined;
 }
@@ -1292,6 +1294,7 @@ function conformTool(options: {
     async execute(_id, given, _signal, _onUpdate, ctx) {
       const params = fromWorkingDir(cwd, given);
       const plainFile = resolve(params.base, params.plain_file);
+      refuseTestPlainFile(plainFile);
       return withCallStack(plainFile, params.stack, async () => {
         const model = options.model(ctx, plainFile, params.model);
         const loop = options.loop(ctx);
@@ -1327,6 +1330,7 @@ function registerGlimpse(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
     async execute(_id, given, _signal, _onUpdate, ctx) {
       const params = fromWorkingDir(cwd, given);
       const plainFile = resolve(params.base, params.plain_file);
+      refuseTestPlainFile(plainFile);
       return withCallStack(plainFile, params.stack, async () => {
         const running = new Set(workLoopFor(jobs, cwd, ctx).status().filter((status) => status.running !== undefined).map((status) => status.module));
         const planner = chatModelOf(ctx);
@@ -2677,9 +2681,11 @@ function checkPlainTool(cwd: string) {
     name: "validate",
     label: "Validate spec",
     description:
-      "Validate one or more .plain specifications without rendering: parses each file, resolves its " +
-      "imports and required modules, and reports every syntax, concept and structure error with the " +
-      "line it is on. Pass a directory to check every .plain file in it. Fast, free, and offline.",
+      "Validate one or more .plain modules without rendering: parses each with its test plain files, resolves its " +
+      "imports and required modules, and reports every syntax, concept and structure error with the line it is on, " +
+      "every functional spec without a test plain file, and every test plain file outside its module's folder. A " +
+      "module that passes lists each functional spec with its test plain file and its scenarios. Pass a directory to " +
+      "check every .plain module in it; a test plain file or test folder is refused - name its module. Fast, free, and offline.",
     promptSnippet: "validate a .plain spec, regenerating nothing",
     promptGuidelines: [
       "Run validate after editing a .plain file, and before telling the user a spec is valid or ready. Never shell out to another renderer to check one.",

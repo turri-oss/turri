@@ -145,6 +145,6 @@ Every skill in `genome/skills/` can be run from a conversation; most are also us
 turri validate app.plain     # or validate in a conversation
 ```
 
-It parses \*\*\*plain with this repo's own parser, resolves its imports and required modules, and reports every syntax, concept and structure error with its line - no model, no API key. The interview skills run it before a phase ends, and `change_plain` refuses a change that leaves a file that does not parse. Pass the project directory to check every module at once.
+It parses \*\*\*plain with this repo's own parser - each module with its test plain files - resolves its imports and required modules, and reports every syntax, concept and structure error with its line, every functional spec without a test plain file, and every test plain file outside its module's folder - no model, no API key. The interview skills run it before a phase ends, and `change_plain` refuses a change that leaves a file that does not pass. Pass the project directory to check every module at once.
 
 What `check` cannot see - a fact in the wrong section, a functional spec that is too big, two that conflict, wording no test can check - is what the rules, the skills and the reviewers are for.

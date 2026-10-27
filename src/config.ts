@@ -12,6 +12,7 @@ import { projectDirOf } from "./regenerate/paths.ts";
  *
  * ```yaml
  * module: prism_cli.plain                                   # what `turri regenerate` builds by default
+ * test-dir: tests                                           # where the test plain files are, a folder per module: tests/<module>/ (default: tests)
  * harness-model:                                            # the model you chat with in `turri`
  *   model: anthropic/claude-opus-5-5
  *   thinking: high
@@ -462,6 +463,11 @@ export interface ProjectConfig {
    * asked, before it first opens in a session, whether to start it. Unset: ask.
    */
   sentinel?: SentinelSetting;
+  /**
+   * The folder of the test plain files, from the project's folder: a functional spec's scenarios are in its test plain
+   * file in `<test-dir>/<module>/`. Unset: `tests`.
+   */
+  testDir?: string;
   /** Path from the root to the unit testing script. */
   unittestsScript?: string;
   /** Path from the root to the conformance testing script. */
@@ -536,6 +542,7 @@ export const CONFIG_KEYS = {
   allowToStopJobs: "allow-to-stop-jobs",
   releaseAfterPulse: "release-after-pulse",
   sentinel: "sentinel",
+  testDir: "test-dir",
   unittestsScript: "unittests-script",
   conformanceTestsScript: "conformance-tests-script",
   prepareEnvironmentScript: "prepare-environment-script",
@@ -702,6 +709,14 @@ function withoutUndefined(config: ProjectConfig): ProjectConfig {
   return Object.fromEntries(Object.entries(config).filter(([, value]) => value !== undefined)) as ProjectConfig;
 }
 
+/** Where the test plain files are when `test-dir:` does not say. */
+export const DEFAULT_TEST_DIR = "tests";
+
+/** The folder of a module's project's test plain files: `test-dir:` - its stack's over the project's - from the project's folder. */
+export function testDirOf(plainFile: string): string {
+  return resolve(projectDirOf(resolve(plainFile)), configForSpec(plainFile).testDir ?? DEFAULT_TEST_DIR);
+}
+
 /** The config a spec is built with: its project's, with its module's stack over it (`stackForModule`). */
 export function configForSpec(plainFile: string): ProjectConfig {
   const root = projectDirOf(resolve(plainFile));
@@ -732,6 +747,7 @@ function readConfigFile(path: string): ProjectConfig {
     allowToStopJobs: typeof raw[CONFIG_KEYS.allowToStopJobs] === "boolean" ? (raw[CONFIG_KEYS.allowToStopJobs] as boolean) : undefined,
     releaseAfterPulse: typeof raw[CONFIG_KEYS.releaseAfterPulse] === "boolean" ? (raw[CONFIG_KEYS.releaseAfterPulse] as boolean) : undefined,
     sentinel: typeof raw[CONFIG_KEYS.sentinel] === "boolean" || raw[CONFIG_KEYS.sentinel] === "ask" ? (raw[CONFIG_KEYS.sentinel] as SentinelSetting) : undefined,
+    testDir: text(raw[CONFIG_KEYS.testDir]),
     unittestsScript: text(raw[CONFIG_KEYS.unittestsScript]),
     conformanceTestsScript: text(raw[CONFIG_KEYS.conformanceTestsScript]),
     prepareEnvironmentScript: text(raw[CONFIG_KEYS.prepareEnvironmentScript]),

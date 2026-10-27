@@ -3,8 +3,10 @@ import { c } from "./module-report.ts";
 
 const USAGE = `usage: turri validate <file.plain | directory> [options]
 
-Validates a ***plain specification statically: parses it, resolves its imports and
-required modules, and reports every error without rendering anything.
+Validates ***plain statically: parses each module with its test plain files, resolves its imports
+and required modules, and reports every error without rendering anything - and every functional spec
+without a test plain file, and every test plain file outside its module's folder. A test plain file
+or test folder is refused: name its module.
 
   --template-dir <dir>   extra template directory (repeatable)
   --json                 machine-readable output
