@@ -135,6 +135,7 @@ Every skill in `genome/skills/` can be run from a conversation; most are also us
 | check what is written | `analyze-2-func-specs`, `analyze-func-specs`, `resolve-section-ownership` |
 | fix what is written | `break-down-func-spec`, `resolve-spec-conflict`, `debug-specs` |
 | restructure modules | `refactor-module`, `consolidate-concepts` |
+| move a module from the old syntax | `convert-old-syntax` - one module at a time, the lowest of its chain first: it proposes the func-ids and scenario-ids, and once the person confirms them writes the module and its test plain files in one \*\*\*plain diff, word for word, then validates it; it regenerates nothing |
 | set up the project to build | `implement-unit-testing-script`, `implement-conformance-testing-script` |
 
 `debug-specs` is the one for a running application that misbehaves: it reads the generated code to find the cause, traces it back to \*\*\*plain, and fixes only the `.plain` files.

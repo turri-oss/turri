@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { loadSkill, skillStatus } from "../../src/skill.ts";
+import { loadSkill, readRubric, skillStatus } from "../../src/skill.ts";
 
 let dir: string;
 
@@ -170,15 +170,27 @@ describe("a skill's tools", () => {
     expect(loadSkill(dir).allowedTools).toEqual([]);
   });
 
-  it("every skill here names its tools - the ones that only read and report can only read", async () => {
+  it("every skill here names its tools - the ones that only read and report can only read, and one that writes only through change_plain has no file tools to write with", async () => {
     const { readdirSync, readFileSync } = await import("node:fs");
     for (const name of readdirSync("genome/skills")) {
       expect(readFileSync(`genome/skills/${name}/SKILL.md`, "utf8"), name).toMatch(/^allowed-tools: \[/m);
       const tools = loadSkill(`genome/skills/${name}`).allowedTools;
       expect(tools, name).toContain("read");
       if (name.startsWith("analyze-")) expect(tools, name).not.toContain("write");
+      else if (tools.includes("change_plain")) for (const tool of ["write", "edit"]) expect(tools, name).not.toContain(tool);
       else expect(tools, name).toEqual(expect.arrayContaining(["write", "edit"]));
     }
+  });
+
+  it("convert-old-syntax rewrites a module through change_plain alone, its rewrite judged before it is kept", () => {
+    const skill = loadSkill("genome/skills/convert-old-syntax");
+    expect(skill.allowedTools).toEqual(["read", "ls", "grep", "find", "change_plain", "validate"]);
+    expect(skill.steps.map((step) => step.name)).toEqual(["ids", "rewrite", "check"]);
+    const gate = skill.steps.find((step) => step.name === "rewrite")!.gate!;
+    expect(gate.review.judgeTools).toEqual(["read", "ls", "grep", "find"]);
+    expect(readRubric(skill, gate.review)).toContain("word for word");
+    expect(skill.paced).toBe(true);
+    expect(skill.questioning).toEqual([]);
   });
 });
 
