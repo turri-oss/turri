@@ -3,29 +3,30 @@ import { buildSpecDiffPrompt, describeSpecChange, reviewedSpec } from "../../src
 import { unitReviewTask } from "../../src/regenerate/unit-review.ts";
 import { changesBetween, serializeTree } from "../../src/regenerate/spec-steps.ts";
 
-const tree = (definitions: string[], reqs: string[], specs: string[]) => ({
+/** A tree with its definitions, its reqs, and its functional specs - each a func-id and its text. */
+const tree = (definitions: string[], reqs: string[], specs: Array<[string, string]>) => ({
   definitions: definitions.map((markdown) => ({ markdown })),
   "implementation reqs": reqs.map((markdown) => ({ markdown })),
-  "functional specs": specs.map((markdown) => ({ markdown })),
+  "functional specs": specs.map(([id, markdown]) => ({ id, markdown })),
 });
 
 describe("a functional spec regenerated again, as the coding agent reads it", () => {
   it("is told apart from a change - to regenerate again, with its text as it is now", () => {
-    const marked = tree([], [], ["- Log in with a token.", "- Show the feed."]) as Record<string, unknown>;
+    const marked = tree([], [], [["log-in", "Log in with a token."], ["show-feed", "Show the feed."]]) as Record<string, unknown>;
     const specs = (marked["functional specs"] as Array<{ markdown: string }>).map((entry, index) => (index === 1 ? { ...entry, regenerate_again: true } : entry));
     const text = describeSpecChange(changesBetween(serializeTree({ ...marked, "functional specs": specs } as never), serializeTree(marked as never)));
     expect(text).toContain('<functional specs change="1 to regenerate again">');
-    expect(text).toContain("To regenerate again - built already, and regenerated again:\n  functionality 2:\n    - Show the feed.");
+    expect(text).toContain("To regenerate again - built already, and regenerated again:\n  functional spec `show-feed`:\n    Show the feed.");
     expect(text).not.toContain("before:");
   });
 });
 
 describe("a spec change, as the coding agent reads it", () => {
-  const before = tree(["- :Api: is the API, described in `api.md`.", "- :Token: is a token."], ["- :Implementation: builds photo URLs from `photo_url`."], ["- Log in with :Token:."]);
+  const before = tree(["- :Api: is the API, described in `api.md`.", "- :Token: is a token."], ["- :Implementation: builds photo URLs from `photo_url`."], [["log-in", "Log in with :Token:."]]);
   const after = tree(
     ["- :Page: is a page.", "- :Api: is the API, defined by `api.yaml`.", "- :Token: is a token for 7 days.", "- :Feed: is the list on :Page:."],
     ["- :Implementation: builds photo URLs from the `photo_url` of :Page:."],
-    ["- Log in with :Token:.", "- Show :Feed: at `/`.\n  - Newest first."],
+    [["log-in", "Log in with :Token:."], ["show-feed", "Show :Feed: at `/`.\n  - Newest first."]],
   );
   const text = describeSpecChange(changesBetween(serializeTree(before), serializeTree(after)));
 
@@ -44,8 +45,8 @@ describe("a spec change, as the coding agent reads it", () => {
     expect(text).not.toContain("Removed:");
   });
 
-  it("tells a new functional spec by its number, whole", () => {
-    expect(text).toContain("  functionality 2:\n  - Show :Feed: at `/`.\n    - Newest first.");
+  it("tells a new functional spec by its func-id, whole", () => {
+    expect(text).toContain("  functional spec `show-feed`:\n  Show :Feed: at `/`.\n    - Newest first.");
   });
 
   it("lists every definition the change adds as added, marking none as needing no code", () => {
@@ -59,6 +60,7 @@ describe("a spec change, as the coding agent reads it", () => {
       diff: "@@ -1 +1 @@\n-raw\n+diff",
       changes: changesBetween(serializeTree(before), serializeTree(after)),
       specifications: { definitions: [], "implementation reqs": [], "test reqs": [], "functional specs": [] } as never,
+      funcIds: [],
       required: [],
       linkedResources: [],
       empty: false,
@@ -68,7 +70,7 @@ describe("a spec change, as the coding agent reads it", () => {
   });
 
   it("is what the unit test review is shown too, told that behaviour is what a functional spec, an acceptance test or a req states", () => {
-    const spec = reviewedSpec({ moduleName: "app", specifications: { definitions: [], "implementation reqs": [], "test reqs": [], "functional specs": [] } as never, change: text });
+    const spec = reviewedSpec({ moduleName: "app", specifications: { definitions: [], "implementation reqs": [], "test reqs": [], "functional specs": [] } as never, funcIds: [], change: text });
     const prompt = unitReviewTask({ buildDir: "/code", what: "the spec change to module `app`", spec, forChange: true });
     expect(prompt).toContain(`<new in this work>\n<spec change>\n${text}\n</spec change>\n</new in this work>`);
     expect(prompt).toContain("Behaviour is what a functional spec, an acceptance test or an implementation req states.");

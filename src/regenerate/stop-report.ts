@@ -24,7 +24,7 @@ export const ATTEMPTS: Record<StopPoint, number> = {
 export interface StopFacts {
   moduleName: string;
   /** The functionality it stopped at; none for a spec change. */
-  frid?: string;
+  funcId?: string;
   at: StopPoint;
   /** The unit test runs, the last of which is the failing one. */
   runs?: TestRun[];
@@ -45,7 +45,7 @@ export interface StopFacts {
  * offered here is a change to a `.plain` file, never to code, tests or the machine.
  */
 export function describeStop(facts: StopFacts): string {
-  const what = facts.frid !== undefined ? `${facts.moduleName} functionality ${facts.frid}` : `the spec change in ${facts.moduleName}`;
+  const what = facts.funcId !== undefined ? `functional spec ${facts.moduleName}:${facts.funcId}` : `the spec change in ${facts.moduleName}`;
   // What actually happened, not the most it could have been.
   const tries =
     facts.at === "unit tests" ? (facts.attempts ?? ATTEMPTS[facts.at]) : facts.at === "conformance" ? (facts.conformance?.rounds ?? ATTEMPTS[facts.at]) : ATTEMPTS[facts.at];
@@ -85,7 +85,7 @@ export function describeStop(facts: StopFacts): string {
     ];
   } else if (facts.at === "conformance" && facts.conformance?.specConflict !== undefined) {
     const { functionalities, reason } = facts.conformance.specConflict;
-    const [one, two] = functionalities.map((ref) => `${ref.module} ${ref.frid}`);
+    const [one, two] = functionalities.map((ref) => `${ref.module}:${ref.funcId}`);
     why = `its spec contradicts itself: functionalities ${one} and ${two} cannot both hold. ${reason.trim()}`;
     todo = [
       `Compare functional specs ${one} and ${two} (\`analyze-2-func-specs\`, \`resolve-spec-conflict\`) and change whichever is wrong - ` +
@@ -171,13 +171,13 @@ export function describeStop(facts: StopFacts): string {
  * spec is all they work on, and the fix is theirs to choose.
  */
 export function describeSpecConflict(conflict: SpecConflict): string {
-  const name = (spec: SpecConflict["specs"][number]) => `functional spec ${spec.frid} of ${spec.module}`;
+  const name = (spec: SpecConflict["specs"][number]) => `functional spec ${spec.module}:${spec.funcId}`;
   const [one, two] = conflict.specs;
   return [
     `The spec contradicts itself: ${name(one!)} and ${name(two!)} cannot both hold.`,
     "",
     ...conflict.specs.flatMap((spec) => [
-      `Functional spec ${spec.frid} of ${spec.module} (${basename(spec.plainFile)}):`,
+      `Functional spec ${spec.module}:${spec.funcId} (${basename(spec.plainFile)}):`,
       ...spec.text.trim().split("\n").map((line) => `  ${line}`),
       "",
     ]),

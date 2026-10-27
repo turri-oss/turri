@@ -306,7 +306,7 @@ export function startRunReport(options: RunReportOptions): RunReporter {
         specified: module.specified,
         completed: module.completed,
         conformance_tested: module.conformanceTested,
-        incomplete_frids: module.incomplete,
+        incomplete_func_ids: module.incomplete,
       })),
     );
     return {

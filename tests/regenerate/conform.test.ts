@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /** The conformance agent, stubbed: it records what it was given, and leaves a labelled test where it was asked to. */
-const conformanceRuns: Array<{ plainFile: string; frid: string; buildDir: string; conformanceDir: string; diff?: string; module?: string; specs?: string }> = [];
+const conformanceRuns: Array<{ plainFile: string; funcId: string; buildDir: string; conformanceDir: string; diff?: string; module?: string; specs?: string }> = [];
 let passing = true;
 /** What the stubbed run says of its last green run: nothing, the code and tests as they are after it, or as they were before it wrote. */
 let green: "none" | "now" | "stale" = "none";
@@ -14,21 +14,21 @@ vi.mock("../../src/regenerate/conformance.ts", async (importOriginal) => {
   return {
     ...actual,
     renderConformanceTests: async (options: {
-      plainFile: string; frid: string; buildDir: string; conformanceDir: string; diff?: string;
+      plainFile: string; funcId: string; buildDir: string; conformanceDir: string; diff?: string;
       spec?: { moduleName: string; tree: Record<string, unknown> };
     }) => {
       conformanceRuns.push({
-        plainFile: options.plainFile, frid: options.frid, buildDir: options.buildDir, conformanceDir: options.conformanceDir,
+        plainFile: options.plainFile, funcId: options.funcId, buildDir: options.buildDir, conformanceDir: options.conformanceDir,
         diff: options.diff, module: options.spec?.moduleName, specs: JSON.stringify(options.spec?.tree),
       });
       mkdirSync(options.conformanceDir, { recursive: true });
       const { digestFiles } = await import("../../src/regenerate/codebase.ts");
       const before = { code: digestFiles(options.buildDir), tests: digestFiles(options.conformanceDir) };
-      writeFileSync(join(options.conformanceDir, "check_1.sh"), "# conformance tests of functionality 1\nexit 0\n");
+      writeFileSync(join(options.conformanceDir, "check_1.sh"), "# conformance tests of functionality top-one\n# conformance tests of functionality base-one\nexit 0\n");
       const after = { code: digestFiles(options.buildDir), tests: digestFiles(options.conformanceDir) };
       return {
         ...(green === "now" ? { green: after } : green === "stale" ? { green: before } : {}),
-        moduleName: options.spec?.moduleName ?? "x", frid: options.frid, buildDir: options.buildDir, conformanceDir: options.conformanceDir,
+        moduleName: options.spec?.moduleName ?? "x", funcId: options.funcId, buildDir: options.buildDir, conformanceDir: options.conformanceDir,
         prompt: "", response: "Brought the tests in line.", files: ["check_1.sh"], runs: [{ command: "sh check.sh", exitCode: passing ? 0 : 1 }],
         passed: passing, rounds: 1, codeChanged: false, testRemovals: [],
       };
@@ -40,18 +40,20 @@ const { renderSpecDiffConformance, describeSpecDiffConformance } = await import(
 const { readRecord, writeCodeRecord } = await import("../../src/regenerate/records.ts");
 const { plainFileParser } = await import("../../src/plain/parser.ts");
 const { resolveTemplateDirs } = await import("../../src/regenerate/paths.ts");
+const { writePlain } = await import("../test-plain.ts");
 
 let dir: string;
-const module_ = (specs: string[], requires?: string, testReqs = true) =>
+/** A module, its functional specs each a func-id and its text. */
+const module_ = (specs: Array<[string, string]>, requires?: string, testReqs = true) =>
   `${requires ? `---\nrequires:\n  - ${requires}\n---\n\n` : ""}***implementation reqs***\n\n- Python.\n\n` +
-  `${testReqs ? "***test reqs***\n\n- Shell scripts.\n\n" : ""}***functional specs***\n\n${specs.join("\n\n")}\n`;
+  `${testReqs ? "***test reqs***\n\n- Shell scripts.\n\n" : ""}***functional specs***\n\n${specs.map(([id, text]) => `# ${id}\n${text}`).join("\n\n")}\n`;
 const file = (name: string) => join(dir, `${name}.plain`);
 const buildOf = (name: string) => join(dir, "plain_modules", name, "code");
 const testsOf = (name: string) => join(dir, "plain_modules", name, "tests");
 const git = (...args: string[]) => spawnSync("git", args, { cwd: dir, encoding: "utf8" }).stdout;
 
 function built(name: string) {
-  const [, tree] = plainFileParser(`${name}.plain`, resolveTemplateDirs(file(name)));
+  const [, tree] = plainFileParser(`${name}.plain`, resolveTemplateDirs(file(name)), { testDir: join(dir, "tests") });
   mkdirSync(buildOf(name), { recursive: true });
   writeFileSync(join(buildOf(name), "app.sh"), `echo ${name}\n`);
   writeCodeRecord(buildOf(name), tree);
@@ -70,8 +72,8 @@ function diffOf(name: string, content: string): string {
 
 beforeEach(() => {
   dir = realpathSync(mkdtempSync(join(tmpdir(), "turri-change-plain-conformance-")));
-  writeFileSync(file("base"), module_(["- Base one.", "- Base two."]));
-  writeFileSync(file("top"), module_(["- Top one."], "base"));
+  writePlain(dir, "base.plain", module_([["base-one", "Base one."], ["base-two", "Base two."]]));
+  writePlain(dir, "top.plain", module_([["top-one", "Top one."]], "base"));
   // The project's scripts: every check in the suite, run from the build.
   mkdirSync(join(dir, "test_scripts"), { recursive: true });
   writeFileSync(join(dir, "test_scripts", "run_unittests_sh.sh"), "exit 0\n");
@@ -87,7 +89,7 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }));
 describe("conformance for a spec diff", () => {
   it("applies the diff and brings the tests of the latest codebase in line with it, even for a change to a module it requires", async () => {
     for (const name of ["base", "top"]) built(name);
-    const diff = diffOf("base", module_(["- Base one.", "- Base two, now with a limit of ten."]));
+    const diff = diffOf("base", module_([["base-one", "Base one."], ["base-two", "Base two, now with a limit of ten."]]));
 
     const result = await renderSpecDiffConformance({ plainFile: file("base"), diff, cwd: dir });
 
@@ -101,10 +103,10 @@ describe("conformance for a spec diff", () => {
     // The whole suite ran, and passed; top's labelled functionality is recorded as passing.
     expect(result.regression?.passed).toBe(true);
     expect(result.passed).toBe(true);
-    expect(result.tested).toEqual(["1"]);
+    expect(result.tested).toEqual(["top-one"]);
     // Nothing was rendered: the record still says what the code was built from.
-    const inherited = readRecord(buildOf("top"))!["required functional specs"] as Array<{ markdown: string; module: string; frid: string }>;
-    expect(inherited.find((spec) => spec.module === "base" && spec.frid === "2")!.markdown).toBe("- Base two.");
+    const inherited = readRecord(buildOf("top"))!["required functional specs"] as Array<{ markdown: string; module: string; id: string }>;
+    expect(inherited.find((spec) => spec.module === "base" && spec.id === "base-two")!.markdown).toBe("Base two.");
     // The tests it wrote are committed.
     expect(existsSync(join(testsOf("top"), "check_1.sh"))).toBe(true);
     expect(describeSpecDiffConformance(result)).toContain("in line with the spec change");
@@ -112,7 +114,7 @@ describe("conformance for a spec diff", () => {
 
   it("runs the whole suite only once - not again when the code and the tests are as they were when it passed with the unit tests", async () => {
     for (const name of ["base", "top"]) built(name);
-    const diff = diffOf("base", module_(["- Base one.", "- Base two, now with a limit of ten."]));
+    const diff = diffOf("base", module_([["base-one", "Base one."], ["base-two", "Base two, now with a limit of ten."]]));
     green = "now";
     try {
       const result = await renderSpecDiffConformance({ plainFile: file("base"), diff, cwd: dir });
@@ -125,7 +127,7 @@ describe("conformance for a spec diff", () => {
 
   it("runs the whole suite again when the code or the tests changed after the green run", async () => {
     for (const name of ["base", "top"]) built(name);
-    const diff = diffOf("base", module_(["- Base one.", "- Base two, now with a limit of ten."]));
+    const diff = diffOf("base", module_([["base-one", "Base one."], ["base-two", "Base two, now with a limit of ten."]]));
     green = "stale";
     try {
       const result = await renderSpecDiffConformance({ plainFile: file("base"), diff, cwd: dir });
@@ -139,7 +141,7 @@ describe("conformance for a spec diff", () => {
   it("stops at a conformance step that does not pass, and undoes it", async () => {
     built("base");
     passing = false;
-    const diff = diffOf("base", module_(["- Base one.", "- Base two, now with a limit of ten."]));
+    const diff = diffOf("base", module_([["base-one", "Base one."], ["base-two", "Base two, now with a limit of ten."]]));
     const result = await renderSpecDiffConformance({ plainFile: file("base"), diff, cwd: dir });
     expect(result).toMatchObject({ passed: false, stoppedAt: "conformance" });
     expect(result.regression).toBeUndefined();
@@ -148,7 +150,7 @@ describe("conformance for a spec diff", () => {
 
   it("tests a change with no functional spec written yet - a definition - rather than refusing it", async () => {
     const none = "***implementation reqs***\n\n- Python.\n\n***test reqs***\n\n- Shell scripts.\n";
-    writeFileSync(file("base"), none);
+    writePlain(dir, "base.plain", none);
     mkdirSync(buildOf("base"), { recursive: true });
     writeFileSync(join(buildOf("base"), "app.sh"), "echo base\n");
     const diff = diffOf("base", "***definitions***\n\n- :User: is a person.\n\n" + none);
@@ -156,14 +158,14 @@ describe("conformance for a spec diff", () => {
     const result = await renderSpecDiffConformance({ plainFile: file("base"), diff, cwd: dir });
 
     expect(conformanceRuns).toHaveLength(1);
-    expect(conformanceRuns[0]).toMatchObject({ frid: undefined, diff, module: "base" });
+    expect(conformanceRuns[0]).toMatchObject({ funcId: undefined, diff, module: "base" });
     expect(result.passed).toBe(true);
   });
 
   it("needs test reqs to write conformance tests from", async () => {
-    writeFileSync(file("base"), module_(["- Base one."], undefined, false));
+    writePlain(dir, "base.plain", module_([["base-one", "Base one."]], undefined, false));
     built("base");
-    const diff = diffOf("base", module_(["- Base one, changed."], undefined, false));
+    const diff = diffOf("base", module_([["base-one", "Base one, changed."]], undefined, false));
     await expect(renderSpecDiffConformance({ plainFile: file("base"), diff, cwd: dir })).rejects.toThrow("has no test reqs");
     expect(conformanceRuns).toHaveLength(0);
   });

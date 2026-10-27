@@ -338,8 +338,8 @@ export function draftPrompt(): string {
 export const AGAIN_ASKS = 2;
 
 /** For a coding agent regenerating functional specs again that has written nothing: no change is no answer. */
-export function againPrompt(again: Array<{ frid: string; module?: string }>): string {
-  const named = again.map((spec) => `fs ${spec.frid}${spec.module !== undefined ? ` of module \`${spec.module}\`` : ""}`).join(", ");
+export function againPrompt(again: Array<{ funcId: string; module?: string }>): string {
+  const named = again.map((spec) => (spec.module !== undefined ? `\`${spec.module}:${spec.funcId}\`` : `\`${spec.funcId}\``)).join(", ");
   return [
     "You have not written anything yet: the code folder is as it was when you started.",
     "",

@@ -25,9 +25,9 @@ import { resourcesChanged, type SpecChange } from "./spec-steps.ts";
  * that does not know what exists re-implements it; a test writer that does not know it
  * cannot set up what a functionality depends on; a fixer that does not know it breaks it.
  */
-function alreadyImplemented(moduleName: string, own: string[], required: RequiredSpec[]): string | null {
+function alreadyImplemented(moduleName: string, own: string[], funcIds: string[], required: RequiredSpec[]): string | null {
   if (own.length === 0 && required.length === 0) return null;
-  const entries = [...required, ...own.map((spec, index) => ({ module: moduleName, frid: String(index + 1), spec }))];
+  const entries = [...required, ...own.map((spec, index) => ({ module: moduleName, funcId: funcIds[index] ?? "", spec }))];
   return `<already implemented>\n${functionalitiesByModule(entries, moduleName, "implemented")}\n</already implemented>`;
 }
 
@@ -39,7 +39,7 @@ function alreadyImplemented(moduleName: string, own: string[], required: Require
  * (the reference implementation's implemented functional requirements prompt section, as tags.)
  */
 export function functionalitiesByModule(
-  entries: Array<{ module: string; frid: string; spec: string }>,
+  entries: Array<{ module: string; funcId: string; spec: string }>,
   currentModule: string,
   status?: string,
 ): string {
@@ -52,16 +52,16 @@ export function functionalitiesByModule(
         .filter((entry) => entry.module === module)
         .map(
           (entry) =>
-            `<functionality module="${entry.module}" id="${entry.frid}"${status !== undefined ? ` status="${status}"` : ""}>\n${entry.spec}\n</functionality>`,
+            `<functionality module="${entry.module}" id="${entry.funcId}"${status !== undefined ? ` status="${status}"` : ""}>\n${entry.spec}\n</functionality>`,
         );
       return `<module name="${module}"${module === currentModule ? ' role="current"' : ""}>\n${items.join("\n\n")}\n</module>`;
     })
     .join("\n\n");
 }
 
-/** "functionality 3 of module `app`": a functionality, named so that no other module's can be meant. */
-export function functionalityOf(frid: string, moduleName: string): string {
-  return `functionality ${frid} of module \`${moduleName}\``;
+/** "functional spec `app:add-task`": a functional spec, named so that no other module's can be meant. */
+export function functionalityOf(funcId: string, moduleName: string): string {
+  return `functional spec \`${moduleName}:${funcId}\``;
 }
 
 /**
@@ -270,6 +270,8 @@ export interface SpecDiffPromptInput {
   changes?: SpecChange[];
   /** The module's sections and its functional specs, as they stand after the change. */
   specifications: Specifications;
+  /** The func-ids of its functional specs, in order. */
+  funcIds: string[];
   /** Functional specs of the modules this one requires, as they stand after the change. */
   required: RequiredSpec[];
   linkedResources: LoadedResource[];
@@ -291,6 +293,8 @@ export interface SpecDiffPromptInput {
 export function reviewedSpec(input: {
   moduleName: string;
   specifications: Specifications;
+  /** The func-ids of its functional specs, in order. */
+  funcIds: string[];
   /** Functional specs of the modules this one requires: already in the code. */
   required?: RequiredSpec[];
   /** The change, section by section. */
@@ -306,7 +310,7 @@ export function reviewedSpec(input: {
     "",
     moduleSection(DEFINITIONS, specifications[DEFINITIONS] ?? [], input.moduleName, input.modules),
     moduleSection(NON_FUNCTIONAL_REQUIREMENTS, specifications[NON_FUNCTIONAL_REQUIREMENTS] ?? [], input.moduleName, input.modules),
-    alreadyImplemented(input.moduleName, functionalities, required),
+    alreadyImplemented(input.moduleName, functionalities, input.funcIds, required),
     "<new in this work>",
     specChangeBlock(input.change ?? "(the change is not known)"),
     "</new in this work>",
@@ -371,7 +375,7 @@ const parsed = (serialized: string | undefined): unknown => {
 /**
  * A spec change as an agent reads it: section by section, what was added, what changed - before and now - and what
  * was removed. A definition taken out and put back reworded, or moved, is one change to it, not two. Every item is
- * named so no other module's can be meant: a functional spec by its module and number, and a definition or req of a
+ * named so no other module's can be meant: a functional spec by its module and func-id, and a definition or req of a
  * module below by its module; `moduleName` is the module whose codebase it is - whose own items carry no module.
  */
 export function describeSpecChange(changes: SpecChange[], moduleName?: string): string {
@@ -382,12 +386,12 @@ export function describeSpecChange(changes: SpecChange[], moduleName?: string): 
   for (const { key, title } of sections) {
     const here = changes.filter((change) => change.section === key);
     if (here.length === 0) continue;
-    /** Which item it is: a functional spec by its module and number, a definition by its concept, and one of a module below with that module. */
+    /** Which item it is: a functional spec by its module and func-id, a definition by its concept, and one of a module below with that module. */
     const labelOf = (change: SpecChange, line: string | undefined): string => {
-      const item = parsed(line) as { module?: string; frid?: string } | undefined;
+      const item = parsed(line) as { module?: string; id?: string } | undefined;
       const below = item?.module !== undefined && item.module !== moduleName ? ` of module \`${item.module}\`` : "";
-      if (key === FUNCTIONAL_REQUIREMENTS) return moduleName !== undefined ? functionalityOf(String(change.position), moduleName) : `functionality ${change.position}`;
-      if (key === REQUIRED_FUNCTIONAL_SPECS) return item?.module !== undefined && item.frid !== undefined ? functionalityOf(item.frid, item.module) : `functionality ${change.position}${below}`;
+      if (key === FUNCTIONAL_REQUIREMENTS) return moduleName !== undefined ? functionalityOf(item?.id ?? "", moduleName) : `functional spec \`${item?.id ?? ""}\``;
+      if (key === REQUIRED_FUNCTIONAL_SPECS) return item?.module !== undefined && item.id !== undefined ? functionalityOf(item.id, item.module) : `functional spec \`${item?.id ?? ""}\`${below}`;
       if (key === DEFINITIONS) return `${conceptOf(itemText(line)) ?? `item ${change.position}`}${below}`;
       return `item ${change.position}${below}`;
     };
@@ -482,7 +486,7 @@ export function buildSpecDiffPrompt(input: SpecDiffPromptInput): string {
     ...input.required,
     ...specifications[FUNCTIONAL_REQUIREMENTS].map((spec, index) => ({
       module: input.moduleName,
-      frid: String(index + 1),
+      funcId: input.funcIds[index] ?? "",
       spec,
     })),
   ];
@@ -524,9 +528,11 @@ export interface ConformancePromptInput {
   /** What the job does to each functional spec (work.ts): the agent is told case by case. Not given: in general. */
   cases?: JobCases;
   moduleName: string;
-  /** The functionality under test; for a spec change, the last there is - none before the first is written. */
-  frid?: string;
+  /** The functional spec under test, by its func-id; for a spec change, the last there is - none before the first is written. */
+  funcId?: string;
   specifications: Specifications;
+  /** The func-ids of its functional specs, in order. */
+  funcIds: string[];
   linkedResources: LoadedResource[];
   /** File names in the build directory. */
   manifest: string[];
@@ -542,8 +548,8 @@ export interface ConformancePromptInput {
   readCode?: string;
   /** The code's build files, read by the harness: the exact name, coordinates and version a test project points at. */
   manifests?: Array<{ path: string; content: string }>;
-  /** For a spec change: the functionalities it touches, with their acceptance tests - each implemented and labelled. */
-  touched?: Array<{ frid: string; acceptanceTests: string[] }>;
+  /** For a spec change: the functional specs it touches, with their acceptance tests - each implemented and labelled. */
+  touched?: Array<{ funcId: string; acceptanceTests: string[] }>;
   /** Tests already in the conformance directory, from an earlier version of the spec. */
   existingTests?: string[];
   /** Functional specs of the modules this one requires, transitively. */
@@ -570,7 +576,7 @@ export function buildConformancePrompt(input: ConformancePromptInput): string {
   const functionalities = specifications[FUNCTIONAL_REQUIREMENTS];
   const forChange = input.diff !== undefined;
   const target = functionalities[functionalities.length - 1];
-  if (target === undefined && !forChange) throw new Error(`Functionality ${input.frid} has no specification text.`);
+  if (target === undefined && !forChange) throw new Error(`Functional spec ${input.funcId} has no specification text.`);
 
   const parts: Array<string | null> = [
     specPrimer({ testReqs: true }),
@@ -633,7 +639,7 @@ export function buildConformancePrompt(input: ConformancePromptInput): string {
     // user registered before one logs in - so its tests can set that up through the same
     // public entry points. Only the functionality below is under test. For a diff, every
     // functionality is the spec as it now stands.
-    alreadyImplemented(input.moduleName, input.diff !== undefined ? functionalities : functionalities.slice(0, -1), input.required ?? []),
+    alreadyImplemented(input.moduleName, input.diff !== undefined ? functionalities : functionalities.slice(0, -1), input.funcIds, input.required ?? []),
   ];
 
   const resources = linkedResourcesSection(input.linkedResources);
@@ -642,10 +648,10 @@ export function buildConformancePrompt(input: ConformancePromptInput): string {
   parts.push(
     input.diff !== undefined
       ? specChangeBlock(input.diff)
-      : `<functionality module="${input.moduleName}" id="${input.frid}">\n${target}\n</functionality>`,
+      : `<functionality module="${input.moduleName}" id="${input.funcId}">\n${target}\n</functionality>`,
     input.diff !== undefined
       ? touchedAcceptanceTests(input.touched ?? [])
-      : numberedAcceptanceTests(input.frid!, specifications[ACCEPTANCE_TESTS] ?? []),
+      : numberedAcceptanceTests(input.funcId!, (specifications[ACCEPTANCE_TESTS] ?? []).map((scenario) => scenario.text)),
     `<files in the build>\n${input.manifest.join("\n")}\n</files in the build>`,
     input.existingTests && input.existingTests.length > 0
       ? [
@@ -676,9 +682,9 @@ export function buildConformancePrompt(input: ConformancePromptInput): string {
           "- A test is removed only because the spec no longer asks for what it checks. Say which, and why.",
         ]
       : [
-          `Write conformance tests for ${functionalityOf(input.frid!, input.moduleName)}.`,
+          `Write conformance tests for ${functionalityOf(input.funcId!, input.moduleName)}.`,
           "",
-          `- Test ${functionalityOf(input.frid!, input.moduleName)} only. What is listed as already implemented is there to be`,
+          `- Test ${functionalityOf(input.funcId!, input.moduleName)} only. What is listed as already implemented is there to be`,
           "  used - to set up the state a test needs - not tested again.",
         ]),
     "- Write them in your working directory - the module's tests folder - and nowhere else: never in the",
@@ -689,8 +695,8 @@ export function buildConformancePrompt(input: ConformancePromptInput): string {
     "- Organise the tests however suits them - files, folders, shared helpers. Make it clear which",
     forChange
       ? "  functionality a test covers, so its tests can be found and updated later."
-      : `  functionality a test covers, so the tests of ${functionalityOf(input.frid!, input.moduleName)} can be found and updated later.`,
-    ...(forChange ? changeTestKinds() : testKinds(input.frid!, (specifications[ACCEPTANCE_TESTS] ?? []).length)),
+      : `  functionality a test covers, so the tests of ${functionalityOf(input.funcId!, input.moduleName)} can be found and updated later.`,
+    ...(forChange ? changeTestKinds() : testKinds(input.funcId!, (specifications[ACCEPTANCE_TESTS] ?? []).length)),
     "- Test observable behaviour only: output, exit codes, files produced, values returned by the",
     "  public entry point. Never assert on internal names, private helpers or implementation detail.",
     "- <test reqs> say how conformance tests must be written and run. Follow them.",
@@ -740,10 +746,10 @@ export function buildConformancePrompt(input: ConformancePromptInput): string {
  * For a spec change: the acceptance tests of the functionalities it touches, numbered as their tests
  * are labelled - each implemented as a test of its own, as a functionality's own run has them.
  */
-function touchedAcceptanceTests(touched: Array<{ frid: string; acceptanceTests: string[] }>): string | null {
+function touchedAcceptanceTests(touched: Array<{ funcId: string; acceptanceTests: string[] }>): string | null {
   const withTests = touched.filter((item) => item.acceptanceTests.length > 0);
   if (withTests.length === 0) return null;
-  const rendered = withTests.flatMap((item) => item.acceptanceTests.map((test, index) => `${acceptanceLabel(item.frid, index + 1)}: ${acceptanceText(test)}`));
+  const rendered = withTests.flatMap((item) => item.acceptanceTests.map((test, index) => `${acceptanceLabel(item.funcId, index + 1)}: ${acceptanceText(test)}`));
   return [
     "The acceptance tests of the functional specs the change touches:",
     `<acceptance tests>\n${rendered.join("\n\n")}\n</acceptance tests>`,
@@ -753,9 +759,9 @@ function touchedAcceptanceTests(touched: Array<{ frid: string; acceptanceTests: 
 }
 
 /** The functionality's acceptance tests, numbered as their tests are labelled. */
-function numberedAcceptanceTests(frid: string, items: string[]): string | null {
+function numberedAcceptanceTests(funcId: string, items: string[]): string | null {
   if (items.length === 0) return null;
-  const rendered = items.map((item, i) => `${acceptanceLabel(frid, i + 1)}: ${acceptanceText(item)}`);
+  const rendered = items.map((item, i) => `${acceptanceLabel(funcId, i + 1)}: ${acceptanceText(item)}`);
   return `<acceptance tests>\n${rendered.join("\n\n")}\n</acceptance tests>`;
 }
 
@@ -780,12 +786,12 @@ export const CHANGE_LABEL = "conformance tests of the spec";
  * The two kinds of test, kept apart and labelled (see test-kinds.ts). `acceptance` is how many
  * acceptance tests the functionality has; for a spec change, it is left to the change.
  */
-function testKinds(frid: string, acceptance: number | undefined): string[] {
+function testKinds(funcId: string, acceptance: number | undefined): string[] {
   const conformance = [
     "- Conformance tests come from the functional spec itself: what it says the functionality does, its edge",
     "  cases, its errors - written as if no acceptance tests had been given. They do not copy the acceptance",
     "  tests, and do not stop where the acceptance tests stop.",
-    `- Label them: files whose names say conformance, each with a comment "${conformanceLabel(frid)}" at its top`,
+    `- Label them: files whose names say conformance, each with a comment "${conformanceLabel(funcId)}" at its top`,
     "  (for a spec change, the functionality each covers).",
   ];
   if (acceptance === 0) return conformance;
@@ -797,15 +803,15 @@ function testKinds(frid: string, acceptance: number | undefined): string[] {
     acceptance === undefined
       ? "  conformance tests, each as its own test, doing what it says, in files whose names say acceptance."
       : "  says, in files whose names say acceptance. Never fold one into a conformance test, even where they overlap.",
-    `- Label each acceptance test with a comment right above it: "${acceptanceLabel(frid, 1)}:" and the text`,
+    `- Label each acceptance test with a comment right above it: "${acceptanceLabel(funcId, 1)}:" and the text`,
     "  of the acceptance test, numbered as above.",
   ];
 }
 
 export interface RegressionFixPromptInput {
   moduleName: string;
-  /** Functionalities built so far, in order. */
-  frids: string[];
+  /** The func-ids of the functional specs built so far, in order. */
+  funcIds: string[];
   specifications: Specifications;
   failure: string;
   /** Functional specs of the modules this one requires, transitively. */
@@ -827,14 +833,14 @@ export function buildRegressionFixPrompt(input: RegressionFixPromptInput): strin
     specPrimer({ testReqs: false }),
     `The conformance suite for \`${input.moduleName}\` is failing.`,
     "",
-    `It covers functionalities ${input.frids.join(", ")} of module \`${input.moduleName}\` together. A functionality that passed`,
+    `It covers functional specs ${input.funcIds.join(", ")} of module \`${input.moduleName}\` together. A functional spec that passed`,
     "on its own can still be broken by a later one, which is what this run is for.",
     "",
     moduleSection(DEFINITIONS, specifications[DEFINITIONS], input.moduleName, input.modules),
     moduleSection(NON_FUNCTIONAL_REQUIREMENTS, specifications[NON_FUNCTIONAL_REQUIREMENTS], input.moduleName, input.modules),
     // All of it is in the code, the required modules' functionalities included, and any of it
     // may be what the latest change broke.
-    alreadyImplemented(input.moduleName, specifications[FUNCTIONAL_REQUIREMENTS], input.required ?? []),
+    alreadyImplemented(input.moduleName, specifications[FUNCTIONAL_REQUIREMENTS], input.funcIds, input.required ?? []),
     `<conformance failure>\n${input.failure}\n</conformance failure>`,
     "",
     "Change the implementation so every functionality listed as already implemented works at the same time.",

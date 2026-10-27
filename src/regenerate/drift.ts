@@ -1,7 +1,7 @@
 import { DEFAULT_CONCEPTS, extractConceptsFromDefinition, extractConceptsFromSpecText } from "../plain/concepts.ts";
 import { DEFINITIONS, FUNCTIONAL_REQUIREMENTS, REQUIRED_FUNCTIONAL_SPECS, type MarshalledPlainSource } from "../plain/spec.ts";
 import { codeTree, conformanceTarget, marksRegenerateAgain, type Chosen } from "./records.ts";
-import { applyChanges, changesBetween, parseTree, resourcesChanged, serializeTree, type SpecChange } from "./spec-steps.ts";
+import { applyChanges, changesBetween, isMove, parseTree, resourcesChanged, serializeTree, type SpecChange } from "./spec-steps.ts";
 
 /**
  * The work, derived from the records - see docs/regenerating.md. Nothing here is stored: what is left
@@ -27,11 +27,11 @@ export function conformanceWork(tests: MarshalledPlainSource | null, code: Marsh
 }
 
 /**
- * A functional spec a job touches: its number - in the spec after the job, or, taken out, before it - its first line,
- * and the module it belongs to: each module numbers its own from 1, so a number alone can mean two.
+ * A functional spec a job touches: its func-id, its first line, and the module it belongs to - a func-id is unique in its
+ * module, so a func-id alone can mean two.
  */
 export interface TouchedSpec {
-  frid: string;
+  funcId: string;
   text: string;
   module?: string;
 }
@@ -40,13 +40,13 @@ export interface TouchedSpec {
  * What a job does to the functional specs, and so what its agents are told:
  *
  * - fresh: the module requires none and nothing is built - the project is set up first.
- * - add: functional specs that are new.
- * - patch: functional specs changed - their text, their acceptance tests, or a concept they use: a
- *   change to what is built, never built again from scratch.
+ * - add: functional specs that are new - a func-id the spec did not have.
+ * - patch: functional specs changed - their text, their scenarios, or a concept they use: a
+ *   change to what is built, never built again from scratch. A functional spec moved, and nothing else, is none.
  * - again: functional specs marked to regenerate again (`regenerate` with functionalities named): their code is built, and is regenerated again - rewritten
  *   or started over, doing what the spec says now - with what it replaces taken out. A functional spec of a module
  *   this one requires, regenerated again here, is one too.
- * - delete: functional specs taken out.
+ * - delete: functional specs taken out - a func-id the spec no longer has. One renamed is a delete and an add.
  * - mechanical: none of those - only reqs, or definitions no functional spec uses. Existing tests may
  *   change only mechanically, and no new ones are written.
  *
@@ -62,13 +62,14 @@ export interface JobCases {
 }
 
 interface FunctionalItem {
+  id: string;
   markdown: string;
-  frid?: string;
+  module?: string;
 }
 
 const functionalSpecs = (tree: MarshalledPlainSource): FunctionalItem[] => (tree[FUNCTIONAL_REQUIREMENTS] as FunctionalItem[] | undefined) ?? [];
 
-const firstLine = (markdown: string) => markdown.trim().split("\n")[0]!.replace(/^-\s*/, "").trim();
+const firstLine = (markdown: string) => markdown.trim().split("\n")[0]!.trim();
 
 /** An item of a serialized tree, read back. */
 const itemOfLine = (line: string | undefined): FunctionalItem | undefined => {
@@ -118,13 +119,12 @@ export function conceptsUsed(markdown: string, definitions: Array<{ markdown: st
 export function casesOf(before: MarshalledPlainSource, changes: SpecChange[], options: { fresh?: boolean; module?: string } = {}): JobCases {
   const beforeText = serializeTree(before);
   const after = parseTree(applyChanges(beforeText, changes));
-  const numberIn = (tree: MarshalledPlainSource, item: FunctionalItem | undefined, position: number): string => {
-    if (item?.frid !== undefined) return item.frid;
-    const specs = functionalSpecs(tree);
-    const at = item === undefined ? -1 : specs.findIndex((spec) => spec.markdown === item.markdown);
-    return String(at === -1 ? position : at + 1);
-  };
   const own = options.module !== undefined ? { module: options.module } : {};
+  const touchedOf = (item: FunctionalItem, required: boolean): TouchedSpec => ({
+    funcId: item.id,
+    text: firstLine(item.markdown),
+    ...(required ? (item.module !== undefined ? { module: item.module } : {}) : own),
+  });
   const add: TouchedSpec[] = [];
   const patch: TouchedSpec[] = [];
   const again: TouchedSpec[] = [];
@@ -134,15 +134,16 @@ export function casesOf(before: MarshalledPlainSource, changes: SpecChange[], op
     const is = itemOfLine(change.after);
     // Marked to regenerate again: regenerated again, whatever else changed in its text - its own or, required, another module's.
     if (change.kind === "change" && is !== undefined && marksRegenerateAgain(was)) {
-      const required = change.section === REQUIRED_FUNCTIONAL_SPECS ? (is as FunctionalItem & { module?: string }) : undefined;
-      if (change.section === FUNCTIONAL_REQUIREMENTS) again.push({ frid: numberIn(after, is, change.position), text: firstLine(is.markdown), ...own });
-      else if (required !== undefined) again.push({ frid: `${required.frid ?? change.position}`, text: firstLine(is.markdown), ...(required.module !== undefined ? { module: required.module } : {}) });
+      if (change.section === FUNCTIONAL_REQUIREMENTS) again.push(touchedOf(is, false));
+      else if (change.section === REQUIRED_FUNCTIONAL_SPECS) again.push(touchedOf(is, true));
       continue;
     }
     if (change.section !== FUNCTIONAL_REQUIREMENTS) continue;
-    if (change.kind === "add" && is !== undefined) add.push({ frid: numberIn(after, is, change.position), text: firstLine(is.markdown), ...own });
-    else if (change.kind === "remove" && was !== undefined) removed.push({ frid: numberIn(before, was, change.position), text: firstLine(was.markdown), ...own });
-    else if (change.kind === "change" && is !== undefined) patch.push({ frid: numberIn(after, is, change.position), text: firstLine(is.markdown), ...own });
+    // Moved, and nothing else: none.
+    if (isMove(change)) continue;
+    if (change.kind === "add" && is !== undefined) add.push(touchedOf(is, false));
+    else if (change.kind === "remove" && was !== undefined) removed.push(touchedOf(was, false));
+    else if (change.kind === "change" && is !== undefined) patch.push(touchedOf(is, false));
   }
 
   // The concepts the job defines anew, changes or takes out.
@@ -155,16 +156,17 @@ export function casesOf(before: MarshalledPlainSource, changes: SpecChange[], op
     }
   }
   if (redefined.size > 0) {
-    const touched = new Set([...add, ...patch, ...again].filter((spec) => spec.module === options.module).map((spec) => spec.frid));
+    const touched = new Set([...add, ...patch, ...again].filter((spec) => spec.module === options.module).map((spec) => spec.funcId));
     const definitionsAfter = (after[DEFINITIONS] as Array<{ markdown: string }> | undefined) ?? [];
     const definitionsBefore = (before[DEFINITIONS] as Array<{ markdown: string }> | undefined) ?? [];
-    functionalSpecs(after).forEach((item, index) => {
-      const frid = item.frid ?? String(index + 1);
-      if (touched.has(frid)) return;
+    for (const item of functionalSpecs(after)) {
+      if (touched.has(item.id)) continue;
       const uses = new Set([...conceptsUsed(item.markdown, definitionsAfter), ...conceptsUsed(item.markdown, definitionsBefore)]);
-      if ([...redefined].some((concept) => uses.has(concept))) patch.push({ frid, text: firstLine(item.markdown), ...own });
-    });
-    patch.sort((a, b) => Number(a.frid) - Number(b.frid));
+      if ([...redefined].some((concept) => uses.has(concept))) patch.push(touchedOf(item, false));
+    }
+    // In the spec's order.
+    const order = new Map(functionalSpecs(after).map((item, index) => [item.id, index]));
+    patch.sort((a, b) => (order.get(a.funcId) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.funcId) ?? Number.MAX_SAFE_INTEGER));
   }
 
   return {

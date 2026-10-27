@@ -44,17 +44,17 @@ export class LinkedImageError extends Error {}
 /**
  * Load the resources linked from the specifications in scope for one functionality.
  *
- * `collectLinkedResources` stops at the requested FRID, so a resource introduced by a
- * later functionality is not pulled into this prompt.
+ * `collectLinkedResources` stops at the requested functional spec, so a resource introduced by a
+ * later one is not pulled into this prompt.
  */
 export function loadLinkedResources(
   tree: MarshalledPlainSource,
   /** Up to and including this functionality. Null: the whole module. */
-  frid: string | null,
+  funcId: string | null,
   templateDirs: string[],
 ): LoadedResource[] {
   const collected: Array<{ text: string; target: string; sections: string[] }> = [];
-  collectLinkedResources(tree, collected, null, true, frid);
+  collectLinkedResources(tree, collected, null, true, funcId);
 
   const loaded: LoadedResource[] = [];
   for (const resource of collected) {

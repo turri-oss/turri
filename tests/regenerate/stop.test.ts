@@ -104,17 +104,17 @@ describe("a spec that contradicts itself, for the person", () => {
       moduleName: "cognio",
       plainFile: "/p/cognio.plain",
       specs: [
-        { module: "accounts", frid: "1", plainFile: "/p/accounts.plain", text: "- A user can register.\n  - A duplicate email returns `400`." },
-        { module: "cognio", frid: "4", plainFile: "/p/cognio.plain", text: "- A duplicate email returns `409`." },
+        { module: "accounts", funcId: "register", plainFile: "/p/accounts.plain", text: "A user can register.\n  - A duplicate email returns `400`." },
+        { module: "cognio", funcId: "duplicate-email", plainFile: "/p/cognio.plain", text: "A duplicate email returns `409`." },
       ],
-      reasons: ["1 says 400, 4 says 409 for the same request.", "1 says 400, 4 says 409 for the same request.", "Both cannot hold."],
+      reasons: ["register says 400, duplicate-email says 409 for the same request.", "register says 400, duplicate-email says 409 for the same request.", "Both cannot hold."],
     });
     // Across modules: each named with its module and the file it is in.
-    expect(text).toContain("functional spec 1 of accounts and functional spec 4 of cognio cannot both hold");
-    expect(text).toContain("Functional spec 1 of accounts (accounts.plain):\n  - A user can register.\n    - A duplicate email returns `400`.");
-    expect(text).toContain("Functional spec 4 of cognio (cognio.plain):\n  - A duplicate email returns `409`.");
+    expect(text).toContain("functional spec accounts:register and functional spec cognio:duplicate-email cannot both hold");
+    expect(text).toContain("Functional spec accounts:register (accounts.plain):\n  A user can register.\n    - A duplicate email returns `400`.");
+    expect(text).toContain("Functional spec cognio:duplicate-email (cognio.plain):\n  A duplicate email returns `409`.");
     // Each reason once.
-    expect(text.match(/1 says 400/g)).toHaveLength(1);
+    expect(text.match(/register says 400/g)).toHaveLength(1);
     expect(text).toContain("found 3 times");
     expect(text).toContain("only you can say what is meant");
     // Nothing of the code or the tests: the spec is all the person works on.

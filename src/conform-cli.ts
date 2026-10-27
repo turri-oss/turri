@@ -1,10 +1,10 @@
 import { parseArgs } from "./cli-options.ts";
 import { headlessOptions, runLoop } from "./loop-cli.ts";
 
-const USAGE = `usage: turri conform <file.plain> [frid ...] [options]
+const USAGE = `usage: turri conform <file.plain> [module:func-id ...] [options]
 
-Writes and runs the black-box conformance tests of a module's functional specs - those named, or
-every one - on the code as it is built, as the chat's conform does, whatever the config's
+Writes and runs the black-box conformance tests of a module's functional specs - those named, each
+as module:func-id, or every one - on the code as it is built, as the chat's conform does, whatever the config's
 conformance-tests says: from the spec's test reqs and acceptance tests, with the whole suite the
 module inherits, a failure fixed in the test or the code, whichever is wrong. Every functional spec
 tested goes in one pulse, as far as the size guardrail lets.
@@ -19,7 +19,7 @@ tested goes in one pulse, as far as the size guardrail lets.
 
 const { positional, options } = parseArgs(process.argv.slice(2), ["--one-by-one"], USAGE, ["--build-dir", "--report", "--harness-model", "--judge-model", "--review"]);
 const { report, buildDir } = headlessOptions(options, false);
-const [plainFile, ...frids] = positional;
+const [plainFile, ...funcIds] = positional;
 if (plainFile === undefined) {
   console.error(USAGE);
   process.exit(1);
@@ -31,7 +31,7 @@ runLoop({
   command: ["conform", ...process.argv.slice(2)],
   ask: (loop) =>
     loop.conformance(plainFile, {
-      ...(frids.length > 0 ? { frids } : {}),
+      ...(funcIds.length > 0 ? { funcIds } : {}),
       ...(options["one-by-one"] !== undefined ? { separately: true } : {}),
     }),
 }).catch((error) => {

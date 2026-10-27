@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { syncTestPlainFiles } from "./test-plain.ts";
 import { conformanceOption, overrideConfig, projectModels, readProjectConfig, booleanOption, roleModel } from "../src/config.ts";
 import { configKeyOptions, parseArgs } from "../src/cli-options.ts";
 import { headlessOptions, moduleStates } from "../src/loop-cli.ts";
@@ -199,15 +200,22 @@ describe("writing the run report", () => {
   });
 });
 
-/** A spec of its own functional specs, requiring another or not. */
+/** A functional spec's func-id: its first two words - "App one, changed." is still `app-one`. */
+const idOf = (text: string) => text.toLowerCase().replace(/[^a-z0-9 ]/g, "").split(" ").slice(0, 2).join("-");
+
+/** A spec of its own functional specs, requiring another or not, each with its test plain file. */
 function spec(name: string, specs: string[], requires?: string): string {
   const file = join(dir, `${name}.plain`);
   writeFileSync(
     file,
-    `${requires !== undefined ? `---\nrequires:\n  - ${requires}\n---\n\n` : ""}***implementation reqs***\n\n- Python.\n\n***functional specs***\n\n${specs.map((text) => `- ${text}`).join("\n\n")}\n`,
+    `${requires !== undefined ? `---\nrequires:\n  - ${requires}\n---\n\n` : ""}***implementation reqs***\n\n- Python.\n\n***functional specs***\n\n${specs.map((text) => `# ${idOf(text)}\n${text}`).join("\n\n")}\n`,
   );
+  syncTestPlainFiles(dir);
   return file;
 }
+
+/** A functional spec as a record has it. */
+const item = (text: string, extra: object = {}) => ({ id: idOf(text), markdown: text, ...extra });
 
 describe("the functional specs completed", () => {
   it("counts each module's in the furthest-built codebase - what its record has as the spec has it now", () => {
@@ -220,32 +228,32 @@ describe("the functional specs completed", () => {
     writeCodeRecord(chain[1]!.buildDir, { ...tree, "functional specs": own.slice(0, 2) });
     mkdirSync(join(chain[1]!.buildDir, "src"), { recursive: true });
     // Conformance tests written for app's first.
-    writeTestsRecord(join(dir, "plain_modules", "app", "tests"), { "functional specs": [{ markdown: "- App one.", frid: "1" }] });
+    writeTestsRecord(join(dir, "plain_modules", "app", "tests"), { "functional specs": [item("App one.")] });
 
     const [counted] = functionalityCompletion(app);
     expect(counted!.codebase).toBe(chain[1]!.buildDir);
     expect(counted!.modules).toEqual([
       { module: "base", specified: 2, completed: 2, conformanceTested: 0, tested: [], incomplete: [] },
-      { module: "app", specified: 3, completed: 2, conformanceTested: 1, tested: ["1"], incomplete: ["3"] },
+      { module: "app", specified: 3, completed: 2, conformanceTested: 1, tested: ["app-one"], incomplete: ["app-three"] },
     ]);
 
     // base's second spec says something else now: what app's code has of it is not what the spec says.
     spec("base", ["Base one.", "Base two, changed."]);
-    expect(functionalityCompletion(app)[0]!.modules[0]).toMatchObject({ completed: 1, incomplete: ["2"] });
+    expect(functionalityCompletion(app)[0]!.modules[0]).toMatchObject({ completed: 1, incomplete: ["base-two"] });
   });
 
   it("counts nothing completed where nothing is built", () => {
     const app = spec("app", ["App one."]);
-    expect(functionalityCompletion(app)[0]!.modules).toEqual([{ module: "app", specified: 1, completed: 0, conformanceTested: 0, tested: [], incomplete: ["1"] }]);
+    expect(functionalityCompletion(app)[0]!.modules).toEqual([{ module: "app", specified: 1, completed: 0, conformanceTested: 0, tested: [], incomplete: ["app-one"] }]);
   });
 });
 
 /** The conformance tests recorded as written for these of a module's functional specs, where the loop keeps them. */
-function testsFor(module: string, specs: Array<{ markdown: string; frid: string }>, required: Array<{ markdown: string; module: string; frid: string }> = []): void {
+function testsFor(module: string, specs: Array<{ id: string; markdown: string }>, required: Array<{ id: string; markdown: string; module: string }> = []): void {
   writeTestsRecord(conformanceDirFor(module, modulesRoot(dir)), { "functional specs": specs, ...(required.length > 0 ? { "required functional specs": required } : {}) });
 }
 
-/** Each module's conformance-tested functional specs, by number - checked against its count on the way. */
+/** Each module's conformance-tested functional specs, by func-id - checked against its count on the way. */
 function testedOf(app: string): Record<string, string[]> {
   const [counted] = functionalityCompletion(app);
   for (const module of counted!.modules) expect(module.conformanceTested).toBe(module.tested.length);
@@ -259,10 +267,10 @@ describe("the functional specs conformance tested", () => {
     writeCodeRecord(entry!.buildDir, chainSpec([entry!]).tree);
     // Recorded out of order: the spec's order is what is listed.
     testsFor("app", [
-      { markdown: "- App three.", frid: "3" },
-      { markdown: "- App one.", frid: "1" },
+      item("App three."),
+      item("App one."),
     ]);
-    expect(testedOf(app)).toEqual({ app: ["1", "3"] });
+    expect(testedOf(app)).toEqual({ app: ["app-one", "app-three"] });
   });
 
   it("leaves out a functional spec that is not completed - not built yet, changed since, or marked to regenerate again", () => {
@@ -273,18 +281,18 @@ describe("the functional specs conformance tested", () => {
     // The first built, the second marked to regenerate again, the third not built.
     writeCodeRecord(entry!.buildDir, { ...tree, "functional specs": [own[0]!, { ...own[1]!, regenerate_again: true }] });
     testsFor("app", [
-      { markdown: "- App one.", frid: "1" },
-      { markdown: "- App two.", frid: "2" },
-      { markdown: "- App three.", frid: "3" },
+      item("App one."),
+      item("App two."),
+      item("App three."),
     ]);
-    expect(testedOf(app)).toEqual({ app: ["1"] });
+    expect(testedOf(app)).toEqual({ app: ["app-one"] });
 
     // The first changed since it was built, its conformance tests already written for the new text.
     spec("app", ["App one, changed.", "App two.", "App three."]);
     testsFor("app", [
-      { markdown: "- App one, changed.", frid: "1" },
-      { markdown: "- App two.", frid: "2" },
-      { markdown: "- App three.", frid: "3" },
+      item("App one, changed."),
+      item("App two."),
+      item("App three."),
     ]);
     expect(testedOf(app)).toEqual({ app: [] });
   });
@@ -294,10 +302,10 @@ describe("the functional specs conformance tested", () => {
     const [entry] = resolveRequiresChain(app, [], undefined, { allowNoFunctionalities: true });
     writeCodeRecord(entry!.buildDir, chainSpec([entry!]).tree);
     testsFor("app", [
-      { markdown: "- App one.", frid: "1" },
-      { markdown: "- App two, as it was.", frid: "2" },
+      item("App one."),
+      item("App two, as it was."),
     ]);
-    expect(testedOf(app)).toEqual({ app: ["1"] });
+    expect(testedOf(app)).toEqual({ app: ["app-one"] });
   });
 
   it("is empty for a module with no conformance record", () => {
@@ -313,10 +321,10 @@ describe("the functional specs conformance tested", () => {
     const [entry] = resolveRequiresChain(app, [], undefined, { allowNoFunctionalities: true });
     writeCodeRecord(entry!.buildDir, chainSpec([entry!]).tree);
     testsFor("app", [
-      { markdown: "- App one.", frid: "1" },
-      { markdown: "- App two.", frid: "2", regenerate_again: true } as { markdown: string; frid: string },
+      item("App one."),
+      item("App two.", { regenerate_again: true }),
     ]);
-    expect(testedOf(app)).toEqual({ app: ["1"] });
+    expect(testedOf(app)).toEqual({ app: ["app-one"] });
   });
 
   it("holds only each module's own functional specs in a chain", () => {
@@ -324,17 +332,17 @@ describe("the functional specs conformance tested", () => {
     const app = spec("app", ["App one.", "App two."], "base");
     const chain = resolveRequiresChain(app, [], undefined, { allowNoFunctionalities: true });
     writeCodeRecord(chain[1]!.buildDir, chainSpec(chain).tree);
-    testsFor("base", [{ markdown: "- Base one.", frid: "1" }]);
+    testsFor("base", [item("Base one.")]);
     // app's tests hold base's second too, copied up with its code: it is base's, not app's.
-    testsFor("app", [{ markdown: "- App two.", frid: "2" }], [{ markdown: "- Base two.", module: "base", frid: "2" }]);
-    expect(testedOf(app)).toEqual({ base: ["1"], app: ["2"] });
+    testsFor("app", [item("App two.")], [item("Base two.", { module: "base" })]);
+    expect(testedOf(app)).toEqual({ base: ["base-one"], app: ["app-two"] });
   });
 
   it("is empty for every module where nothing is built", () => {
     spec("base", ["Base one."]);
     const app = spec("app", ["App one."], "base");
-    testsFor("base", [{ markdown: "- Base one.", frid: "1" }]);
-    testsFor("app", [{ markdown: "- App one.", frid: "1" }]);
+    testsFor("base", [item("Base one.")]);
+    testsFor("app", [item("App one.")]);
     expect(testedOf(app)).toEqual({ base: [], app: [] });
   });
 });

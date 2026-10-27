@@ -52,8 +52,9 @@ describe("the codebase map", () => {
 
   it("goes into the coding agent's prompt, with the instruction to start from it", () => {
     const prompt = buildSpecDiffPrompt({
-      moduleName: "app", diff: "+- Two.", linkedResources: [], codebase: "Files (1):\n  app/main.py", required: [], empty: false,
-      specifications: { definitions: [], "implementation reqs": [], "test reqs": [], "functional specs": ["- One."] },
+      moduleName: "app", diff: "+Two.", linkedResources: [], codebase: "Files (1):\n  app/main.py", required: [], empty: false,
+      specifications: { definitions: [], "implementation reqs": [], "test reqs": [], "functional specs": ["One."], conformance_tests: [], acceptance_tests: [] },
+      funcIds: ["one"],
     });
     expect(prompt).toContain("<codebase>\nFiles (1):\n  app/main.py\n</codebase>");
     expect(prompt).toContain("Start from it");

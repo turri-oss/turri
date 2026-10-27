@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Command, MemorySaver } from "@langchain/langgraph";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { writePlain } from "../test-plain.ts";
 import { interruptedRun } from "../../src/genome.ts";
 import { compileSkill } from "../../src/graph.ts";
 import { createJobRegistry } from "../../src/regenerate/jobs.ts";
@@ -107,10 +108,10 @@ describe("a gate the user overrules", () => {
 
 describe("the builds after a restart", () => {
   it("build what the spec holds that is not built, and nothing twice", async () => {
-    writeFileSync(join(dir, "app.plain"), "***implementation reqs***\n\n- Python.\n\n***functional specs***\n\n- One.\n\n- Two.\n");
+    writePlain(dir, "app.plain", "***implementation reqs***\n\n- Python.\n\n***functional specs***\n\n# one\nOne.\n\n# two\nTwo.\n");
     const ran: string[][] = [];
-    const run = async (job: { buildDir: string; spec: { tree: object }; planned: { cases: { add: Array<{ frid: string }> } } }) => {
-      ran.push(job.planned.cases.add.map((spec) => spec.frid));
+    const run = async (job: { buildDir: string; spec: { tree: object }; planned: { cases: { add: Array<{ funcId: string }> } } }) => {
+      ran.push(job.planned.cases.add.map((spec) => spec.funcId));
       mkdirSync(job.buildDir, { recursive: true });
       writeFileSync(join(job.buildDir, "app.py"), "\n");
       writeCodeRecord(job.buildDir, job.spec.tree as never);
@@ -123,6 +124,6 @@ describe("the builds after a restart", () => {
     const again = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run: run as never });
     await again.bringUp("app.plain");
     await again.drain();
-    expect(ran).toEqual([["1"], ["2"]]);
+    expect(ran).toEqual([["one"], ["two"]]);
   });
 });

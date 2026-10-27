@@ -8,8 +8,8 @@ import type { JobCases, TouchedSpec } from "./drift.ts";
  * for each.
  */
 
-/** Functional specs, each by its number and - each module numbering its own from 1 - the module it belongs to. */
-const named = (specs: TouchedSpec[]) => specs.map((spec) => `fs ${spec.frid}${spec.module !== undefined ? ` of module \`${spec.module}\`` : ""} (${spec.text})`).join("; ");
+/** Functional specs, each by its func-id - with the module it belongs to, a func-id being unique in its module only - and its first line. */
+const named = (specs: TouchedSpec[]) => specs.map((spec) => `${spec.module !== undefined ? `\`${spec.module}:${spec.funcId}\`` : `\`${spec.funcId}\``} (${spec.text})`).join("; ");
 
 /** What the coding agent does, case by case. */
 export function codeCasesBlock(cases: JobCases): string[] {

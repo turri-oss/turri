@@ -170,9 +170,9 @@ const RETRIES = 2;
 
 /**
  * A functional spec to build, for the grouping: the number the agent answers with, its text, and whether it is built
- * already and regenerated again. `id` and `module` say which it is: each module numbers its own from 1, and a codebase
- * regenerates again the functional specs of the modules it is built on too. No module: the codebase's own. No id: the
- * number.
+ * already and regenerated again. `id` and `module` say which it is: its func-id, unique in its module, and a codebase
+ * regenerates again the functional specs of the modules it is built on too. No module: the codebase's own. `place` is
+ * where it is among its module's functional specs - the ones next to it there are next to it. No place: its number.
  */
 export interface NewSpec {
   number: number;
@@ -180,6 +180,7 @@ export interface NewSpec {
   again?: boolean;
   id?: string;
   module?: string;
+  place?: number;
 }
 
 export interface GroupAnswer {
@@ -262,13 +263,13 @@ export function groupProblems(specs: NewSpec[], answer: GroupAnswer, maxSpecs = 
   const numbers = specs.map((spec) => spec.number);
   const given = answer.groups.flatMap((group) => group.specs);
   if (given.join(",") !== numbers.join(",")) problems.push(`The groups must hold every new functional spec once, in the order the spec has them: ${numbers.join(", ")}. They hold ${given.join(", ") || "none"}.`);
-  // Next to each other: in the same module, one numbered after the other there.
+  // Next to each other: in the same module, one in the place after the other there.
   const byNumber = new Map(specs.map((spec) => [spec.number, spec]));
   const nextTo = (a: number, b: number) => {
     const first = byNumber.get(a);
     const second = byNumber.get(b);
     if (first === undefined || second === undefined) return b === a + 1;
-    return first.module === second.module && Number(second.id ?? second.number) === Number(first.id ?? first.number) + 1;
+    return first.module === second.module && (second.place ?? second.number) === (first.place ?? first.number) + 1;
   };
   for (const group of answer.groups) {
     if (group.specs.length === 0) problems.push(`"${group.title}" has no functional spec.`);
@@ -497,13 +498,13 @@ function conformanceGroups(
   return groups.map((group) => ({ specs: group.specs, title: group.specs.map(titleOfSpec).join("; ") }));
 }
 
-/** A functional spec's id, as the tree it is in has it - a conformance item's `frid` - or nothing when it says none. */
-function fridOf(change: SpecChange): string | undefined {
+/** A functional spec's func-id, as the tree it is in has it - or nothing when it says none. */
+function funcIdOf(change: SpecChange): string | undefined {
   for (const side of [change.after, change.before]) {
     if (side === undefined) continue;
     try {
-      const frid = (JSON.parse(side) as { frid?: unknown }).frid;
-      if (typeof frid === "string" && frid !== "") return frid;
+      const id = (JSON.parse(side) as { id?: unknown }).id;
+      if (typeof id === "string" && id !== "") return id;
     } catch {
       // Not an item with an id.
     }
@@ -548,11 +549,12 @@ async function cut(input: PlanInput, agents?: ChunkAgents, notes?: string[]): Pr
   // 1. Which functional specs go together.
   reportStage(`planning the queue: which of the ${specs.length} functional spec${specs.length === 1 ? "" : "s"} to build go together`);
   const numbered: NewSpec[] = specs.map((change, index) => {
-    const required = change.section === REQUIRED_FUNCTIONAL_SPECS ? (JSON.parse(change.after!) as { module?: string; frid?: string }) : undefined;
+    const required = change.section === REQUIRED_FUNCTIONAL_SPECS ? (JSON.parse(change.after!) as { module?: string }) : undefined;
     return {
       number: index + 1,
       text: textOf(change),
-      id: required?.frid ?? String(change.position),
+      id: funcIdOf(change) ?? "",
+      place: change.position,
       ...(required?.module !== undefined ? { module: required.module } : input.moduleName !== undefined ? { module: input.moduleName } : {}),
       ...(regeneratesAgain(change) ? { again: true } : {}),
     };
@@ -595,8 +597,8 @@ async function cut(input: PlanInput, agents?: ChunkAgents, notes?: string[]): Pr
         },
         (number) => titleOf(bySpec.get(number)!),
         (spec) => {
-          const frid = fridOf(bySpec.get(spec.number)!);
-          return frid === undefined ? -1 : (input.groups ?? []).findIndex((group) => group.includes(frid));
+          const funcId = funcIdOf(bySpec.get(spec.number)!);
+          return funcId === undefined ? -1 : (input.groups ?? []).findIndex((group) => group.includes(funcId));
         },
       )
     : grouped !== undefined && holds
@@ -736,12 +738,12 @@ export function groupPrompt(specs: NewSpec[], steering?: Steering[], maxSpecs = 
     "independent - nothing next to it builds on it or is part of the same thing - or when it is very large on its own.",
     "Never group specs only because they are of the same kind.",
     "",
-    "Only functional specs next to each other in the same module go together, and they stay in the order given: the",
+    "Only functional specs next to each other in the same module - one in the place after the other there - go together, and they stay in the order given: the",
     `order is what each is built on. Give each group a title that says what it builds - at most ${TITLE_WORDS} words and ${TITLE_CHARS}`,
     "characters: it heads the group's pulse where the person watches the work, and a longer one is cut short there.",
     "",
-    "The specification is split into modules - a ***plain matter, not how the code is laid out. Each numbers its",
-    "functional specs from 1: each below is given with its module and its id there, and a number of its own to answer with.",
+    "The specification is split into modules - a ***plain matter, not how the code is laid out. A functional spec has a",
+    "func-id, unique in its module: each below is given with its module, its func-id, its place among the module's functional specs, and a number of its own to answer with.",
     "",
     ...steeringBlock(steering),
     ...(specs.some((spec) => spec.again === true)
@@ -755,7 +757,7 @@ export function groupPrompt(specs: NewSpec[], steering?: Steering[], maxSpecs = 
     "",
     ...specs.map(
       (spec) =>
-        `<functional spec number="${spec.number}"${spec.module !== undefined ? ` module="${spec.module}"` : ""} id="${spec.id ?? spec.number}"${spec.again === true ? ' again="true"' : ""}>\n${spec.text.trim()}\n</functional spec>`,
+        `<functional spec number="${spec.number}"${spec.module !== undefined ? ` module="${spec.module}"` : ""} id="${spec.id ?? spec.number}"${spec.place !== undefined ? ` place="${spec.place}"` : ""}${spec.again === true ? ' again="true"' : ""}>\n${spec.text.trim()}\n</functional spec>`,
     ),
     "",
     "Call submit_groups once, with every one of them in a group.",

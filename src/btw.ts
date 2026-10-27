@@ -24,7 +24,7 @@ export const SIDE_CALLS = 20;
 const CONVERSATION_CHARS = 24_000;
 const SKILL_SESSION_CHARS = 16_000;
 
-/** "/btw what is a frid?" -> "what is a frid?"; "/btw" alone -> ""; anything else is not a side question. */
+/** "/btw what is a func-id?" -> "what is a func-id?"; "/btw" alone -> ""; anything else is not a side question. */
 export function sideQuestionOf(text: string): string | undefined {
   const match = /^\s*\/btw(?:\s+|$)([\s\S]*)$/i.exec(text);
   return match === null ? undefined : match[1]!.trim();

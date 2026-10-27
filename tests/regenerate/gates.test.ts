@@ -184,36 +184,36 @@ describe("the conformance tests, while an agent fixes the code", () => {
 
 describe("when a build stops", () => {
   it("says where, why and what to change in the spec, for each gate", () => {
-    const unit = describeStop({ moduleName: "app", frid: "3", at: "unit tests", runs: [{ command: "pytest", exitCode: 1 }] });
-    expect(unit).toContain("Stopped at app functionality 3: after 20 attempts it still could not be built");
+    const unit = describeStop({ moduleName: "app", funcId: "add-task", at: "unit tests", runs: [{ command: "pytest", exitCode: 1 }] });
+    expect(unit).toContain("Stopped at functional spec app:add-task: after 20 attempts it still could not be built");
     expect(unit).toContain("What to change in the spec:");
     expect(unit).toContain("break-down-func-spec");
     expect(unit).toContain("implementation reqs");
     expect(unit).toContain("it picks up here");
 
-    const conformance = describeStop({ moduleName: "app", frid: "3", at: "conformance" });
+    const conformance = describeStop({ moduleName: "app", funcId: "add-task", at: "conformance" });
     expect(conformance).toContain("still disagree about what the spec means");
     expect(conformance).toContain("acceptance tests");
     expect(conformance).toContain("test reqs");
 
-    const regression = describeStop({ moduleName: "app", frid: "3", at: "regression", repairs: 20 });
+    const regression = describeStop({ moduleName: "app", funcId: "add-task", at: "regression", repairs: 20 });
     expect(regression).toContain("broke what was built before it, and 20 attempts");
     expect(regression).toContain("resolve-spec-conflict");
   });
 
   it("says how many attempts there really were, not the most there could have been", () => {
-    expect(describeStop({ moduleName: "rt_tuples", frid: "2", at: "unit tests", attempts: 3 })).toContain(
-      "Stopped at rt_tuples functionality 2: after 3 attempts it still could not be built",
+    expect(describeStop({ moduleName: "rt_tuples", funcId: "add-tuples", at: "unit tests", attempts: 3 })).toContain(
+      "Stopped at functional spec rt_tuples:add-tuples: after 3 attempts it still could not be built",
     );
-    expect(describeStop({ moduleName: "app", frid: "1", at: "unit tests", attempts: 1 })).toContain("after 1 attempt it still");
-    expect(describeStop({ moduleName: "app", frid: "1", at: "conformance", conformance: { runs: [], rounds: 4 } })).toContain(
+    expect(describeStop({ moduleName: "app", funcId: "add-task", at: "unit tests", attempts: 1 })).toContain("after 1 attempt it still");
+    expect(describeStop({ moduleName: "app", funcId: "add-task", at: "conformance", conformance: { runs: [], rounds: 4 } })).toContain(
       "after 4 rounds, its conformance tests",
     );
   });
 
   it("never sends the person to the code, the tests or the machine", () => {
     for (const at of ["unit tests", "conformance", "regression"] as const) {
-      const text = describeStop({ moduleName: "app", frid: "3", at, runs: [{ command: "pytest", exitCode: 1 }] });
+      const text = describeStop({ moduleName: "app", funcId: "add-task", at, runs: [{ command: "pytest", exitCode: 1 }] });
       for (const codeLevel of ["/watch", "install_system_packages", "turri doctor", "ALLOWED_HOSTS", "script", "exit 1", "pytest"]) {
         expect(text).not.toContain(codeLevel);
       }

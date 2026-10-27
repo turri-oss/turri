@@ -2,14 +2,15 @@ import { CONFIG_FILE, readProjectConfig } from "./config.ts";
 import { parseArgs } from "./cli-options.ts";
 import { headlessOptions, runLoop } from "./loop-cli.ts";
 
-const USAGE = `usage: turri regenerate [file.plain] [frid ...] [options]
+const USAGE = `usage: turri regenerate [file.plain] [module:func-id ...] [options]
 
 Regenerates the module's code from its spec as it is now, and everything it requires, bottom first, as
 the chat does: what is left to regenerate - from what each module's code was regenerated from to its
 spec now - is planned into jobs, and they run one after the other until the code is regenerated from
 the spec, each followed by the conformance tests of what it regenerated when they are on. Then it says
-how each went. With functional specs named, those are regenerated though their spec did not change - as regenerate
-does in the chat with functionalities named: their code taken out and built anew, doing what the spec says.
+how each went. With functional specs named - each as module:func-id - those are regenerated though their spec did
+not change, as regenerate does in the chat with funcIds named: their code taken out and built anew, doing what the
+spec says.
 
 The project's config.turri.yaml, in the current directory, gives the defaults: module (the file to
 build when none is given), coding-model (the agents that build), harness-model (the planner), and

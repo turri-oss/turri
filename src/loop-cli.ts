@@ -161,7 +161,11 @@ async function runLoopReporting(
   const toStartOver = planned.filter((status) => status.startOver !== undefined);
   if (toStartOver.length > 0 && options.dryRun !== true) {
     const why = toStartOver
-      .map(({ startOver }) => `${startOver!.codebases.join(", ")} was built without ${startOver!.requires.join(", ")}, which it now requires: no change to its code can bring it in.`)
+      .map(({ startOver }) =>
+        startOver!.old === true
+          ? `${startOver!.codebases.join(", ")} was built when functional specs were numbered, before they had func-ids: nothing more can be built on it.`
+          : `${startOver!.codebases.join(", ")} was built without ${startOver!.requires.join(", ")}, which it now requires: no change to its code can bring it in.`,
+      )
       .join("\n");
     // No terminal and no --start-over: no one to ask, so the run stops here rather than build nothing and say it is done.
     if (options.startOver !== true && process.stdin.isTTY !== true) {
@@ -230,7 +234,9 @@ export function moduleStates(reports: DriftReport[]): ModuleState[] {
               : "incomplete";
     const why =
       state === "start_over_needed"
-        ? `built without ${report.startOver!.requires.join(", ")}, which it now requires: run with --start-over`
+        ? report.startOver!.old === true
+          ? "built when functional specs were numbered, before they had func-ids: run with --start-over to regenerate its chain from scratch"
+          : `built without ${report.startOver!.requires.join(", ")}, which it now requires: run with --start-over`
         : state === "incomplete"
           ? report.code !== null && report.code !== undefined
             ? "its code is not regenerated from the spec as it is"

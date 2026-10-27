@@ -17,12 +17,12 @@ import { listFiles } from "./testing.ts";
  * implements, never has to be guessed.
  */
 
-export function conformanceLabel(frid: string): string {
-  return `conformance tests of functionality ${frid}`;
+export function conformanceLabel(funcId: string): string {
+  return `conformance tests of functionality ${funcId}`;
 }
 
-export function acceptanceLabel(frid: string, n: number): string {
-  return `acceptance test ${n} of functionality ${frid}`;
+export function acceptanceLabel(funcId: string, n: number): string {
+  return `acceptance test ${n} of functionality ${funcId}`;
 }
 
 /** An acceptance test as the spec gives it, without its bullet. */
@@ -38,7 +38,7 @@ function normalise(text: string): string {
  * What is missing from the labelling of a functionality's tests: the conformance label, when no
  * test file carries it, and each acceptance test no test is labelled as implementing.
  */
-export function missingTestLabels(testsDir: string, frid: string, acceptanceTests: string[]): string[] {
+export function missingTestLabels(testsDir: string, funcId: string, acceptanceTests: string[]): string[] {
   const text = normalise(
     listFiles(testsDir)
       .map((file) => {
@@ -50,30 +50,30 @@ export function missingTestLabels(testsDir: string, frid: string, acceptanceTest
       })
       .join("\n"),
   );
-  // Functionality 2's label must not be found in functionality 2.1's.
+  // The label of `register` must not be found in the label of `register-twice`.
   const has = (label: string) =>
-    new RegExp(`${normalise(label).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![0-9.]*[0-9])`).test(text);
+    new RegExp(`${normalise(label).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![a-z0-9]|-[a-z0-9])`).test(text);
   const missing: string[] = [];
-  if (!has(conformanceLabel(frid))) missing.push(`No test file is labelled "${conformanceLabel(frid)}".`);
+  if (!has(conformanceLabel(funcId))) missing.push(`No test file is labelled "${conformanceLabel(funcId)}".`);
   acceptanceTests.forEach((item, i) => {
-    if (!has(acceptanceLabel(frid, i + 1))) missing.push(`No test is labelled "${acceptanceLabel(frid, i + 1)}": ${acceptanceText(item)}`);
+    if (!has(acceptanceLabel(funcId, i + 1))) missing.push(`No test is labelled "${acceptanceLabel(funcId, i + 1)}": ${acceptanceText(item)}`);
   });
   return missing;
 }
 
 /** Sent back when the labels are missing: which, and how to label them. */
-export function labelsPrompt(frid: string, missing: string[], empty = false, hasAcceptance = true): string {
-  return labelsPromptFor([{ frid, missing }], empty, hasAcceptance);
+export function labelsPrompt(funcId: string, missing: string[], empty = false, hasAcceptance = true): string {
+  return labelsPromptFor([{ funcId, missing }], empty, hasAcceptance);
 }
 
 /**
  * Sent back when the labels of several functionalities are missing - a spec change that touches them: every one that is
  * missing, in one request, so none is asked for in place of another.
  */
-export function labelsPromptFor(items: Array<{ frid: string; missing: string[] }>, empty = false, hasAcceptance = true): string {
+export function labelsPromptFor(items: Array<{ funcId: string; missing: string[] }>, empty = false, hasAcceptance = true): string {
   const pending = items.filter((item) => item.missing.length > 0);
-  const frids = pending.map((item) => item.frid);
-  const which = frids.length === 1 ? `functionality ${frids[0]}` : `functionalities ${frids.slice(0, -1).join(", ")} and ${frids.at(-1)}`;
+  const funcIds = pending.map((item) => item.funcId);
+  const which = funcIds.length === 1 ? `functionality ${funcIds[0]}` : `functionalities ${funcIds.slice(0, -1).join(", ")} and ${funcIds.at(-1)}`;
   return [
     empty
       ? "There are no tests in your tests folder - nothing ran. Whatever a build folder or an earlier report there says, write " +
@@ -83,11 +83,11 @@ export function labelsPromptFor(items: Array<{ frid: string; missing: string[] }
     ...pending.flatMap((item) => item.missing.map((line) => `- ${line}`)),
     "",
     "Every functionality's conformance tests carry its own label, in a comment of its own line: " +
-      `"${conformanceLabel(frids[0] ?? "1")}"${frids.length > 1 ? `, "${conformanceLabel(frids[1]!)}", and so on - one line a functionality` : ""}. ` +
+      `"${conformanceLabel(funcIds[0] ?? "1")}"${funcIds.length > 1 ? `, "${conformanceLabel(funcIds[1]!)}", and so on - one line a functionality` : ""}. ` +
       `A file that tests several functionalities has one such line for each. A label naming several at once - "conformance tests of functionality 1, 2 and 3" - counts for the first alone.`,
     ...(hasAcceptance
       ? [
-          `Every acceptance test is its own test, with a comment right above it: "${acceptanceLabel(frids[0] ?? "1", 1)}:" and the acceptance test's text - one not implemented yet is written as a test of its own, not folded into a conformance test.`,
+          `Every acceptance test is its own test, with a comment right above it: "${acceptanceLabel(funcIds[0] ?? "1", 1)}:" and the acceptance test's text - one not implemented yet is written as a test of its own, not folded into a conformance test.`,
         ]
       : []),
     "Add every label missing above. Keep every label and every test that is there already: adding one functionality's label never takes another's away. Then run the tests again.",
@@ -101,7 +101,7 @@ export function labelsPromptFor(items: Array<{ frid: string; missing: string[] }
  * a label is misplaced all the same.
  */
 export function misplacedConformanceTests(codeDir: string): string[] {
-  const label = /conformance tests of (functionality [0-9]|the spec)|acceptance test [0-9]+ of functionality/i;
+  const label = /conformance tests of (functionality [a-z0-9]|the spec)|acceptance test [0-9]+ of functionality [a-z0-9]/i;
   return listFiles(codeDir).filter((file) => {
     const parts = file.toLowerCase().split("/");
     const named = parts.some((part) => /conformance|acceptance/.test(part)) && /test/.test(parts.at(-1)!);

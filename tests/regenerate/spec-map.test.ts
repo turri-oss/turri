@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { writePlain } from "../test-plain.ts";
 import { DEFINITIONS, FUNCTIONAL_REQUIREMENTS, NON_FUNCTIONAL_REQUIREMENTS, TEST_REQUIREMENTS, type MarshalledPlainSource } from "../../src/plain/spec.ts";
 import { createJobRegistry } from "../../src/regenerate/jobs.ts";
 import { createWorkLoop, type JobRunner, type MapCodebase, type MapPlan, type MapPulse } from "../../src/regenerate/loop.ts";
@@ -107,7 +108,7 @@ describe("the regeneration from the files", () => {
       { key: "3", section: NON_FUNCTIONAL_REQUIREMENTS, state: "built", text: "- Use Python 3.12.", acceptance: [] },
       { key: "4", section: FUNCTIONAL_REQUIREMENTS, state: "new", text: "- Eat an :Apple:.", acceptance: [] },
     ];
-    const own = "***functional specs***\n\n- Eat an :Apple:.\n\n***definitions***\n\n- :Apple: is a fruit.\n\n- :Zebra: is an animal.\n";
+    const own = "***functional specs***\n\n# eat-an-apple\nEat an :Apple:.\n\n***definitions***\n\n- :Apple: is a fruit.\n\n- :Zebra: is an animal.\n";
     const lang = "***implementation reqs***\n\n- Use Python 3.12.\n";
     const laid = layOut(items, [{ text: own }, { label: "stdlib/lang/python", text: lang }]);
     expect(laid.map((entry) => [entry.text, entry.file])).toEqual([
@@ -124,26 +125,26 @@ describe("the regeneration from the files", () => {
   });
 
   it("reads a project before anything has run: what the code record has is built, the rest waits, and nobody has asked to build it", () => {
-    writeFileSync(join(dir, "app.plain"), "***implementation reqs***\n\n- Use Python.\n\n***functional specs***\n\n- Say hello.\n\n- Say goodbye.\n");
+    writePlain(dir, "app.plain", "***implementation reqs***\n\n- Use Python.\n\n***functional specs***\n\n# say-hello\nSay hello.\n\n# say-goodbye\nSay goodbye.\n");
     const code = join(dir, "plain_modules", "app", "code");
-    writeCodeRecord(code, tree({ [NON_FUNCTIONAL_REQUIREMENTS]: ["- Use Python."], [FUNCTIONAL_REQUIREMENTS]: ["- Say hello."] }));
+    writeCodeRecord(code, { ...tree({ [NON_FUNCTIONAL_REQUIREMENTS]: ["- Use Python."] }), [FUNCTIONAL_REQUIREMENTS]: [{ id: "say-hello", linked_resources: [], markdown: "Say hello." }] });
     const [only] = markSpecMap(readSpecMap([join(dir, "app.plain")]), noPlan);
     expect(only!.items.map((entry) => [entry.mark, entry.text])).toEqual([
       ["built", "- Use Python."],
-      ["built", "- Say hello."],
-      ["waiting", "- Say goodbye."],
+      ["built", "Say hello."],
+      ["waiting", "Say goodbye."],
     ]);
     expect(only!.status).toBe("not asked to build - regenerate plans it");
   });
 
   it("has a page for each module of the requires chain, a module below read from the codebase built on it", () => {
-    writeFileSync(join(dir, "base.plain"), "***definitions***\n\n- :Store: is a key-value store.\n\n***implementation reqs***\n\n- Use Python.\n\n***functional specs***\n\n- Put a value in the :Store:.\n");
-    writeFileSync(join(dir, "top.plain"), "---\nrequires:\n  - base\n---\n\n***implementation reqs***\n\n- Serve it over HTTP.\n\n***functional specs***\n\n- Get a value back.\n");
+    writePlain(dir, "base.plain", "***definitions***\n\n- :Store: is a key-value store.\n\n***implementation reqs***\n\n- Use Python.\n\n***functional specs***\n\n# put-a-value\nPut a value in the :Store:.\n");
+    writePlain(dir, "top.plain", "---\nrequires:\n  - base\n---\n\n***implementation reqs***\n\n- Serve it over HTTP.\n\n***functional specs***\n\n# get-a-value\nGet a value back.\n");
     const code = join(dir, "plain_modules", "top", "code");
     writeCodeRecord(code, {
       [DEFINITIONS]: [{ markdown: "- :Store: is a key-value store.", module: "base" }],
       [NON_FUNCTIONAL_REQUIREMENTS]: [{ markdown: "- Use Python.", module: "base" }],
-      "required functional specs": [{ markdown: "- Put a value in the :Store:.", module: "base", frid: "1" }],
+      "required functional specs": [{ id: "put-a-value", linked_resources: [], markdown: "Put a value in the :Store:.", module: "base" }],
     } as MarshalledPlainSource);
     writeFileSync(join(code, "main.py"), "");
     const pages = markSpecMap(readSpecMap([join(dir, "top.plain")]), noPlan);
@@ -154,25 +155,25 @@ describe("the regeneration from the files", () => {
   });
 
   it("maps the project's module from config.yaml when nothing has been asked for, else the files no other one imports or requires", () => {
-    writeFileSync(join(dir, "base.plain"), "***implementation reqs***\n\n- Use Python.\n\n***functional specs***\n\n- Do a thing.\n");
-    writeFileSync(join(dir, "top.plain"), "---\nrequires:\n  - base\n---\n\n***implementation reqs***\n\n- Serve it over HTTP.\n\n***functional specs***\n\n- Do another.\n");
+    writePlain(dir, "base.plain", "***implementation reqs***\n\n- Use Python.\n\n***functional specs***\n\n# do-a-thing\nDo a thing.\n");
+    writePlain(dir, "top.plain", "---\nrequires:\n  - base\n---\n\n***implementation reqs***\n\n- Serve it over HTTP.\n\n***functional specs***\n\n# do-another\nDo another.\n");
     expect(defaultMapFiles(dir)).toEqual([join(dir, "top.plain")]);
     writeFileSync(join(dir, "config.yaml"), "module: base.plain\n");
     expect(defaultMapFiles(dir)).toEqual([join(dir, "base.plain")]);
   });
 
   it("reads the files again only once a while has passed, or when asked to", () => {
-    writeFileSync(join(dir, "app.plain"), "***implementation reqs***\n\n- Use Python.\n\n***functional specs***\n\n- Say hello.\n");
+    writePlain(dir, "app.plain", "***implementation reqs***\n\n- Use Python.\n\n***functional specs***\n\n# say-hello\nSay hello.\n");
     let at = 0;
     const source = createSpecMapSource({ files: () => [join(dir, "app.plain")], plan: () => noPlan, every: 1000, now: () => at });
     const specs = () => source.read()[0]!.items.filter((entry) => entry.section === FUNCTIONAL_REQUIREMENTS);
     expect(specs()).toHaveLength(1);
-    writeFileSync(join(dir, "app.plain"), "***implementation reqs***\n\n- Use Python.\n\n***functional specs***\n\n- Say hello.\n\n- Say goodbye.\n");
+    writePlain(dir, "app.plain", "***implementation reqs***\n\n- Use Python.\n\n***functional specs***\n\n# say-hello\nSay hello.\n\n# say-goodbye\nSay goodbye.\n");
     at = 500;
     expect(specs()).toHaveLength(1);
     at = 1500;
     expect(specs()).toHaveLength(2);
-    writeFileSync(join(dir, "app.plain"), "***implementation reqs***\n\n- Use Python.\n\n***functional specs***\n\n- Say hello.\n");
+    writePlain(dir, "app.plain", "***implementation reqs***\n\n- Use Python.\n\n***functional specs***\n\n# say-hello\nSay hello.\n");
     source.refresh();
     expect(specs()).toHaveLength(1);
   });
@@ -392,7 +393,7 @@ describe("the regeneration drawn", () => {
 
   it("opens a functional spec's acceptance tests as the spec has them - nested under it as deep as its sub-bullets, under a heading drawn as a section's", () => {
     const spec: MarshalledPlainSource = {
-      [FUNCTIONAL_REQUIREMENTS]: [{ markdown: "- Patch the records.\n    - Lookups first.", acceptance_tests: [{ markdown: "- A lookup becomes an `@odata.bind` entry." }, { markdown: "- An empty record patches nothing." }] }],
+      [FUNCTIONAL_REQUIREMENTS]: [{ markdown: "- Patch the records.\n    - Lookups first.", acceptance_tests: [{ id: "lookup", text: "A lookup becomes an `@odata.bind` entry." }, { id: "empty-record", text: "An empty record patches nothing." }] }],
     } as MarshalledPlainSource;
     const [marked] = markSpecMap([page(spec, spec)], noPlan);
     const state = createSpecMapState();
@@ -402,8 +403,8 @@ describe("the regeneration drawn", () => {
     const heading = lines.findIndex((line) => line.includes("acceptance tests"));
     expect(lines[heading - 1]!.trimEnd()).toMatch(/│$/);
     expect(lines[heading]).toContain("│     <section>***acceptance tests***</section>");
-    expect(lines[heading + 1]).toContain("│     - A lookup becomes an `@odata.bind` entry.");
-    expect(lines[heading + 2]).toContain("│     - An empty record patches nothing.");
+    expect(lines[heading + 1]).toContain("│     A lookup becomes an `@odata.bind` entry.");
+    expect(lines[heading + 2]).toContain("│     An empty record patches nothing.");
     expect(lines.join("\n")).not.toContain("acceptance tests:");
   });
 
@@ -600,7 +601,7 @@ describe("the side panel's two views", () => {
   });
 
   it("reads a plan that fails as a page saying so", () => {
-    writeFileSync(join(dir, "app.plain"), "***implementation reqs***\n\n- Use Python.\n\n***functional specs***\n\n- Say hello.\n");
+    writePlain(dir, "app.plain", "***implementation reqs***\n\n- Use Python.\n\n***functional specs***\n\n# say-hello\nSay hello.\n");
     const source = createSpecMapSource({ files: () => [join(dir, "app.plain")], plan: () => { throw new Error("no plan"); } });
     expect(source.read()[0]).toMatchObject({ status: "the map could not be read: no plan", stuck: true });
   });
@@ -636,7 +637,7 @@ describe("the side panel's two views", () => {
 
 describe("the work loop's plan for the map", () => {
   it("numbers the module's pulses - the running one, then each planned one after it - with the trees each goes between", async () => {
-    writeFileSync(join(dir, "app.plain"), "***implementation reqs***\n\n- :Implementation: is Python.\n\n***functional specs***\n\n- Say hello.\n\n- Say goodbye.\n");
+    writePlain(dir, "app.plain", "***implementation reqs***\n\n- :Implementation: is Python.\n\n***functional specs***\n\n# say-hello\nSay hello.\n\n# say-goodbye\nSay goodbye.\n");
     let release: () => void = () => {};
     const hold = new Promise<void>((resolve) => (release = resolve));
     const run: JobRunner = async (job) => {
@@ -664,8 +665,8 @@ describe("the work loop's plan for the map", () => {
 
     const [marked] = markSpecMap(readSpecMap(plan.files), plan);
     expect(marked!.items.filter((entry) => entry.section === FUNCTIONAL_REQUIREMENTS).map((entry) => [entry.text, entry.mark])).toEqual([
-      ["- Say hello.", "regenerating"],
-      ["- Say goodbye.", "planned"],
+      ["Say hello.", "regenerating"],
+      ["Say goodbye.", "planned"],
     ]);
     release();
     await loop.drain();
@@ -675,14 +676,14 @@ describe("the work loop's plan for the map", () => {
   });
 
   it("keeps a pulse that did not land with the halt, for the map to mark its items", async () => {
-    writeFileSync(join(dir, "app.plain"), "***implementation reqs***\n\n- Use Python.\n\n***functional specs***\n\n- Say hello.\n");
+    writePlain(dir, "app.plain", "***implementation reqs***\n\n- Use Python.\n\n***functional specs***\n\n# say-hello\nSay hello.\n");
     const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run: async () => ({ landed: false, report: "did not pass" }) });
     await loop.bringUp("app.plain");
     await loop.drain();
     const plan = loop.mapPlan();
     expect(plan.codebases[0]!.stuck).toMatchObject({ pulse: { number: 1 } });
     const [marked] = markSpecMap(readSpecMap(plan.files), plan);
-    expect(marked!.items.find((entry) => entry.text === "- Say hello.")).toMatchObject({ mark: "stuck", rolledBack: 1 });
+    expect(marked!.items.find((entry) => entry.text === "Say hello.")).toMatchObject({ mark: "stuck", rolledBack: 1 });
     expect(marked!.status).toMatch(/^pulse 1 didn't land/);
   });
 });

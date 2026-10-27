@@ -10,7 +10,9 @@ The other rules say what a spec means. This one says what turri does with a chan
 
 - turri regenerates the code from spec diffs: what changed between the spec the code was built from and the spec now
 - A functional spec added, changed or taken out is that change alone, wherever it sits - first, in the middle or last of its module
-- The specs around it are not regenerated because their position or numbering moved, and nothing after it is built again. A spec inserted in the middle is one addition
+- A functional spec is known by its module and its func-id, `<module>:<func-id>`: the specs around it are not regenerated because their position moved, and nothing after it is built again. A spec inserted in the middle is one addition; one moved to another place with its text as it was is no change at all
+- A func-id renamed is a functional spec taken out and another added: its code is removed and built anew. Keep a func-id once it is built, and change the text under it
+- Code built before functional specs had func-ids is never built on: its whole chain is regenerated from scratch, never done without the person agreeing
 - "Specs render top to bottom, each knowing only the ones before it" is about what a spec may assume (`func-specs.md`), not about what a change costs
 
 ## A change is regenerated in the chain's tip

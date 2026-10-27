@@ -89,12 +89,12 @@ describe("the changes between two trees", () => {
     ]);
   });
 
-  it("an acceptance test changed is a change to the spec it belongs to, and says so", () => {
-    const before = { "functional specs": [item("- One.", { acceptance_tests: [item("- A.")] })] };
-    const after = { "functional specs": [item("- One.", { acceptance_tests: [item("- B.")] })] };
+  it("an acceptance scenario changed is a change to the functional spec it belongs to, and says so", () => {
+    const before = { "functional specs": [item("One.", { id: "one", acceptance_tests: [{ id: "a", text: "A." }] })] };
+    const after = { "functional specs": [item("One.", { id: "one", acceptance_tests: [{ id: "a", text: "B." }] })] };
     const changes = changesOf(before, after);
     expect(changes.map((change) => change.kind)).toEqual(["change"]);
-    expect(describeChange(changes[0]!)).toContain("c1: change the acceptance tests of item 1 of functional specs");
+    expect(describeChange(changes[0]!)).toContain("c1: change the acceptance scenarios of");
   });
 
   it("pairs a removed item with an added one only when they are alike - and keeps what is left over in its place", () => {
@@ -265,9 +265,11 @@ describe("a spec change laid out as the module's file", () => {
     "",
     "***functional specs***",
     "",
-    "- A :User: can sign up.",
+    "# sign-up",
+    "A :User: can sign up.",
     "",
-    "- A :User: can log in and gets a :Token:.",
+    "# log-in",
+    "A :User: can log in and gets a :Token:.",
     "",
   ].join("\n");
 
@@ -288,13 +290,13 @@ describe("a spec change laid out as the module's file", () => {
     const before = serializeTree({
       definitions: [{ markdown: "- :User: is a person." }, { markdown: "- :Profile: is what others see of a :User:." }],
       "implementation reqs": [{ markdown: "- :Implementation: is in Python." }, { markdown: "- :Implementation: uses FastAPI." }],
-      "functional specs": [{ markdown: "- A :User: can sign up." }],
+      "functional specs": [{ id: "sign-up", markdown: "A :User: can sign up." }],
     } as never);
     const after = serializeTree({
       // The parser's order - by what uses what - not the file's.
       definitions: [{ markdown: "- :User: is a person." }, { markdown: "- :Token: is a bearer token." }, { markdown: "- :Profile: is what others see of a :User:." }],
       "implementation reqs": [{ markdown: "- :Implementation: is in Python." }, { markdown: "- :Implementation: uses FastAPI." }],
-      "functional specs": [{ markdown: "- A :User: can sign up." }, { markdown: "- A :User: can log in and gets a :Token:." }],
+      "functional specs": [{ id: "sign-up", markdown: "A :User: can sign up." }, { id: "log-in", markdown: "A :User: can log in and gets a :Token:." }],
     } as never);
     const diff = diffSpecText(before, after, "app.plain", layoutOf(FILE));
     // :Token: after :Profile:, as in the file, on the file's line 11.
@@ -303,7 +305,7 @@ describe("a spec change laid out as the module's file", () => {
     expect(diff).not.toMatch(/^index /m);
     expect(diff).toMatch(/^@@ -\d+(,\d+)? \+\d+(,\d+)? @@$/m);
     expect(diff).not.toMatch(/^@@ .* @@ ./m);
-    expect(diff).toContain("+- A :User: can log in and gets a :Token:.");
+    expect(diff).toContain("+A :User: can log in and gets a :Token:.");
     // Three lines of context before it: :Token: goes in at the file's line 11.
     expect(diff).toContain("@@ -8,6 +8,8 @@\n");
   });
@@ -313,7 +315,7 @@ describe("a restructuring of the specs", () => {
   const built = {
     definitions: [item("- :User: is a person."), item("- :Session: is a sign-in.")],
     "implementation reqs": [item("- Python.")],
-    "functional specs": [item("- A :User: can register."), item("- A :User: can log in.")],
+    "functional specs": [item("A :User: can register.", { id: "register" }), item("A :User: can log in.", { id: "log-in" })],
   } as MarshalledPlainSource;
 
   it("is the same spec - definitions moved to a common module, and so read in another order", () => {
@@ -322,17 +324,18 @@ describe("a restructuring of the specs", () => {
   });
 
   it("is the same spec when functional specs move to the module the code already holds them from", () => {
-    const own = { ...built, "functional specs": [item("- A :User: can register."), item("- A :User: can log in.")], "required functional specs": [item("- Say hello.", { module: "base", frid: "1" })] } as MarshalledPlainSource;
-    const movedDown = { ...built, "functional specs": [item("- A :User: can log in.")], "required functional specs": [item("- Say hello.", { module: "base", frid: "1" }), item("- A :User: can register.", { module: "base", frid: "2" })] } as MarshalledPlainSource;
+    const own = { ...built, "required functional specs": [item("Say hello.", { module: "base", id: "say-hello" })] } as MarshalledPlainSource;
+    const movedDown = { ...built, "functional specs": [item("A :User: can log in.", { id: "log-in" })], "required functional specs": [item("Say hello.", { module: "base", id: "say-hello" }), item("A :User: can register.", { module: "base", id: "register" })] } as MarshalledPlainSource;
     expect(sameSpec(own, movedDown)).toBe(true);
   });
 
-  it("is not the same spec when a module is required that the code was not built on, or anything reads differently", () => {
-    const onNew = { ...built, "functional specs": [item("- A :User: can log in.")], "required functional specs": [item("- A :User: can register.", { module: "accounts", frid: "1" })] } as MarshalledPlainSource;
+  it("is not the same spec when a module is required that the code was not built on, or anything reads differently - but is in another order", () => {
+    const onNew = { ...built, "functional specs": [item("A :User: can log in.", { id: "log-in" })], "required functional specs": [item("A :User: can register.", { module: "accounts", id: "register" })] } as MarshalledPlainSource;
     expect(sameSpec(built, onNew)).toBe(false);
     expect(sameSpec(built, { ...built, definitions: [item("- :User: is a student."), item("- :Session: is a sign-in.")] } as MarshalledPlainSource)).toBe(false);
-    // Functional specs in another order are another spec: each is built on the ones before it.
-    expect(sameSpec(built, { ...built, "functional specs": [item("- A :User: can log in."), item("- A :User: can register.")] } as MarshalledPlainSource)).toBe(false);
+    expect(sameSpec(built, { ...built, "functional specs": [item("A :User: can log in.", { id: "log-in" }), item("A :User: can register, twice.", { id: "register" })] } as MarshalledPlainSource)).toBe(false);
+    // Functional specs in another order are the same spec: each is known by its func-id, wherever it is written.
+    expect(sameSpec(built, { ...built, "functional specs": [item("A :User: can log in.", { id: "log-in" }), item("A :User: can register.", { id: "register" })] } as MarshalledPlainSource)).toBe(true);
   });
 });
 

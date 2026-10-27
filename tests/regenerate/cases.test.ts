@@ -9,7 +9,7 @@ const none: JobCases = { fresh: false, add: [], patch: [], again: [], delete: []
 const text = (lines: string[]) => lines.join("\n");
 
 describe("what a job's agents are told, case by case, and nothing more", () => {
-  const one = { frid: "1", text: "Users sign up." };
+  const one = { funcId: "sign-up", text: "Users sign up." };
   /** Each case alone, and the words that are its own in each block: a job holding only it gets those, and no other case's. */
   const only: Array<{ name: string; cases: JobCases; code: string; review?: string; conformance?: string }> = [
     { name: "fresh", cases: { ...none, fresh: true }, code: "Nothing is built yet", conformance: "There are no conformance tests yet" },
@@ -42,27 +42,27 @@ describe("what a job's agents are told, case by case, and nothing more", () => {
 
 describe("what a job's agents are told, by its cases", () => {
   it("tells the coding agent, for each case, what to do with its functional specs - a section for each case the job holds", () => {
-    const mixed = text(codeCasesBlock({ ...none, add: [{ frid: "3", text: "Users log out." }], patch: [{ frid: "1", text: "Users sign up." }], delete: [{ frid: "2", text: "Users rate." }] }));
-    expect(mixed).toContain("New - build each, and write its unit tests: fs 3 (Users log out.)");
-    expect(mixed).toContain("Changed - its text, or a concept it uses: fs 1 (Users sign up.)");
+    const mixed = text(codeCasesBlock({ ...none, add: [{ funcId: "log-out", text: "Users log out." }], patch: [{ funcId: "sign-up", text: "Users sign up." }], delete: [{ funcId: "rate", text: "Users rate." }] }));
+    expect(mixed).toContain("New - build each, and write its unit tests: `log-out` (Users log out.)");
+    expect(mixed).toContain("Changed - its text, or a concept it uses: `sign-up` (Users sign up.)");
     expect(mixed).toContain("Do not build it again from scratch.");
     expect(mixed).toContain("Taken out - remove its code, and the unit tests only it had");
     expect(mixed).not.toContain("No functional spec is touched");
   });
 
   it("tells the coding agent to build again what is built - its implementation taken out and built anew, even where the old code already does what the spec says - and its reviewer to hold it to that", () => {
-    const again = text(codeCasesBlock({ ...none, again: [{ frid: "2", text: "Users sign in." }] }));
-    expect(again).toContain("Regenerated again - its code and unit tests are built, and are to be regenerated again: fs 2 (Users sign in.)");
+    const again = text(codeCasesBlock({ ...none, again: [{ funcId: "sign-in", text: "Users sign in." }] }));
+    expect(again).toContain("Regenerated again - its code and unit tests are built, and are to be regenerated again: `sign-in` (Users sign in.)");
     expect(again).toContain("Take its implementation out and build it anew from the specification");
     expect(again).toContain("the old code already doing what it says, is no reason\n  to keep it");
     expect(again).toContain("no second implementation beside the old one");
     expect(again).not.toContain("New - build each");
-    const review = text(codeReviewCasesBlock({ ...none, again: [{ frid: "2", text: "Users sign in." }] }));
-    expect(review).toContain("Regenerated again: fs 2 (Users sign in.) - its implementation built anew, not kept or patched beside the old one");
+    const review = text(codeReviewCasesBlock({ ...none, again: [{ funcId: "sign-in", text: "Users sign in." }] }));
+    expect(review).toContain("Regenerated again: `sign-in` (Users sign in.) - its implementation built anew, not kept or patched beside the old one");
   });
 
   it("sets a fresh project up first, with its unit tests where the unit testing script runs them - no word of conformance", () => {
-    const fresh = text(codeCasesBlock({ ...none, fresh: true, add: [{ frid: "1", text: "Say hello." }] }));
+    const fresh = text(codeCasesBlock({ ...none, fresh: true, add: [{ funcId: "say-hello", text: "Say hello." }] }));
     expect(fresh).toContain("Nothing is built yet: set the project up first");
     expect(fresh).toContain("unit testing script");
     expect(fresh).not.toMatch(/conformance|testing scripts/);
@@ -75,7 +75,8 @@ describe("what a job's agents are told, by its cases", () => {
     const prompt = buildSpecDiffPrompt({
       moduleName: "app",
       diff: "",
-      specifications: { definitions: [], "implementation reqs": ["- :Implementation: is Python 3.13."], "test reqs": [], "functional specs": [] },
+      specifications: { definitions: [], "implementation reqs": ["- :Implementation: is Python 3.13."], "test reqs": [], "functional specs": [], conformance_tests: [], acceptance_tests: [] },
+      funcIds: [],
       required: [],
       linkedResources: [],
       empty: false,
@@ -90,26 +91,26 @@ describe("what a job's agents are told, by its cases", () => {
     const task = unitReviewTask({ buildDir: "/b", what: "the change", spec: "<spec>", forChange: true, cases: { ...none, mechanical: true } });
     expect(task).toContain("Raise no missing test");
     expect(task).not.toContain("Check that every behaviour the specification states for this work is tested");
-    const parts = text(codeReviewCasesBlock({ ...none, add: [{ frid: "2", text: "Two." }], patch: [{ frid: "1", text: "One." }] }));
-    expect(parts).toContain("New: fs 2 (Two.)");
-    expect(parts).toContain("Changed: fs 1 (One.) - the code and its tests changed to match it now");
+    const parts = text(codeReviewCasesBlock({ ...none, add: [{ funcId: "two", text: "Two." }], patch: [{ funcId: "one", text: "One." }] }));
+    expect(parts).toContain("New: `two` (Two.)");
+    expect(parts).toContain("Changed: `one` (One.) - the code and its tests changed to match it now");
   });
 
   it("tells the conformance agent the same, for its tests - a fresh tests folder, new, changed and taken out, and mechanical", () => {
-    const all = text(conformanceCasesBlock({ ...none, fresh: true, add: [{ frid: "1", text: "One." }], patch: [{ frid: "2", text: "Two." }], delete: [{ frid: "3", text: "Three." }] }));
+    const all = text(conformanceCasesBlock({ ...none, fresh: true, add: [{ funcId: "one", text: "One." }], patch: [{ funcId: "two", text: "Two." }], delete: [{ funcId: "three", text: "Three." }] }));
     expect(all).toContain("There are no conformance tests yet: set the tests folder up first");
-    expect(all).toContain("New - write its conformance tests: fs 1 (One.)");
+    expect(all).toContain("New - write its conformance tests: `one` (One.)");
     expect(all).toContain("rewrite them to what it says now");
-    expect(all).toContain("Taken out - remove its conformance tests: fs 3 (Three.)");
+    expect(all).toContain("Taken out - remove its conformance tests: `three` (Three.)");
     const mechanical = text(conformanceCasesBlock({ ...none, mechanical: true }));
     expect(mechanical).toContain("the change is to the test reqs, or to definitions or implementation reqs alone");
     expect(mechanical).toContain("Write no new tests.");
-    expect(conformanceReviewCasesBlock({ ...none, add: [{ frid: "1", text: "One." }] })).toEqual([]);
+    expect(conformanceReviewCasesBlock({ ...none, add: [{ funcId: "one", text: "One." }] })).toEqual([]);
   });
 
   it("tells the conformance agent to run the tests of a functional spec regenerated again on its new code, and fix what fails against the spec", () => {
-    const again = text(conformanceCasesBlock({ ...none, again: [{ frid: "1", text: "The server answers a health check." }] }));
-    expect(again).toContain("its conformance tests were written against the code it replaced: fs 1 (The server answers a health check.)");
+    const again = text(conformanceCasesBlock({ ...none, again: [{ funcId: "health", text: "The server answers a health check." }] }));
+    expect(again).toContain("its conformance tests were written against the code it replaced: `health` (The server answers a health check.)");
     expect(again).toContain("Run its tests against the new code.");
     // Passing tests are tests of the new code too: only what fails is fixed.
     expect(again).toContain("are not rewritten. Fix what fails against the");
@@ -120,14 +121,15 @@ describe("what a job's agents are told, by its cases", () => {
   it("puts the conformance cases in the conformance agent's prompt and a mechanical job's in its reviewer's", () => {
     const prompt = buildConformancePrompt({
       moduleName: "app",
-      frid: "1",
-      specifications: { definitions: [], "implementation reqs": [], "test reqs": ["- pytest."], "functional specs": ["- One."] },
+      funcId: "one",
+      specifications: { definitions: [], "implementation reqs": [], "test reqs": ["- pytest."], "functional specs": ["One."], conformance_tests: [], acceptance_tests: [] },
+      funcIds: ["one"],
       linkedResources: [],
       manifest: ["app.py"],
-      diff: "+- One.",
-      cases: { ...none, add: [{ frid: "1", text: "One." }] },
+      diff: "+One.",
+      cases: { ...none, add: [{ funcId: "one", text: "One." }] },
     } as never);
-    expect(prompt).toContain("New - write its conformance tests: fs 1 (One.)");
+    expect(prompt).toContain("New - write its conformance tests: `one` (One.)");
     const review = testReviewTask({ buildDir: "/b", conformanceDir: "/t", spec: { moduleName: "app", text: "<spec>" } as never, functionalities: [], forChange: true, invocation: "run it", cases: { ...none, mechanical: true } });
     expect(review).toContain("Raise no missing test");
     expect(review).toContain("And, of every test the run changed:");

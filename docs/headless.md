@@ -149,8 +149,8 @@ A module that `requires` others is built in its own codebase on top of theirs: t
   "functionalities": {
     "total": { "specified": 12, "completed": 10, "conformance_tested": 8 },
     "modules": [
-      { "module": "base", "specified": 4, "completed": 4, "conformance_tested": 4, "incomplete_frids": [] },
-      { "module": "app", "specified": 8, "completed": 6, "conformance_tested": 4, "incomplete_frids": ["7", "8"] }
+      { "module": "base", "specified": 4, "completed": 4, "conformance_tested": 4, "incomplete_func_ids": [] },
+      { "module": "app", "specified": 8, "completed": 6, "conformance_tested": 4, "incomplete_func_ids": ["export-csv", "import-csv"] }
     ],
     "codebases": ["plain_modules/app/code"]
   },
@@ -188,10 +188,10 @@ Run the same command again. Functionalities already built from the current \*\*\
 ## Rebuilding one functionality
 
 ```bash
-turri regenerate app.plain 3
+turri regenerate app.plain app:add-task
 ```
 
-It rebuilds just functionality 3 over the code that already exists - after its \*\*\*plain changed, or as it is - without rebuilding the ones before it. To change what it does, change its \*\*\*plain first: \*\*\*plain is what the code is built from, and a change made there lasts. Then it updates the functionality's conformance tests and runs every conformance test in the codebase, since a change can break something built later as easily as something built earlier. It works in the codebase the functionality now lives in: when later modules are built on top of this one, the furthest-built of them. It exits `0` when everything passes, and refuses when there is no code yet - regenerate the module first.
+It rebuilds just `app:add-task` over the code that already exists - after its \*\*\*plain changed, or as it is - without rebuilding the ones before it. To change what it does, change its \*\*\*plain first: \*\*\*plain is what the code is built from, and a change made there lasts. Then it updates the functionality's conformance tests and runs every conformance test in the codebase, since a change can break something built later as easily as something built earlier. It works in the codebase the functionality now lives in: when later modules are built on top of this one, the furthest-built of them. It exits `0` when everything passes, and refuses when there is no code yet - regenerate the module first.
 
 Several changes do not need one command each: after editing \*\*\*plain, re-running `turri regenerate` brings the code up to it - one \*\*\*plain diff for what changed in what is built, then the functional specs not built yet.
 

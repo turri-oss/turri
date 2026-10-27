@@ -48,9 +48,9 @@ export interface Exploration {
    * start, and whether they start it themselves.
    */
   testsReachIt: string;
-  interfaces: Array<{ module: string; frid: string; how: string }>;
+  interfaces: Array<{ module: string; funcId: string; how: string }>;
   environment: string;
-  plan: Array<{ module: string; frid: string; tests: string }>;
+  plan: Array<{ module: string; funcId: string; tests: string }>;
   other?: string;
 }
 
@@ -59,9 +59,9 @@ export function explorationText(exploration: Exploration, replies: string[] = []
   const sections = [
     `## How to build and run it\n\n${exploration.buildAndRun.trim()}`,
     `## How the conformance tests reach it, run by the testing script\n\n${exploration.testsReachIt.trim()}`,
-    `## How each functionality is reached\n\n${exploration.interfaces.map((item) => `### ${item.module} ${item.frid}\n\n${item.how.trim()}`).join("\n\n")}`,
+    `## How each functionality is reached\n\n${exploration.interfaces.map((item) => `### ${item.module} ${item.funcId}\n\n${item.how.trim()}`).join("\n\n")}`,
     `## What it needs around it\n\n${exploration.environment.trim()}`,
-    `## Plan for the conformance tests\n\n${exploration.plan.map((item) => `### ${item.module} ${item.frid}\n\n${item.tests.trim()}`).join("\n\n")}`,
+    `## Plan for the conformance tests\n\n${exploration.plan.map((item) => `### ${item.module} ${item.funcId}\n\n${item.tests.trim()}`).join("\n\n")}`,
     ...(exploration.other?.trim() ? [`## Anything else\n\n${exploration.other.trim()}`] : []),
     // An account it could not complete is passed on with what it wrote, so nothing it found is lost.
     ...(replies.length > 0 ? [`## What the explorer wrote as it worked\n\n${replies.map((reply) => reply.trim()).join("\n\n")}`] : []),
@@ -95,7 +95,7 @@ export function explorationProblems(
   scope: ConflictScope,
   moduleName: string,
   /** The functionalities whose acceptance tests the plan has to carry out, and how many each has. */
-  acceptance: Array<{ module: string; frid: string; count: number }> = [],
+  acceptance: Array<{ module: string; funcId: string; count: number }> = [],
 ): string[] {
   if (exploration === undefined) return ["You have not called submit_exploration."];
   const problems: string[] = [];
@@ -107,13 +107,13 @@ export function explorationProblems(
     );
   }
   const unknown = [...exploration.interfaces, ...exploration.plan].filter(
-    (item) => item.frid !== "" && !scope.functionalities.some((ref) => ref.module === item.module && ref.frid === item.frid),
+    (item) => item.funcId !== "" && !scope.functionalities.some((ref) => ref.module === item.module && ref.funcId === item.funcId),
   );
   if (unknown.length > 0 && scope.tested === undefined) {
-    const names = [...new Set(unknown.map((item) => `${item.module} ${item.frid}`))];
+    const names = [...new Set(unknown.map((item) => `${item.module} ${item.funcId}`))];
     problems.push(
-      `${names.join(", ")} ${names.length === 1 ? "is not a functionality" : "are not functionalities"}: give module and id as ` +
-        `the specification numbers them - ${scope.functionalities.filter((ref) => ref.module === moduleName).map(refLabel).join(", ") || "none yet"}.`,
+      `${names.join(", ")} ${names.length === 1 ? "is not a functionality" : "are not functionalities"}: give module and func-id as ` +
+        `the specification has them - ${scope.functionalities.filter((ref) => ref.module === moduleName).map(refLabel).join(", ") || "none yet"}.`,
     );
   }
   const short = (text: string | undefined) => (text ?? "").trim().length < 40;
@@ -131,7 +131,7 @@ export function explorationProblems(
   if (scope.tested !== undefined) {
     // A functionality's run: the one under test, reached and planned for.
     const tested = scope.tested;
-    const has = (list: Array<{ module: string; frid: string }>) => list.some((item) => item.module === tested.module && item.frid === tested.frid);
+    const has = (list: Array<{ module: string; funcId: string }>) => list.some((item) => item.module === tested.module && item.funcId === tested.funcId);
     if (!has(reached)) problems.push(`interfaces does not say how ${refLabel(tested)} is reached: the command and its arguments, or the route, method, headers and the request and response fields.`);
     if (!has(planned)) problems.push(`plan has no tests for ${refLabel(tested)}: the cases to write, how each is set up and invoked, and what it checks as the specification says.`);
   } else {
@@ -143,14 +143,14 @@ export function explorationProblems(
   // leaves its author to write a placeholder.
   for (const item of acceptance) {
     const text = exploration.plan
-      .filter((entry) => entry.module === item.module && entry.frid === item.frid)
+      .filter((entry) => entry.module === item.module && entry.funcId === item.funcId)
       .map((entry) => entry.tests)
       .join("\n");
     const named = new Set([...text.matchAll(/acceptance test\s*(\d+)/gi)].map((match) => Number(match[1])));
     const missing = Array.from({ length: item.count }, (_, index) => index + 1).filter((n) => !named.has(n));
     if (missing.length > 0) {
       problems.push(
-        `plan does not carry out ${missing.map((n) => `acceptance test ${n}`).join(", ")} of ${item.module} ${item.frid}: name each ` +
+        `plan does not carry out ${missing.map((n) => `acceptance test ${n}`).join(", ")} of ${item.module} ${item.funcId}: name each ` +
           '"acceptance test N" as the specification numbers them, and say how each of its steps is done from outside - through ' +
           "which endpoint, or which class and method where the test reqs let the tests call a component directly - with what, " +
           "and what it asserts. A long acceptance test is planned whole, never cut down.",
@@ -179,7 +179,7 @@ export async function exploreInvocation(options: {
    */
   question?: { failure: string; account: string };
   /** The functionalities whose acceptance tests the plan has to carry out, and how many each has. */
-  acceptance?: Array<{ module: string; frid: string; count: number }>;
+  acceptance?: Array<{ module: string; funcId: string; count: number }>;
   label: string;
   model?: string;
   onDelta?: (delta: string) => void;
@@ -195,15 +195,15 @@ export async function exploreInvocation(options: {
       Type.String({
         description:
           target !== undefined
-            ? `The functionality's id as the specification numbers it, e.g. "${target.frid}" - leave both out for ${refLabel(target)}, the one under test`
-            : 'The functionality\'s id as the specification numbers it, e.g. "3" - never a name of your own',
+            ? `The functionality's func-id as the specification has it, e.g. "${target.funcId}" - leave both out for ${refLabel(target)}, the one under test`
+            : 'The functionality\'s func-id as the specification has it, e.g. "add-task" - never a name of your own',
       }),
     ),
   };
   /** An entry's functionality: as given when it is one, otherwise - in a functionality's run - the one under test. */
-  const owner = (item: { module?: string; id?: string }): { module: string; frid: string } => {
-    const given = { module: (item.module ?? "").trim() || options.spec.moduleName, frid: (item.id ?? "").trim() };
-    const known = options.scope.functionalities.some((known) => known.module === given.module && known.frid === given.frid);
+  const owner = (item: { module?: string; id?: string }): { module: string; funcId: string } => {
+    const given = { module: (item.module ?? "").trim() || options.spec.moduleName, funcId: (item.id ?? "").trim() };
+    const known = options.scope.functionalities.some((known) => known.module === given.module && known.funcId === given.funcId);
     return known || target === undefined ? given : { ...target };
   };
   const submit = defineTool({
@@ -573,7 +573,7 @@ export async function createTestReviewer(options: {
   conformanceDir: string;
   spec: SpecContext;
   /** The functionality under test - or, for a spec change, those it touches - with their acceptance tests. */
-  functionalities: Array<{ frid: string; acceptanceTests: string[] }>;
+  functionalities: Array<{ funcId: string; acceptanceTests: string[] }>;
   forChange?: boolean;
   invocation: string;
   label: string;
@@ -660,14 +660,14 @@ export function testReviewTask(options: {
   buildDir: string;
   conformanceDir: string;
   spec: SpecContext;
-  functionalities: Array<{ frid: string; acceptanceTests: string[] }>;
+  functionalities: Array<{ funcId: string; acceptanceTests: string[] }>;
   forChange?: boolean;
   invocation: string;
 }): string {
   const withAcceptance = options.functionalities.filter((item) => item.acceptanceTests.length > 0);
   const whose = options.forChange
-    ? `the functionalities of module \`${options.spec.moduleName}\` the change touches (${options.functionalities.map((item) => item.frid).join(", ") || "none"})`
-    : `functionality ${options.functionalities[0]?.frid ?? ""} of module \`${options.spec.moduleName}\``;
+    ? `the functionalities of module \`${options.spec.moduleName}\` the change touches (${options.functionalities.map((item) => item.funcId).join(", ") || "none"})`
+    : `functionality ${options.functionalities[0]?.funcId ?? ""} of module \`${options.spec.moduleName}\``;
   return [
     specPrimer({ testReqs: true }),
     `You review the conformance tests of the \`${options.spec.moduleName}\` specification a conformance run adds or changes, each time`,
@@ -701,7 +701,7 @@ export function testReviewTask(options: {
           "  stand-in, or said to be impossible to run is missing, not done:",
           "",
           ...withAcceptance.flatMap((item) =>
-            item.acceptanceTests.map((test, index) => `<acceptance test ${index + 1} of functionality ${item.frid}>\n${test.trim()}\n</acceptance test>`),
+            item.acceptanceTests.map((test, index) => `<acceptance test ${index + 1} of functionality ${item.funcId}>\n${test.trim()}\n</acceptance test>`),
           ),
           "",
         ]
@@ -821,12 +821,12 @@ export interface Escalation {
 /** A functionality, by the module it is in and its id there: a conflict can cross modules. */
 export interface FunctionalityRef {
   module: string;
-  frid: string;
+  funcId: string;
 }
 
 /** "billing 4": a functionality as the judge and the person read it. */
 export function refLabel(ref: FunctionalityRef): string {
-  return `${ref.module} ${ref.frid}`;
+  return `${ref.module} ${ref.funcId}`;
 }
 
 export interface Verdict {
@@ -856,14 +856,14 @@ export interface ConflictScope {
   tested?: FunctionalityRef;
 }
 
-const same = (a: FunctionalityRef, b: FunctionalityRef) => a.module === b.module && a.frid === b.frid;
+const same = (a: FunctionalityRef, b: FunctionalityRef) => a.module === b.module && a.funcId === b.funcId;
 
 /** A conflict's functionalities as the judge gave them, tidied: trimmed, and each once. */
-export function conflictRefs(given: Array<{ module?: string; id?: string; frid?: string }> | undefined): FunctionalityRef[] {
+export function conflictRefs(given: Array<{ module?: string; id?: string; funcId?: string }> | undefined): FunctionalityRef[] {
   const refs: FunctionalityRef[] = [];
   for (const item of given ?? []) {
-    const ref = { module: (item.module ?? "").trim(), frid: (item.frid ?? item.id ?? "").trim() };
-    if (ref.module !== "" && ref.frid !== "" && !refs.some((known) => same(known, ref))) refs.push(ref);
+    const ref = { module: (item.module ?? "").trim(), funcId: (item.funcId ?? item.id ?? "").trim() };
+    if (ref.module !== "" && ref.funcId !== "" && !refs.some((known) => same(known, ref))) refs.push(ref);
   }
   return refs;
 }
@@ -894,7 +894,7 @@ export function conflictKey(functionalities: FunctionalityRef[]): string {
 
 export function sortedRefs(functionalities: FunctionalityRef[]): FunctionalityRef[] {
   return conflictRefs(functionalities).sort(
-    (a, b) => a.module.localeCompare(b.module) || a.frid.localeCompare(b.frid, undefined, { numeric: true }),
+    (a, b) => a.module.localeCompare(b.module) || a.funcId.localeCompare(b.funcId, undefined, { numeric: true }),
   );
 }
 
@@ -1045,7 +1045,7 @@ export async function judgeFailure(options: {
             module: Type.String({ description: "The module the functionality is in" }),
             id: Type.String({ description: "Its id in that module" }),
           }),
-          { description: 'For spec: the two functionalities that cannot both hold, e.g. [{"module": "billing", "id": "4"}, {"module": "accounts", "id": "1"}]' },
+          { description: 'For spec: the two functionalities that cannot both hold, e.g. [{"module": "billing", "id": "refund"}, {"module": "accounts", "id": "register"}]' },
         ),
       ),
     }),

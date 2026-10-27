@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { writeTestScripts } from "../test-scripts.ts";
+import { funcIdsIn, newFileDiff, testPlainFile, writePlain } from "../test-plain.ts";
 import { NOTES_FILE, readNotes } from "../../src/regenerate/notes.ts";
 import { BEGIN } from "../../src/pi.ts";
 
@@ -64,7 +65,7 @@ vi.mock("../../src/pi.ts", async (importOriginal) => {
 
 const { applySpecDiff, describeSpecDiff, renderSpecDiff, snapshotSpec } = await import("../../src/regenerate/regenerate.ts");
 const { buildSpecDiffPrompt } = await import("../../src/regenerate/prompt.ts");
-const { readRecord } = await import("../../src/regenerate/records.ts");
+const { codeTree, readRecord } = await import("../../src/regenerate/records.ts");
 const { createSteering } = await import("../../src/regenerate/steering.ts");
 const { listFiles } = await import("../../src/regenerate/testing.ts");
 /** The spec as the parser has it now. */
@@ -74,7 +75,15 @@ const { resolveTemplateDirs } = await import("../../src/regenerate/paths.ts");
 
 let dir: string;
 let cwd: string;
-const plain = (fs: string[]) => `***implementation reqs***\n\n- Python.\n\n***functional specs***\n\n${fs.join("\n\n")}\n`;
+/** A functional spec's func-id: the words of its first line, up to a comma. */
+const idOf = (text: string) => text.split(/[,\n]/)[0]!.toLowerCase().match(/[a-z0-9]+/g)!.join("-");
+const plain = (fs: string[]) => `***implementation reqs***\n\n- Python.\n\n***functional specs***\n\n${fs.map((text) => `# ${idOf(text)}\n${text}`).join("\n\n")}\n`;
+/** A git diff that removes a file, as a ***plain change removes a test plain file. */
+const goneFileDiff = (path: string, text: string) => {
+  const lines = text.split("\n").slice(0, -1);
+  return [`diff --git a/${path} b/${path}`, "deleted file mode 100644", `--- a/${path}`, "+++ /dev/null", `@@ -1,${lines.length} +0,0 @@`, ...lines.map((line) => `-${line}`), ""].join("\n");
+};
+/** The change to app.plain, and to the test plain files of the functional specs it adds and takes out. */
 const diffOf = (before: string, after: string) =>
   [
     "diff --git a/app.plain b/app.plain",
@@ -84,7 +93,9 @@ const diffOf = (before: string, after: string) =>
     ...before.split("\n").slice(0, -1).map((line) => `-${line}`),
     ...after.split("\n").slice(0, -1).map((line) => `+${line}`),
     "",
-  ].join("\n");
+  ].join("\n") +
+  funcIdsIn(after).filter((id) => !funcIdsIn(before).includes(id)).map((id) => newFileDiff(`tests/app/${id}.plain`, testPlainFile("app", id))).join("") +
+  funcIdsIn(before).filter((id) => !funcIdsIn(after).includes(id)).map((id) => goneFileDiff(`tests/app/${id}.plain`, testPlainFile("app", id))).join("");
 
 beforeEach(async () => {
   dir = realpathSync(mkdtempSync(join(tmpdir(), "turri-specdiff-")));
@@ -104,16 +115,16 @@ afterEach(() => {
 
 describe("applying the spec diff with git", () => {
   it("applies it, accepts it already applied, and refuses one that fits neither way", () => {
-    const before = plain(["- One."]);
-    const after = plain(["- One.", "- Two."]);
-    writeFileSync(join(dir, "app.plain"), before);
+    const before = plain(["One."]);
+    const after = plain(["One.", "Two."]);
+    writePlain(dir, "app.plain", before);
     const diff = diffOf(before, after);
 
     expect(applySpecDiff(diff, dir)).toBe("applied");
     expect(readFileSync(join(dir, "app.plain"), "utf8")).toBe(after);
     expect(applySpecDiff(diff, dir)).toBe("already applied");
 
-    writeFileSync(join(dir, "app.plain"), plain(["- Something else entirely."]));
+    writePlain(dir, "app.plain", plain(["Something else entirely."]));
     expect(() => applySpecDiff(diff, dir)).toThrow(/does not apply/);
   });
 });
@@ -122,23 +133,25 @@ describe("the change agent's prompt", () => {
   it("carries the diff and every spec as it now stands, the required modules' first", () => {
     const prompt = buildSpecDiffPrompt({
       moduleName: "app",
-      diff: "+- Two.",
-      specifications: { definitions: [], "implementation reqs": ["- Python."], "test reqs": [], "functional specs": ["- One.", "- Two."] },
-      required: [{ module: "base", frid: "1", spec: "- Base." }],
+      diff: "+Two.",
+      specifications: { definitions: [], "implementation reqs": ["- Python."], "test reqs": [], "functional specs": ["One.", "Two."] },
+      funcIds: ["one", "two"],
+      required: [{ module: "base", funcId: "base", spec: "Base." }],
       linkedResources: [],
       empty: false,
     });
     // Not told section by section: the raw diff, with which tag each ***heading*** in it is.
-    expect(prompt).toContain("+- Two.\n</spec change>");
+    expect(prompt).toContain("+Two.\n</spec change>");
     expect(prompt).toContain("***implementation reqs*** is\n<implementation reqs>");
-    expect(prompt.indexOf('module="base" id="1"')).toBeLessThan(prompt.indexOf('module="app" id="2"'));
+    expect(prompt.indexOf('module="base" id="base"')).toBeLessThan(prompt.indexOf('module="app" id="two"'));
     expect(prompt).toContain("Implement what the change adds. Update what it changes. Remove what it removes");
   });
 
   it("says so when there is nothing built to change", () => {
     const prompt = buildSpecDiffPrompt({
-      moduleName: "app", diff: "+- One.", linkedResources: [], required: [], empty: true,
-      specifications: { definitions: [], "implementation reqs": [], "test reqs": [], "functional specs": ["- One."] },
+      moduleName: "app", diff: "+One.", linkedResources: [], required: [], empty: true,
+      specifications: { definitions: [], "implementation reqs": [], "test reqs": [], "functional specs": ["One."] },
+      funcIds: ["one"],
     });
     expect(prompt).toContain("Nothing is built yet");
   });
@@ -147,8 +160,8 @@ describe("the change agent's prompt", () => {
 describe("rendering a spec diff", () => {
   it("has a debugger look at a failure that repeats 3 times running, and gives the coding agent its root cause and fix", async () => {
     writeFileSync(join(dir, "config.yaml"), "review: false\n");
-    writeFileSync(join(dir, "app.plain"), plain(["- One."]));
-    await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["- One."]), plain(["- One."])), cwd: dir, applied: "already applied" });
+    writePlain(dir, "app.plain", plain(["One."]));
+    await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["One."]), plain(["One."])), cwd: dir, applied: "already applied" });
     const failing = "import unittest\n\nclass AppTest(unittest.TestCase):\n    def test_ok(self):\n        raise RuntimeError('no such table: users')\n";
     const passing = "import unittest\n\nclass AppTest(unittest.TestCase):\n    def test_two(self):\n        self.assertEqual(2, 1 + 1)\n";
     const debuggerSaw: string[] = [];
@@ -169,7 +182,7 @@ describe("rendering a spec diff", () => {
       return agentRunning("python3 -m unittest discover", session, prompt);
     }) as never);
 
-    const result = await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["- One."]), plain(["- One.", "- Two."])), cwd: dir });
+    const result = await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["One."]), plain(["One.", "Two."])), cwd: dir });
 
     expect(result.passed).toBe(true);
     // Once, after the third failure in a row: the run it saw, and the testing script that decides.
@@ -196,8 +209,8 @@ describe("rendering a spec diff", () => {
     const hanging = "import unittest\n\nclass AppTest(unittest.TestCase):\n    def test_ok(self):\n        self.assertTrue(True)  # HANG\n";
     const setUp = async (diagnosis: Record<string, unknown>) => {
       writeFileSync(join(dir, "config.yaml"), "review: false\n");
-      writeFileSync(join(dir, "app.plain"), plain(["- One."]));
-      await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["- One."]), plain(["- One."])), cwd: dir, applied: "already applied" });
+      writePlain(dir, "app.plain", plain(["One."]));
+      await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["One."]), plain(["One."])), cwd: dir, applied: "already applied" });
       writeTestScripts(dir, { unit: SLOW_SCRIPT });
       const { setScriptTimeoutForTests } = await import("../../src/regenerate/test-scripts.ts");
       setScriptTimeoutForTests(2000);
@@ -222,7 +235,7 @@ describe("rendering a spec diff", () => {
 
     it("is looked at by the debugger at once, told how long it ran against its limit, and fixed when something hangs", async () => {
       const debuggerSaw = await setUp({ root_cause: "the test waits on a marker that never clears", fix: "drop the HANG marker" });
-      const result = await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["- One."]), plain(["- One.", "- Two."])), cwd: dir });
+      const result = await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["One."]), plain(["One.", "Two."])), cwd: dir });
       expect(result.passed).toBe(true);
       // At the first timeout, not the third.
       expect(debuggerSaw).toHaveLength(1);
@@ -233,7 +246,7 @@ describe("rendering a spec diff", () => {
     it("stops the pulse, rolled back, when the debugger finds nothing hangs and the suite only needs more time", async () => {
       const debuggerSaw = await setUp({ root_cause: "two tests passed and it was still going: the suite needs longer than 2s", fix: "none", too_slow: true });
       const { EnvironmentError, describeEnvironmentError } = await import("../../src/regenerate/environment-error.ts");
-      const stopped = await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["- One."]), plain(["- One.", "- Two."])), cwd: dir }).then(
+      const stopped = await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["One."]), plain(["One.", "Two."])), cwd: dir }).then(
         () => undefined,
         (error: unknown) => error,
       );
@@ -254,8 +267,8 @@ describe("rendering a spec diff", () => {
     const passing = "import unittest\n\nclass AppTest(unittest.TestCase):\n    def test_two(self):\n        self.assertEqual(2, 1 + 1)\n";
     const setUp = async (diagnosis: Record<string, unknown>) => {
       writeFileSync(join(dir, "config.yaml"), "review: false\n");
-      writeFileSync(join(dir, "app.plain"), plain(["- One."]));
-      await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["- One."]), plain(["- One."])), cwd: dir, applied: "already applied" });
+      writePlain(dir, "app.plain", plain(["One."]));
+      await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["One."]), plain(["One."])), cwd: dir, applied: "already applied" });
       writeTestScripts(dir, { unit: BROKEN_SCRIPT });
       const seen = { debugger: [] as string[], coderTurns: 0 };
       const { ask } = await import("../../src/pi.ts");
@@ -274,7 +287,7 @@ describe("rendering a spec diff", () => {
       return seen;
     };
     const stop = () =>
-      renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["- One."]), plain(["- One.", "- Two."])), cwd: dir }).then(
+      renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["One."]), plain(["One.", "Two."])), cwd: dir }).then(
         () => undefined,
         (error: unknown) => error,
       );
@@ -314,8 +327,8 @@ describe("rendering a spec diff", () => {
 
   it("ends the coding agent's turn when it goes round in circles in its own runs, and has a debugger on the harness model look at it", async () => {
     writeFileSync(join(dir, "config.yaml"), "review: false\nharness-model: test/strong\n");
-    writeFileSync(join(dir, "app.plain"), plain(["- One."]));
-    await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["- One."]), plain(["- One."])), cwd: dir, applied: "already applied" });
+    writePlain(dir, "app.plain", plain(["One."]));
+    await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["One."]), plain(["One."])), cwd: dir, applied: "already applied" });
     const variant = (signature: string) =>
       `import unittest\n\nclass AppTest(unittest.TestCase):\n    def test_ok(self):\n        def mock_get(${signature}): pass\n        mock_get(self, 'url', params={})\n`;
     const variants = ["url, params=None", "url, **kwargs", "url, params=None, **kwargs"];
@@ -347,7 +360,7 @@ describe("rendering a spec diff", () => {
       return "Done.";
     }) as never);
 
-    const result = await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["- One."]), plain(["- One.", "- Two."])), cwd: dir });
+    const result = await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["One."]), plain(["One.", "Two."])), cwd: dir });
 
     expect(result.passed).toBe(true);
     // Told once at the first state it had failed in before, its turn ended at the second - not 40 runs later.
@@ -362,41 +375,41 @@ describe("rendering a spec diff", () => {
 
   it("says the spec gaps its agent met in its report, for the conversation to put to the person", async () => {
     writeFileSync(join(dir, "config.yaml"), "review: false\n");
-    writeFileSync(join(dir, "app.plain"), plain(["- One."]));
-    await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["- One."]), plain(["- One."])), cwd: dir, applied: "already applied" });
+    writePlain(dir, "app.plain", plain(["One."]));
+    await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["One."]), plain(["One."])), cwd: dir, applied: "already applied" });
     const { ask } = await import("../../src/pi.ts");
     vi.mocked(ask).mockImplementation((async (session: StubSession, prompt: string) => {
       const own = (name: string) => session.tools.find((tool) => tool.name === name);
       if (prompt === BEGIN) await own("report_spec_gap")!.execute("id", { question: "Should Two be case-sensitive?", assumption: "Two is case-sensitive" });
       return passingAgent(session, prompt);
     }) as never);
-    const result = await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["- One."]), plain(["- One.", "- Two."])), cwd: dir });
+    const result = await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["One."]), plain(["One.", "Two."])), cwd: dir });
     expect(result.specGaps).toEqual([{ question: "Should Two be case-sensitive?", assumption: "Two is case-sensitive" }]);
     expect(describeSpecDiff(result)).toContain("Put each to the user");
     expect(describeSpecDiff(result)).toContain("- Should Two be case-sensitive? Meanwhile: Two is case-sensitive");
   });
 
   it("gives the agent the spec the code is built from - the state before the change - and the change, never the spec after it", async () => {
-    writeFileSync(join(dir, "app.plain"), plain(["- One."]));
-    await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["- One."]), plain(["- One."])), cwd: dir, applied: "already applied" });
+    writePlain(dir, "app.plain", plain(["One."]));
+    await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["One."]), plain(["One."])), cwd: dir, applied: "already applied" });
     prompts.length = 0;
-    const diff = diffOf(plain(["- One."]), plain(["- One, loudly.", "- Two."]));
+    const diff = diffOf(plain(["One."]), plain(["One, loudly.", "Two."]));
     await renderSpecDiff({ plainFile: "app.plain", diff, cwd: dir });
     expect(prompts[0]).toContain('<already implemented>\n<module name="app" role="current">');
-    expect(prompts[0]).toContain('<functionality module="app" id="1" status="implemented">\n- One.');
-    expect(prompts[0]).not.toContain('<functionality module="app" id="2">');
-    expect(prompts[0]).not.toContain("- One, loudly.\n</functionality>");
-    // The change section by section - functionality 1 reworded, 2 added - not the raw diff.
+    expect(prompts[0]).toContain('<functionality module="app" id="one" status="implemented">\nOne.');
+    expect(prompts[0]).not.toContain('<functionality module="app" id="two">');
+    expect(prompts[0]).not.toContain("One, loudly.\n</functionality>");
+    // The change section by section - one reworded, two added - not the raw diff.
     expect(prompts[0]).toContain('<spec change>\n<functional specs change="1 added, 1 changed">');
-    expect(prompts[0]).toContain("  functionality 1 of module `app`\n    before:\n      - One.\n    now:\n      - One, loudly.");
-    expect(prompts[0]).toContain("Added:\n  functionality 2 of module `app`:\n  - Two.");
+    expect(prompts[0]).toContain("  functional spec `app:one`\n    before:\n      One.\n    now:\n      One, loudly.");
+    expect(prompts[0]).toContain("Added:\n  functional spec `app:two`:\n  Two.");
   });
 
   it("hands the coding agent a linked image to look at, and its prompt says which attachment it is", async () => {
     const png = Buffer.from("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489", "hex");
     writeFileSync(join(dir, "mockup.png"), png);
-    writeFileSync(join(dir, "app.plain"), plain(["- One."]));
-    const diff = diffOf(plain(["- One."]), plain(["- One.", "- Two, as [the mockup](mockup.png) shows."]));
+    writePlain(dir, "app.plain", plain(["One."]));
+    const diff = diffOf(plain(["One."]), plain(["One.", "Two, as [the mockup](mockup.png) shows."]));
 
     await renderSpecDiff({ plainFile: "app.plain", diff, cwd: dir });
 
@@ -406,7 +419,7 @@ describe("rendering a spec diff", () => {
   });
 
   it("gives the coding agent can_it_fail where the testing scripts run in place, and its run leaves the code as the agent wrote it", async () => {
-    writeFileSync(join(dir, "app.plain"), plain(["- One."]));
+    writePlain(dir, "app.plain", plain(["One."]));
     const { ask } = await import("../../src/pi.ts");
     let checked = "";
     let task = "";
@@ -425,7 +438,7 @@ describe("rendering a spec diff", () => {
       }
       return passingAgent(session, prompt);
     }) as never);
-    const result = await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["- One."]), plain(["- One.", "- Two."])), cwd: dir });
+    const result = await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["One."]), plain(["One.", "Two."])), cwd: dir });
     expect(task).toContain("check with can_it_fail that a test fails when it breaks");
     expect(checked).toContain("The unit tests fail with app.py changed: something catches it.");
     expect(result.passed).toBe(true);
@@ -434,14 +447,14 @@ describe("rendering a spec diff", () => {
 
   it("gives the coding agent no can_it_fail, nor tells it to use one, under mutation-testing: false", async () => {
     writeFileSync(join(dir, "config.yaml"), "mutation-testing: false\n");
-    writeFileSync(join(dir, "app.plain"), plain(["- One."]));
+    writePlain(dir, "app.plain", plain(["One."]));
     const { ask } = await import("../../src/pi.ts");
     const coders: Array<{ tools: string[]; task: string }> = [];
     vi.mocked(ask).mockImplementation((async (session: StubSession, prompt: string) => {
       if (prompt === BEGIN && session.tools.some((tool) => tool.name === "submit_work")) coders.push({ tools: session.tools.map((tool) => tool.name), task: session.task ?? "" });
       return passingAgent(session, prompt);
     }) as never);
-    const result = await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["- One."]), plain(["- One.", "- Two."])), cwd: dir });
+    const result = await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["One."]), plain(["One.", "Two."])), cwd: dir });
     expect(result.passed).toBe(true);
     expect(coders.length).toBeGreaterThan(0);
     for (const coder of coders) {
@@ -451,8 +464,8 @@ describe("rendering a spec diff", () => {
   });
 
   it("tells the coding agent up front about its folder and this machine, beside its walls", async () => {
-    writeFileSync(join(dir, "app.plain"), plain(["- One."]));
-    const diff = diffOf(plain(["- One."]), plain(["- One.", "- Two."]));
+    writePlain(dir, "app.plain", plain(["One."]));
+    const diff = diffOf(plain(["One."]), plain(["One.", "Two."]));
     await renderSpecDiff({ plainFile: "app.plain", diff, cwd: dir });
     const coder = imagesGiven.find((agent) => agent.label?.endsWith("coding agent"))!;
     expect(coder.system).toContain("<sandbox>");
@@ -462,10 +475,10 @@ describe("rendering a spec diff", () => {
 
   it("stops at once, saying what to install, when the unit testing script on this machine cannot find its toolchain - its agent never asked for notes", async () => {
     writeTestScripts(dir, { unit: "#!/bin/bash\necho 'run_unittests.sh: line 3: flutter: command not found'\nexit 127\n" });
-    writeFileSync(join(dir, "app.plain"), plain(["- One."]));
+    writePlain(dir, "app.plain", plain(["One."]));
     const { ask } = await import("../../src/pi.ts");
     vi.mocked(ask).mockClear();
-    const diff = diffOf(plain(["- One."]), plain(["- One.", "- Two."]));
+    const diff = diffOf(plain(["One."]), plain(["One.", "Two."]));
 
     const stopped = await renderSpecDiff({ plainFile: "app.plain", diff, cwd: dir }).then(
       () => undefined,
@@ -482,23 +495,23 @@ describe("rendering a spec diff", () => {
   });
 
   it("gives a steer that came between turns as the agent's next turn, runs the tests again, and lands the spec as it was steered to", async () => {
-    writeFileSync(join(dir, "app.plain"), plain(["- One."]));
-    const diff = diffOf(plain(["- One."]), plain(["- One.", "- Two."]));
+    writePlain(dir, "app.plain", plain(["One."]));
+    const diff = diffOf(plain(["One."]), plain(["One.", "Two."]));
     const regenerated = snapshotSpec("app.plain", { cwd: dir });
     // While it works, the spec gains a sub-bullet under what it regenerates: the loop steered it, the agent not yet told.
-    writeFileSync(join(dir, "app.plain"), plain(["- One.", "- Two.\n  - Twice."]));
+    writePlain(dir, "app.plain", plain(["One.", "Two.\n  - Twice."]));
     const steered = parsed();
     const steering = createSteering(regenerated.tree);
     steering.target = steered;
     steering.agent = steered;
     steering.steers = 1;
-    steering.notes.push("functional specs 2 reads otherwise now");
+    steering.notes.push("functional spec two reads otherwise now");
 
     const result = await renderSpecDiff({ plainFile: "app.plain", diff, cwd: dir, applied: "already applied", spec: regenerated, steering });
 
     expect(result.passed).toBe(true);
     expect(prompts.some((prompt) => prompt.includes("The spec changed while you work") && prompt.includes("Twice."))).toBe(true);
-    expect(result.steered).toEqual(["functional specs 2 reads otherwise now"]);
+    expect(result.steered).toEqual(["functional spec two reads otherwise now"]);
     expect(describeSpecDiff(result)).toContain("Steered while it ran - the spec changed inside what it was regenerating");
     expect(JSON.stringify(readRecord(result.buildDir))).toContain("Twice.");
     // Told, nothing waits; and the job no longer reaches its agent once it is done.
@@ -507,8 +520,8 @@ describe("rendering a spec diff", () => {
   });
 
   it("from scratch: applies the diff, renders it, and records the specs as they now stand", async () => {
-    writeFileSync(join(dir, "app.plain"), plain(["- One."]));
-    const diff = diffOf(plain(["- One."]), plain(["- One.", "- Two."]));
+    writePlain(dir, "app.plain", plain(["One."]));
+    const diff = diffOf(plain(["One."]), plain(["One.", "Two."]));
 
     const result = await renderSpecDiff({ plainFile: "app.plain", diff, cwd: dir });
 
@@ -520,7 +533,7 @@ describe("rendering a spec diff", () => {
     expect(prompts[0]).toContain("Nothing is built yet");
     expect(prompts[0]).not.toContain("<already implemented>\n");
     // What the code is built from: the spec with the change in, and nothing else in the file.
-    expect(readRecord(result.buildDir)).toEqual(parsed());
+    expect(readRecord(result.buildDir)).toEqual(codeTree(parsed()));
     expect(Object.keys(JSON.parse(readFileSync(join(result.buildDir, ".turri.json"), "utf8"))).sort()).toEqual(["functional specs", "implementation reqs"]);
   });
 
@@ -532,14 +545,14 @@ describe("rendering a spec diff", () => {
       if (session.tools.some((tool) => tool.name === "submit_review")) (reviews += 1), (reviewerTask = session.task ?? "");
       return passingAgent(session, prompt);
     }) as never);
-    writeFileSync(join(dir, "app.plain"), plain(["- One."]));
+    writePlain(dir, "app.plain", plain(["One."]));
     writeFileSync(join(dir, "config.yaml"), "review: false\n");
-    const off = await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["- One."]), plain(["- One.", "- Two."])), cwd: dir });
+    const off = await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["One."]), plain(["One.", "Two."])), cwd: dir });
     expect(off.passed).toBe(true);
     expect(reviews).toBe(0);
 
     writeFileSync(join(dir, "config.yaml"), "review: true\n");
-    const on = await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["- One.", "- Two."]), plain(["- One.", "- Two.", "- Three."])), cwd: dir });
+    const on = await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["One.", "Two."]), plain(["One.", "Two.", "Three."])), cwd: dir });
     expect(on.passed).toBe(true);
     expect(reviews).toBeGreaterThan(0);
     // Which tests the script runs, and how, is part of whether they test anything: the reviewer reads it word for word.
@@ -548,13 +561,13 @@ describe("rendering a spec diff", () => {
 
   it("is judged by its unit tests alone - the conformance testing script is not in its prompt, and the conformance tests are not run", async () => {
     const withTests = (fs: string[]) => plain(fs).replace("***functional specs***", "***test reqs***\n\n- unittest.\n\n***functional specs***");
-    writeFileSync(join(dir, "app.plain"), withTests(["- One."]));
+    writePlain(dir, "app.plain", withTests(["One."]));
     // Conformance tests already here that would fail: the code job does not run them - the conformance job does.
     const tests = join(dir, "plain_modules", "app", "tests");
     mkdirSync(tests, { recursive: true });
     writeFileSync(join(tests, "test_conformance_one.py"), "import unittest\n\nclass T(unittest.TestCase):\n    def test_x(self):\n        self.fail()\n");
 
-    const result = await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(withTests(["- One."]), withTests(["- One.", "- Two."])), cwd: dir });
+    const result = await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(withTests(["One."]), withTests(["One.", "Two."])), cwd: dir });
 
     expect(prompts[0]).toContain('<script kind="unit tests"');
     expect(prompts[0]).not.toContain("conformance tests\" path=");
@@ -562,13 +575,13 @@ describe("rendering a spec diff", () => {
   });
 
   it("starts from the notes earlier agents left, and leaves its own, labelled as the spec change - told first that its unit tests passed", async () => {
-    writeFileSync(join(dir, "app.plain"), plain(["- One."]));
+    writePlain(dir, "app.plain", plain(["One."]));
     const { ask } = await import("../../src/pi.ts");
     vi.mocked(ask).mockClear();
     const code = join(dir, "plain_modules", "app", "code");
     mkdirSync(code, { recursive: true });
     writeFileSync(join(code, NOTES_FILE), "# Working notes\n\n## Assumptions\n\n- [2026-09-24 09:00 · app 1] One means exactly one\n");
-    const diff = diffOf(plain(["- One."]), plain(["- One.", "- Two."]));
+    const diff = diffOf(plain(["One."]), plain(["One.", "Two."]));
 
     await renderSpecDiff({ plainFile: "app.plain", diff, cwd: dir });
 
@@ -581,7 +594,7 @@ describe("rendering a spec diff", () => {
   });
 
   it("stops at the unit tests when they do not pass, and undoes the change - no code, no tree, its agent never asked for notes", async () => {
-    writeFileSync(join(dir, "app.plain"), plain(["- One."]));
+    writePlain(dir, "app.plain", plain(["One."]));
     mkdirSync(join(dir, "plain_modules", "app", "code"), { recursive: true });
     const { ask } = await import("../../src/pi.ts");
     vi.mocked(ask).mockClear();
@@ -590,7 +603,7 @@ describe("rendering a spec diff", () => {
       if (!prompt.includes("Before you finish: call update_notes")) await session.tools.find((tool) => tool.name === "write")!.execute("id", { path: "app.py", content: "print('uno')\n" });
       return agentRunning("false", session, prompt);
     }) as never);
-    const result = await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["- One."]), plain(["- Uno."])), cwd: dir });
+    const result = await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["One."]), plain(["Uno."])), cwd: dir });
     expect(result.stoppedAt).toBe("unit tests");
     expect(readRecord(result.buildDir)).toBeNull();
     expect(listFiles(result.buildDir)).toEqual([]);
@@ -602,7 +615,7 @@ describe("rendering a spec diff before any functional spec exists", () => {
   it("renders a change that only adds definitions, and records the sections", async () => {
     const before = "***implementation reqs***\n\n- Python.\n";
     const after = "***definitions***\n\n- :User: is a person.\n\n***implementation reqs***\n\n- Python.\n";
-    writeFileSync(join(dir, "app.plain"), before);
+    writePlain(dir, "app.plain", before);
     const diff = [
       "diff --git a/app.plain b/app.plain",
       "--- a/app.plain",
@@ -634,7 +647,7 @@ describe("conformance for a spec change", () => {
   it("follows the change whatever it touches - a definition, with no functional spec written yet", async () => {
     const before = "***implementation reqs***\n\n- Python.\n\n***test reqs***\n\n- :ConformanceTests: use unittest.\n";
     const after = "***definitions***\n\n- :User: is a person.\n\n" + before;
-    writeFileSync(join(dir, "app.plain"), before);
+    writePlain(dir, "app.plain", before);
     const diff = [
       "diff --git a/app.plain b/app.plain",
       "--- a/app.plain",
@@ -677,7 +690,7 @@ describe("the work loop rendering spec diffs", () => {
     const { createJobRegistry } = await import("../../src/regenerate/jobs.ts");
     const { codeTree, readRecord } = await import("../../src/regenerate/records.ts");
     const { resolveRequiresChain } = await import("../../src/regenerate/requires.ts");
-    writeFileSync(join(dir, "app.plain"), plain(["- Say one number."]));
+    writePlain(dir, "app.plain", plain(["Say one number."]));
     const registry = createJobRegistry();
     const loop = createWorkLoop({ registry, cwd: dir, planner: false });
     await loop.bringUp("app.plain");
@@ -685,7 +698,7 @@ describe("the work loop rendering spec diffs", () => {
     prompts.length = 0;
 
     // Changes made while nothing runs, one on top of another: the loop sees only the spec as it now is.
-    writeFileSync(join(dir, "app.plain"), plain(["- Say one number, loudly.", "- Two.", "- Three."]));
+    writePlain(dir, "app.plain", plain(["Say one number, loudly.", "Two.", "Three."]));
     await loop.bringUp("app.plain");
     await loop.drain();
 
@@ -700,10 +713,10 @@ describe("the work loop rendering spec diffs", () => {
     expect(changes[2]).not.toContain("loudly");
     // Each coding agent is told its job's case: the changed functional spec changed in place, the new ones built.
     const tasks = prompts.filter((prompt) => prompt.includes("<spec change>"));
-    expect(tasks[0]).toContain("Changed - its text, or a concept it uses: fs 1 of module `app` (Say one number, loudly.)");
+    expect(tasks[0]).toContain("Changed - its text, or a concept it uses: `app:say-one-number` (Say one number, loudly.)");
     expect(tasks[0]).toContain("Do not build it again from scratch.");
-    expect(tasks[1]).toContain("New - build each, and write its unit tests: fs 2 of module `app` (Two.)");
-    expect(tasks[2]).toContain("New - build each, and write its unit tests: fs 3 of module `app` (Three.)");
+    expect(tasks[1]).toContain("New - build each, and write its unit tests: `app:two` (Two.)");
+    expect(tasks[2]).toContain("New - build each, and write its unit tests: `app:three` (Three.)");
     // Each job's report is what it did, the agent's own account as it wrote it - no offer to try it, no tags around it.
     const reports = registry.list().map((job) => job.report ?? "");
     expect(reports).toHaveLength(4);
@@ -721,7 +734,7 @@ describe("the work loop rendering spec diffs", () => {
     const { ask } = await import("../../src/pi.ts");
     // An agent that writes nothing, so the unit tests never pass.
     vi.mocked(ask).mockImplementation((async () => "Done.") as never);
-    writeFileSync(join(dir, "app.plain"), plain(["- Say one number."]));
+    writePlain(dir, "app.plain", plain(["Say one number."]));
     const registry = createJobRegistry();
     const loop = createWorkLoop({ registry, cwd: dir, planner: false });
     await loop.bringUp("app.plain");
@@ -732,29 +745,29 @@ describe("the work loop rendering spec diffs", () => {
   });
 
   it("record the spec the change was written against - every section - and the diff", async () => {
-    const one = plain(["- One."]);
-    const two = "***definitions***\n\n- :User: is a person.\n\n" + plain(["- One.", "- :User: signs in."]);
-    const three = plain(["- Something else."]);
-    writeFileSync(join(dir, "app.plain"), one);
+    const one = plain(["One."]);
+    const two = "***definitions***\n\n- :User: is a person.\n\n" + plain(["One.", ":User: signs in."]);
+    const three = plain(["Something else."]);
+    writePlain(dir, "app.plain", one);
     const change = diffOf(one, two);
     expect(applySpecDiff(change, dir)).toBe("applied");
     const spec = snapshotSpec("app.plain", { cwd: dir });
     // A later change goes into the file before this one's render starts.
-    writeFileSync(join(dir, "app.plain"), three);
+    writePlain(dir, "app.plain", three);
 
     const result = await renderSpecDiff({ plainFile: "app.plain", diff: change, cwd: dir, applied: "applied", spec });
 
     expect(result.diff).toBe("applied");
     // The spec as it stood with this change in - not the file as it is now.
-    expect(readRecord(result.buildDir)).toEqual(spec.tree);
-    expect((readRecord(result.buildDir)!["functional specs"] as Array<{ markdown: string }>).map((f) => f.markdown)).toEqual(["- One.", "- :User: signs in."]);
+    expect(readRecord(result.buildDir)).toEqual(codeTree(spec.tree));
+    expect((readRecord(result.buildDir)!["functional specs"] as Array<{ markdown: string }>).map((f) => f.markdown)).toEqual(["One.", ":User: signs in."]);
   });
 
   it("leave each spec diff in the history, oldest first - and the tree as the last one left it", async () => {
-    const one = plain(["- One."]);
-    const two = plain(["- One.", "- Two."]);
-    const three = plain(["- One.", "- Two.", "- Three."]);
-    writeFileSync(join(dir, "app.plain"), one);
+    const one = plain(["One."]);
+    const two = plain(["One.", "Two."]);
+    const three = plain(["One.", "Two.", "Three."]);
+    writePlain(dir, "app.plain", one);
     const first = diffOf(one, two);
     const second = diffOf(two, three);
 
@@ -763,25 +776,25 @@ describe("the work loop rendering spec diffs", () => {
 
     const { historyLog } = await import("../../src/regenerate/lineage.ts");
     expect(historyLog(result.buildDir).split("\n").filter((line) => line.includes("spec diff:"))).toHaveLength(2);
-    expect(readRecord(result.buildDir)).toEqual(parsed());
+    expect(readRecord(result.buildDir)).toEqual(codeTree(parsed()));
   });
 });
 
 describe("the history of a rendered spec change", () => {
   it("commits the change with the diff it rendered", async () => {
     const { head, historyLog, historyShow } = await import("../../src/regenerate/lineage.ts");
-    writeFileSync(join(dir, "app.plain"), plain(["- One."]));
-    const diff = diffOf(plain(["- One."]), plain(["- One.", "- Two."]));
+    writePlain(dir, "app.plain", plain(["One."]));
+    const diff = diffOf(plain(["One."]), plain(["One.", "Two."]));
 
     const result = await renderSpecDiff({ plainFile: "app.plain", diff, cwd: dir });
     writeFileSync(join(result.buildDir, "app.py"), "x\n"); // what an agent would have written
     const { recordHistory } = await import("../../src/regenerate/lineage.ts");
-    recordHistory(result.buildDir, "render app fs 2");
+    recordHistory(result.buildDir, "render app:two");
 
     const log = historyLog(result.buildDir);
-    expect(log).toMatch(/spec diff: app\.plain \+\d+ −\d+ · .+/);
+    expect(log).toMatch(/spec diff: app\.plain, two\.plain \+\d+ −\d+ · .+/);
     const commit = log.split("\n").find((line) => line.includes("spec diff:"))!.split("  ")[0]!;
-    expect(historyShow(result.buildDir, commit)).toContain("+- Two.");
+    expect(historyShow(result.buildDir, commit)).toContain("+Two.");
     expect(head(result.buildDir)).toBeDefined();
   });
 });
@@ -789,29 +802,29 @@ describe("the history of a rendered spec change", () => {
 describe("a spec diff that only restructures the specs", () => {
   it("renders nothing - a definition moved to a common module - and records the spec as it is now laid out", async () => {
     const withUser = (fs: string[]) => `***definitions***\n\n- :User: is a person.\n\n${plain(fs)}`;
-    writeFileSync(join(dir, "app.plain"), withUser(["- A :User: can register."]));
-    const first = await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(withUser(["- A :User: can register."]), withUser(["- A :User: can register."])), cwd: dir, applied: "already applied" });
+    writePlain(dir, "app.plain", withUser(["A :User: can register."]));
+    const first = await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(withUser(["A :User: can register."]), withUser(["A :User: can register."])), cwd: dir, applied: "already applied" });
     expect(first.passed).toBe(true);
     const agentTurns = prompts.length;
 
     // The definition moves into an import module: the spec the code is built from reads the same.
-    writeFileSync(join(dir, "common.plain"), "***definitions***\n\n- :User: is a person.\n");
-    const moved = `---\nimport:\n  - common\n---\n\n${plain(["- A :User: can register."])}`;
-    writeFileSync(join(dir, "app.plain"), moved);
-    const result = await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(withUser(["- A :User: can register."]), moved), cwd: dir, applied: "already applied" });
+    writePlain(dir, "common.plain", "***definitions***\n\n- :User: is a person.\n");
+    const moved = `---\nimport:\n  - common\n---\n\n${plain(["A :User: can register."])}`;
+    writePlain(dir, "app.plain", moved);
+    const result = await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(withUser(["A :User: can register."]), moved), cwd: dir, applied: "already applied" });
 
     expect(result).toMatchObject({ passed: true, restructured: true, attempts: 0 });
     expect(prompts).toHaveLength(agentTurns);
-    expect(readRecord(result.buildDir)).toEqual(parsed());
+    expect(readRecord(result.buildDir)).toEqual(codeTree(parsed()));
   });
 
   it("is refused when the module now requires one its code was not built on - that takes a rebuild from scratch", async () => {
-    writeFileSync(join(dir, "app.plain"), plain(["- One."]));
-    await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["- One."]), plain(["- One."])), cwd: dir, applied: "already applied" });
+    writePlain(dir, "app.plain", plain(["One."]));
+    await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["One."]), plain(["One."])), cwd: dir, applied: "already applied" });
     // One moves into a new module that app now requires.
-    writeFileSync(join(dir, "accounts.plain"), plain(["- One."]));
-    writeFileSync(join(dir, "app.plain"), `---\nrequires:\n  - accounts\n---\n\n${plain(["- Two."])}`);
-    await expect(renderSpecDiff({ plainFile: "app.plain", diff: "+- Two.", cwd: dir, applied: "already applied" })).rejects.toThrow(
+    writePlain(dir, "accounts.plain", plain(["One."]));
+    writePlain(dir, "app.plain", `---\nrequires:\n  - accounts\n---\n\n${plain(["Two."])}`);
+    await expect(renderSpecDiff({ plainFile: "app.plain", diff: "+Two.", cwd: dir, applied: "already applied" })).rejects.toThrow(
       /app now requires accounts, which its code was not built on[\s\S]*regenerate it from scratch in the chat[\s\S]*--start-over/,
     );
   });

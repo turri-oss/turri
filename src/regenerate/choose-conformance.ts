@@ -15,7 +15,7 @@ import type { TouchedSpec } from "./drift.ts";
  */
 
 export interface ConformanceChoice {
-  frids: string[];
+  funcIds: string[];
   why: string;
   /** Under module: the conformance pulses, each the functional specs it tests together. */
   groups?: string[][];
@@ -28,7 +28,7 @@ export function choicePrompt(plainFile: string, specs: TouchedSpec[], spec: stri
     when === "module"
       ? "conformance-tests: module - the whole module is regenerated now, and these of its functional specs are built and no conformance test is for them or scheduled:"
       : "conformance-tests: chosen - a code pulse has just regenerated these, and no conformance test is for them or scheduled:",
-    ...specs.map((touched) => `- fs ${touched.frid}: ${touched.text}`),
+    ...specs.map((touched) => `- ${touched.funcId}: ${touched.text}`),
     "",
     `Decide which of them black-box conformance tests are worth it for - what a user or a client of ${basename(plainFile)} relies on,`,
     "not an internal detail its unit tests already cover - and say why. The rest stay without. A functional spec with",
@@ -44,7 +44,7 @@ export function choicePrompt(plainFile: string, specs: TouchedSpec[], spec: stri
         ]
       : []),
     "",
-    `Call choose_conformance once, with the numbers of those you choose${when === "module" ? ", the groups" : ""} and why.`,
+    `Call choose_conformance once, with the func-ids of those you choose${when === "module" ? ", the groups" : ""} and why.`,
     "",
     `<spec file="${basename(plainFile)}">`,
     spec.trimEnd(),
@@ -56,34 +56,34 @@ export function choicePrompt(plainFile: string, specs: TouchedSpec[], spec: stri
 export async function chooseConformance(options: { plainFile: string; specs: TouchedSpec[]; model?: string; budget?: number; when?: "pulse" | "module" }): Promise<ConformanceChoice> {
   const planning = options.when === "module";
   let answer: ConformanceChoice | undefined;
-  const offered = new Set(options.specs.map((touched) => touched.frid));
+  const offered = new Set(options.specs.map((touched) => touched.funcId));
   const tool = defineTool({
     name: "choose_conformance",
     label: "Choose the conformance tests",
-    description: "The functional specs, by number, that get black-box conformance tests - none, some or all of those offered - and why.",
+    description: "The functional specs, by func-id, that get black-box conformance tests - none, some or all of those offered - and why.",
     parameters: Type.Object({
-      frids: Type.Array(Type.String({ description: 'A functional spec\'s number, as offered - e.g. "2" or "3.1"' })),
+      funcIds: Type.Array(Type.String({ description: 'A functional spec\'s func-id, as offered - e.g. "add-task"' })),
       why: Type.String({ description: "Why these, and why not the rest" }),
-      ...(planning ? { groups: Type.Array(Type.Array(Type.String()), { description: "The conformance pulses: each the numbers of the functional specs it tests together - every one chosen in one" }) } : {}),
+      ...(planning ? { groups: Type.Array(Type.Array(Type.String()), { description: "The conformance pulses: each the func-ids of the functional specs it tests together - every one chosen in one" }) } : {}),
     }),
     async execute(_id, params) {
-      const { frids, why, groups } = params as ConformanceChoice;
+      const { funcIds, why, groups } = params as ConformanceChoice;
       if (planning && groups !== undefined) {
         const grouped = groups.flat();
-        const outside = grouped.filter((frid) => !frids.includes(frid));
-        const left = frids.filter((frid) => !grouped.includes(frid));
+        const outside = grouped.filter((funcId) => !funcIds.includes(funcId));
+        const left = funcIds.filter((funcId) => !grouped.includes(funcId));
         if (outside.length > 0 || left.length > 0 || new Set(grouped).size !== grouped.length) {
-          return { content: [{ type: "text" as const, text: `Not recorded: every one chosen is in exactly one group, and nothing else is${outside.length > 0 ? ` - fs ${outside.join(", ")} grouped, not chosen` : ""}${left.length > 0 ? ` - fs ${left.join(", ")} chosen, in no group` : ""}. Call it again.` }], details: {} };
+          return { content: [{ type: "text" as const, text: `Not recorded: every one chosen is in exactly one group, and nothing else is${outside.length > 0 ? ` - ${outside.join(", ")} grouped, not chosen` : ""}${left.length > 0 ? ` - ${left.join(", ")} chosen, in no group` : ""}. Call it again.` }], details: {} };
         }
       }
-      const unknown = frids.filter((frid) => !offered.has(frid));
-      if (options.budget !== undefined && new Set(frids).size > options.budget) {
-        return { content: [{ type: "text" as const, text: `Not recorded: the module's conformance budget allows ${options.budget}, and you chose ${new Set(frids).size}. Choose the ${options.budget} that matter most, and call it again.` }], details: {} };
+      const unknown = funcIds.filter((funcId) => !offered.has(funcId));
+      if (options.budget !== undefined && new Set(funcIds).size > options.budget) {
+        return { content: [{ type: "text" as const, text: `Not recorded: the module's conformance budget allows ${options.budget}, and you chose ${new Set(funcIds).size}. Choose the ${options.budget} that matter most, and call it again.` }], details: {} };
       }
       if (unknown.length > 0) {
-        return { content: [{ type: "text" as const, text: `Not offered: fs ${unknown.join(", ")}. Choose from ${[...offered].join(", ")}, and call it again.` }], details: {} };
+        return { content: [{ type: "text" as const, text: `Not offered: ${unknown.join(", ")}. Choose from ${[...offered].join(", ")}, and call it again.` }], details: {} };
       }
-      answer = { frids: [...new Set(frids)], why, ...(planning && groups !== undefined && groups.length > 0 ? { groups: groups.filter((group) => group.length > 0) } : {}) };
+      answer = { funcIds: [...new Set(funcIds)], why, ...(planning && groups !== undefined && groups.length > 0 ? { groups: groups.filter((group) => group.length > 0) } : {}) };
       return { content: [{ type: "text" as const, text: "Recorded." }], details: {}, terminate: true };
     },
   }) as ToolDefinition;
@@ -105,7 +105,7 @@ export async function chooseConformance(options: { plainFile: string; specs: Tou
   }
   if (answer === undefined) {
     reportActivity(`  the conformance chooser gave no answer for ${basename(options.plainFile)}: none chosen`);
-    return { frids: [], why: "the chooser gave no answer" };
+    return { funcIds: [], why: "the chooser gave no answer" };
   }
   return answer;
 }
@@ -117,9 +117,9 @@ export async function chooseConformance(options: { plainFile: string; specs: Tou
 export function conformanceChooser(options: { model: () => string | undefined; dryRun?: boolean }) {
   const offered = new Set<string>();
   return async (plainFile: string, specs: TouchedSpec[], budget: number | undefined, when: "pulse" | "module"): Promise<ConformanceChoice | undefined> => {
-    const fresh = specs.filter((touched) => !offered.has(`${plainFile}\n${touched.frid}\n${touched.text}`));
+    const fresh = specs.filter((touched) => !offered.has(`${plainFile}\n${touched.funcId}\n${touched.text}`));
     if (fresh.length === 0 || options.dryRun === true) return undefined;
-    for (const touched of fresh) offered.add(`${plainFile}\n${touched.frid}\n${touched.text}`);
+    for (const touched of fresh) offered.add(`${plainFile}\n${touched.funcId}\n${touched.text}`);
     try {
       const model = options.model();
       return await chooseConformance({ plainFile, specs: fresh, when, ...(model !== undefined ? { model } : {}), ...(budget !== undefined ? { budget } : {}) });

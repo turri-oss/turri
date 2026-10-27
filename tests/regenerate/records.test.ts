@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { plainFileParser } from "../../src/plain/parser.ts";
 import { recordHistory } from "../../src/regenerate/lineage.ts";
 import { resolveTemplateDirs } from "../../src/regenerate/paths.ts";
-import { chainTree, inheritedRecord, readRecord, RECORD_FILE, writeCodeRecord } from "../../src/regenerate/records.ts";
+import { chainTree, codeTree, conformanceTarget, inheritedRecord, isOldRecord, notBuilt, readRecord, RECORD_FILE, writeCodeRecord } from "../../src/regenerate/records.ts";
+import { writePlain } from "../test-plain.ts";
 import { listFiles } from "../../src/regenerate/testing.ts";
 
 let dir: string;
@@ -20,74 +21,51 @@ afterEach(() => {
 });
 
 const items = (texts: string[]) => texts.map((markdown) => ({ markdown }));
+/** Functional specs, each with its func-id and no scenarios. */
+const specs = (entries: Array<[string, string]>) => entries.map(([id, markdown]) => ({ id, markdown, linked_resources: [], conformance_tests: [], acceptance_tests: [] }));
 
 describe("a codebase built on another's code", () => {
-  const base = { definitions: items(["- :User: is a person."]), "implementation reqs": items(["- :Implementation: is Python."]), "functional specs": items(["- A :User: registers."]) };
+  const base = { definitions: items(["- :User: is a person."]), "implementation reqs": items(["- :Implementation: is Python."]), "functional specs": specs([["register", "A :User: registers."]]) };
 
   it("starts from that code's record as a lower module's: its definitions and reqs tagged with it, its functional specs inherited - none of its own", () => {
     expect(inheritedRecord(base, "base")).toEqual({
       definitions: [{ markdown: "- :User: is a person.", module: "base" }],
       "implementation reqs": [{ markdown: "- :Implementation: is Python.", module: "base" }],
-      "required functional specs": [{ markdown: "- A :User: registers.", module: "base", frid: "1" }],
+      "required functional specs": [{ id: "register", markdown: "A :User: registers.", linked_resources: [], module: "base" }],
     });
   });
 
   it("is built from the whole chain's definitions and reqs - the lower modules' tagged, bottom first, and one the module shares with them only once", () => {
-    const top = { definitions: items(["- :User: is a person.", "- :Page: is a screen."]), "implementation reqs": items(["- Uses Flask."]), "functional specs": items(["- Show a :Page:."]) };
+    const top = { definitions: items(["- :User: is a person.", "- :Page: is a screen."]), "implementation reqs": items(["- Uses Flask."]), "functional specs": specs([["show-a-page", "Show a :Page:."]]) };
     expect(chainTree([{ module: "base", tree: base }, { module: "top", tree: top }])).toEqual({
       definitions: [{ markdown: "- :User: is a person.", module: "base" }, { markdown: "- :Page: is a screen." }],
       "implementation reqs": [{ markdown: "- :Implementation: is Python.", module: "base" }, { markdown: "- Uses Flask." }],
-      "functional specs": items(["- Show a :Page:."]),
+      "functional specs": specs([["show-a-page", "Show a :Page:."]]),
     });
   });
 });
 
 describe("a record written by an earlier turri", () => {
-  it("is read from a record in the earlier format, up to the first functionality that did not build", () => {
+  it("is old when it is in an earlier format: nothing is built on it", () => {
     mkdirSync(build, { recursive: true });
     writeFileSync(
       join(build, RECORD_FILE),
-      JSON.stringify({
-        version: 2,
-        module: "app",
-        updatedAt: "2026-09-22T00:00:00.000Z",
-        definitions: [],
-        "implementation reqs": ["- A requirement."],
-        "test reqs": [],
-        "functional specs": [
-          { module: "base", frid: "1", spec: "- Base one.", "acceptance tests": ["- It works."] },
-          { module: "app", frid: "1", spec: "- One.", unitTests: "passed" },
-          { module: "app", frid: "2", spec: "- Two.", unitTests: "failed" },
-          { module: "app", frid: "3", spec: "- Three.", unitTests: "passed" },
-        ],
-      }),
+      JSON.stringify({ version: 2, module: "app", "functional specs": [{ module: "app", frid: "1", spec: "- One.", unitTests: "passed" }] }),
     );
-    expect(readRecord(build)).toEqual({
-      "implementation reqs": [{ markdown: "- A requirement." }],
-      "functional specs": [{ markdown: "- One." }],
-      "required functional specs": [{ markdown: "- Base one.", acceptance_tests: [{ markdown: "- It works." }], module: "base", frid: "1" }],
-    });
+    expect(isOldRecord(readRecord(build))).toBe(true);
   });
 
-  it("is read from a record in the first format, so an existing build is not mistaken for none", () => {
+  it("is old when it is in the first format", () => {
     mkdirSync(build, { recursive: true });
-    writeFileSync(
-      join(build, RECORD_FILE),
-      JSON.stringify({
-        module: "app",
-        updatedAt: "2026-09-22T00:00:00.000Z",
-        functionalities: {
-          "1": {
-            frid: "1", renderedAt: "2026-09-22T00:00:00.000Z", unitTests: "passed",
-            specifications: {
-              definitions: [], "implementation reqs": ["- A requirement."], "test reqs": [], "functional specs": ["- One."],
-            },
-          },
-        },
-      }),
-    );
+    writeFileSync(join(build, RECORD_FILE), JSON.stringify({ module: "app", functionalities: { "1": { frid: "1", unitTests: "passed", specifications: {} } } }));
+    expect(isOldRecord(readRecord(build))).toBe(true);
+  });
 
-    expect(readRecord(build)).toEqual({ "implementation reqs": [{ markdown: "- A requirement." }], "functional specs": [{ markdown: "- One." }] });
+  it("is old when its functional specs were numbered, before they had func-ids", () => {
+    expect(isOldRecord({ "functional specs": [{ markdown: "- One." }] })).toBe(true);
+    expect(isOldRecord({ "required functional specs": [{ markdown: "- One.", module: "base", frid: "1" }] })).toBe(true);
+    expect(isOldRecord({ "functional specs": specs([["one", "One."]]) })).toBe(false);
+    expect(isOldRecord({ "implementation reqs": items(["- A requirement."]) })).toBe(false);
   });
 
   it("is nothing built when it does not read", () => {
@@ -97,16 +75,55 @@ describe("a record written by an earlier turri", () => {
   });
 });
 
+describe("what the code is built from", () => {
+  it("leaves out the test reqs, the test plain files and every functional spec's scenarios", () => {
+    const tree = {
+      "test reqs": items(["- Tests use pytest."]),
+      "test plain files": { "tests/app/one.plain": { module: "app", func_id: "one" } },
+      "functional specs": [{ id: "one", markdown: "One.", linked_resources: [], conformance_tests: [{ id: "works", text: "It works.", linked_resources: [] }], acceptance_tests: [] }],
+    };
+    expect(codeTree(tree)).toEqual({ "functional specs": [{ id: "one", markdown: "One.", linked_resources: [] }] });
+  });
+});
+
+describe("what the conformance tests are written for", () => {
+  const code = { "functional specs": specs([["add-task", "Add a task."], ["list-tasks", "List the tasks."]]) };
+
+  it("takes each functional spec the code is built from as the spec has it, in the spec's order, matched by func-id", () => {
+    const spec = { "functional specs": specs([["list-tasks", "List the tasks."], ["add-task", "Add a task."]]) };
+    expect((conformanceTarget(code, null, spec)["functional specs"] as Array<{ id: string }>).map((item) => item.id)).toEqual(["list-tasks", "add-task"]);
+  });
+
+  it("keeps a functional spec's tests as they are while its code is behind its spec", () => {
+    const tests = { "functional specs": specs([["add-task", "Add a task."]]) };
+    const spec = { "functional specs": specs([["add-task", "Add a task, named."], ["list-tasks", "List the tasks."]]) };
+    expect(conformanceTarget(code, tests, spec)["functional specs"]).toEqual([...specs([["add-task", "Add a task."]]), ...specs([["list-tasks", "List the tasks."]])]);
+  });
+
+  it("takes out the tests of a functional spec only once the code has dropped it too", () => {
+    const tests = { "functional specs": specs([["add-task", "Add a task."], ["list-tasks", "List the tasks."]]) };
+    const spec = { "functional specs": specs([["add-task", "Add a task."]]) };
+    expect((conformanceTarget(code, tests, spec)["functional specs"] as Array<{ id: string }>).map((item) => item.id)).toEqual(["add-task", "list-tasks"]);
+    const dropped = { "functional specs": specs([["add-task", "Add a task."]]) };
+    expect((conformanceTarget(dropped, tests, spec)["functional specs"] as Array<{ id: string }>).map((item) => item.id)).toEqual(["add-task"]);
+  });
+
+  it("names the functional specs the code record does not have as the spec has them", () => {
+    const spec = { "functional specs": specs([["add-task", "Add a task."], ["list-tasks", "List every task."], ["delete-task", "Delete a task."]]) };
+    expect(notBuilt(code, spec, ["add-task", "list-tasks", "delete-task"])).toEqual(["list-tasks", "delete-task"]);
+  });
+});
+
 describe("the code record on disk", () => {
   it("is written without the sections it has nothing in", () => {
-    writeCodeRecord(build, { definitions: [], "functional specs": [{ markdown: "- One." }] });
-    expect(JSON.parse(readFileSync(join(build, RECORD_FILE), "utf8"))).toEqual({ "functional specs": [{ markdown: "- One." }] });
+    writeCodeRecord(build, { definitions: [], "functional specs": specs([["one", "One."]]) });
+    expect(JSON.parse(readFileSync(join(build, RECORD_FILE), "utf8"))).toEqual({ "functional specs": [{ id: "one", markdown: "One.", linked_resources: [] }] });
   });
 
   it("is left out of the build manifest", () => {
     mkdirSync(build, { recursive: true });
     writeFileSync(join(build, "app.py"), "print('hi')\n");
-    writeCodeRecord(build, { "functional specs": [{ markdown: "- One." }] });
+    writeCodeRecord(build, { "functional specs": specs([["one", "One."]]) });
 
     expect(existsSync(join(build, RECORD_FILE))).toBe(true);
     expect(listFiles(build)).toEqual(["app.py"]);
@@ -114,33 +131,33 @@ describe("the code record on disk", () => {
 
   it("is read as the harness last committed it - a change an agent's shell made to the file is not carried on", () => {
     const code = join(dir, "plain_modules", "app", "code");
-    const spec = (items: string[]) => ({ "implementation reqs": [{ markdown: "- Python." }], "functional specs": items.map((markdown) => ({ markdown })) });
-    writeCodeRecord(code, spec(["- Say hello."]));
+    const spec = (items: Array<[string, string]>) => ({ "implementation reqs": [{ markdown: "- Python." }], "functional specs": items.map(([id, markdown]) => ({ id, markdown, linked_resources: [] })) });
+    writeCodeRecord(code, spec([["say-hello", "Say hello."]]));
     writeFileSync(join(code, "app.py"), "print('hello')\n");
-    recordHistory(code, "render app fs 1");
-    // An agent's shell rewrites the record mid-render: it claims a functionality nobody built.
-    writeFileSync(join(code, RECORD_FILE), JSON.stringify(spec(["- Say hello.", "- Launch the rockets."])));
-    expect(readRecord(code)).toEqual(spec(["- Say hello."]));
+    recordHistory(code, "render app:say-hello");
+    // An agent's shell rewrites the record mid-render: it claims a functional spec nobody built.
+    writeFileSync(join(code, RECORD_FILE), JSON.stringify(spec([["say-hello", "Say hello."], ["launch", "Launch the rockets."]])));
+    expect(readRecord(code)).toEqual(spec([["say-hello", "Say hello."]]));
     expect(readRecord(code, { onDisk: true })!["functional specs"]).toHaveLength(2);
   });
 });
 
 describe("conformance is optional", () => {
-  const NO_TEST_REQS = `***implementation reqs***\n\n- A requirement.\n\n***functional specs***\n\n- One.\n`;
-  const WITH_TEST_REQS = `***implementation reqs***\n\n- A requirement.\n\n***test reqs***\n\n- Conformance tests run with pytest.\n\n***functional specs***\n\n- One.\n`;
+  const NO_TEST_REQS = `***implementation reqs***\n\n- A requirement.\n\n***functional specs***\n\n# one\nOne.\n`;
+  const WITH_TEST_REQS = `***implementation reqs***\n\n- A requirement.\n\n***test reqs***\n\n- Conformance tests run with pytest.\n\n***functional specs***\n\n# one\nOne.\n`;
 
   it("refuses to write conformance tests without test reqs", async () => {
     const { renderConformanceTests } = await import("../../src/regenerate/conformance.ts");
-    writeFileSync(join(dir, "app.plain"), NO_TEST_REQS);
+    writePlain(dir, "app.plain", NO_TEST_REQS);
     writeFileSync(join(build_dir(), "placeholder.txt"), "code");
 
     await expect(
-      renderConformanceTests({ plainFile: join(dir, "app.plain"), frid: "1", buildDir: build, dryRun: true }),
+      renderConformanceTests({ plainFile: join(dir, "app.plain"), funcId: "one", buildDir: build, dryRun: true }),
     ).rejects.toThrow(/has no test reqs/);
   });
 
   it("is available when the module has test reqs", () => {
-    writeFileSync(join(dir, "app.plain"), WITH_TEST_REQS);
+    writePlain(dir, "app.plain", WITH_TEST_REQS);
     const t = plainFileParser("app.plain", resolveTemplateDirs(join(dir, "app.plain")))[1];
     expect(t["test reqs"]).toHaveLength(1);
   });

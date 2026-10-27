@@ -121,10 +121,10 @@ describe("steering a running job", () => {
 
 describe("a steer waiting for the agent", () => {
   it("names the functional spec by the module the job regenerates, and says to make the code match", () => {
-    const steering = createSteering({ "functional specs": [{ markdown: "- Say hello." }] } as never, "app");
-    steering.agent = { "functional specs": [{ markdown: "- Say hello loudly." }] } as never;
+    const steering = createSteering({ "functional specs": [{ id: "say-hello", markdown: "Say hello." }] } as never, "app");
+    steering.agent = { "functional specs": [{ id: "say-hello", markdown: "Say hello loudly." }] } as never;
     const text = waitingSteer(steering)!;
-    expect(text).toContain("functionality 1 of module `app`");
+    expect(text).toContain("functional spec `app:say-hello`");
     expect(text).toContain("Make the code and its unit tests match the spec as it is now");
   });
 

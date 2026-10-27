@@ -1046,7 +1046,7 @@ function registerRegenerate(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
   // by the planner: one functional spec at a time, a few together or the whole module in one, as it judges. What
   // follows the module is guidance for that plan, in the person's words.
   pi.registerCommand("regenerate", {
-    description: "Regenerate a module from its ***plain as it is now, in pulses the planner cuts - named functionalities though they did not change, or all of it from scratch, its whole chain too when asked: /regenerate [module | file.plain] [functionality ...] [from scratch [whole chain]] [how to cut the work]",
+    description: "Regenerate a module from its ***plain as it is now, in pulses the planner cuts - named functional specs though they did not change, or all of it from scratch, its whole chain too when asked: /regenerate [module | file.plain] [module:func-id ...] [from scratch [whole chain]] [how to cut the work]",
     handler: async (args, ctx) => {
       const command = `/regenerate ${args.trim()}`.trim();
       await echoCommand(pi, command);
@@ -1058,10 +1058,10 @@ function registerRegenerate(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
         say(`There is no ${first} here.`, "error");
         return;
       }
-      // Functionalities named first, by id - 3, 2.1, fs 4 - as on the command line; what follows them is guidance.
+      // Functional specs named first, each as module:func-id, as on the command line; what follows them is guidance.
       const words = rest;
       const again: string[] = [];
-      while (words.length > 0 && /^(fs)?\d+(\.\d+)*,?$/i.test(words[0]!)) again.push(words.shift()!.replace(/^fs/i, "").replace(/,$/, ""));
+      while (words.length > 0 && /^[^\s:]+:[a-z0-9-]+,?$/.test(words[0]!)) again.push(words.shift()!.replace(/,$/, ""));
       const guidance = words.join(" ").trim();
       let plainFile = named;
       if (plainFile === undefined) {
@@ -1080,7 +1080,7 @@ function registerRegenerate(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
       }
       const check = checkPlainFile(plainFile);
       if (!check.ok) {
-        say(`${relative(cwd, plainFile) || plainFile} does not parse, so nothing can be regenerated from it yet: ${check.error}`, "error");
+        say(`${relative(cwd, plainFile) || plainFile} does not parse, so nothing can be regenerated from it yet:\n${formatCheckResults([check])}`, "error");
         return;
       }
       // From scratch - started over, its code deleted - asked in the person's words: started at once, as asked.
@@ -1089,7 +1089,7 @@ function registerRegenerate(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
       const chain = scratch && asksWholeChain(guidance);
       const module = basename(plainFile).replace(/\.plain$/, "");
       if (scratch && again.length > 0) {
-        say("Name functionalities or ask for it from scratch, not both: from scratch regenerates every one of them.", "warning");
+        say("Name functional specs or ask for it from scratch, not both: from scratch regenerates every one of them.", "warning");
         return;
       }
       const loop = workLoopFor(jobs, cwd, ctx);
@@ -1101,7 +1101,7 @@ function registerRegenerate(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
         scratch
           ? `Deleting ${module}'s code${chain ? " and its whole chain's" : ""}, then planning all of it again…`
           : again.length > 0
-            ? `Planning ${module}'s functionalit${again.length === 1 ? "y" : "ies"} ${again.join(", ")} again…`
+            ? `Planning ${again.join(", ")} again…`
             : `Planning ${module}'s pulses…`,
         "info",
       );
@@ -1122,7 +1122,7 @@ function registerRegenerate(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
           // Nothing to do: say how to build it again anyway.
           const upToDate = statuses.length > 0 && statuses.every(isUpToDate);
           const hint = upToDate
-            ? `\nTo regenerate parts of it anyway, name their functionalities - /regenerate ${basename(target)} 2.1 - or start over with /regenerate ${basename(target)} from scratch.`
+            ? `\nTo regenerate parts of it anyway, name their functional specs - /regenerate ${basename(target)} ${module}:<func-id> - or start over with /regenerate ${basename(target)} from scratch.`
             : "";
           // Pulses started: the agent says so, and that the person need not wait - a plan alone leaves the chat silent.
           shownAfterCommand(pi, ctx, command, describeModules(statuses) + hint, "info", true, upToDate ? undefined : COMMAND_STARTED_REACTION);
@@ -1272,18 +1272,12 @@ function conformTool(options: {
       "Under conformance-tests: chosen or module, the chooser decides which functional specs get conformance tests - under chosen as each code pulse ends, under module once the whole module is regenerated - and a pulse's report says what it chose and why. You do not choose them: call conform only when the user asks for conformance tests. The ones named are added to those chosen before; a functional spec tested already keeps its tests.",
       "What the user asks for comes first: for a module already regenerated, while a module built on it is being regenerated, conform stops that pulse, deletes the codebase built on it, writes the tests, and the module above is regenerated from it after - say so. For a module not regenerated yet - one above the one being regenerated - the tests are scheduled now and written once its code is built, before anything is built on it.",
       "Conformance tests go in one pulse for all the functional specs tested. Set one_by_one only when the user asks for a pulse a functional spec - one at a time, separately, or the like.",
-      "When the user asks for the conformance tests in pulses of their own grouping - 1-3 and 4-6 - pass those groups as groups, in one call: each group is a pulse of its own, never sharing one with another. Without groups, every functional spec named goes in one pulse.",
       "A conformance pulse that did not start because its code is not built: tell the user which functional specs it waits for, and which code pulse builds them.",
     ],
     parameters: Type.Object({
       plain_file: Type.String({ description: "A .plain file of the module" }),
       working_dir: WORKING_DIR_PARAM,
-      frids: Type.Optional(Type.Array(Type.String(), { description: "The functional specs to test, by id - added to those chosen before. Omitted: every one" })),
-      groups: Type.Optional(
-        Type.Array(Type.Array(Type.String()), {
-          description: "Only when the user asks for them in pulses of their own grouping: the functional specs by id, a list a pulse - [[\"1\",\"2\",\"3\"],[\"4\",\"5\",\"6\"]]. Each is tested in a pulse of its own; they are added to those chosen, as frids are",
-        }),
-      ),
+      funcIds: Type.Optional(Type.Array(Type.String(), { description: "The functional specs to test, each as module:func-id (todo:add-task) - added to those chosen before. Omitted: every one" })),
       one_by_one: Type.Optional(
         Type.Boolean({ description: "Only when the user asks for it: a pulse a functional spec. Omitted: every functional spec tested in one pulse, as far as the size guardrail lets" }),
       ),
@@ -1299,8 +1293,7 @@ function conformTool(options: {
         const model = options.model(ctx, plainFile, params.model);
         const loop = options.loop(ctx);
         const statuses = await loop.conformance(plainFile, {
-          ...(params.frids !== undefined ? { frids: params.frids } : {}),
-          ...(params.groups !== undefined ? { groups: params.groups } : {}),
+          ...(params.funcIds !== undefined ? { funcIds: params.funcIds } : {}),
           ...(model !== undefined ? { model } : {}),
           ...(params.one_by_one === true ? { separately: true } : {}),
         });
@@ -2767,7 +2760,7 @@ function specConflictTask(conflict: SpecConflict): string {
     describeSpecConflict(conflict),
     "",
     `The render stopped on it: the conformance run's judge found them conflicting, ${conflict.reasons.length} times -`,
-    `functional spec ${one!.frid} of ${one!.module} (${one!.plainFile}) and functional spec ${two!.frid} of ${two!.module} (${two!.plainFile}). Now:`,
+    `functional spec ${one!.module}:${one!.funcId} (${one!.plainFile}) and functional spec ${two!.module}:${two!.funcId} (${two!.plainFile}). Now:`,
     "1. Run the analyze-2-func-specs skill (cultivate) on these two functional specs, to confirm they conflict.",
     "2. If they do, run the resolve-spec-conflict skill on the pair, to work out what could be changed - but change nothing yet.",
     "3. Tell the user exactly what the conflict is - both specs as they read, and the behaviour that cannot satisfy both -",

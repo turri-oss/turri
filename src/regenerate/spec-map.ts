@@ -100,7 +100,7 @@ export interface MarkedPage extends MapPage {
   stuck: boolean;
 }
 
-type Item = { markdown: string; module?: string; frid?: string; [ACCEPTANCE_TESTS]?: Array<{ markdown?: string }> };
+type Item = { markdown: string; id?: string; module?: string; [ACCEPTANCE_TESTS]?: Array<{ id?: string; text?: string }> };
 
 const itemsOf = (tree: MarshalledPlainSource | null | undefined, heading: string): Item[] => ((tree?.[heading] as Item[] | undefined) ?? []).slice();
 
@@ -154,7 +154,7 @@ export function pageItems(input: { module: string; own: boolean; spec: Marshalle
   const acceptance = new Map<string, string[]>();
   for (const item of itemsOf(now, FUNCTIONAL_REQUIREMENTS)) {
     const line = serializeTree(codeTree({ [FUNCTIONAL_REQUIREMENTS]: [item] })).split("\n").find((entry) => entry.startsWith("{"));
-    if (line !== undefined) acceptance.set(line, (item[ACCEPTANCE_TESTS] ?? []).map((test) => test.markdown ?? ""));
+    if (line !== undefined) acceptance.set(line, (item[ACCEPTANCE_TESTS] ?? []).map((test) => test.text ?? ""));
   }
 
   // The record's lines, with what is added in front of each and what becomes of each: the spec's order, the ghosts in theirs.

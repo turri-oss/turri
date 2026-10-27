@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
   ACCEPTANCE_TESTS,
+  CONFORMANCE_TESTS,
   DEFINITIONS,
   FUNCTIONAL_REQUIREMENTS,
   NON_FUNCTIONAL_REQUIREMENTS,
@@ -21,9 +22,10 @@ import { sectionTag } from "./prompt.ts";
  *
  * Both specs are marshalled trees, written out as text with one JSON value per line - a
  * section's name, then each of its items on a line of its own - and compared with git. So an
- * item is the unit of change: a functional spec with its acceptance tests and linked resources,
+ * item is the unit of change: a functional spec with its scenarios and linked resources,
  * a definition, a req. Git lines them up, so a spec inserted in the middle is one addition and
- * the specs after it are untouched, though their numbers moved.
+ * the specs after it are untouched. A functional spec is known by its func-id: one taken out and
+ * one put in with the same func-id are the same functional spec, changed - or, the same text, moved.
  *
  * The planner (`chunk-plan.ts`) cuts the changes into steps - which go together, which go first. It
  * picks changes by id; it never writes a diff. `makeStep` applies what it picked, and `inconsistencies`
@@ -84,8 +86,9 @@ export function sameSpec(before: MarshalledPlainSource, after: MarshalledPlainSo
   const modulesOf = (tree: MarshalledPlainSource) => new Set(getInheritedFunctionalSpecs(tree).map((spec) => spec.module));
   const had = modulesOf(before);
   if ([...modulesOf(after)].some((module) => !had.has(module))) return false;
+  // A functional spec by its func-id and what it says, wherever it is written: moved, it is the same spec.
   const text = (item: unknown) => {
-    const { module: _module, frid: _frid, ...rest } = item as Record<string, unknown>;
+    const { module: _module, ...rest } = item as Record<string, unknown>;
     return JSON.stringify(sortKeys(rest));
   };
   const list = (tree: MarshalledPlainSource, heading: string) => ((tree[heading] as unknown[] | undefined) ?? []).map(text);
@@ -96,7 +99,7 @@ export function sameSpec(before: MarshalledPlainSource, after: MarshalledPlainSo
       .map((key) => [key, sortKeys(tree[key])]);
     return JSON.stringify({
       sections: [DEFINITIONS, NON_FUNCTIONAL_REQUIREMENTS, TEST_REQUIREMENTS].map((heading) => list(tree, heading).sort()),
-      specs: [...list(tree, REQUIRED_FUNCTIONAL_SPECS), ...list(tree, FUNCTIONAL_REQUIREMENTS)],
+      specs: [...list(tree, REQUIRED_FUNCTIONAL_SPECS), ...list(tree, FUNCTIONAL_REQUIREMENTS)].sort(),
       others,
     });
   };
@@ -277,7 +280,51 @@ export function changesBetween(before: string, after: string): SpecChange[] {
       });
     });
   }
-  return changes;
+  return mergeMoves(changes);
+}
+
+/** The sections whose items are functional specs, each known by its func-id. */
+const FUNCTIONAL_SECTIONS = [FUNCTIONAL_REQUIREMENTS, REQUIRED_FUNCTIONAL_SPECS];
+
+/** A functional spec's identity - its func-id, and its module for one a module below has - or undefined for any other line. */
+function identityOfLine(line: string | undefined): string | undefined {
+  if (line === undefined || headerOf(line) !== undefined) return undefined;
+  try {
+    const item = JSON.parse(line) as { id?: unknown; module?: unknown };
+    return typeof item.id === "string" ? `${typeof item.module === "string" ? item.module : ""}:${item.id}` : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * A functional spec taken out in one place and put in at another - the same func-id - is one change, not two: moved,
+ * and changed where its text differs. git lines up a move as a removal and an addition, in hunks of their own; the change
+ * takes the line out where it was and puts it in where it now is.
+ */
+function mergeMoves(changes: SpecChange[]): SpecChange[] {
+  // Paired first, whichever comes first: a spec moved up is added before it is removed.
+  const pairs = new Map<SpecChange, SpecChange>();
+  const used = new Set<SpecChange>();
+  for (const change of changes) {
+    const identity = change.kind === "remove" && FUNCTIONAL_SECTIONS.includes(change.section) ? identityOfLine(change.before) : undefined;
+    const added = identity === undefined ? undefined : changes.find((other) => !used.has(other) && other.kind === "add" && other.section === change.section && identityOfLine(other.after) === identity);
+    if (added === undefined) continue;
+    used.add(added);
+    pairs.set(change, added);
+  }
+  const merged: SpecChange[] = [];
+  for (const change of changes) {
+    if (used.has(change)) continue;
+    const added = pairs.get(change);
+    merged.push(added === undefined ? change : { ...change, kind: "change", after: added.after!, position: added.position, inserts: added.inserts! });
+  }
+  return merged.map((change, index) => ({ ...change, id: `c${index + 1}` }));
+}
+
+/** Whether a change moves a functional spec and leaves what it says as it was. */
+export function isMove(change: SpecChange): boolean {
+  return change.kind === "change" && change.before === change.after;
 }
 
 /** The words of an item's text, for telling a changed item from a different one. */
@@ -301,13 +348,16 @@ const SAME_ITEM = 0.5;
 
 /**
  * Which removed item became which added one, in order on both sides: the pairing that matches
- * the most alike items. Only items at least SAME_ITEM alike are paired.
+ * the most alike items. A functional spec pairs only with the one of its func-id; any other item only with one at
+ * least SAME_ITEM alike.
  */
 function pairItems(removed: string[], added: string[]): Array<[number, number]> {
-  const alike = (r: number, a: number) =>
-    headerOf(removed[r]!) === undefined && headerOf(added[a]!) === undefined && similarity(removed[r]!, added[a]!) >= SAME_ITEM
-      ? similarity(removed[r]!, added[a]!)
-      : 0;
+  const alike = (r: number, a: number) => {
+    if (headerOf(removed[r]!) !== undefined || headerOf(added[a]!) !== undefined) return 0;
+    const identity = identityOfLine(removed[r]);
+    if (identity !== undefined || identityOfLine(added[a]) !== undefined) return identity === identityOfLine(added[a]) ? 1 : 0;
+    return similarity(removed[r]!, added[a]!) >= SAME_ITEM ? similarity(removed[r]!, added[a]!) : 0;
+  };
   // Best total likeness over order-keeping pairings - a longest common subsequence, weighted.
   const best = Array.from({ length: removed.length + 1 }, () => new Array<number>(added.length + 1).fill(0));
   for (let r = removed.length - 1; r >= 0; r -= 1) {
@@ -354,6 +404,12 @@ function itemText(line: string): string {
   ].join("\n");
 }
 
+/** An item as the module's file writes it: a functional spec under its func-id heading, anything else as it reads. */
+function fileItemText(line: string): string {
+  const item = JSON.parse(line) as { id?: string };
+  return item.id !== undefined ? `# ${item.id}\n${itemText(line)}` : itemText(line);
+}
+
 /** A serialized tree as a person reads it, section by section. */
 export function treeText(serialized: string): string {
   const out: string[] = [];
@@ -377,7 +433,13 @@ function changedParts(before: string, after: string): string {
   if (headerOf(before) !== undefined || headerOf(after) !== undefined) return "the text";
   const x = JSON.parse(before) as Record<string, unknown>;
   const y = JSON.parse(after) as Record<string, unknown>;
-  const names: Record<string, string> = { markdown: "the text", [ACCEPTANCE_TESTS]: "the acceptance tests", linked_resources: "the linked resources", code_variables: "the code variables" };
+  const names: Record<string, string> = {
+    markdown: "the text",
+    [CONFORMANCE_TESTS]: "the conformance scenarios",
+    [ACCEPTANCE_TESTS]: "the acceptance scenarios",
+    linked_resources: "the linked resources",
+    code_variables: "the code variables",
+  };
   const parts = [...new Set([...Object.keys(x), ...Object.keys(y)])]
     .filter((key) => JSON.stringify(x[key]) !== JSON.stringify(y[key]))
     .map((key) => names[key] ?? key);
@@ -486,7 +548,7 @@ export function plainText(serialized: string, layout?: SpecLayout): string {
     if (line === "") continue;
     const header = headerOf(line);
     if (header !== undefined) sections.push({ key: header.key, items: [] });
-    else sections.at(-1)?.items.push(itemText(line));
+    else sections.at(-1)?.items.push(fileItemText(line));
   }
   const own = sections.filter((section) => section.key !== REQUIRED_FUNCTIONAL_SPECS && section.items.length > 0);
   if (layout === undefined) return own.map((section) => [`***${section.key}***`, "", ...section.items].join("\n")).join("\n\n");

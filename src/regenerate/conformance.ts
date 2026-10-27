@@ -4,6 +4,7 @@ import { ask, BEGIN, createExecutor, refuseIfModelIsBlind, type TurnOptions } fr
 import { PLAIN_SOURCE_FILE_EXTENSION, plainFileParser } from "../plain/parser.ts";
 import {
   ACCEPTANCE_TESTS,
+  CONFORMANCE_TESTS,
   DEFINITIONS,
   FUNCTIONAL_REQUIREMENTS,
   NON_FUNCTIONAL_REQUIREMENTS,
@@ -73,7 +74,7 @@ import { reportSpecConflict } from "./activity.ts";
 import { ATTEMPTS } from "./stop-report.ts";
 import { ARBITER_AFTER, arbitrateReview, dismissedNote, REVIEW_LIMIT } from "./arbiter.ts";
 import { sectionsOf, type RequiredSpec } from "./state.ts";
-import { configForSpec, inheritModel, modelOnly, modelSpec, splitModelSpec } from "../config.ts";
+import { configForSpec, inheritModel, modelOnly, modelSpec, splitModelSpec, testDirOf } from "../config.ts";
 import { defaultBuildDir, modulesRoot, testsDirUnder, projectDirOf } from "./paths.ts";
 import { buildConformancePrompt, functionalitiesByModule, moduleSection, section, sectionModules, specChangeBlock, type SectionModules } from "./prompt.ts";
 import { diffFiles, digestFiles } from "./codebase.ts";
@@ -106,7 +107,7 @@ export interface RenderConformanceTestsOptions {
   /** What the job does to each functional spec (work.ts): its agents are told case by case. */
   cases?: JobCases;
   plainFile: string;
-  frid?: string;
+  funcId?: string;
   templateDirs?: string[];
   /** The rendered code under test. Must exist and be non-empty. */
   buildDir?: string;
@@ -139,7 +140,7 @@ export interface RenderConformanceTestsOptions {
 
 export interface RenderConformanceTestsResult {
   moduleName: string;
-  frid: string;
+  funcId: string;
   buildDir: string;
   conformanceDir: string;
   prompt: string;
@@ -163,7 +164,7 @@ export interface RenderConformanceTestsResult {
    * The spec contradicts itself: two functionalities that cannot both hold, raised by the judge
    * the times it takes to count. The run stopped on it - nothing in the code or the tests can fix it.
    */
-  specConflict?: { functionalities: Array<{ module: string; frid: string }>; reason: string };
+  specConflict?: { functionalities: Array<{ module: string; funcId: string }>; reason: string };
   /**
    * The run failed the same way, judged the same way, round after round - and again after the
    * explorer was asked what the tests lacked. It stopped rather than spend its attempts on it.
@@ -200,16 +201,16 @@ export async function renderConformanceTests(
   const templateDirs = resolveTemplateDirs(options.plainFile, options.templateDirs);
   const [moduleName, tree] = options.spec
     ? [options.spec.moduleName, options.spec.tree]
-    : plainFileParser(basename(options.plainFile), templateDirs);
+    : plainFileParser(basename(options.plainFile), templateDirs, { testDir: testDirOf(options.plainFile) });
 
   // For a spec change, the tests follow the change, whatever it touches - a definition, a req -
   // with or without a functional spec yet; for one functionality, they are that functionality's.
   const forChange = options.diff !== undefined;
-  const frids = [...getFrids(tree)];
-  const frid = options.frid ?? (forChange ? frids.at(-1) : frids[0]);
-  if (frid === undefined && !forChange) throw new Error(`Module '${moduleName}' has no functionalities.`);
-  if (frid !== undefined && !frids.includes(frid)) {
-    throw new Error(`Functionality ${frid} does not exist. Available: ${frids.join(", ")}.`);
+  const funcIds = [...getFrids(tree)];
+  const funcId = options.funcId ?? (forChange ? funcIds.at(-1) : funcIds[0]);
+  if (funcId === undefined && !forChange) throw new Error(`Module '${moduleName}' has no functionalities.`);
+  if (funcId !== undefined && !funcIds.includes(funcId)) {
+    throw new Error(`Functionality ${funcId} does not exist. Available: ${funcIds.join(", ")}.`);
   }
 
   const buildDir = resolve(options.buildDir ?? defaultBuildDir(moduleName, projectDirOf(options.plainFile)));
@@ -218,10 +219,10 @@ export async function renderConformanceTests(
     options.judgeModel ?? modelSpec(inheritModel(configForSpec(options.plainFile).judgeModel, modelOnly(options.model)));
   const conformanceDir = resolve(options.conformanceDir ?? conformanceDirFor(moduleName, modulesRoot(projectDirOf(options.plainFile))));
   const stage = (label: string) => {
-    if (!options.dryRun) reportStage(`${forChange ? unitOf(moduleName) : unitOf(moduleName, frid)}: ${label}`);
+    if (!options.dryRun) reportStage(`${forChange ? unitOf(moduleName) : unitOf(moduleName, funcId)}: ${label}`);
   };
-  stage(options.diff !== undefined ? "conformance tests for the spec change" : `conformance tests for functionality ${frid}`);
-  if (!options.dryRun && !forChange) reportSpec(buildingSpec(moduleName, frid!, frids.length, getSpecificationsForFrid(tree, frid!)[0]));
+  stage(options.diff !== undefined ? "conformance tests for the spec change" : `conformance tests for functionality ${funcId}`);
+  if (!options.dryRun && !forChange) reportSpec(buildingSpec(moduleName, funcId!, funcIds.length, getSpecificationsForFrid(tree, funcId!)[0]));
   // From the last known good state, unless this step continues work not yet committed.
   // On its own it is one unit - its tests, and any change to the code - landed whole or undone
   // whole. Continuing work already under way, it is part of that work's unit instead.
@@ -241,9 +242,9 @@ export async function renderConformanceTests(
   // The spec as it stands: every section, and the functional specs - none, for a change made
   // before any was written.
   const specifications: Specifications =
-    frid !== undefined
-      ? getSpecificationsForFrid(tree, frid)[0]
-      : { ...sectionsOf(tree), [FUNCTIONAL_REQUIREMENTS]: [], [ACCEPTANCE_TESTS]: [] };
+    funcId !== undefined
+      ? getSpecificationsForFrid(tree, funcId)[0]
+      : { ...sectionsOf(tree), [FUNCTIONAL_REQUIREMENTS]: [], [CONFORMANCE_TESTS]: [], [ACCEPTANCE_TESTS]: [] };
 
   // Conformance tests are written from the test reqs: they say how the suite is built and
   // run. Without them there is nothing to write tests against, and an agent asked anyway
@@ -263,15 +264,16 @@ export async function renderConformanceTests(
   const scripts = findTestScripts(root, options.plainFile, buildDir);
   if (!options.dryRun) requireTestScripts(moduleName, scripts, { conformance: true });
 
-  const linkedResources = loadLinkedResources(tree, forChange ? null : frid!, templateDirs);
+  const linkedResources = loadLinkedResources(tree, forChange ? null : funcId!, templateDirs);
   // The spec's images need a model that reads them: refused before any of its agents starts.
   if (!options.dryRun) await refuseIfModelIsBlind(options.model, resourceImages(linkedResources).length);
   const required = getInheritedFunctionalSpecs(tree);
   const prompt = withTestingScripts(buildConformancePrompt({
     ...(options.cases !== undefined ? { cases: options.cases } : {}),
     moduleName,
-    frid,
+    funcId,
     specifications,
+    funcIds,
     modules: sectionModules(tree, moduleName),
     linkedResources,
     manifest,
@@ -284,7 +286,7 @@ export async function renderConformanceTests(
   if (options.dryRun) {
     return {
       moduleName,
-      frid: frid ?? "",
+      funcId: funcId ?? "",
       buildDir,
       conformanceDir,
       prompt,
@@ -315,18 +317,18 @@ export async function renderConformanceTests(
   // The code and its tests are rendered apart: the tests in their own folder, by an agent that
   // may read the code but writes only tests. An explorer reads the code first and writes down how the
   // software is invoked, which is what the tests are written against.
-  const label = `${moduleName} ${options.diff !== undefined ? "spec change" : frid}`;
+  const label = `${moduleName} ${options.diff !== undefined ? "spec change" : funcId}`;
   // For a spec change: the functionalities it touches, whose acceptance tests are labelled, checked and reviewed.
-  const touched = forChange ? touchedFunctionalities(tree, frids, options.diff!) : [];
+  const touched = forChange ? touchedFunctionalities(tree, funcIds, options.diff!) : [];
   // The acceptance tests the run's tests carry out: every functionality the change touches, or the one under test.
-  const carriedOut = forChange ? touched : [{ frid: frid!, acceptanceTests: specifications[ACCEPTANCE_TESTS] ?? [] }];
-  const specContext: SpecContext = { moduleName, text: specText(specifications, moduleName, frids, required, carriedOut, options.change ?? options.diff, sectionModules(tree, moduleName)) };
+  const carriedOut = forChange ? touched : [{ funcId: funcId!, acceptanceTests: acceptanceTextsOf(specifications) }];
+  const specContext: SpecContext = { moduleName, text: specText(specifications, moduleName, funcIds, required, carriedOut, options.change ?? options.diff, sectionModules(tree, moduleName)) };
   // Any functionality of the codebase - this module's, and those of the modules it requires. A
   // functionality's run may raise a spec conflict only with that functionality; a spec diff's, between any two.
-  const own = (forChange ? frids : frids.slice(0, frids.indexOf(frid!) + 1)).map((id) => ({ module: moduleName, frid: id }));
+  const own = (forChange ? funcIds : funcIds.slice(0, funcIds.indexOf(funcId!) + 1)).map((id) => ({ module: moduleName, funcId: id }));
   const scope: ConflictScope = {
-    functionalities: [...required.map((spec) => ({ module: spec.module, frid: spec.frid })), ...own],
-    ...(forChange ? {} : { tested: { module: moduleName, frid: frid! } }),
+    functionalities: [...required.map((spec) => ({ module: spec.module, funcId: spec.funcId })), ...own],
+    ...(forChange ? {} : { tested: { module: moduleName, funcId: funcId! } }),
   };
   /** How many times each spec conflict has been raised in this run, by the two functionalities it names. */
   const conflicts = new Map<string, string[]>();
@@ -397,7 +399,7 @@ export async function renderConformanceTests(
   ];
   // The acceptance tests the explorer's plan has to carry out, step by step.
   const toCarryOut = carriedOut
-    .map((item) => ({ module: moduleName, frid: item.frid, count: item.acceptanceTests.length }))
+    .map((item) => ({ module: moduleName, funcId: item.funcId, count: item.acceptanceTests.length }))
     .filter((item) => item.count > 0);
   let invocation = await exploreInvocation({ buildDir, spec: specContext, scope, testingScripts, acceptance: toCarryOut, label, model: options.model, onDelta: options.onDelta });
   reportActivity(`  how to invoke it: ${invocation.split("\n")[0]!.slice(0, 120)}`);
@@ -405,8 +407,9 @@ export async function renderConformanceTests(
     buildConformancePrompt({
       ...(options.cases !== undefined ? { cases: options.cases } : {}),
       moduleName,
-      frid,
+      funcId,
       specifications,
+      funcIds,
       modules: sectionModules(tree, moduleName),
       linkedResources,
       manifest,
@@ -555,7 +558,7 @@ export async function renderConformanceTests(
       // The conformance tests and each acceptance test have to be there, and labelled as what
       // they are, before anything else counts.
       if (options.diff === undefined) {
-        const missing = missingTestLabels(conformanceDir, frid!, specifications[ACCEPTANCE_TESTS] ?? []);
+        const missing = missingTestLabels(conformanceDir, funcId!, acceptanceTextsOf(specifications));
         if (missing.length > 0) {
           if (labelAsks >= LABEL_ASKS) {
             stage(`the tests were sent back ${LABEL_ASKS} times to be written and labelled, and still are not - stopping`);
@@ -564,14 +567,14 @@ export async function renderConformanceTests(
           }
           labelAsks += 1;
           stage(listFiles(conformanceDir).length === 0 ? "no tests in the tests folder - the conformance agent writes them" : "labelling the conformance and acceptance tests");
-          response = await askConformance(labelsPrompt(frid!, missing, listFiles(conformanceDir).length === 0, (specifications[ACCEPTANCE_TESTS] ?? []).length > 0), options.onDelta);
+          response = await askConformance(labelsPrompt(funcId!, missing, listFiles(conformanceDir).length === 0, (specifications[ACCEPTANCE_TESTS] ?? []).length > 0), options.onDelta);
           continue;
         }
       } else {
         // A spec change: every functionality it touches, as a functionality's own run would have it - every one missing
         // asked for in one request, checked whole again after each answer, so none is asked for in place of another.
         const pending = touched
-          .map((item) => ({ frid: item.frid, missing: missingTestLabels(conformanceDir, item.frid, item.acceptanceTests) }))
+          .map((item) => ({ funcId: item.funcId, missing: missingTestLabels(conformanceDir, item.funcId, item.acceptanceTests) }))
           .filter((item) => item.missing.length > 0);
         if (pending.length > 0) {
           if (labelAsks >= LABEL_ASKS) {
@@ -580,7 +583,7 @@ export async function renderConformanceTests(
             break;
           }
           labelAsks += 1;
-          stage(`labelling the conformance and acceptance tests of functionalit${pending.length === 1 ? "y" : "ies"} ${pending.map((item) => item.frid).join(", ")}, which the change touches`);
+          stage(`labelling the conformance and acceptance tests of functionalit${pending.length === 1 ? "y" : "ies"} ${pending.map((item) => item.funcId).join(", ")}, which the change touches`);
           const acceptance = touched.some((item) => item.acceptanceTests.length > 0);
           response = await askConformance(labelsPromptFor(pending, listFiles(conformanceDir).length === 0, acceptance), options.onDelta);
           continue;
@@ -775,8 +778,8 @@ export async function renderConformanceTests(
                 plainFile: files.get(ref.module) ?? options.plainFile,
                 text:
                   ref.module === moduleName
-                    ? (ownSpecs[frids.indexOf(ref.frid)] ?? "")
-                    : (required.find((spec) => spec.module === ref.module && spec.frid === ref.frid)?.spec ?? ""),
+                    ? (ownSpecs[funcIds.indexOf(ref.funcId)] ?? "")
+                    : (required.find((spec) => spec.module === ref.module && spec.funcId === ref.funcId)?.spec ?? ""),
               })),
               reasons: said,
             });
@@ -906,7 +909,7 @@ export async function renderConformanceTests(
           if (failedReviews > REVIEW_ROUNDS) {
             stage(`the review sent the tests back ${failedReviews === 1 ? "once" : `${failedReviews} times`} - the arbiter weighs what it found`);
             const ruling = await arbitrateReview({
-              subject: `the conformance tests of ${forChange ? `the spec change in module \`${moduleName}\`` : `functionality ${frid} of module \`${moduleName}\``}`,
+              subject: `the conformance tests of ${forChange ? `the spec change in module \`${moduleName}\`` : `functionality ${funcId} of module \`${moduleName}\``}`,
               workdir: conformanceDir,
               read: [conformanceDir, buildDir],
               uphold: [
@@ -989,19 +992,19 @@ export async function renderConformanceTests(
     const changed = codeChanged();
     if (verified) {
       // The tests, and the code when it changed: one commit if they share a module folder.
-      const subject = `conformance ${moduleName} ${options.diff !== undefined ? "for a spec change" : `fs ${frid}`}${changed ? " (code changed)" : ""}`;
+      const subject = `conformance ${moduleName} ${options.diff !== undefined ? "for a spec change" : `fs ${funcId}`}${changed ? " (code changed)" : ""}`;
       stage(`committing the conformance tests${changed ? " and the code changes" : ""}`);
       landWork(conformanceDir, subject);
       if (moduleDirOf(buildDir) !== moduleDirOf(conformanceDir)) landWork(buildDir, subject);
     } else if (start !== undefined) {
-      const why = notLandedWhy(options.diff !== undefined ? "for the spec change" : `of functionality ${frid}`, unlabelled);
+      const why = notLandedWhy(options.diff !== undefined ? "for the spec change" : `of functionality ${funcId}`, unlabelled);
       stage(`${why} - undoing them`);
       abandonWork(start, moduleName, why);
     }
 
     return {
       moduleName,
-      frid: frid ?? "",
+      funcId: funcId ?? "",
       buildDir,
       conformanceDir,
       prompt: agentPrompt,
@@ -1051,7 +1054,7 @@ function plainFilesOf(plainFile: string, templateDirs: string[]): Map<string, st
  * has a line the change adds or removes - with their acceptance tests: what a spec diff's
  * conformance run labels, checks and reviews, as a functionality's run does for its one.
  */
-export function touchedFunctionalities(tree: MarshalledPlainSource, frids: string[], diff: string): Array<{ frid: string; acceptanceTests: string[] }> {
+export function touchedFunctionalities(tree: MarshalledPlainSource, funcIds: string[], diff: string): Array<{ funcId: string; acceptanceTests: string[] }> {
   const bare = (line: string) => line.trim().replace(/^-\s+/, "").replace(/\s+/g, " ");
   const changed = new Set(
     diff
@@ -1060,12 +1063,12 @@ export function touchedFunctionalities(tree: MarshalledPlainSource, frids: strin
       .map((line) => bare(line.slice(1)))
       .filter((line) => line.length > 12),
   );
-  return frids.flatMap((frid) => {
-    const specifications = getSpecificationsForFrid(tree, frid)[0];
+  return funcIds.flatMap((funcId) => {
+    const specifications = getSpecificationsForFrid(tree, funcId)[0];
     const spec = specifications[FUNCTIONAL_REQUIREMENTS].at(-1) ?? "";
-    const acceptanceTests = specifications[ACCEPTANCE_TESTS] ?? [];
+    const acceptanceTests = acceptanceTextsOf(specifications);
     const lines = [spec, ...acceptanceTests].flatMap((text) => text.split("\n")).map(bare);
-    return lines.some((line) => changed.has(line)) ? [{ frid, acceptanceTests }] : [];
+    return lines.some((line) => changed.has(line)) ? [{ funcId, acceptanceTests }] : [];
   });
 }
 
@@ -1165,9 +1168,9 @@ export function failureLine(run: ScriptRun): string {
 function specText(
   specifications: Specifications,
   moduleName: string,
-  frids: string[],
+  funcIds: string[],
   required: RequiredSpec[],
-  acceptance: Array<{ frid: string; acceptanceTests: string[] }>,
+  acceptance: Array<{ funcId: string; acceptanceTests: string[] }>,
   diff?: string,
   modules?: SectionModules,
 ): string {
@@ -1176,7 +1179,7 @@ function specText(
     key === FUNCTIONAL_REQUIREMENTS
       ? [
           functionalitiesByModule(
-            [...required, ...items.map((item, index) => ({ module: moduleName, frid: frids[index] ?? String(index + 1), spec: item }))],
+            [...required, ...items.map((item, index) => ({ module: moduleName, funcId: funcIds[index] ?? String(index + 1), spec: item }))],
             moduleName,
           ),
         ]
@@ -1187,10 +1190,15 @@ function specText(
     .filter(([, items]) => items.length > 0)
     .map(([key, items]) => (key === FUNCTIONAL_REQUIREMENTS ? section(key, numbered(key, items)) : moduleSection(key, items, moduleName, modules))!);
   // Not only the last functionality's: a spec change's run carries out the acceptance tests of every one it touches.
-  const tests = acceptance.flatMap((item) => item.acceptanceTests.map((test, index) => `${acceptanceLabel(item.frid, index + 1)}: ${acceptanceText(test)}`));
+  const tests = acceptance.flatMap((item) => item.acceptanceTests.map((test, index) => `${acceptanceLabel(item.funcId, index + 1)}: ${acceptanceText(test)}`));
   if (tests.length > 0) sections.push(section(ACCEPTANCE_TESTS, tests)!);
   if (diff !== undefined) sections.push(specChangeBlock(diff));
   return sections.join("\n\n");
+}
+
+/** The texts of a functional spec's acceptance scenarios. */
+function acceptanceTextsOf(specifications: Specifications): string[] {
+  return (specifications[ACCEPTANCE_TESTS] ?? []).map((scenario) => scenario.text);
 }
 
 /**
@@ -1199,13 +1207,13 @@ function specText(
  */
 export function buildingSpec(
   moduleName: string,
-  frid: string,
+  funcId: string,
   total: number,
-  specifications: { "functional specs": string[]; [ACCEPTANCE_TESTS]?: string[] },
+  specifications: { "functional specs": string[]; [ACCEPTANCE_TESTS]?: Array<{ text: string }> },
 ): BuildingSpec {
-  const acceptance = specifications[ACCEPTANCE_TESTS] ?? [];
+  const acceptance = (specifications[ACCEPTANCE_TESTS] ?? []).map((scenario) => scenario.text);
   return {
-    label: `${moduleName} functionality ${frid} of ${total}`,
+    label: `${moduleName} functionality ${funcId} of ${total}`,
     text: [(specifications["functional specs"].at(-1) ?? "").trim(), ...(acceptance.length > 0 ? ["", "acceptance tests:", ...acceptance.map((test) => test.trim())] : [])].join("\n"),
   };
 }
