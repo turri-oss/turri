@@ -45,7 +45,7 @@ The workflow signs in to npm with npm's trusted publishing (OIDC), not a token: 
 | `src/pi.ts` | [pi](https://pi.dev) session factories for executors, sub-agents and judges |
 | `src/spec-tools.ts` | `change_plain` |
 | `src/loop-tools.ts` | `regenerate`, `drift` and `halt` - one definition each, for the conversation and the skills alike |
-| `src/plain/` | the [\*\*\*plain](https://plainlang.org/docs/) parser - see [parser](parser.md) - and `highlight.ts`, which highlights \*\*\*plain with plyn's grammar, `plain.tmLanguage.json` (`npm run grammar:sync` refreshes it from [plyn](https://github.com/plainlang/plyn)) |
+| `src/plain/` | the [\*\*\*plain](https://plainlang.org/docs/) parser - see [parser](parser.md) - and `highlight.ts`, which highlights \*\*\*plain with turri's own grammar, `plain.tmLanguage.json` - started from [plyn](https://github.com/plainlang/plyn)'s at `f9c02b8`, and changed here since: test plain files' sections and keys, the `# <id>` heading |
 | `src/regenerate/conformance.ts` | conformance tests: writing them, and fixing the test or the code until they pass |
 | `src/regenerate/regenerate.ts`, `src/regenerate/conform.ts` | a code job - a \*\*\*plain diff regenerated in the code - and a conformance job |
 | `src/regenerate/loop.ts`, `src/regenerate/records.ts`, `src/regenerate/drift.ts`, `src/regenerate/jobs.ts` | the work loop, the records and the work derived from them, and background jobs |

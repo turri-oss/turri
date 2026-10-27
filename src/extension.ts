@@ -2314,7 +2314,7 @@ function sidePanelOf(jobs: JobRegistry, cwd: string): SidePanelHost {
             warning: (text) => theme.fg("warning", text),
             added: (text) => theme.fg("toolDiffAdded", text),
             removed: (text) => theme.fg("toolDiffRemoved", text),
-            // A spec diff's ***plain highlighted as plyn highlights it, and its added and removed lines filled.
+            // A spec diff's ***plain highlighted by turri's grammar, and its added and removed lines filled.
             diff: plainPaint(theme),
             // What conformance tests show does what its spec says: neon.
             conforms: brandNeon(theme),

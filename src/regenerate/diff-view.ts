@@ -3,7 +3,7 @@ import { highlightLine, roleOf, type HighlightState, type PlainRole } from "../p
 import { RESOURCE_MARKER } from "../plain/markdown.ts";
 
 /**
- * A spec diff as the panels show it: each line's ***plain highlighted as plyn highlights it
+ * A spec diff as the panels show it: each line's ***plain highlighted by turri's own grammar
  * (`plain/highlight.ts`), an added line on a green band and a removed one on a red, the band the width
  * of the panel - as an editor shows a diff. Each file is named once, quietly, above its hunks - not
  * git's headers - and a hunk header is a quiet rule between hunks.

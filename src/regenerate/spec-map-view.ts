@@ -212,7 +212,7 @@ export function legendLines(page: MarkedPage, style: TranscriptStyle): string[] 
 export const DISCUSS_KEY = "d";
 const needsLine = (page: MarkedPage) => `needs you - ${page.status} · ${DISCUSS_KEY} to talk it through in the chat`;
 
-/** Each character's role in a line of ***plain, as plyn highlights it - kept, the map redraws every half second. */
+/** Each character's role in a line of ***plain, as turri's grammar highlights it - kept, the map redraws every half second. */
 const rolesSeen = new Map<string, Array<PlainRole | undefined>>();
 function rolesOf(line: string): Array<PlainRole | undefined> {
   const seen = rolesSeen.get(line);
@@ -244,7 +244,7 @@ function paintRoles(text: string, from: number, roles: Array<PlainRole | undefin
   return out + (run === "" ? "" : role === undefined ? run : paint.syntax(role, run));
 }
 
-/** A line of ***plain highlighted as plyn highlights it: the whole line read, so a span over several words keeps its colour. */
+/** A line of ***plain highlighted as turri's grammar highlights it: the whole line read, so a span over several words keeps its colour. */
 export function highlighted(line: string, style: TranscriptStyle): string {
   return style.diff === undefined ? line : paintRoles(line, 0, rolesOf(line), style.diff);
 }

@@ -35,7 +35,7 @@
             "patterns": [
                 {
                     "name": "entity.name.function.plain",
-                    "match": "\\*\\*\\*(definitions|implementation reqs|test reqs|functional specs|acceptance tests)\\*\\*\\*"
+                    "match": "^\\*\\*\\*(definitions|implementation reqs|test reqs|functional specs|conformance tests|acceptance tests)\\*\\*\\*"
                 },
                 {
                     "name": "meta.frontmatter.plain",
@@ -61,6 +61,21 @@
                         {
                             "name": "keyword.control.requires.plain",
                             "match": "^\\s*(requires):"
+                        },
+                        {
+                            "match": "^\\s*(module:)\\s*([a-zA-Z_][a-zA-Z0-9_]*)?",
+                            "captures": {
+                                "1": {
+                                    "name": "keyword.control.import.plain"
+                                },
+                                "2": {
+                                    "name": "entity.name.type.class.plain"
+                                }
+                            }
+                        },
+                        {
+                            "name": "keyword.control.import.plain",
+                            "match": "^\\s*(func_id):"
                         },
                         {
                             "match": "^\\s*-\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
@@ -92,6 +107,10 @@
                     "name": "entity.name.module.plain",
                     "begin": "\\{%\\s*include",
                     "end": "%\\}"
+                },
+                {
+                    "name": "entity.name.tag.id.plain",
+                    "match": "^#\\s+[a-z0-9]+(?:-[a-z0-9]+)*\\s*$"
                 },
                 {
                     "name": "entity.punctuation.definition.bullet.plain",

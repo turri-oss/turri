@@ -36,8 +36,7 @@
     "validate": "tsx src/validate-cli.ts",
     "doctor": "node bin/turri.mjs doctor",
     "build": "node scripts/build.mjs",
-    "prepack": "npm run build",
-    "grammar:sync": "node scripts/sync-plyn-grammar.mjs"
+    "prepack": "npm run build"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "^1.2.0",
