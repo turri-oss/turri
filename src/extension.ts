@@ -1,6 +1,6 @@
 // Whether the terminal shows images, before anything draws: the banner's jellyfish is a picture or text.
 import "./terminal-images.ts";
-import { refuseTestPlainFile, testPlainFileRefusal } from "./test-plain-files.ts";
+import { moduleOfTestPlainFile, refuseTestPlainFile, testPlainFileRefusal } from "./test-plain-files.ts";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
@@ -994,10 +994,15 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
             ? "It changed no file in the project - whatever it said it wrote is not there. Say so to the user; do not report the work as done."
             : "It only reads: what it found is the artifact below.";
       // A skill that edits the specs with the file tools builds nothing: the change is the conversation's to render.
+      // A test plain file is its module's: the module is what regenerate is called for, its scenarios' tests brought up with it.
       const specsChanged = changes.filter((path) => path.endsWith(".plain"));
+      const named = specsChanged.map((path) => {
+        const owner = moduleOfTestPlainFile(resolve(cwd, path));
+        return owner === undefined ? path : `${path} (a test plain file of ${owner.plainFile !== undefined ? relative(cwd, owner.plainFile) : owner.module})`;
+      });
       const unrendered =
         specsChanged.length > 0 && !skill.allowedTools.includes("change_plain")
-          ? `${specsChanged.join(", ")} changed, and nothing is regenerated from that yet: call regenerate for it, and the code is brought up to the spec.`
+          ? `${named.join(", ")} changed, and nothing is regenerated from that yet: call regenerate for ${named.length === 1 ? "its module" : "their modules"}, and the code and its conformance tests are brought up to the spec.`
           : "";
       const gated = skill.steps.some((step) => step.gate !== undefined);
       const first = skill.allowedTools.includes("change_plain") ? firstRegeneration(jobs.list(), began) : {};

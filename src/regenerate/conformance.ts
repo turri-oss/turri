@@ -1192,7 +1192,7 @@ function specText(
   // Not only the last functionality's: a spec change's run carries out the acceptance tests of every one it touches.
   const tests = acceptance.flatMap((item) => item.acceptanceTests.map((test, index) => `${acceptanceLabel(item.funcId, index + 1)}: ${acceptanceText(test)}`));
   if (tests.length > 0) sections.push(section(ACCEPTANCE_TESTS, tests)!);
-  if (diff !== undefined) sections.push(specChangeBlock(diff));
+  if (diff !== undefined) sections.push(specChangeBlock(diff, true));
   return sections.join("\n\n");
 }
 

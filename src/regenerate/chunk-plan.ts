@@ -1,7 +1,7 @@
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { DEFAULT_CONCEPTS, extractConceptsFromDefinition, extractConceptsFromSpecText } from "../plain/concepts.ts";
-import { ACCEPTANCE_TESTS, DEFINITIONS, FUNCTIONAL_REQUIREMENTS, NON_FUNCTIONAL_REQUIREMENTS, REQUIRED_FUNCTIONAL_SPECS, TEST_REQUIREMENTS, type MarshalledPlainSource } from "../plain/spec.ts";
+import { ACCEPTANCE_TESTS, CONFORMANCE_TESTS, DEFINITIONS, FUNCTIONAL_REQUIREMENTS, NON_FUNCTIONAL_REQUIREMENTS, REQUIRED_FUNCTIONAL_SPECS, TEST_REQUIREMENTS, type MarshalledPlainSource } from "../plain/spec.ts";
 import { ask, BEGIN, createExecutor } from "../pi.ts";
 import { reportActivity, reportStage } from "./activity.ts";
 import { firstLine, record } from "./ledger.ts";
@@ -231,12 +231,17 @@ export interface ChunkAgents {
   title?(groups: TitleGroup[], check: (answer: TitleAnswer) => string[], track: "code" | "conformance"): Promise<TitleAnswer | undefined>;
 }
 
-/** An item's text, from its serialized line: its markdown, and its acceptance tests. */
+/**
+ * An item's text, from its serialized line: its markdown - a functional spec's body, its func-id given beside it - and
+ * its scenarios, each under its scenario-id, where the tree has them: the conformance track's.
+ */
 function textOf(change: SpecChange): string {
   const line = change.after ?? change.before ?? "";
   try {
-    const item = JSON.parse(line) as { markdown?: string; [ACCEPTANCE_TESTS]?: Array<{ markdown?: string }> };
-    return [item.markdown ?? "", ...(item[ACCEPTANCE_TESTS] ?? []).map((test) => test.markdown ?? "")].filter(Boolean).join("\n");
+    type Scenario = { id?: string; text?: string };
+    const item = JSON.parse(line) as { markdown?: string; [CONFORMANCE_TESTS]?: Scenario[]; [ACCEPTANCE_TESTS]?: Scenario[] };
+    const scenarios = [...(item[CONFORMANCE_TESTS] ?? []), ...(item[ACCEPTANCE_TESTS] ?? [])].map((scenario) => `# ${scenario.id ?? ""}\n${scenario.text ?? ""}`);
+    return [item.markdown ?? "", ...scenarios].filter(Boolean).join("\n");
   } catch {
     return line;
   }

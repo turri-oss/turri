@@ -78,24 +78,24 @@ describe("a spec change, as the coding agent reads it", () => {
   });
 });
 
-describe("a functional spec with acceptance tests, in a spec change", () => {
-  // As the parser gives them: each acceptance test an item of its own, its text in its markdown.
-  const withTests = (specs: Array<{ markdown: string; tests: string[] }>) => ({
-    "functional specs": specs.map(({ markdown, tests }) => ({ markdown, acceptance_tests: tests.map((test) => ({ markdown: test })) })),
+describe("a functional spec with acceptance scenarios, in a spec change", () => {
+  // As the parser gives them: each scenario its id and its text.
+  const withTests = (specs: Array<{ id: string; markdown: string; tests: Array<[string, string]> }>) => ({
+    "functional specs": specs.map(({ id, markdown, tests }) => ({ id, markdown, acceptance_tests: tests.map(([scenario, text]) => ({ id: scenario, text })) })),
   });
-  const before = withTests([{ markdown: "- A :Cube: is intersected by a :Ray:.", tests: ["- ray(point(5,0.5,0), vector(-1,0,0)) should give T 4 and 6."] }]);
+  const before = withTests([{ id: "cube-ray", markdown: "A :Cube: is intersected by a :Ray:.", tests: [["through", "ray(point(5,0.5,0), vector(-1,0,0)) should give T 4 and 6."]] }]);
   const after = withTests([
-    { markdown: "- A :Cube: is intersected by a :Ray:.", tests: ["- ray(point(5,0.5,0), vector(-1,0,0)) should give T 4 and 6.", "- ray(point(2,2,0), vector(0,0,-1)) should give no intersections."] },
-    { markdown: "- A :Cube: has a normal on each face.", tests: ["- The normal at (1,0.5,-0.8) should be (1,0,0)\n  and at (-1,-0.2,0.9) should be (-1,0,0)."] },
+    { id: "cube-ray", markdown: "A :Cube: is intersected by a :Ray:.", tests: [["through", "ray(point(5,0.5,0), vector(-1,0,0)) should give T 4 and 6."], ["misses", "ray(point(2,2,0), vector(0,0,-1)) should give no intersections."]] },
+    { id: "cube-normal", markdown: "A :Cube: has a normal on each face.", tests: [["faces", "The normal at (1,0.5,-0.8) should be (1,0,0)\nand at (-1,-0.2,0.9) should be (-1,0,0)."]] },
   ]);
   const text = describeSpecChange(changesBetween(serializeTree(before as never), serializeTree(after as never)));
 
-  it("shows each acceptance test's text, never the object it is parsed into", () => {
+  it("shows each scenario's id and text, never the object it is parsed into", () => {
     expect(text).not.toContain("[object Object]");
-    expect(text).toContain("      <acceptance tests>\n        - ray(point(5,0.5,0), vector(-1,0,0)) should give T 4 and 6.\n        - ray(point(2,2,0), vector(0,0,-1)) should give no intersections.");
+    expect(text).toContain("      <acceptance tests>\n        # through\n        ray(point(5,0.5,0), vector(-1,0,0)) should give T 4 and 6.\n        # misses\n        ray(point(2,2,0), vector(0,0,-1)) should give no intersections.");
   });
 
-  it("keeps an acceptance test of several lines under its tag, each line indented", () => {
-    expect(text).toContain("  <acceptance tests>\n    - The normal at (1,0.5,-0.8) should be (1,0,0)\n      and at (-1,-0.2,0.9) should be (-1,0,0).\n    </acceptance tests>");
+  it("keeps a scenario of several lines under its tag, each line indented", () => {
+    expect(text).toContain("  <acceptance tests>\n    # faces\n    The normal at (1,0.5,-0.8) should be (1,0,0)\n    and at (-1,-0.2,0.9) should be (-1,0,0).\n    </acceptance tests>");
   });
 });

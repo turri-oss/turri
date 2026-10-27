@@ -1,4 +1,4 @@
-import { ACCEPTANCE_TESTS, DEFINITIONS, FUNCTIONAL_REQUIREMENTS, NON_FUNCTIONAL_REQUIREMENTS, REQUIRED_FUNCTIONAL_SPECS, TEST_REQUIREMENTS } from "../plain/spec.ts";
+import { DEFINITIONS, FUNCTIONAL_REQUIREMENTS, NON_FUNCTIONAL_REQUIREMENTS, REQUIRED_FUNCTIONAL_SPECS, TEST_REQUIREMENTS } from "../plain/spec.ts";
 import type { DiffWhere } from "./diff-view.ts";
 import { resourceDiff, type SpecChange } from "./spec-steps.ts";
 
@@ -6,8 +6,8 @@ import { resourceDiff, type SpecChange } from "./spec-steps.ts";
  * A job's change as its agent is given it, for the panels: the same items `describeSpecChange` writes into
  * `<spec change>` - what the job's functional specs use, from the module's own file and from the files it
  * imports and requires alike - laid out as a diff the panels already show (`diff-view.ts`). Each section is
- * a block under its header, each item as its file writes it - its markdown, its acceptance tests indented
- * under it - so placed in the .plain files (`locateDiffLines`) every line is shown in the file it is written
+ * a block under its header, each item as its file writes it - a functional spec under its `# <func-id>` heading -
+ * so placed in the .plain files (`locateDiffLines`) every line is shown in the file it is written
  * in, with its line there: split by file and by block. A text diff of the module's file would show other
  * things - the lines around a change, the items no job takes yet - and leave out what an import adds.
  */
@@ -18,7 +18,7 @@ const ORDER = [DEFINITIONS, NON_FUNCTIONAL_REQUIREMENTS, TEST_REQUIREMENTS, REQU
 /** A section's header as a .plain file writes it: a required module's functional specs are under its own `***functional specs***`. */
 const heading = (section: string) => `***${section === REQUIRED_FUNCTIONAL_SPECS ? FUNCTIONAL_REQUIREMENTS : section}***`;
 
-/** An item's lines as a .plain file writes them: its markdown, then its acceptance tests indented under it. */
+/** An item's lines as a .plain file writes them: a functional spec's `# <func-id>` heading over its text, anything else its text. */
 function itemLines(serialized: string | undefined): string[] {
   if (serialized === undefined) return [];
   let item: unknown;
@@ -28,16 +28,9 @@ function itemLines(serialized: string | undefined): string[] {
     return serialized.split("\n");
   }
   if (typeof item === "string") return item.split("\n");
-  const { markdown, [ACCEPTANCE_TESTS]: tests } = (item ?? {}) as { markdown?: string; [key: string]: unknown };
+  const { id, markdown } = (item ?? {}) as { id?: string; markdown?: string };
   const lines = (markdown ?? JSON.stringify(item)).split("\n");
-  if (Array.isArray(tests) && tests.length > 0) {
-    lines.push("", "    ***acceptance tests***", "");
-    for (const test of tests) {
-      const text = typeof test === "string" ? test : ((test as { markdown?: string }).markdown ?? JSON.stringify(test));
-      lines.push(...text.split("\n").map((line) => `    ${line}`));
-    }
-  }
-  return lines;
+  return id !== undefined ? [`# ${id}`, ...lines] : lines;
 }
 
 /**

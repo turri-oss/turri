@@ -1,6 +1,7 @@
 import { modulesScratchDir } from "./paths.ts";
 import {
   ACCEPTANCE_TESTS,
+  CONFORMANCE_TESTS,
   DEFINITIONS,
   FUNCTIONAL_REQUIREMENTS,
   NON_FUNCTIONAL_REQUIREMENTS,
@@ -15,7 +16,7 @@ import { codeCasesBlock, conformanceCasesBlock } from "./cases.ts";
 import { marksRegenerateAgain } from "./records.ts";
 import type { JobCases } from "./drift.ts";
 import type { RequiredSpec } from "./state.ts";
-import { resourcesChanged, type SpecChange } from "./spec-steps.ts";
+import { resourcesChanged, scenarioLines, type SpecChange } from "./spec-steps.ts";
 
 /**
  * Everything already in the code: the required modules' functional specs, bottom of the
@@ -33,9 +34,9 @@ function alreadyImplemented(moduleName: string, own: string[], funcIds: string[]
 
 /**
  * Functional specs grouped by the module they belong to - in the order the modules are built on
- * one another, the current module marked - and each tagged with its module and its id there. A codebase holds the
- * functionalities of every module it is built on, and each module numbers its own from 1, so
- * "functionality 1" alone is ambiguous: the first listed may be base's 1 and the next top's 3.
+ * one another, the current module marked - and each tagged with its module and its func-id there. A codebase holds the
+ * functionalities of every module it is built on, and a func-id is unique only in its module, so a func-id alone can
+ * be ambiguous: `base` and `app` may each have an `export`.
  * (the reference implementation's implemented functional requirements prompt section, as tags.)
  */
 export function functionalitiesByModule(
@@ -87,24 +88,29 @@ export function specPrimer(options: { testReqs: boolean }): string {
       ? "- <test reqs>: how the conformance tests are written and run."
       : "- <test reqs>: how the conformance tests are written and run. They are not given to you: the conformance tests\n" +
         "  are written apart from the code, from the specification.",
-    "- <functional specs>: what the system does, one functionality at a time, numbered in order, each built on the ones",
-    '  before it. Each functional spec is a <functionality module="..." id="...">; those in <already implemented> are',
-    "  in the code.",
+    "- <functional specs>: what the system does, one functionality at a time, in order, each built on the ones before",
+    '  it. Each functional spec is a <functionality module="..." id="...">, its id the func-id it has in its module; those',
+    "  in <already implemented> are in the code.",
     "- Modules: a ***plain specification is split into modules, each a .plain file of its own. Modules are how the",
     "  specification is written, in ***plain's own syntax - not how the code is laid out. A module can require others:",
     "  it is built on their code, in one codebase with them, so the codebase holds their definitions, implementation",
     "  reqs and functionalities as well as its own. A module can also import others: those hold only definitions and",
     "  reqs - shared ones, never functional specs or code of their own - and what a module imports is its own. Every",
     "  section reaches you grouped under the module each item belongs to - <module name=\"...\">, the modules in the",
-    "  order they are built on one another, the current one marked role=\"current\". Each module numbers its",
-    "  functional specs from 1, so a functionality is always given with its module and its id there: functionality 1",
-    "  of `base` and functionality 1 of `app` are two different functionalities.",
+    "  order they are built on one another, the current one marked role=\"current\". A func-id is unique only in its",
+    "  module, so a functional spec is always given with its module and its func-id there, `<module>:<func-id>`:",
+    "  `base:export` and `app:export` are two different functionalities.",
     "- You work only in the codebase of the current module: it is all you can reach, and it already holds the code of",
     "  every module it requires. Organise and write the code as the <implementation reqs> say - its layout, its",
     "  structure, its conventions - never by the ***plain modules: they say where the specification puts an item,",
     "  not where its code goes.",
-    "- <acceptance tests>: under a functional spec, specific checks that functionality's implementation must pass.",
-    "  They carry the same authority as the functional spec itself.",
+    ...(options.testReqs
+      ? [
+          "- <conformance tests> and <acceptance tests>: under a functional spec, its scenarios, each under its",
+          "  `# <scenario-id>`: what its conformance tests check, and the checks its implementation must pass end to end.",
+          "  They carry the same authority as the functional spec itself.",
+        ]
+      : []),
     "- <linked resources>: files the specification refers to as `[resource]name`. They are part of the specification.",
     "  A linked resource is not in your workspace. When the code needs what one holds while it runs - a schema it",
     "  validates against, a version it reports - it keeps exactly one copy, at the path its code-copy names in the",
@@ -191,7 +197,7 @@ export const ERROR_CAUSE_RULES = [
 
 /** A section's tag - its name in every prompt: `<implementation reqs>`, `<acceptance tests>`. */
 export function sectionTag(key: string): string {
-  return key === ACCEPTANCE_TESTS ? "acceptance tests" : key;
+  return key === ACCEPTANCE_TESTS ? "acceptance tests" : key === CONFORMANCE_TESTS ? "conformance tests" : key;
 }
 
 export function section(key: string, items: string[]): string | null {
@@ -326,13 +332,32 @@ export function reviewedSpec(input: {
 const RAW_CHANGE_NOTE =
   "The change could not be told section by section, so it is the diff of the .plain files, as the person made it. There,\n" +
   "each section is headed by its name in stars: ***definitions*** is <definitions>, ***implementation reqs*** is\n" +
-  "<implementation reqs>, ***test reqs*** is <test reqs>, ***functional specs*** is <functional specs>, and\n" +
-  "***acceptance tests*** under a functional spec is its <acceptance tests>.";
+  "<implementation reqs>, ***test reqs*** is <test reqs>, and ***functional specs*** is <functional specs>, where each\n" +
+  "functional spec is a `# <func-id>` heading and its text under it.";
+
+/** The same, for a conformance agent: a functional spec's scenarios are in a test plain file of their own. */
+const RAW_CHANGE_NOTE_SCENARIOS =
+  `${RAW_CHANGE_NOTE}\nA test plain file - tests/<module>/<func-id>.plain, its module: and func_id: at its top - holds one functional\n` +
+  "spec's scenarios: ***conformance tests*** is its <conformance tests> and ***acceptance tests*** its <acceptance tests>,\n" +
+  "each scenario a `# <scenario-id>` heading and its text.";
+
+/**
+ * A raw diff of the .plain files without the hunks of test plain files: a coding agent never sees scenarios, which are
+ * the conformance tests'. A test plain file is told by its own frontmatter - `func_id:` - since its folder is the
+ * project's to name.
+ */
+export function withoutTestPlainFiles(diff: string): string {
+  return diff
+    .split(/^(?=diff --git )/m)
+    .filter((file) => !/^[ +-]func_id:/m.test(file))
+    .join("");
+}
 
 /** A change in its tag: told section by section, or - when it could not be - the raw diff, with which tag each heading is. */
-export function specChangeBlock(change: string): string {
+export function specChangeBlock(change: string, scenarios = false): string {
   const raw = /^diff --git |^@@ |^[+-]{3} /m.test(change);
-  return `<spec change>\n${raw ? `${RAW_CHANGE_NOTE}\n\n` : ""}${change.trim()}\n</spec change>`;
+  const shown = raw && !scenarios ? withoutTestPlainFiles(change) : change;
+  return `<spec change>\n${raw ? `${scenarios ? RAW_CHANGE_NOTE_SCENARIOS : RAW_CHANGE_NOTE}\n\n` : ""}${shown.trim()}\n</spec change>`;
 }
 
 /** The sections as the change is told, in the order a spec has them. Test reqs are the conformance tests', not the code's. */
@@ -343,7 +368,7 @@ const CHANGE_SECTIONS: Array<{ key: string; title: string }> = [
   { key: "required functional specs", title: "functional specs of the modules this one requires" },
 ];
 
-/** A changed item's text: its markdown, and its acceptance tests under it. */
+/** A changed item's text: its markdown - a functional spec's body, named above it - and its scenarios under it, where the tree has them. */
 function itemText(serialized: string | undefined): string {
   if (serialized === undefined) return "";
   let item: unknown;
@@ -353,12 +378,9 @@ function itemText(serialized: string | undefined): string {
     return serialized;
   }
   if (typeof item === "string") return item;
-  const { markdown, [ACCEPTANCE_TESTS]: tests } = (item ?? {}) as { markdown?: string; [key: string]: unknown };
-  const lines = [markdown ?? JSON.stringify(item)];
-  // Each test is an item of the tree, its text in its markdown - as spec-steps.ts `itemText` reads it.
-  const testText = (test: unknown) => (typeof test === "string" ? test : ((test as { markdown?: string } | null)?.markdown ?? JSON.stringify(test)));
-  if (Array.isArray(tests) && tests.length > 0) lines.push("  <acceptance tests>", ...tests.map((test) => `  ${testText(test).replace(/\n/g, "\n  ")}`), "  </acceptance tests>");
-  return lines.join("\n");
+  const { markdown, [CONFORMANCE_TESTS]: conformance, [ACCEPTANCE_TESTS]: acceptance } = (item ?? {}) as { markdown?: string; [key: string]: unknown };
+  type Scenario = { id?: string; text?: string };
+  return [markdown ?? JSON.stringify(item), ...scenarioLines("conformance tests", conformance as Scenario[] | undefined), ...scenarioLines("acceptance tests", acceptance as Scenario[] | undefined)].join("\n");
 }
 
 const indent = (text: string, by: string) => text.split("\n").map((line) => `${by}${line}`).join("\n");
@@ -509,7 +531,7 @@ export function buildSpecDiffPrompt(input: SpecDiffPromptInput): string {
     linkedResourcesSection(input.linkedResources),
     input.changes !== undefined && input.changes.length > 0
       ? specChangeBlock(describeSpecChange(input.changes, input.moduleName))
-      : `<spec change>\n${RAW_CHANGE_NOTE}\n\n${input.diff.trim()}\n</spec change>`,
+      : `<spec change>\n${RAW_CHANGE_NOTE}\n\n${withoutTestPlainFiles(input.diff).trim()}\n</spec change>`,
     "",
     ...(input.cases !== undefined
       ? codeCasesBlock(input.cases)
@@ -647,7 +669,7 @@ export function buildConformancePrompt(input: ConformancePromptInput): string {
 
   parts.push(
     input.diff !== undefined
-      ? specChangeBlock(input.diff)
+      ? specChangeBlock(input.diff, true)
       : `<functionality module="${input.moduleName}" id="${input.funcId}">\n${target}\n</functionality>`,
     input.diff !== undefined
       ? touchedAcceptanceTests(input.touched ?? [])

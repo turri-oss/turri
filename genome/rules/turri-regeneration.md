@@ -36,7 +36,7 @@ The other rules say what a spec means. This one says what turri does with a chan
 
 ## What a coding agent sees
 
-- A coding agent sees its prompt and its module's code - nothing else. It cannot read `.plain` files, this conversation, AGENTS.md or the person
+- A coding agent sees its prompt and its module's code - nothing else. It cannot read `.plain` files, this conversation, AGENTS.md or the person. It never sees a functional spec's scenarios: those are the conformance tests'
 - What the code needs to know has to be in the spec. A fact said only in the conversation, AGENTS.md or notes never reaches the code, and is lost at the next regeneration
 - Steering reaches the agents that plan the work - how it is cut and in what order - not what the code does. What the code does is changed in the spec
 

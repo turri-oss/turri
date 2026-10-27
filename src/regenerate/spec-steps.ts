@@ -394,20 +394,24 @@ export function applyChanges(before: string, changes: SpecChange[]): string {
   return `${out.join("\n")}\n`;
 }
 
-/** An item as a person reads it: its text, and its acceptance tests under it. */
-function itemText(line: string): string {
-  const item = JSON.parse(line) as { markdown?: string; [ACCEPTANCE_TESTS]?: Array<{ markdown?: string }> };
-  const tests = item[ACCEPTANCE_TESTS] ?? [];
-  return [
-    item.markdown ?? line,
-    ...(tests.length > 0 ? ["  <acceptance tests>", ...tests.map((test) => `  ${(test.markdown ?? "").replace(/\n/g, "\n  ")}`), "  </acceptance tests>"] : []),
-  ].join("\n");
+/** A functional spec's scenarios of one kind, as a person reads them: each under its scenario-id, in its section's tag. */
+export function scenarioLines(tag: string, scenarios: Array<{ id?: string; text?: string }> | undefined): string[] {
+  if (scenarios === undefined || scenarios.length === 0) return [];
+  const indent = (text: string) => text.split("\n").map((line) => (line === "" ? "" : `  ${line}`)).join("\n");
+  return [`  <${tag}>`, ...scenarios.map((scenario) => indent(`# ${scenario.id ?? ""}\n${scenario.text ?? ""}`)), `  </${tag}>`];
 }
 
-/** An item as the module's file writes it: a functional spec under its func-id heading, anything else as it reads. */
-function fileItemText(line: string): string {
-  const item = JSON.parse(line) as { id?: string };
-  return item.id !== undefined ? `# ${item.id}\n${itemText(line)}` : itemText(line);
+/**
+ * An item as a person reads it: a functional spec under its `# <func-id>` heading, as its module's file writes it,
+ * with its conformance and acceptance scenarios under it where the tree has them; anything else as it reads.
+ */
+function itemText(line: string): string {
+  const item = JSON.parse(line) as { id?: string; markdown?: string; [CONFORMANCE_TESTS]?: Array<{ id?: string; text?: string }>; [ACCEPTANCE_TESTS]?: Array<{ id?: string; text?: string }> };
+  return [
+    item.id !== undefined ? `# ${item.id}\n${item.markdown ?? ""}` : (item.markdown ?? line),
+    ...scenarioLines("conformance tests", item[CONFORMANCE_TESTS]),
+    ...scenarioLines("acceptance tests", item[ACCEPTANCE_TESTS]),
+  ].join("\n");
 }
 
 /** A serialized tree as a person reads it, section by section. */
@@ -446,14 +450,33 @@ function changedParts(before: string, after: string): string {
   return parts.length === 0 ? "the text" : parts.join(" and ");
 }
 
+/** A functional spec a change is to, by its func-id - `module:func-id` for one of a module below - or nothing for another item. */
+function funcSpecOf(change: SpecChange): string | undefined {
+  if (!FUNCTIONAL_SECTIONS.includes(change.section)) return undefined;
+  try {
+    const item = JSON.parse(change.after ?? change.before ?? "") as { id?: string; module?: string };
+    if (item.id === undefined) return undefined;
+    return `functional spec \`${item.module !== undefined ? `${item.module}:` : ""}${item.id}\``;
+  } catch {
+    return undefined;
+  }
+}
+
 /** A change as the planning agent is shown it. */
 export function describeChange(change: SpecChange): string {
+  const spec = funcSpecOf(change);
   const what =
-    change.kind === "add"
-      ? `add to ${change.section}, as item ${change.position}`
-      : change.kind === "remove"
-        ? `remove item ${change.position} of ${change.section}`
-        : `change ${changedParts(change.before!, change.after!)} of item ${change.position} of ${change.section}`;
+    spec !== undefined
+      ? change.kind === "add"
+        ? `add ${spec} to ${change.section}, as item ${change.position}`
+        : change.kind === "remove"
+          ? `remove ${spec} from ${change.section}`
+          : `change ${changedParts(change.before!, change.after!)} of ${spec}`
+      : change.kind === "add"
+        ? `add to ${change.section}, as item ${change.position}`
+        : change.kind === "remove"
+          ? `remove item ${change.position} of ${change.section}`
+          : `change ${changedParts(change.before!, change.after!)} of item ${change.position} of ${change.section}`;
   const header = (line: string | undefined) => (line !== undefined && headerOf(line) !== undefined ? `the section ${headerOf(line)!.key}` : undefined);
   const body = [
     ...(change.before !== undefined ? ["  before:", `    ${(header(change.before) ?? itemText(change.before)).replace(/\n/g, "\n    ")}`] : []),
@@ -502,7 +525,7 @@ export interface SpecLayout {
   sections: string[];
   /** Each concept's place in the file's definitions - the parser orders them by what uses what. */
   concepts: Map<string, number>;
-  /** The sections whose items the file writes with no blank line between them. */
+  /** The sections whose items the file writes with no blank line between them - definitions and reqs: functional specs never are. */
   tight: Set<string>;
 }
 
@@ -526,7 +549,7 @@ export function layoutOf(text: string): SpecLayout {
       continue;
     }
     // An item straight after another's last line, with no blank line: the section is written tight.
-    if (section !== undefined && line.startsWith("- ") && previous.trim() !== "" && !SECTION_HEADING.test(previous)) tight.add(section);
+    if (section !== undefined && section !== FUNCTIONAL_REQUIREMENTS && line.startsWith("- ") && previous.trim() !== "" && !SECTION_HEADING.test(previous)) tight.add(section);
     previous = line;
     const concept = CONCEPT.exec(line);
     if (section === DEFINITIONS && concept && !concepts.has(concept[1]!)) concepts.set(concept[1]!, concepts.size);
@@ -548,7 +571,7 @@ export function plainText(serialized: string, layout?: SpecLayout): string {
     if (line === "") continue;
     const header = headerOf(line);
     if (header !== undefined) sections.push({ key: header.key, items: [] });
-    else sections.at(-1)?.items.push(fileItemText(line));
+    else sections.at(-1)?.items.push(itemText(line));
   }
   const own = sections.filter((section) => section.key !== REQUIRED_FUNCTIONAL_SPECS && section.items.length > 0);
   if (layout === undefined) return own.map((section) => [`***${section.key}***`, "", ...section.items].join("\n")).join("\n\n");
@@ -623,9 +646,9 @@ export function resourceDiff(changes: SpecChange[], file = "spec.plain"): string
     .join("");
 }
 
-/** The item a change is to, as the person finds it: its concept or its number, in the spec file it is in - a module below's by its name. */
+/** The item a change is to, as the person finds it: its concept, its func-id or its number, in the spec file it is in - a module below's by its name. */
 function linkedBy(change: SpecChange, file: string): string {
-  let item: { markdown?: string; module?: string } = {};
+  let item: { id?: string; markdown?: string; module?: string } = {};
   try {
     item = JSON.parse(change.after ?? change.before ?? "") as typeof item;
   } catch {
@@ -635,8 +658,8 @@ function linkedBy(change: SpecChange, file: string): string {
   const what =
     change.section === DEFINITIONS && concept !== undefined
       ? concept
-      : change.section === FUNCTIONAL_REQUIREMENTS
-        ? `functional spec ${change.position}`
+      : FUNCTIONAL_SECTIONS.includes(change.section) && item.id !== undefined
+        ? `functional spec ${item.id}`
         : `${sectionTag(change.section).replace(/s$/, "")} ${change.position}`;
   return `${what} in ${item.module !== undefined ? `${item.module}.plain` : file}`;
 }

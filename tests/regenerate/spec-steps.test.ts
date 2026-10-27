@@ -82,6 +82,25 @@ describe("the changes between two trees", () => {
     expect(changes[0]).toMatchObject({ kind: "add", position: 2, after: '{"markdown":"- One and a half."}' });
   });
 
+  it("names a functional spec by its func-id, one of a module below by its module too, never by its place", () => {
+    const before = { "functional specs": [item("One.", { id: "one" })], "required functional specs": [item("Base.", { id: "base-one", module: "base" })] };
+    const after = { "functional specs": [item("One, loudly.", { id: "one" }), item("Two.", { id: "two" })], "required functional specs": [] };
+    const described = changesOf(before as never, after as never).map(describeChange);
+    expect(described.find((text) => text.includes("functional spec `one`"))).toContain("change the text of functional spec `one`");
+    expect(described.find((text) => text.includes("`two`"))).toContain("add functional spec `two` to functional specs");
+    expect(described.find((text) => text.includes("base:base-one"))).toContain("remove functional spec `base:base-one` from required functional specs");
+    // Each written as its file has it: the heading over its text.
+    expect(described.join("\n")).toContain("# two\n    Two.");
+  });
+
+  it("shows a functional spec's scenarios under it, each under its scenario-id, in its kind's tag", () => {
+    const before = { "functional specs": [item("One.", { id: "one", conformance_tests: [], acceptance_tests: [] })] };
+    const after = { "functional specs": [item("One.", { id: "one", conformance_tests: [{ id: "loud", text: "It is loud." }], acceptance_tests: [{ id: "quiet", text: "It is not\nquiet." }] })] };
+    const [change] = changesOf(before as never, after as never);
+    expect(describeChange(change!)).toContain("change the acceptance scenarios and the conformance scenarios of functional spec `one`");
+    expect(describeChange(change!)).toContain("  <conformance tests>\n      # loud\n      It is loud.\n      </conformance tests>\n      <acceptance tests>\n      # quiet\n      It is not\n      quiet.\n      </acceptance tests>");
+  });
+
   it("a spec changed in place is a change, with what it was and what it becomes", () => {
     const changes = changesOf(tree({ "functional specs": ["- One.", "- Two."] }), tree({ "functional specs": ["- One.", "- Two, reworded."] }));
     expect(changes).toEqual([
@@ -283,6 +302,15 @@ describe("a spec change laid out as the module's file", () => {
     writeFileSync(join(dir, "app.plain"), FILE);
     const [, tree] = plainFileParser(join(dir, "app.plain"), [dir]);
     expect(plainText(serializeTree(tree), layoutOf(FILE))).toBe(FILE.trimEnd());
+  });
+
+  it("writes functional specs a blank line apart whatever the file's reqs do: only definitions and reqs are written tight", async () => {
+    const { layoutOf, plainText, serializeTree } = await import("../../src/regenerate/spec-steps.ts");
+    const file = ["***implementation reqs***", "", "- Python.", "- FastAPI.", "", "***functional specs***", "", "# one", "One.", "", "# two", "Two.", ""].join("\n");
+    const layout = layoutOf(file);
+    expect([...layout.tight]).toEqual(["implementation reqs"]);
+    const tree = { "implementation reqs": [{ markdown: "- Python." }, { markdown: "- FastAPI." }], "functional specs": [{ id: "one", markdown: "One." }, { id: "two", markdown: "Two." }] };
+    expect(plainText(serializeTree(tree as never), layout)).toBe(file.trimEnd());
   });
 
   it("numbers a step's lines as the file's, so its hunks point where the change is in the file", async () => {

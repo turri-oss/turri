@@ -49,6 +49,31 @@ describe("template directory resolution", () => {
 });
 
 describe("the coding agent's prompt", () => {
+  it("never shows the scenarios of a test plain file, even in a change given as the raw diff of the .plain files", () => {
+    const testPlain = [
+      "diff --git a/tests/demo/mine-two.plain b/tests/demo/mine-two.plain",
+      "new file mode 100644",
+      "--- /dev/null",
+      "+++ b/tests/demo/mine-two.plain",
+      "@@ -0,0 +1,9 @@",
+      "+---",
+      "+module: demo",
+      "+func_id: mine-two",
+      "+---",
+      "+",
+      "+***acceptance tests***",
+      "+",
+      "+# prints-two",
+      "+It prints two.",
+      "",
+    ].join("\n");
+    const prompt = codingPrompt({ diff: `diff --git a/demo.plain b/demo.plain\n--- a/demo.plain\n+++ b/demo.plain\n@@ -1,2 +1,5 @@\n # mine-one\n Mine one.\n+\n+# mine-two\n+Mine two.\n${testPlain}` });
+    expect(prompt).toContain("+# mine-two\n+Mine two.");
+    expect(prompt).toContain("each\nfunctional spec is a `# <func-id>` heading");
+    expect(prompt).not.toContain("It prints two.");
+    expect(prompt).not.toContain("tests/demo/mine-two.plain");
+  });
+
   it("withholds the test reqs, which belong to conformance", () => {
     const prompt = codingPrompt();
     expect(prompt).not.toContain("<test reqs>\n");
@@ -149,14 +174,20 @@ describe("how to read the specification", () => {
     const prompt = codingPrompt();
     expect(prompt.startsWith("<how to read the specification>")).toBe(true);
     expect(prompt).toContain(":Implementation: - the system that implements :plainFunctionality:.");
-    expect(prompt).toContain("They carry the same authority as the");
+    expect(specPrimer({ testReqs: true })).toContain("They carry the same authority as the");
     // What a concept is, the primer says once: the rules after it do not say it again.
     expect(prompt).toContain("Predefined concepts - used in every specification without being defined in it:");
     expect(prompt).not.toContain("defined in <definitions>, or predefined");
     // Every section is named by its tag, one name each: never by its ***heading*** as well.
-    for (const tag of ["<definitions>", "<implementation reqs>", "<test reqs>", "<functional specs>", "<acceptance tests>", "<linked resources>", "<spec change>"]) {
+    for (const tag of ["<definitions>", "<implementation reqs>", "<test reqs>", "<functional specs>", "<linked resources>", "<spec change>"]) {
       expect(specPrimer({ testReqs: false })).toContain(`- ${tag}: `);
     }
+    // Scenarios are the conformance tests': only the agents that write and judge them are told of them.
+    expect(specPrimer({ testReqs: true })).toContain("- <conformance tests> and <acceptance tests>: ");
+    expect(specPrimer({ testReqs: false })).not.toContain("<acceptance tests>");
+    // A functional spec is known by its module and func-id, never by a number.
+    expect(specPrimer({ testReqs: false })).toContain("`<module>:<func-id>`");
+    expect(specPrimer({ testReqs: false })).not.toContain("from 1");
     expect(specPrimer({ testReqs: false })).not.toMatch(/\*\*\*(definitions|implementation reqs|test reqs|functional specs|acceptance tests)\*\*\*/);
     expect(prompt).toContain("mock or stub the system under test to hide a failure");
     // The coding agent is told the test reqs exist, and that they are not its.
