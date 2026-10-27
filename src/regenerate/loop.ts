@@ -598,14 +598,16 @@ export function createWorkLoop(options: {
    * Which functional specs the conformance tests are for: every one - unless the config has them for the chosen ones,
    * or the conversation named some over a config that has them off. Then: those named, those with acceptance tests
    * when the config chooses, and those tested already - a choice is kept, and tests are never taken out because
-   * other functional specs were named.
+   * other functional specs were named. Off in the config and not asked for: those tested already alone - their tests
+   * kept up to date, and none written for any other.
    */
   const chosenOf = (state: ModuleState, spec: SpecSnapshot, tests: MarshalledPlainSource | null): Chosen | undefined => {
     const named = state.conformance?.chosen;
     const choosing = configChosen(tipEntry(state).plainFile);
+    const tested = new Set(((tests?.[FUNCTIONAL_REQUIREMENTS] as Array<{ frid?: string }> | undefined) ?? []).map((item) => item.frid));
+    if (state.conformance === undefined && !configConformance(tipEntry(state).plainFile)) return (frid) => tested.has(frid);
     if (!choosing && (state.conformance === undefined || named === undefined || configConformance(tipEntry(state).plainFile))) return undefined;
     if (choosing && state.conformance !== undefined && named === undefined) return undefined;
-    const tested = new Set(((tests?.[FUNCTIONAL_REQUIREMENTS] as Array<{ frid?: string }> | undefined) ?? []).map((item) => item.frid));
     const specs = (spec.tree[FUNCTIONAL_REQUIREMENTS] as Array<{ [ACCEPTANCE_TESTS]?: unknown[] }> | undefined) ?? [];
     const accepted = (frid: string) => (specs[Number(frid) - 1]?.[ACCEPTANCE_TESTS] ?? []).length > 0;
     return (frid) => tested.has(frid) || named?.has(frid) === true || (choosing && accepted(frid));
@@ -682,11 +684,19 @@ export function createWorkLoop(options: {
     });
   };
 
-  /** Whether a codebase's conformance tests are written: asked for, or on in the config - with test reqs to write them from, and code to test. */
-  const conformanceWanted = (state: ModuleState, spec: SpecSnapshot): boolean =>
-    (state.conformance !== undefined || configConformance(tipEntry(state).plainFile)) &&
-    ((spec.tree[TEST_REQUIREMENTS] as unknown[] | undefined) ?? []).length > 0 &&
-    readRecord(tipEntry(state).buildDir) !== null;
+  /**
+   * Whether a codebase's conformance tests are written: asked for, or on in the config - with test reqs to write them
+   * from, and code to test. Off and not asked for, the tests there are are still kept up to date: wanted when a
+   * functional spec that has conformance tests was added, changed, regenerated again or taken out in the code - the
+   * work then is for those alone (chosenOf). Work for the test reqs or definitions alone does not start it.
+   */
+  const conformanceWanted = (state: ModuleState, spec: SpecSnapshot): boolean => {
+    if (((spec.tree[TEST_REQUIREMENTS] as unknown[] | undefined) ?? []).length === 0 || readRecord(tipEntry(state).buildDir) === null) return false;
+    if (state.conformance !== undefined || configConformance(tipEntry(state).plainFile)) return true;
+    const tested = testedOf(state);
+    const cases = casesOf(tested, workOf("conformance", tested, state, spec), { module: tipEntry(state).moduleName });
+    return cases.add.length + cases.patch.length + cases.again.length + cases.delete.length > 0;
+  };
 
   /**
    * The functional specs a conformance job is scheduled for, as the spec has them now - refused when one is not in
@@ -2051,7 +2061,7 @@ const defaultConformanceRunner: JobRunner = async (job, onDelta) => {
     onDelta,
   });
   if (result.passed) {
-    writeTestsRecord(result.conformanceDir, keepAgainMarks(job.planned.step.tree, job.planned.cases, job.moduleName, result.conformance.rewritten ?? []));
+    writeTestsRecord(result.conformanceDir, job.planned.step.tree);
     landWork(job.buildDir, `conformance tests: ${job.planned.title}`);
   }
   return { landed: result.passed, report: describeSpecDiffConformance(result), ...(result.specGaps !== undefined ? { specGaps: result.specGaps } : {}) };
@@ -2061,18 +2071,6 @@ const defaultConformanceRunner: JobRunner = async (job, onDelta) => {
 export function pulseCases(cases: JobCases, moduleName: string): PulseCases {
   const of = (specs: TouchedSpec[]) => specs.map((spec) => ({ module: spec.module ?? moduleName, frid: spec.frid }));
   return { add: of(cases.add), patch: of(cases.patch), again: of(cases.again), delete: of(cases.delete) };
-}
-
-/**
- * What a conformance job records its tests are written for: its step's tree, but a functional spec of the module it
- * regenerates again keeps its mark unless the run wrote its tests - tests that passed as they were are still the old
- * code's, and still conformance work.
- */
-export function keepAgainMarks(tree: MarshalledPlainSource, cases: JobCases, moduleName: string, rewritten: string[]): MarshalledPlainSource {
-  const stale = new Set(cases.again.filter((spec) => (spec.module ?? moduleName) === moduleName && !rewritten.includes(spec.frid)).map((spec) => spec.frid));
-  if (stale.size === 0) return tree;
-  const items = (tree[FUNCTIONAL_REQUIREMENTS] as Array<{ frid?: string }> | undefined) ?? [];
-  return { ...tree, [FUNCTIONAL_REQUIREMENTS]: items.map((item) => (item.frid !== undefined && stale.has(item.frid) ? { ...item, [REGENERATE_AGAIN]: true } : item)) } as MarshalledPlainSource;
 }
 
 /**

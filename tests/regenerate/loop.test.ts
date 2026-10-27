@@ -6,8 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createJobRegistry } from "../../src/regenerate/jobs.ts";
 import type { JobCases } from "../../src/regenerate/drift.ts";
 import { moduleLanes } from "../../src/regenerate/lanes.ts";
-import { createWorkLoop, describeDrift, describeModules, keepAgainMarks, skipsReview, type JobRunner } from "../../src/regenerate/loop.ts";
-import { codeTree, readRecord, writeCodeRecord, writeTestsRecord } from "../../src/regenerate/records.ts";
+import { createWorkLoop, describeDrift, describeModules, skipsReview, type JobRunner } from "../../src/regenerate/loop.ts";
+import { codeTree, conformanceTarget, readRecord, writeCodeRecord, writeTestsRecord } from "../../src/regenerate/records.ts";
 import { recordHistory } from "../../src/regenerate/lineage.ts";
 import { copyRequiredCode } from "../../src/regenerate/requires.ts";
 import { snapshotSpec } from "../../src/regenerate/regenerate.ts";
@@ -965,6 +965,118 @@ describe("the work loop", () => {
       expect(loop.status()[0]!.planned).toEqual([]);
     });
 
+    describe("under conformance-tests: false, with none asked for", () => {
+      /** Each conformance pulse, by what it does to each functional spec. */
+      const pulses: Array<{ add: string[]; patch: string[]; again: string[]; delete: string[] }> = [];
+      const frids = (specs: Array<{ frid: string }>) => specs.map((spec) => spec.frid);
+      /** When set, a conformance pulse passes on the tests as they are: it records them, and writes no test file. */
+      let asTheyAre = false;
+
+      /** The module built from `specs`, with conformance tests for `tested` alone - as an earlier request left them - and its loop. */
+      async function builtWithTests(specs: string[], tested: string[]) {
+        pulses.length = 0;
+        asTheyAre = false;
+        writeFileSync(join(dir, "app.plain"), app(specs));
+        const code = runner();
+        const tests = conformanceRunner();
+        const loop = createWorkLoop({
+          registry: createJobRegistry(),
+          cwd: dir,
+          planner: false,
+          conformanceOn: () => false,
+          run: code.run,
+          runConformance: async (job, onDelta) => {
+            const cases = job.planned.cases;
+            pulses.push({ add: frids(cases.add), patch: frids(cases.patch), again: frids(cases.again), delete: frids(cases.delete) });
+            if (!asTheyAre) return tests.runConformance(job, onDelta);
+            writeTestsRecord(testsDir(), job.planned.step.tree);
+            recordHistory(job.buildDir, `conformance: ${job.planned.title}`);
+            return { landed: true, report: "passed" };
+          },
+        });
+        await loop.bringUp("app.plain");
+        await loop.drain();
+        if (tested.length > 0) {
+          const built = readRecord(codeDir())!;
+          writeTestsRecord(testsDir(), conformanceTarget(built, null, built, (frid) => tested.includes(frid)));
+          recordHistory(codeDir(), "conformance tests");
+        }
+        // Building it wrote no tests: conformance is off.
+        expect(pulses).toEqual([]);
+        return { loop, code, tests };
+      }
+      const testedFrids = () => ((readRecord(testsDir())?.["functional specs"] as Array<{ frid: string }> | undefined) ?? []).map((item) => item.frid);
+      const marked = () => JSON.stringify(readRecord(testsDir()) ?? {}).includes("regenerate_again");
+
+      it("keeps the tests of a functional spec regenerated again up to date - a conformance pulse for it alone", async () => {
+        const { loop } = await builtWithTests(["Say hello.", "Say goodbye."], ["1", "2"]);
+        await loop.regenerateAgain("app.plain", ["1"]);
+        expect(marked()).toBe(true);
+        await loop.drain();
+        expect(pulses).toEqual([{ add: [], patch: [], again: ["1"], delete: [] }]);
+        expect(marked()).toBe(false);
+      });
+
+      it("keeps the tests of a functional spec whose text changed up to date - a conformance pulse for it alone", async () => {
+        const { loop } = await builtWithTests(["Say hello.", "Say goodbye."], ["1", "2"]);
+        writeFileSync(join(dir, "app.plain"), app(["Say hello loudly.", "Say goodbye."]));
+        await loop.bringUp("app.plain", { specChange: true });
+        await loop.drain();
+        expect(pulses).toEqual([{ add: [], patch: ["1"], again: [], delete: [] }]);
+        expect(JSON.stringify(readRecord(testsDir()))).toContain("Say hello loudly.");
+      });
+
+      it("writes no tests for a functional spec that has none, though another of the module has", async () => {
+        const { loop } = await builtWithTests(["Say hello.", "Say goodbye."], ["2"]);
+        await loop.regenerateAgain("app.plain", ["1"]);
+        await loop.drain();
+        expect(pulses).toEqual([]);
+        expect(testedFrids()).toEqual(["2"]);
+        expect(describeDrift(await loop.drift("app.plain"))).not.toContain("to write or change");
+      });
+
+      it("brings a conformance pulse for the tested functional spec of a code pulse alone - none for the untested one beside it", async () => {
+        const { loop } = await builtWithTests(["Say hello.", "Say goodbye.", "Say thanks."], ["1"]);
+        writeFileSync(join(dir, "app.plain"), app(["Say hello loudly.", "Say goodbye.", "Say thanks warmly."]));
+        await loop.bringUp("app.plain", { specChange: true });
+        await loop.drain();
+        expect(pulses).toEqual([{ add: [], patch: ["1"], again: [], delete: [] }]);
+        expect(testedFrids()).toEqual(["1"]);
+      });
+
+      it("starts no conformance pulse in a module with no conformance tests", async () => {
+        const { loop } = await builtWithTests(["Say hello.", "Say goodbye."], []);
+        await loop.regenerateAgain("app.plain", ["1"]);
+        writeFileSync(join(dir, "app.plain"), app(["Say hello loudly.", "Say goodbye."]));
+        await loop.bringUp("app.plain", { specChange: true });
+        await loop.drain();
+        expect(pulses).toEqual([]);
+        expect(existsSync(join(testsDir(), ".turri.json"))).toBe(false);
+      });
+
+      it("clears the mark of a functional spec regenerated again once its tests pass on the new code, no test file changed", async () => {
+        const { loop } = await builtWithTests(["Say hello.", "Say goodbye."], ["1"]);
+        mkdirSync(testsDir(), { recursive: true });
+        writeFileSync(join(testsDir(), "test_app.py"), "# conformance tests of functionality 1\n");
+        asTheyAre = true;
+        await loop.regenerateAgain("app.plain", ["1"]);
+        await loop.drain();
+        expect(pulses).toEqual([{ add: [], patch: [], again: ["1"], delete: [] }]);
+        expect(marked()).toBe(false);
+        expect(readFileSync(join(testsDir(), "test_app.py"), "utf8")).toBe("# conformance tests of functionality 1\n");
+      });
+
+      it("keeps the mark of a functional spec regenerated again while its tests fail on the new code - the pulse does not land", async () => {
+        const { loop, tests } = await builtWithTests(["Say hello.", "Say goodbye."], ["1"]);
+        tests.gate.pass = false;
+        await loop.regenerateAgain("app.plain", ["1"]);
+        await loop.drain();
+        expect(pulses).toEqual([{ add: [], patch: [], again: ["1"], delete: [] }]);
+        expect(marked()).toBe(true);
+        expect(describeDrift(await loop.drift("app.plain"))).toContain("conformance tests: to write or change");
+      });
+    });
+
     it("of a functional spec regenerated again by name are kept while it regenerates, then written again for the new code", async () => {
       writeFileSync(join(dir, "app.plain"), app(["Say hello.", "Say goodbye."]));
       const code = runner();
@@ -1599,20 +1711,5 @@ describe("the review of a pulse", () => {
     expect(skipsReview(cases({ fresh: true, add: [spec("1"), spec("2")] }))).toBe(false);
     expect(skipsReview(cases({ add: [spec("2")] }))).toBe(false);
     expect(skipsReview(cases({ patch: [spec("1")] }))).toBe(false);
-  });
-});
-
-describe("the tests record a conformance pulse writes", () => {
-  const cases = (over: Partial<JobCases>): JobCases => ({ fresh: false, add: [], patch: [], again: [], delete: [], mechanical: false, ...over });
-  const tree = { "functional specs": [{ frid: "1", markdown: "- One." }, { frid: "2", markdown: "- Two." }] };
-
-  it("keeps a functional spec regenerated again marked when the run did not write its tests", () => {
-    const written = keepAgainMarks(tree, cases({ again: [{ frid: "1", text: "One.", module: "app" }], add: [{ frid: "2", text: "Two.", module: "app" }] }), "app", []);
-    expect(written["functional specs"]).toEqual([{ frid: "1", markdown: "- One.", regenerate_again: true }, { frid: "2", markdown: "- Two." }]);
-  });
-
-  it("drops the mark of one whose tests the run wrote, and leaves a module below's alone", () => {
-    const written = keepAgainMarks(tree, cases({ again: [{ frid: "1", text: "One.", module: "app" }, { frid: "2", text: "Base two.", module: "base" }] }), "app", ["1"]);
-    expect(written).toEqual(tree);
   });
 });

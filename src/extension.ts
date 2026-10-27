@@ -1514,14 +1514,14 @@ export function projectConfigBlock(root: string): string {
       ...[
         config.module !== undefined && of !== "stack" ? `- module: ${config.module}${where} - the module to build when the user does not name one.` : undefined,
         config.conformanceTests === false
-          ? "- conformance-tests: false - conformance tests are OFF: renders write none and run none, unless the user asks for them in this conversation."
+          ? "- conformance-tests: false - conformance tests are OFF: no new ones are written, unless the user asks for them in this conversation. The ones there are are kept up to date: a functional spec that has conformance tests and is regenerated - changed, regenerated again or taken out - gets a conformance pulse for it alone once its code lands. A functional spec with none gets none."
           : config.conformanceTests === "chosen"
             ? "- conformance-tests: chosen - conformance tests are on for the functional specs chosen: those with acceptance tests always, those the chooser picks as each code pulse ends from what it regenerated, and those the user asks for with conform. A conformance pulse starts once the module's code is built, before anything is built on it. Once chosen, a functional spec keeps them."
             : config.conformanceTests === "module"
             ? "- conformance-tests: module - conformance tests are on for the functional specs chosen: those with acceptance tests always, those the chooser picks - and plans into pulses - once the whole module is regenerated, and those the user asks for with conform. They run before anything is built on the module. Once chosen, a functional spec keeps them."
             : config.conformanceTests === true
             ? "- conformance-tests: all - conformance tests are on, for every functional spec of every module that has test reqs."
-            : "- conformance-tests: not set - conformance tests are OFF, as with false: renders write none and run none, unless the user asks for them in this conversation.",
+            : "- conformance-tests: not set - conformance tests are OFF, as with false: no new ones are written, unless the user asks for them in this conversation; the ones there are are kept up to date - a functional spec that has them and is regenerated gets a conformance pulse for it alone once its code lands.",
         config.review === true
           ? "- review: true - the code and its tests are reviewed once they pass: two reviews at most, the arbiter weighing the second."
           : `- review: ${config.review === false ? "false" : "not set, so off"} - the code and its tests are not reviewed: a pulse lands once its tests pass.`,

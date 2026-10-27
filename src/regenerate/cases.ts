@@ -95,12 +95,13 @@ export function conformanceCasesBlock(cases: JobCases): string[] {
   if (cases.again.length > 0) {
     lines.push(
       `- Regenerated again - its code was built anew, and its conformance tests were written against the code it replaced: ${named(cases.again)}.`,
-      "  Its text did not change, but the code did: write its tests again for the new code - that they still pass is",
-      "  no sign they fit it. What they check that the specification says stays checked, as the new code is reached.",
-      "  What they check that the specification leaves open - a path, a field, a message, a format the old code chose",
-      "  and the specification never names - is the new code's choice now: rewrite those checks to what the new code",
-      "  does, or take them out. No test may hold the new code to what only the old code did. A run that leaves every",
-      "  test file labelled with it as it was is sent back. The tests of everything else stay as they are.",
+      "  Its text did not change, but the code did. Run its tests against the new code. Those that pass are tests of the",
+      "  new code too - conformance tests are black box - and are not rewritten. Fix what fails against the",
+      "  specification: what a failing test checks that the specification says stays checked, the test changed only as",
+      "  the new code needs it reached; what it checks that the specification leaves open - a path, a field, a message,",
+      "  a format the old code chose and the specification never names - is the new code's choice now: rewrite that",
+      "  check to what the new code does, or take it out. No test may hold the new code to what only the old code did.",
+      "  The tests of everything else stay as they are.",
     );
   }
   if (cases.delete.length > 0) lines.push(`- Taken out - remove its conformance tests: ${named(cases.delete)}.`);

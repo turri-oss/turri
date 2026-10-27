@@ -22,7 +22,8 @@ describe("what the chat's agent is told about the project's config.yaml", () => 
       "unittests-script: test_scripts/run_unittests.sh\ncoding-model: amazon-bedrock/eu.anthropic.claude-sonnet-5\nharness-model: google/gemini-3.1-pro\nconformance-tests: false\nmodule: orders.plain\n",
     );
     const block = projectConfigBlock(root);
-    expect(block).toContain("conformance tests are OFF: renders write none and run none");
+    expect(block).toContain("conformance tests are OFF: no new ones are written");
+    expect(block).toContain("The ones there are are kept up to date");
     expect(block).toContain("module: orders.plain - the module to build when the user does not name one");
     expect(block).toContain("coding-model: amazon-bedrock/eu.anthropic.claude-sonnet-5");
     expect(block).toContain("unit testing script: test_scripts/run_unittests.sh");
