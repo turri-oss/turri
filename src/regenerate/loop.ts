@@ -44,7 +44,7 @@ import { createSteering, MAX_STEERS, markTold, steer, waitingSteer, type JobStee
 import { projectDirOf } from "./paths.ts";
 import { changesBetween, parseTree, serializeTree, type SpecChange, type SpecStep } from "./spec-steps.ts";
 import { listFiles } from "./testing.ts";
-import { casesOf, codeWork, stillWanted, whyNotWanted, type JobCases, type TouchedSpec } from "./drift.ts";
+import { casesOf, codeWork, stillWanted, whyNotWanted, type JobCases, type ScenarioCases, type TouchedSpec } from "./drift.ts";
 
 /**
  * The work loop - see docs/regenerating.md.
@@ -1770,18 +1770,32 @@ function whereInFiles(diff: string, chain: ChainEntry[]): DiffWhere {
 }
 
 /**
- * The conformance tests' work, a line a functional spec, each with why its tests are behind: "todo:add-task   scenarios
- * changed". What a case is follows from the tests record: a functional spec added there is new to the tests, one patched
- * changed - its text or its scenarios - one regenerated again had its code replaced, one deleted is taken out.
+ * The conformance tests' work, a line a functional spec, each with its scenarios counted by case and why else its tests
+ * are behind: "todo:add-task   1 added, 1 changed". What a case is follows from the tests record, by scenario-id: a
+ * scenario added there is new to the tests, one changed reads otherwise, one removed is taken out - and a functional spec
+ * whose code changed under scenarios unchanged has their tests run on the new code.
  */
 function conformanceLines(module: string, cases: JobCases): string[] {
   const name = (touched: TouchedSpec) => `${touched.module ?? module}:${touched.funcId}`;
-  const rows: Array<[string, string]> = [
-    ...cases.add.map((touched): [string, string] => [name(touched), "scenarios to write tests for"]),
-    ...cases.patch.map((touched): [string, string] => [name(touched), "its text or its scenarios changed"]),
-    ...cases.again.map((touched): [string, string] => [name(touched), "its code was regenerated again"]),
-    ...cases.delete.map((touched): [string, string] => [name(touched), "taken out - its tests go"]),
-  ];
+  const why: Record<NonNullable<ScenarioCases["codeChanged"]>, string> = { text: "its code changed", again: "its code was regenerated again", concept: "a concept it uses changed" };
+  const counted = (spec: ScenarioCases): string => {
+    const parts = [
+      ...(spec.added.length > 0 ? [`${spec.added.length} added`] : []),
+      ...(spec.changed.length > 0 ? [`${spec.changed.length} changed`] : []),
+      ...(spec.removed.length > 0 ? [`${spec.removed.length} removed`] : []),
+      ...(spec.codeChanged !== undefined ? [`${why[spec.codeChanged]} - ${spec.unchanged.length} to run on it`] : []),
+    ];
+    return parts.length > 0 ? parts.join(", ") : "its text changed";
+  };
+  const rows: Array<[string, string]> =
+    cases.scenarios !== undefined
+      ? cases.scenarios.map((spec): [string, string] => [name(spec), cases.delete.some((gone) => name(gone) === name(spec)) ? `taken out - its tests go (${spec.removed.length} removed)` : counted(spec)])
+      : [
+          ...cases.add.map((touched): [string, string] => [name(touched), "scenarios to write tests for"]),
+          ...cases.patch.map((touched): [string, string] => [name(touched), "its text or its scenarios changed"]),
+          ...cases.again.map((touched): [string, string] => [name(touched), "its code was regenerated again"]),
+          ...cases.delete.map((touched): [string, string] => [name(touched), "taken out - its tests go"]),
+        ];
   if (rows.length === 0) return ["    the test reqs or what they are written against changed"];
   const width = Math.max(...rows.map(([name]) => name.length));
   return rows.map(([name, why]) => `    ${name.padEnd(width)}   ${why}`);
@@ -1961,6 +1975,7 @@ const defaultConformanceRunner: JobRunner = async (job, onDelta) => {
     applied: "already applied",
     spec: job.spec,
     cases: job.planned.cases,
+    recorded: job.planned.step.tree,
     ...(job.model !== undefined ? { model: job.model } : {}),
     onDelta,
   });

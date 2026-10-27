@@ -645,7 +645,9 @@ export function testReviewTask(options: {
     "check it against the diff and the files. A problem it says is fixed that the tests do not fix is still a problem;",
     "one it declined, weigh its reason - it may be right.",
     "",
-    ...(options.cases !== undefined && options.cases.mechanical ? [...conformanceReviewCasesBlock(options.cases), "", "And, of every test the run changed:"] : ["Check every test the run added or changed:"]),
+    ...(options.cases !== undefined && options.cases.mechanical
+      ? [...conformanceReviewCasesBlock(options.cases), "", "And, of every test the run changed:"]
+      : [...(options.cases !== undefined ? conformanceReviewCasesBlock(options.cases, options.spec.moduleName) : []), "Check every test the run added or changed:"]),
     "- Black box: it reaches the software only the way the test reqs have it - its API, its command, its public",
     "  classes where the test reqs say so - and never mocks, stubs or replaces any part of the software under test:",
     "  no mocked beans, services or clients of its own. A real external service the test reqs say not to mock is",

@@ -692,7 +692,7 @@ export function buildConformancePrompt(input: ConformancePromptInput): string {
           "conformance tests in line with the specs as they now stand.",
           "",
           ...(input.cases !== undefined
-            ? conformanceCasesBlock(input.cases)
+            ? conformanceCasesBlock(input.cases, input.moduleName)
             : [
                 "- Write tests for the scenarios the change adds, change the tests of the scenarios it changes, and remove",
                 "  the tests of the scenarios it removes. Leave the tests of everything the change does not touch as they are.",

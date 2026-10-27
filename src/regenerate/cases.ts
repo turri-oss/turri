@@ -1,4 +1,5 @@
-import type { JobCases, TouchedSpec } from "./drift.ts";
+import type { JobCases, ScenarioCases, ScenarioRef, TouchedSpec } from "./drift.ts";
+import { scenarioLabel } from "./test-kinds.ts";
 
 /**
  * What a job's agents are told to do, by its cases - see docs/regenerating.md. A job's functional specs each fall in
@@ -76,8 +77,53 @@ export function codeReviewCasesBlock(cases: JobCases): string[] {
   ];
 }
 
-/** What the conformance agent does, case by case. */
-export function conformanceCasesBlock(cases: JobCases): string[] {
+/** Scenarios, each by the label its tests carry. */
+const labelled = (spec: ScenarioCases, scenarios: ScenarioRef[], module: string) =>
+  scenarios.map((scenario) => `"${scenarioLabel(scenario.kind, scenario.id, spec.module ?? module, spec.funcId)}"`).join("; ");
+
+/** Why a functional spec's code moved under its unchanged scenarios, in a few words. */
+const CODE_CHANGED: Record<NonNullable<ScenarioCases["codeChanged"]>, string> = {
+  text: "its text, or a file it links, changed",
+  again: "it was regenerated again",
+  concept: "a concept it uses changed",
+};
+
+/**
+ * What the conformance agent does with each functional spec, scenario by scenario - each scenario named by the label its
+ * tests carry - and, where the code moved under unchanged scenarios, what to do with their tests.
+ */
+function scenarioCasesLines(specs: ScenarioCases[], module: string): string[] {
+  const lines = ["What this job does to the tests, scenario by scenario - each named by the label its tests carry:"];
+  for (const spec of specs) {
+    lines.push(`- \`${spec.module ?? module}:${spec.funcId}\` (${spec.text}):`);
+    if (spec.added.length > 0) lines.push(`  - added - write a test for each: ${labelled(spec, spec.added, module)}.`);
+    if (spec.changed.length > 0) lines.push(`  - changed - rewrite its tests to the scenario as it reads now: ${labelled(spec, spec.changed, module)}.`);
+    if (spec.removed.length > 0) lines.push(`  - removed - delete every test labelled with it, and its label, and nothing else: ${labelled(spec, spec.removed, module)}.`);
+    if (spec.unchanged.length > 0) {
+      lines.push(
+        spec.codeChanged !== undefined
+          ? `  - unchanged, but its code changed - ${CODE_CHANGED[spec.codeChanged]} - run their tests on the new code: ${labelled(spec, spec.unchanged, module)}.`
+          : `  - unchanged - leave their tests exactly as they are: ${labelled(spec, spec.unchanged, module)}.`,
+      );
+    }
+  }
+  if (specs.some((spec) => spec.codeChanged !== undefined)) {
+    lines.push(
+      "- Where the code changed under unchanged scenarios: their tests were written against the code it replaced. Run them",
+      "  against the new code. Those that pass are tests of the new code too - conformance tests are black box - and are",
+      "  not rewritten. Fix what fails against its scenario, read with the functional spec's text: what a failing test checks",
+      "  that the scenario says stays checked, the test changed only as the new code needs it reached; what it checks that",
+      "  the scenario and the specification leave open - a path, a field, a message, a format the old code chose - is the",
+      "  new code's choice now: rewrite that check to what the new code does, or take it out. No test may hold the new code",
+      "  to what only the old code did.",
+    );
+  }
+  lines.push("- The tests of every other functional spec stay as they are.");
+  return lines;
+}
+
+/** What the conformance agent does, case by case - scenario by scenario, when the job has them. */
+export function conformanceCasesBlock(cases: JobCases, module = ""): string[] {
   const lines: string[] = [];
   if (cases.fresh) {
     lines.push(
@@ -85,6 +131,7 @@ export function conformanceCasesBlock(cases: JobCases): string[] {
       "  conformance testing script, which brings the tests together with the code, runs them - then write what follows.",
     );
   }
+  if (cases.scenarios !== undefined && cases.scenarios.length > 0) return [...lines, ...scenarioCasesLines(cases.scenarios, module)];
   if (cases.add.length > 0) lines.push(`- New - write a test for each of its scenarios: ${named(cases.add)}.`);
   if (cases.patch.length > 0) {
     lines.push(
@@ -116,9 +163,22 @@ export function conformanceCasesBlock(cases: JobCases): string[] {
   return lines;
 }
 
-/** What the conformance test reviewer holds the tests to, when the job is mechanical: in place of its checks. */
-export function conformanceReviewCasesBlock(cases: JobCases): string[] {
-  if (!cases.mechanical) return [];
+/** What the conformance test reviewer holds the tests to: scenario by scenario - or, when the job is mechanical, in place of its checks. */
+export function conformanceReviewCasesBlock(cases: JobCases, module = ""): string[] {
+  if (!cases.mechanical) {
+    if (cases.scenarios === undefined || cases.scenarios.length === 0) return [];
+    const all = (pick: (spec: ScenarioCases) => ScenarioRef[]) => cases.scenarios!.flatMap((spec) => (pick(spec).length > 0 ? [labelled(spec, pick(spec), module)] : [])).join("; ");
+    const kept = all((spec) => (spec.codeChanged === undefined ? spec.unchanged : []));
+    const rerun = all((spec) => (spec.codeChanged !== undefined ? spec.unchanged : []));
+    const removed = all((spec) => spec.removed);
+    return [
+      "What this job does to the tests, scenario by scenario - hold it to that:",
+      ...(kept !== "" ? [`- Unchanged - their tests come out exactly as they were, not rewritten or reworded: ${kept}.`] : []),
+      ...(rerun !== "" ? [`- Unchanged, the code changed under them - a test changed only where it failed on the new code, and only to what its scenario says: ${rerun}.`] : []),
+      ...(removed !== "" ? [`- Removed - no test labelled with them is left: ${removed}.`] : []),
+      "",
+    ];
+  }
   return [
     "This work touches no functional spec - only the test reqs, or definitions or implementation reqs alone. Review",
     "only that the tests follow them, and that no test was removed or weakened: an assertion loosened or taken out, a",

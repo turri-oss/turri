@@ -23,7 +23,7 @@ import { createWorkLedger, describeAccounts, SUBMIT_WORK_NOTE, unanswered, unans
 import type { JobCases } from "./drift.ts";
 import { CONFORMANCE_COMPACTION } from "./compaction.ts";
 import { NOTES_TURN, notesForSession, passedOutcome, readNotes, reflectOnReview, withNotes } from "./notes.ts";
-import { labelsPrompt, labelsPromptFor, misplacedConformanceTests, misplacedTestsPrompt, missingTestLabels, type TestedSpec } from "./test-kinds.ts";
+import { labelsPrompt, labelsPromptFor, misplacedConformanceTests, misplacedTestsPrompt, missingTestLabels, orphanedLabels, orphansPrompt, testedSpecsOf, type TestedSpec } from "./test-kinds.ts";
 import {
   createScriptTool,
   findTestScripts,
@@ -124,6 +124,11 @@ export interface RenderConformanceTestsOptions {
   dryRun?: boolean;
   /** Update the tests for a spec change, given as a diff, rather than for one functionality. */
   diff?: string;
+  /**
+   * For a spec change: what the tests are written for once it lands - the tests record it writes. Every scenario in it
+   * has a labelled test before a run counts, and a label naming nothing in it sends the agent back.
+   */
+  recorded?: MarshalledPlainSource;
   /** That change section by section, as the agents are shown it in place of the diff. */
   change?: string;
   /**
@@ -573,7 +578,10 @@ export async function renderConformanceTests(
       } else {
         // A spec change: every functionality it touches, as a functionality's own run would have it - every one missing
         // asked for in one request, checked whole again after each answer, so none is asked for in place of another.
-        const pending = touched
+        // And every other functional spec the tests are written for: each of its scenarios has its labelled test too.
+        const touchedKeys = new Set(touched.map((item) => `${item.module ?? moduleName}:${item.funcId}`));
+        const others = testedSpecsOf(options.recorded).filter((item) => !touchedKeys.has(`${item.module ?? moduleName}:${item.funcId}`));
+        const pending = [...touched, ...others]
           .map((item) => ({ funcId: item.funcId, ...(item.module !== undefined ? { module: item.module } : {}), missing: missingTestLabels(conformanceDir, moduleName, item) }))
           .filter((item) => item.missing.length > 0);
         if (pending.length > 0) {
@@ -585,6 +593,20 @@ export async function renderConformanceTests(
           labelAsks += 1;
           stage(`labelling the tests of the scenarios of ${pending.map((item) => `${item.module ?? moduleName}:${item.funcId}`).join(", ")}, which the change touches`);
           response = await askConformance(labelsPromptFor(moduleName, pending, listFiles(conformanceDir).length === 0), options.onDelta);
+          continue;
+        }
+        // A label that names nothing the tests are written for - a scenario or a functional spec taken out, a label
+        // mistyped, a test invented beside the scenarios: sent back to be removed or relabelled.
+        const orphans = options.recorded !== undefined ? orphanedLabels(conformanceDir, moduleName, testedSpecsOf(options.recorded)) : [];
+        if (orphans.length > 0) {
+          if (labelAsks >= LABEL_ASKS) {
+            stage(`the tests were sent back ${LABEL_ASKS} times to be written and labelled, and still are not - stopping`);
+            unlabelled = orphans.map((orphan) => `${orphan.file} is labelled "${orphan.label}", which names nothing the tests are written for.`);
+            break;
+          }
+          labelAsks += 1;
+          stage(`${orphans.length} label${orphans.length === 1 ? "" : "s"} in the tests name${orphans.length === 1 ? "s" : ""} nothing they are written for - the conformance agent removes or relabels them`);
+          response = await askConformance(orphansPrompt(orphans), options.onDelta);
           continue;
         }
       }

@@ -282,10 +282,10 @@ It is told, too, what to do with each functional spec the job touches, by its ca
 | case | when | code | conformance |
 | --- | --- | --- | --- |
 | fresh | the module requires none and nothing is built | set up the project and its unit tests where the unit testing script runs them, then build | set up `tests/` so the conformance testing script, which brings the tests together with `code/`, runs them, then write |
-| add | a functional spec is new | build it and write its unit tests | write its tests |
-| patch | its text changed, or a concept it uses did | change the existing code and tests to match - never build it again from scratch | rewrite its existing tests to match |
+| add | a functional spec is new | build it and write its unit tests | write the tests of each of its scenarios |
+| patch | its text changed, or a concept it uses did - for the conformance tests, or its scenarios | change the existing code and tests to match - never build it again from scratch | [scenario by scenario](#scenario-by-scenario): the tests of those added written, of those changed rewritten, of those removed deleted; those of the unchanged ones stay - run on the new code when its code changed |
 | again | `regenerate` named it: it is built, and marked in the code record to be regenerated again | take its implementation out and build it anew, doing what \*\*\*plain says now - the old code already doing it is no reason to keep it; no second implementation beside the old, nothing of it left unused; its unit tests written anew. A coding agent that writes nothing is sent back twice to build it anew, and then the pulse does not land | its tests were written against the code it replaced: run against the new code - black box, those that pass are its tests too, and are not rewritten; one that fails is judged against \*\*\*plain like any failure: what it checks that \*\*\*plain says stays checked, and what it checks that \*\*\*plain leaves open - a path, a field, a message the old code chose - is rewritten to what the new code does, or taken out |
-| delete | a functional spec is gone | take out its code and the tests only it had | take out its tests |
+| delete | a functional spec is gone | take out its code and the tests only it had | take out its tests, every scenario's |
 | mechanical | no functional spec of the chain is touched - only reqs, or definitions none uses | adapt the code; write no new test; an existing one may change only mechanically - an import, a fixture, its setup - never what it asserts | the same, for test reqs, definitions or implementation reqs alone |
 
 **Regenerating again.** `regenerate` with functionalities named regenerates them again though their \*\*\*plain did not change - made better, on another model, after many patches. Each is marked in the code record of every codebase it is built in (`regenerate_again`, committed), and nothing else changes: the record now differs from \*\*\*plain at that item, so the work loop plans it as it plans any change. A functional spec of a module below is regenerated again where its code lives - the codebase at the tip of each chain built on it, never the module's own codebase left behind - marked among that codebase's required functional specs. The planner groups the ones regenerated again as it groups new ones - up to three a job, only those next to each other in one module together - and the job is given the definitions and implementation reqs as every job is; `<spec change>` lists each under "To regenerate again", with its text as it is now. The job that regenerates it records it as \*\*\*plain has it, without the mark. Its conformance tests are marked with it, in the tests record of the same codebase - the tip's, whose suite holds the tests of the whole chain, a module below's among them, never the module's own codebase left behind: they were written against the code being replaced, and may hold the new code to what only the old code chose - `/healthcheck` where \*\*\*plain says only that there is a health check, and the new code answers `/health`. While the code regenerates they stay as they are; once it lands, the mark is conformance work like any change, its tests being there - and a conformance job runs them on the new code, in the again case above, with the whole suite. The mark means its tests have not yet run on its new code: the job drops it once the whole suite passes, and one that does not land keeps it. Until it lands, regen shows its tests as written for an earlier build, and they are not counted as conformance tested.
@@ -323,13 +323,14 @@ A conformance job is a \*\*\*plain diff's conformance run: the tests of its chan
 
 **`conform`.** The loop starts conformance pulses by itself; `conform` starts them now - every functional spec of the module with scenarios, or those named as `module:func-id`. A module none of whose functional specs has scenarios, a functional spec \*\*\*plain does not have, one with no scenarios ("write them first") or a module with no test reqs is refused, and nothing is started. `conform` changes the module named alone, never the modules below it. For a module not regenerated yet, its tests are written once its code is built, before anything is built on it. For a module already regenerated whose tests are not written, while a module above it was started from it - its first pulse running, or code of its own built - the codebase above is disposable: a pulse running there is stopped, whatever `allow-to-stop-jobs` says, as the person asked; the codebase is deleted whole, its history with it; the tests are written in the module's own codebase; and the module above is regenerated from it once they pass. With every test written for what is built, it says so, and nothing is touched.
 
-**`turri drift`** lists the conformance work one functional spec a line, with why its tests are behind:
+**`turri drift`** lists the conformance work one functional spec a line, its scenarios counted by case, and why else its tests are behind:
 
 ```
   conformance tests: to write or change - written once the code is built, or now with conform
-    todo:add-task      scenarios to write tests for
-    todo:list-tasks    its code was regenerated again
-    todo:delete-task   taken out - its tests go
+    todo:add-task      2 added
+    todo:edit-task     1 added, 1 changed, 1 removed
+    todo:list-tasks    its code was regenerated again - 3 to run on it
+    todo:delete-task   taken out - its tests go (2 removed)
 ```
 
 A functional spec with no scenarios is not listed: `validate` shows it as "no scenarios - not tested".
@@ -337,6 +338,20 @@ A functional spec with no scenarios is not listed: `validate` shows it as "no sc
 While a codebase's work is being planned into jobs, with nothing running there, what is planned says so - the conformance tests being planned, or the work - rather than showing nothing until the plan is made. A module asked for - `regenerate`, from scratch, functionalities again - shows its work as being planned from that moment, before its code is deleted and what is left is worked out, not only once the planner runs: in the loop's status, which a host draws its plan from, and in the job panel - a module the loop holds nothing of yet, as when turri was just opened, too. A \*\*\*plain change is looked at quietly.
 
 **What a conformance job tests is built.** As a conformance job starts, the harness reads the code record, `code/.turri.json`, and checks that it has every functional spec the job adds or changes tests for, as the job has it. One it does not have stops the job before any agent runs: its report says which are not built, the conformance tests halt, and the chat model tells the person. They are tried again once the code or \*\*\*plain changes. Code jobs and conformance jobs are planned apart, each track on its own: a job is one or the other. A module built on another starts with the tests record below it, as what it inherits: none of its own tests is written yet.
+
+### Scenario by scenario
+
+A conformance job goes down to the scenarios. For each functional spec it touches it compares the scenarios with the tests record by kind and scenario-id, as functional specs are compared by func-id, and its agent and its reviewer are told each scenario's case by the label its tests carry:
+
+| scenario | the tests |
+| --- | --- |
+| added | written |
+| changed - its text, or a file it links | rewritten to the scenario as it reads now |
+| removed | deleted, every test labelled with it - and nothing else |
+| unchanged | left exactly as they are |
+| unchanged, its functional spec's code changed - its text or a file it links patched, it was regenerated again, or a concept it uses changed | run on the new code: those that pass stay as they are, and one that fails is fixed against its scenario, read with the functional spec's text - no test holds the new code to what only the old code did |
+
+A scenario given another scenario-id is one removed and one added, and so is one moved between `***conformance tests***` and `***acceptance tests***`, as its label changes; one moved between two test plain files of the same functional spec is nothing. A functional spec whose text and scenarios both changed gets both cases. The tests record stores nothing new for it: each scenario's `{id, text}`, as written. The reviewer holds the agent to the cases: the tests of an unchanged scenario come out unchanged - unless the code changed under it and a test failed on it - and none labelled with a removed scenario is left.
 
 ### Exactly the scenarios, labelled
 
@@ -347,7 +362,7 @@ The conformance agent carries out a functional spec's scenarios, and nothing els
 | A file of a functional spec's tests | a comment at its top: `conformance tests of todo:add-task` - one line for each functional spec the file tests |
 | A test | a comment right above it: `conformance scenario rejects-empty-title of todo:add-task`, or `acceptance scenario adds-and-lists of todo:add-task` |
 
-The labels are checked, not trusted: before a passing run counts, the harness reads the tests and sends the agent back for a functional spec with no labelled file, or for any scenario no test is labelled as carrying out. A label is matched on its whole key, so `todo:log-in` is never found in `todo:log-in-2`. For a \*\*\*plain change that touches several functional specs, everything missing - every one's - is asked for in one request, the agent told to keep the labels there already, and the whole set checked again after each answer. Anyone reading the tests - or the next agent - sees at a glance which scenario a test carries out.
+The labels are checked, not trusted: before a passing run counts, the harness reads the tests and sends the agent back for a functional spec with no labelled file, or for any scenario no test is labelled as carrying out - of every functional spec the tests are written for once the job lands, not only those it touches. A label that names nothing those are - a functional spec or a scenario taken out, a label mistyped, a test invented beside the scenarios - sends it back too, to remove the test or relabel it with the scenario it does carry out. A label is matched on its whole key, so `todo:log-in` is never found in `todo:log-in-2`. For a \*\*\*plain change that touches several functional specs, everything missing - every one's - is asked for in one request, the agent told to keep the labels there already, and the whole set checked again after each answer. Anyone reading the tests - or the next agent - sees at a glance which scenario a test carries out.
 
 ### Regenerated apart from the code
 

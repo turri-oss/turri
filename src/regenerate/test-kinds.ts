@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { ACCEPTANCE_TESTS, CONFORMANCE_TESTS, FUNCTIONAL_REQUIREMENTS, REQUIRED_FUNCTIONAL_SPECS, type MarshalledPlainSource } from "../plain/spec.ts";
 import { listFiles } from "./testing.ts";
 
 /**
@@ -110,6 +111,64 @@ export function labelsPromptFor(codebase: string, items: Array<{ funcId: string;
     `Every scenario is carried out by at least one test, with a comment right above it: "${scenarioLabel("conformance", "<scenario-id>", module, first)}" or ` +
       `"${scenarioLabel("acceptance", "<scenario-id>", module, first)}" - one not carried out yet is written as a test of its own.`,
     "Add every label missing above. Keep every label and every test that is there already: adding one scenario's label never takes another's away. Then run the tests again.",
+  ].join("\n");
+}
+
+/**
+ * The functional specs of a tree of what conformance tests are written for, with their scenarios - those of the modules
+ * below with their module, the codebase's own after them.
+ */
+export function testedSpecsOf(tree: MarshalledPlainSource | null | undefined): TestedSpec[] {
+  type Carrier = { id?: string; module?: string; [CONFORMANCE_TESTS]?: Scenario[]; [ACCEPTANCE_TESTS]?: Scenario[] };
+  const of = (section: string, below: boolean) =>
+    ((tree?.[section] as Carrier[] | undefined) ?? []).map((item): TestedSpec => ({
+      funcId: item.id ?? "",
+      ...(below && item.module !== undefined ? { module: item.module } : {}),
+      conformance: (item[CONFORMANCE_TESTS] ?? []).map(({ id, text }) => ({ id, text })),
+      acceptance: (item[ACCEPTANCE_TESTS] ?? []).map(({ id, text }) => ({ id, text })),
+    }));
+  return [...of(REQUIRED_FUNCTIONAL_SPECS, true), ...of(FUNCTIONAL_REQUIREMENTS, false)];
+}
+
+const ID = "[a-z0-9]+(?:-[a-z0-9]+)*";
+const END = "(?![a-z0-9_]|-[a-z0-9])";
+
+/**
+ * The labels in the tests folder that name nothing the tests are written for: a functional spec, or a scenario of one,
+ * that `specs` does not have - left over from a scenario or a functional spec taken out or renamed, mistyped, or
+ * invented. Each with the file it is in.
+ */
+export function orphanedLabels(testsDir: string, codebase: string, specs: TestedSpec[]): Array<{ file: string; label: string }> {
+  const known = new Set<string>();
+  for (const spec of specs) {
+    const module = spec.module ?? codebase;
+    known.add(conformanceLabel(module, spec.funcId).toLowerCase());
+    for (const scenario of scenariosOf(spec)) known.add(scenarioLabel(scenario.kind, scenario.id, module, spec.funcId).toLowerCase());
+  }
+  const pattern = new RegExp(`\\b(?:conformance tests of|(?:conformance|acceptance) scenario ${ID} of) [\\w./-]+:${ID}${END}`, "gi");
+  const found: Array<{ file: string; label: string }> = [];
+  for (const file of listFiles(testsDir)) {
+    let text: string;
+    try {
+      text = readFileSync(join(testsDir, file), "utf8");
+    } catch {
+      continue;
+    }
+    for (const match of new Set(text.match(pattern) ?? [])) if (!known.has(match.replace(/\s+/g, " ").toLowerCase())) found.push({ file, label: match });
+  }
+  return found;
+}
+
+/** Sent back when labels name nothing the tests are written for. */
+export function orphansPrompt(orphans: Array<{ file: string; label: string }>): string {
+  return [
+    "These labels name no functional spec, or no scenario of one, that the tests are written for - a scenario or a functional spec",
+    "taken out or renamed, a label mistyped, or a test of your own beside the scenarios:",
+    "",
+    ...orphans.map((orphan) => `- ${orphan.file}: "${orphan.label}"`),
+    "",
+    "Remove each such test and its label - or, where it carries out a scenario that is there under another label, relabel it with",
+    "that scenario's label. Every test carries out a scenario, labelled as it is now. Then run the tests again.",
   ].join("\n");
 }
 

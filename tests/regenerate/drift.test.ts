@@ -323,6 +323,54 @@ describe("a job's cases", () => {
     expect(cases.patch.map((entry) => entry.funcId)).toEqual(["show-price"]);
   });
 
+  describe("of the conformance tests, scenario by scenario", () => {
+    const tested = conformanceTarget(codeTree(shop()), null, shop());
+    const casesFor = (now: MarshalledPlainSource, code = codeTree(shop())) => casesOf(tested, conformanceWork(tested, code, now), { module: "shop" });
+    const ids = (scenarios: Array<{ kind: string; id: string }>) => scenarios.map((entry) => `${entry.kind} ${entry.id}`);
+
+    it("lists each scenario added, changed, removed or unchanged, by scenario-id, across the functional specs it touches", () => {
+      const now = shop();
+      fs(now)[0]!.acceptance_tests = [scenario("sign-up-1", "Signing up twice fails, and says why."), scenario("no-email", "Signing up with no email fails.")];
+      fs(now)[1]!.conformance_tests = [];
+      fs(now)[1]!.acceptance_tests = [scenario("kept", "An order is kept.")];
+      const cases = casesFor(now);
+      expect(cases.scenarios!.map((spec) => [spec.funcId, ids(spec.added), ids(spec.changed), ids(spec.removed), ids(spec.unchanged), spec.codeChanged])).toEqual([
+        ["sign-up", ["acceptance no-email"], ["acceptance sign-up-1"], [], [], undefined],
+        ["place-order", ["acceptance kept"], [], ["conformance refused"], [], undefined],
+      ]);
+    });
+
+    it("takes a scenario moved between conformance and acceptance, or given another scenario-id, for one removed and one added", () => {
+      const now = shop();
+      fs(now)[1]!.conformance_tests = [];
+      fs(now)[1]!.acceptance_tests = [scenario("refused", "An :Order: of nothing is refused.")];
+      fs(now)[2]!.acceptance_tests = [scenario("two-places", "A price of 10 shows as 10.00.")];
+      const [placeOrder, showPrice] = casesFor(now).scenarios!;
+      expect([ids(placeOrder!.added), ids(placeOrder!.removed)]).toEqual([["acceptance refused"], ["conformance refused"]]);
+      expect([ids(showPrice!.added), ids(showPrice!.removed)]).toEqual([["acceptance two-places"], ["acceptance show-price-1"]]);
+    });
+
+    it("says the code changed under the unchanged scenarios of a functional spec whose text changed, regenerated again or whose concept changed", () => {
+      const reworded = shop();
+      fs(reworded)[0]!.markdown = "A :Customer: signs up with an email.";
+      expect(casesFor(reworded, codeTree(reworded)).scenarios).toEqual([
+        expect.objectContaining({ funcId: "sign-up", unchanged: [{ kind: "acceptance", id: "sign-up-1", text: "Signing up twice fails." }], codeChanged: "text" }),
+      ]);
+      const redefined = shop({ definitions: [item("- :Price: is the gross amount of an :Order:."), item("- :Order: is what a :Customer: buys."), item("- :Customer: is a person with an account.")] });
+      expect(casesFor(redefined, codeTree(redefined)).scenarios!.map((spec) => [spec.funcId, spec.codeChanged])).toEqual([["show-price", "concept"]]);
+      const marked = { ...tested, "functional specs": fs(tested).map((entry, index) => (index === 1 ? { ...entry, [REGENERATE_AGAIN]: true } : entry)) } as MarshalledPlainSource;
+      expect(casesOf(marked, conformanceWork(marked, codeTree(shop()), shop())).scenarios!.map((spec) => [spec.funcId, spec.codeChanged, ids(spec.unchanged)])).toEqual([
+        ["place-order", "again", ["conformance refused"]],
+      ]);
+    });
+
+    it("lists a functional spec taken out with every scenario removed, and gives a code job none", () => {
+      const now = shop({ "functional specs": fs(shop()).slice(0, 2) });
+      expect(casesFor(now, codeTree(now)).scenarios!.map((spec) => [spec.funcId, ids(spec.removed)])).toEqual([["show-price", ["acceptance show-price-1"]]]);
+      expect(casesOf(codeTree(shop()), codeWork(codeTree(shop()), now)).scenarios).toBeUndefined();
+    });
+  });
+
   it("gives every functional spec it touches the module whose codebase it is", () => {
     const built = codeTree(shop());
     const now = shop({ "functional specs": [...fs(shop()), spec("cancel-order", "A :Customer: cancels an :Order:.")] });

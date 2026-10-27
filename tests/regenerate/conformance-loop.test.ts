@@ -113,6 +113,11 @@ vi.mock("../../src/pi.ts", async (importOriginal) => {
         });
         return "Done.";
       }
+      if (prompt.includes("These labels name no functional spec")) {
+        // Sent back for a label that names nothing: the test it was on, of a scenario taken out, is gone.
+        await tool("write").execute("id", { path: "test_gone.py", content: "# A helper, no longer a test.\n" });
+        return "Done.";
+      }
       if (prompt.includes("are not labelled yet")) {
         // Sent back for the acceptance test it left out: written as a test of its own.
         await tool("write").execute("id", {
@@ -523,6 +528,36 @@ describe("the conformance step", { timeout: 180_000 }, () => {
     const review = asked.find((turn) => turn.role === "reviewer")!.prompt;
     expect(review).toContain("the functionalities the change touches (app:print-hello)");
     expect(review).toContain("<scenario>\nacceptance scenario prints-hello of app:print-hello:\nRunning the app prints hello and exits 0.\n</scenario>");
+  });
+
+  it("for a spec change, sends back a label that names nothing the tests are written for, and leaves the tests of an unchanged scenario as they are", async () => {
+    const testsDir = join(root, "plain_modules", "app", "tests");
+    mkdirSync(join(root, "tests", "app"), { recursive: true });
+    writeFileSync(join(root, "tests", "app", "print-hello.plain"), testPlainFile("app", "print-hello", { conformance: ["# checks\nThe app prints hello."], acceptance: ["# prints-hello\nRunning the app prints hello and exits 0."] }));
+    acceptanceTests("take-no-arguments", "# no-arguments\nRunning the app with no arguments exits 0.");
+    writePlain(root, "app.plain", APP + "# print-hello\nThe app prints hello.\n\n# take-no-arguments\nThe app takes no arguments.\n");
+    // The tests already there: an unchanged scenario's, and one of a scenario taken out.
+    mkdirSync(testsDir, { recursive: true });
+    const unchanged =
+      "# conformance tests of app:take-no-arguments\nimport subprocess, sys, unittest\n\nclass Arguments(unittest.TestCase):\n" +
+      "    # acceptance scenario no-arguments of app:take-no-arguments\n    def test_no_arguments(self):\n" +
+      "        self.assertEqual(subprocess.run([sys.executable, 'app.py']).returncode, 0)\n";
+    writeFileSync(join(testsDir, "test_arguments.py"), unchanged);
+    writeFileSync(join(testsDir, "test_gone.py"), "import unittest\n\nclass Gone(unittest.TestCase):\n    # acceptance scenario waves of app:print-hello\n    def test_waves(self):\n        pass\n");
+    const scenario = (id: string, text: string) => ({ id, text, linked_resources: [] });
+    const recorded = {
+      "functional specs": [
+        { id: "print-hello", markdown: "The app prints hello.", linked_resources: [], conformance_tests: [scenario("checks", "The app prints hello.")], acceptance_tests: [scenario("prints-hello", "Running the app prints hello and exits 0.")] },
+        { id: "take-no-arguments", markdown: "The app takes no arguments.", linked_resources: [], conformance_tests: [], acceptance_tests: [scenario("no-arguments", "Running the app with no arguments exits 0.")] },
+      ],
+    };
+    const diff = "--- a/app.plain\n+++ b/app.plain\n@@ -1 +1 @@\n-The app prints hi.\n+The app prints hello.\n";
+    const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), buildDir: codeDir, conformanceDir: testsDir, diff, recorded });
+    expect(result.passed).toBe(true);
+    const sentBack = asked.find((turn) => turn.role === "conformance agent" && turn.prompt.includes("These labels name no functional spec"))!;
+    expect(sentBack.prompt).toContain(`- test_gone.py: "acceptance scenario waves of app:print-hello"`);
+    expect(readFileSync(join(testsDir, "test_gone.py"), "utf8")).not.toContain("scenario waves");
+    expect(readFileSync(join(testsDir, "test_arguments.py"), "utf8")).toBe(unchanged);
   });
 
   it("for a spec change, gives the judge and the explorer the scenarios of every functionality it touches, labelled - not only the last one's", async () => {

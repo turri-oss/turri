@@ -108,6 +108,30 @@ describe("what a job's agents are told, by its cases", () => {
     expect(conformanceReviewCasesBlock({ ...none, add: [{ funcId: "one", text: "One." }] })).toEqual([]);
   });
 
+  it("tells the conformance agent, and its reviewer, what to do with each scenario by the label its tests carry", () => {
+    const scenario = (kind: "conformance" | "acceptance", id: string) => ({ kind, id, text: `${id}.` });
+    const cases: JobCases = {
+      ...none,
+      add: [{ funcId: "log-in", text: "Users log in.", module: "base" }],
+      patch: [{ funcId: "add-task", text: "Add a task.", module: "app" }],
+      scenarios: [
+        { funcId: "log-in", text: "Users log in.", module: "base", added: [scenario("acceptance", "logs-in")], changed: [], removed: [], unchanged: [] },
+        { funcId: "add-task", text: "Add a task.", module: "app", added: [], changed: [scenario("conformance", "titled")], removed: [scenario("acceptance", "old")], unchanged: [scenario("conformance", "empty")], codeChanged: "text" },
+      ],
+    };
+    const agent = text(conformanceCasesBlock(cases, "app"));
+    expect(agent).toContain("- `base:log-in` (Users log in.):\n  - added - write a test for each: \"acceptance scenario logs-in of base:log-in\".");
+    expect(agent).toContain("  - changed - rewrite its tests to the scenario as it reads now: \"conformance scenario titled of app:add-task\".");
+    expect(agent).toContain("  - removed - delete every test labelled with it, and its label, and nothing else: \"acceptance scenario old of app:add-task\".");
+    expect(agent).toContain("  - unchanged, but its code changed - its text, or a file it links, changed - run their tests on the new code: \"conformance scenario empty of app:add-task\".");
+    expect(agent).toContain("No test may hold the new code\n  to what only the old code did.");
+    const review = text(conformanceReviewCasesBlock(cases, "app"));
+    expect(review).toContain("- Unchanged, the code changed under them - a test changed only where it failed on the new code");
+    expect(review).toContain("- Removed - no test labelled with them is left: \"acceptance scenario old of app:add-task\".");
+    const kept = text(conformanceReviewCasesBlock({ ...cases, scenarios: [{ ...cases.scenarios![1]!, codeChanged: undefined }] }, "app"));
+    expect(kept).toContain("- Unchanged - their tests come out exactly as they were, not rewritten or reworded: \"conformance scenario empty of app:add-task\".");
+  });
+
   it("tells the conformance agent to run the tests of a functional spec regenerated again on its new code, and fix what fails against the spec", () => {
     const again = text(conformanceCasesBlock({ ...none, again: [{ funcId: "health", text: "The server answers a health check." }] }));
     expect(again).toContain("its conformance tests were written against the code it replaced: `health` (The server answers a health check.)");

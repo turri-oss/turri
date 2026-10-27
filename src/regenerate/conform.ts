@@ -1,7 +1,7 @@
 import { relative, resolve } from "node:path";
 import { digestFiles } from "./codebase.ts";
 import type { JobCases } from "./drift.ts";
-import { getFrids, getInheritedFunctionalSpecs, TEST_REQUIREMENTS } from "../plain/spec.ts";
+import { getFrids, getInheritedFunctionalSpecs, TEST_REQUIREMENTS, type MarshalledPlainSource } from "../plain/spec.ts";
 import { reportActivity, reportLogNote, reportStage, unitOf } from "./activity.ts";
 import { conformanceDirFor, notLandedWhy, renderConformanceTests, type RenderConformanceTestsResult } from "./conformance.ts";
 import { abandonWork, startWork } from "./lineage.ts";
@@ -52,6 +52,8 @@ export interface RenderSpecDiffConformanceOptions {
   applied?: "applied" | "already applied";
   /** The spec as parsed with the diff in. Taken now, after applying it, when not given. */
   spec?: SpecSnapshot;
+  /** What the tests are written for once the job lands - the tests record it writes: its labels are checked against it. */
+  recorded?: MarshalledPlainSource;
   model?: string;
   onDelta?: (delta: string) => void;
 }
@@ -119,6 +121,7 @@ export async function renderSpecDiffConformance(options: RenderSpecDiffConforman
     diff: options.diff,
     ...(options.change !== undefined ? { change: options.change } : {}),
     ...(options.cases !== undefined ? { cases: options.cases } : {}),
+    ...(options.recorded !== undefined ? { recorded: options.recorded } : {}),
     spec: { moduleName, tree },
     model: options.model,
     onDelta: options.onDelta,

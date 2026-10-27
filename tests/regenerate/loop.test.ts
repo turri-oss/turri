@@ -739,7 +739,43 @@ describe("the work loop", () => {
       expect(JSON.stringify(readRecord(testsDir()))).not.toContain("Say goodbye.");
     });
 
-    it("say in the drift what is to write or change, a line a functional spec with why", async () => {
+    it("bring one edit that adds, changes and removes scenarios across functional specs into one pulse, with every case", async () => {
+      writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye."]));
+      const scenarios = (funcId: string, ...acceptance: string[]) => writeFileSync(join(dir, "tests", "app", `${funcId}.plain`), testPlainFile("app", funcId, { acceptance }));
+      mkdirSync(join(dir, "tests", "app"), { recursive: true });
+      scenarios("say-hello", "# works\nIt works.");
+      scenarios("say-goodbye", "# works\nIt works.", "# waves\nIt waves.");
+      const code = runner();
+      const tests = conformanceRunner();
+      const pulses: string[][] = [];
+      const loop = createWorkLoop({
+        registry: createJobRegistry(),
+        cwd: dir,
+        planner: false,
+        run: code.run,
+        runConformance: async (job, onDelta) => {
+          pulses.push(
+            (job.planned.cases.scenarios ?? []).map(
+              (spec) => `${spec.funcId}: +${spec.added.map((entry) => entry.id)} ~${spec.changed.map((entry) => entry.id)} -${spec.removed.map((entry) => entry.id)} =${spec.unchanged.map((entry) => entry.id)}`,
+            ),
+          );
+          return tests.runConformance(job, onDelta);
+        },
+      });
+      await loop.bringUp("app.plain");
+      await loop.drain();
+      expect(pulses).toEqual([["say-hello: +works ~ - =", "say-goodbye: +works,waves ~ - ="]]);
+      const built = code.ran.length;
+      scenarios("say-hello", "# works\nIt works well.", "# loud\nIt says hello loudly.");
+      scenarios("say-goodbye", "# works\nIt works.");
+      await loop.bringUp("app.plain", { specChange: true });
+      await loop.drain();
+      expect(pulses.slice(1)).toEqual([["say-hello: +loud ~works - =", "say-goodbye: + ~ -waves =works"]]);
+      // Scenarios are the conformance tests' alone: no code pulse for them.
+      expect(code.ran).toHaveLength(built);
+    });
+
+    it("say in the drift what is to write or change, a line a functional spec with its scenarios counted by case", async () => {
       writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye."]));
       scenariosIn("say-hello");
       scenariosIn("say-goodbye");
@@ -749,12 +785,12 @@ describe("the work loop", () => {
       await loop.bringUp("app.plain");
       await loop.drain();
       expect(describeDrift(loop.drift("app.plain"))).toContain("conformance tests: written for what is built - no drift");
-      scenariosIn("say-hello", "app", "# loud\nIt says hello loudly.");
+      writeFileSync(join(dir, "tests", "app", "say-hello.plain"), testPlainFile("app", "say-hello", { acceptance: ["# works\nIt works, and says so.", "# loud\nIt says hello loudly."] }));
       writeFileSync(join(dir, "tests", "app", "say-goodbye.plain"), testPlainFile("app", "say-goodbye"));
       const text = describeDrift(loop.drift("app.plain"));
       expect(text).toContain("conformance tests: to write or change - written once the code is built, or now with conform\n");
-      expect(text).toContain("    app:say-hello     its text or its scenarios changed\n");
-      expect(text).toContain("    app:say-goodbye   taken out - its tests go");
+      expect(text).toContain("    app:say-hello     1 added, 1 changed\n");
+      expect(text).toContain("    app:say-goodbye   taken out - its tests go (1 removed)");
     });
 
     const base = (spec: string) => `***implementation reqs***\n\n- :Implementation: is Python.\n\n***test reqs***\n\n- :ConformanceTests: use pytest.\n\n***functional specs***\n\n# ${slug(spec)}\n${spec}\n`;
