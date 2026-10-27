@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
+import { scenariosOf, scenarioText, type TestedSpec } from "./test-kinds.ts";
 import type { AgentSession, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -37,8 +38,8 @@ export interface SpecContext {
 }
 
 /**
- * What an explorer hands the author of the conformance tests: how the software is built and run, how each functionality is reached from outside,
- * what it needs around it, and a plan for the tests.
+ * What an explorer hands the author of the conformance tests: how the software is built and run, how each functionality is
+ * reached from outside, and what it needs around it. What to test is the scenarios', never the explorer's.
  */
 export interface Exploration {
   buildAndRun: string;
@@ -48,9 +49,8 @@ export interface Exploration {
    * start, and whether they start it themselves.
    */
   testsReachIt: string;
-  interfaces: Array<{ module: string; frid: string; how: string }>;
+  interfaces: Array<{ module: string; funcId: string; how: string }>;
   environment: string;
-  plan: Array<{ module: string; frid: string; tests: string }>;
   other?: string;
 }
 
@@ -59,9 +59,8 @@ export function explorationText(exploration: Exploration, replies: string[] = []
   const sections = [
     `## How to build and run it\n\n${exploration.buildAndRun.trim()}`,
     `## How the conformance tests reach it, run by the testing script\n\n${exploration.testsReachIt.trim()}`,
-    `## How each functionality is reached\n\n${exploration.interfaces.map((item) => `### ${item.module} ${item.frid}\n\n${item.how.trim()}`).join("\n\n")}`,
+    `## How each functionality is reached\n\n${exploration.interfaces.map((item) => `### ${item.module} ${item.funcId}\n\n${item.how.trim()}`).join("\n\n")}`,
     `## What it needs around it\n\n${exploration.environment.trim()}`,
-    `## Plan for the conformance tests\n\n${exploration.plan.map((item) => `### ${item.module} ${item.frid}\n\n${item.tests.trim()}`).join("\n\n")}`,
     ...(exploration.other?.trim() ? [`## Anything else\n\n${exploration.other.trim()}`] : []),
     // An account it could not complete is passed on with what it wrote, so nothing it found is lost.
     ...(replies.length > 0 ? [`## What the explorer wrote as it worked\n\n${replies.map((reply) => reply.trim()).join("\n\n")}`] : []),
@@ -72,7 +71,7 @@ export function explorationText(exploration: Exploration, replies: string[] = []
 /**
  * What an exploration lacks for the conformance tests to be written from it alone, or nothing when
  * it is whole: how to build and run it, and - for every functionality the tests are for - how it
- * is reached and what to test.
+ * is reached.
  */
 /**
  * How many tool calls the agents with one thing to decide may make before they are told to decide:
@@ -94,8 +93,6 @@ export function explorationProblems(
   exploration: Exploration | undefined,
   scope: ConflictScope,
   moduleName: string,
-  /** The functionalities whose acceptance tests the plan has to carry out, and how many each has. */
-  acceptance: Array<{ module: string; frid: string; count: number }> = [],
 ): string[] {
   if (exploration === undefined) return ["You have not called submit_exploration."];
   const problems: string[] = [];
@@ -106,14 +103,14 @@ export function explorationProblems(
         "commands, fields and their types, and the setup - no code listings, no files pasted whole.",
     );
   }
-  const unknown = [...exploration.interfaces, ...exploration.plan].filter(
-    (item) => item.frid !== "" && !scope.functionalities.some((ref) => ref.module === item.module && ref.frid === item.frid),
+  const unknown = exploration.interfaces.filter(
+    (item) => item.funcId !== "" && !scope.functionalities.some((ref) => ref.module === item.module && ref.funcId === item.funcId),
   );
   if (unknown.length > 0 && scope.tested === undefined) {
-    const names = [...new Set(unknown.map((item) => `${item.module} ${item.frid}`))];
+    const names = [...new Set(unknown.map((item) => `${item.module} ${item.funcId}`))];
     problems.push(
-      `${names.join(", ")} ${names.length === 1 ? "is not a functionality" : "are not functionalities"}: give module and id as ` +
-        `the specification numbers them - ${scope.functionalities.filter((ref) => ref.module === moduleName).map(refLabel).join(", ") || "none yet"}.`,
+      `${names.join(", ")} ${names.length === 1 ? "is not a functionality" : "are not functionalities"}: give module and func-id as ` +
+        `the specification has them - ${scope.functionalities.filter((ref) => ref.module === moduleName).map(refLabel).join(", ") || "none yet"}.`,
     );
   }
   const short = (text: string | undefined) => (text ?? "").trim().length < 40;
@@ -127,44 +124,22 @@ export function explorationProblems(
   }
   if (short(exploration.environment)) problems.push("environment says too little: every variable, configuration file, service, database and fixture it needs, and how each test gets a fresh one - or say plainly it needs none.");
   const reached = exploration.interfaces.filter((item) => !short(item.how));
-  const planned = exploration.plan.filter((item) => !short(item.tests));
   if (scope.tested !== undefined) {
-    // A functionality's run: the one under test, reached and planned for.
+    // A functionality's run: the one under test, reached.
     const tested = scope.tested;
-    const has = (list: Array<{ module: string; frid: string }>) => list.some((item) => item.module === tested.module && item.frid === tested.frid);
+    const has = (list: Array<{ module: string; funcId: string }>) => list.some((item) => item.module === tested.module && item.funcId === tested.funcId);
     if (!has(reached)) problems.push(`interfaces does not say how ${refLabel(tested)} is reached: the command and its arguments, or the route, method, headers and the request and response fields.`);
-    if (!has(planned)) problems.push(`plan has no tests for ${refLabel(tested)}: the cases to write, how each is set up and invoked, and what it checks as the specification says.`);
   } else {
-    // A spec change's: what it touches is for the explorer to say, but some of this module has to be reached and planned.
+    // A spec change's: what it touches is for the explorer to say, but some of this module has to be reached.
     if (!reached.some((item) => item.module === moduleName)) problems.push(`interfaces says nothing of how \`${moduleName}\`'s functionalities the change touches are reached - one entry each.`);
-    if (!planned.some((item) => item.module === moduleName)) problems.push(`plan has no tests for \`${moduleName}\`: the cases the change adds, changes or removes, for each functionality it touches.`);
-  }
-  // Every acceptance test is carried out, step by step, from outside: a plan that leaves one out
-  // leaves its author to write a placeholder.
-  for (const item of acceptance) {
-    const text = exploration.plan
-      .filter((entry) => entry.module === item.module && entry.frid === item.frid)
-      .map((entry) => entry.tests)
-      .join("\n");
-    const named = new Set([...text.matchAll(/acceptance test\s*(\d+)/gi)].map((match) => Number(match[1])));
-    const missing = Array.from({ length: item.count }, (_, index) => index + 1).filter((n) => !named.has(n));
-    if (missing.length > 0) {
-      problems.push(
-        `plan does not carry out ${missing.map((n) => `acceptance test ${n}`).join(", ")} of ${item.module} ${item.frid}: name each ` +
-          '"acceptance test N" as the specification numbers them, and say how each of its steps is done from outside - through ' +
-          "which endpoint, or which class and method where the test reqs let the tests call a component directly - with what, " +
-          "and what it asserts. A long acceptance test is planned whole, never cut down.",
-      );
-    }
   }
   return problems;
 }
 
 /**
- * How the built software is invoked from outside, and a plan for its conformance tests, as an agent
- * that explored the code writes it - everything the tests' author works
- * from. Checked before it is used: it has to cover every functionality the tests are for, and is sent
- * back until it does. What the explorer wrote in its replies goes with an account it never completed.
+ * How the built software is invoked from outside, as an agent that explored the code writes it - everything of the code
+ * the tests' author works from; what to test is the scenarios'. Checked before it is used: it has to cover every
+ * functionality the tests are for, and is sent back until it does. What the explorer wrote in its replies goes with an account it never completed.
  */
 export async function exploreInvocation(options: {
   buildDir: string;
@@ -178,8 +153,6 @@ export async function exploreInvocation(options: {
    * something they need of the software that it left out. The failing run, as the harness saw it.
    */
   question?: { failure: string; account: string };
-  /** The functionalities whose acceptance tests the plan has to carry out, and how many each has. */
-  acceptance?: Array<{ module: string; frid: string; count: number }>;
   label: string;
   model?: string;
   onDelta?: (delta: string) => void;
@@ -195,15 +168,15 @@ export async function exploreInvocation(options: {
       Type.String({
         description:
           target !== undefined
-            ? `The functionality's id as the specification numbers it, e.g. "${target.frid}" - leave both out for ${refLabel(target)}, the one under test`
-            : 'The functionality\'s id as the specification numbers it, e.g. "3" - never a name of your own',
+            ? `The functionality's func-id as the specification has it, e.g. "${target.funcId}" - leave both out for ${refLabel(target)}, the one under test`
+            : 'The functionality\'s func-id as the specification has it, e.g. "add-task" - never a name of your own',
       }),
     ),
   };
   /** An entry's functionality: as given when it is one, otherwise - in a functionality's run - the one under test. */
-  const owner = (item: { module?: string; id?: string }): { module: string; frid: string } => {
-    const given = { module: (item.module ?? "").trim() || options.spec.moduleName, frid: (item.id ?? "").trim() };
-    const known = options.scope.functionalities.some((known) => known.module === given.module && known.frid === given.frid);
+  const owner = (item: { module?: string; id?: string }): { module: string; funcId: string } => {
+    const given = { module: (item.module ?? "").trim() || options.spec.moduleName, funcId: (item.id ?? "").trim() };
+    const known = options.scope.functionalities.some((known) => known.module === given.module && known.funcId === given.funcId);
     return known || target === undefined ? given : { ...target };
   };
   const submit = defineTool({
@@ -233,15 +206,6 @@ export async function exploreInvocation(options: {
       environment: Type.String({
         description: "What it needs around it: environment variables, configuration, services, databases, files, fixtures - and how each test gets a fresh one",
       }),
-      plan: Type.Array(
-        Type.Object({
-          ...ref,
-          tests: Type.String({
-            description:
-              "The conformance tests to write for it, from the specification and its acceptance tests: each case, how it is set up and invoked, what it checks as the specification says, and where its files go as the test reqs say - and every acceptance test, named \"acceptance test N\", with how each of its steps is done from outside and what it asserts",
-          }),
-        }),
-      ),
       other: Type.Optional(Type.String({ description: "Anything else the test author needs" })),
     }),
     async execute(_id, params) {
@@ -250,7 +214,6 @@ export async function exploreInvocation(options: {
         tests_reach_it: string;
         interfaces: Array<{ module?: string; id?: string; how: string }>;
         environment: string;
-        plan: Array<{ module?: string; id?: string; tests: string }>;
         other?: string;
       };
       submissions += 1;
@@ -259,7 +222,6 @@ export async function exploreInvocation(options: {
         testsReachIt: given.tests_reach_it ?? "",
         interfaces: given.interfaces.map((item) => ({ ...owner(item), how: item.how })),
         environment: given.environment,
-        plan: given.plan.map((item) => ({ ...owner(item), tests: item.tests })),
         other: given.other,
       };
       // Every hand-over ends the turn and is checked: the harness says what is missing, a few times at most.
@@ -284,7 +246,7 @@ export async function exploreInvocation(options: {
   try {
     replies.push(await ask(session, BEGIN, options.onDelta));
     for (let again = 0; again < EXPLORATION_SUBMISSIONS; again += 1) {
-      const problems = explorationProblems(exploration, options.scope, options.spec.moduleName, options.acceptance);
+      const problems = explorationProblems(exploration, options.scope, options.spec.moduleName);
       if (problems.length === 0 || submissions >= EXPLORATION_SUBMISSIONS) break;
       reportActivity(`  the exploration is not complete yet: ${problems[0]!.slice(0, 120)}`);
       replies.push(
@@ -298,7 +260,7 @@ export async function exploreInvocation(options: {
   } finally {
     session.dispose();
   }
-  const complete = explorationProblems(exploration, options.scope, options.spec.moduleName, options.acceptance).length === 0;
+  const complete = explorationProblems(exploration, options.scope, options.spec.moduleName).length === 0;
   const found = replies.filter((reply) => reply.trim() !== "");
   if (exploration === undefined) {
     return found.length > 0
@@ -436,7 +398,7 @@ export function explorePrompt(
 ): string {
   const target =
     scope.tested !== undefined
-      ? `functionality ${refLabel(scope.tested)}`
+      ? `functional spec ${refLabel(scope.tested)}`
       : `the spec change - every functionality of \`${spec.moduleName}\` it can reach`;
   return [
     specPrimer({ testReqs: true }),
@@ -462,17 +424,11 @@ export function explorePrompt(
     "  reached from outside: the command and its arguments, or the route, method and headers, and the fields",
     "  of its request and response and their types, as the code takes them;",
     "- environment: environment variables, configuration, services and databases it talks to, files and",
-    "  fixtures - and how each test gets a fresh one;",
-    `- plan: the conformance tests to write for ${target}, from the specification and its acceptance tests:`,
-    "  each case, how it is set up and invoked, what it checks as the specification says, and where the files",
-    "  go as the test reqs say. Every acceptance test, named \"acceptance test N\" as the specification numbers",
-    "  them, with how each of its steps is done from outside - through which endpoint, or which class and",
-    "  method where the test reqs let the tests call a component directly - and what it asserts. A long one is",
-    "  planned whole, never cut down;",
+    "  fixtures - and how each test gets a fresh one.",
     "",
+    "What to test is not yours to say: the tests carry out the functional specs' scenarios, and nothing else.",
     "Describe how to call it, never what it answers: what it returns in each case is for the tests to check",
-    "against the specification, not to copy from the code - so the plan's expectations come from the",
-    "specification, and the code only tells you how to reach it. Read the code - its build files, its entry points, its",
+    "against the scenarios, not to copy from the code - the code only tells you how to reach it. Read the code - its build files, its entry points, its",
     "configuration - with the file tools: you have no shell, and run nothing. Change nothing. Then call submit_exploration - once, with the whole of it: it ends your turn, and",
     `you are told if anything is missing. You can hand it over ${EXPLORATION_SUBMISSIONS} times at most.`,
     "",
@@ -501,7 +457,7 @@ export function explorePrompt(
           "This codebase was explored before, for an earlier conformance run, and the account below was handed over then.",
           "Start from it - do not explore again what it already says. Check what it says against the files that changed",
           "since, listed below, and read further only for what it does not cover yet: how the functionality under test",
-          "now is reached, and the plan for its tests. Then hand over the whole account, updated - what still holds kept,",
+          "now is reached. Then hand over the whole account, updated - what still holds kept,",
           "what changed corrected, what is new added.",
           "",
           `<the account handed over before>
@@ -541,7 +497,7 @@ export interface ReviewProblem {
   kind: "missing" | "bad";
   what: string;
   /**
-   * The functionality is not yet tested, black box: a test or an acceptance test missing or cut down,
+   * The functionality is not yet tested, black box: a scenario's test missing or cut down,
    * the software mocked or reached other than from outside, a test that cannot fail or skips what it
    * checks. Never let go. Anything else is a way to make good tests better.
    */
@@ -550,7 +506,7 @@ export interface ReviewProblem {
 
 /**
  * The review gate, after the conformance suite and the unit tests pass: do the tests this run added
- * or changed test the software black box, and do the acceptance tests do what the spec says - every
+ * or changed test the software black box, and do they carry out the scenarios as they say - every
  * step, every expectation. Passing tests prove nothing when they assert nothing, mock the software
  * they test, or skip what the spec asks for. It reads the tests and the code and changes neither.
  * No verdict is no pass: a gate that cannot say yes stays shut.
@@ -572,8 +528,8 @@ export async function createTestReviewer(options: {
   buildDir: string;
   conformanceDir: string;
   spec: SpecContext;
-  /** The functionality under test - or, for a spec change, those it touches - with their acceptance tests. */
-  functionalities: Array<{ frid: string; acceptanceTests: string[] }>;
+  /** The functionality under test - or, for a spec change, those it touches - with their scenarios. */
+  functionalities: TestedSpec[];
   forChange?: boolean;
   invocation: string;
   label: string;
@@ -599,7 +555,7 @@ export async function createTestReviewer(options: {
           what: Type.String({ description: "Exactly what is missing or bad, and what the specification says instead" }),
           blocking: Type.Boolean({
             description:
-              "True when the functionality is not yet tested black box because of it: a test or an acceptance test missing, cut down or " +
+              "True when the functionality is not yet tested black box because of it: a scenario's test missing, cut down or " +
               "skipping what it checks, the software mocked or not reached from outside, a test that cannot fail. False for a way to make " +
               "tests that already do that better",
           }),
@@ -660,14 +616,14 @@ export function testReviewTask(options: {
   buildDir: string;
   conformanceDir: string;
   spec: SpecContext;
-  functionalities: Array<{ frid: string; acceptanceTests: string[] }>;
+  functionalities: TestedSpec[];
   forChange?: boolean;
   invocation: string;
 }): string {
-  const withAcceptance = options.functionalities.filter((item) => item.acceptanceTests.length > 0);
+  const scenarios = options.functionalities.flatMap((item) => scenariosOf(item).map((scenario) => ({ funcId: item.funcId, scenario })));
   const whose = options.forChange
-    ? `the functionalities of module \`${options.spec.moduleName}\` the change touches (${options.functionalities.map((item) => item.frid).join(", ") || "none"})`
-    : `functionality ${options.functionalities[0]?.frid ?? ""} of module \`${options.spec.moduleName}\``;
+    ? `the functionalities of module \`${options.spec.moduleName}\` the change touches (${options.functionalities.map((item) => item.funcId).join(", ") || "none"})`
+    : `functional spec ${options.spec.moduleName}:${options.functionalities[0]?.funcId ?? ""}`;
   return [
     specPrimer({ testReqs: true }),
     `You review the conformance tests of the \`${options.spec.moduleName}\` specification a conformance run adds or changes, each time`,
@@ -694,35 +650,33 @@ export function testReviewTask(options: {
     "- It tests something: every test asserts what the specification says, and fails when that does not hold. No",
     "  placeholder, no `assertTrue(true)`, no empty or skipped test, no failure caught and swallowed, no assertion",
     "  so loose any answer passes.",
-    ...(withAcceptance.length > 0
+    ...(scenarios.length > 0
       ? [
-          `- The acceptance tests of ${whose}, each implemented as a test of its own, doing every step it lists, in`,
-          "  order, with what it names, and asserting every expectation it states. A step left out, replaced by a",
-          "  stand-in, or said to be impossible to run is missing, not done:",
+          `- The scenarios of ${whose}, each carried out by at least one test, doing every step it lists, in order, with`,
+          "  what it names, and asserting every expectation it states. A step left out, replaced by a stand-in, or said",
+          "  to be impossible to run is missing, not done:",
           "",
-          ...withAcceptance.flatMap((item) =>
-            item.acceptanceTests.map((test, index) => `<acceptance test ${index + 1} of functionality ${item.frid}>\n${test.trim()}\n</acceptance test>`),
-          ),
+          ...scenarios.map(({ funcId, scenario }) => `<scenario>\n${scenarioText(options.spec.moduleName, funcId, scenario)}\n</scenario>`),
           "",
         ]
       : []),
-    `- The conformance tests cover what the specification says ${options.forChange ? "the change does" : `${whose} does`} - its behaviour, its`,
-    "  edge cases, its errors - each checked against the specification, not against what the code happens to do.",
-    "  Only what can be seen from outside: where the specification says one part calls or uses another, the test",
-    "  checks the outcome that follows - what comes back, what is stored, what the other service received - never",
-    "  that the call was made. Asking for a test of how the code works inside is not a problem to raise.",
+    "- The tests are the scenarios', and only theirs: a test that carries out no scenario is not one to ask for, and a",
+    "  missing edge case the scenarios do not name is not a problem to raise. Each is checked against the",
+    "  specification, not against what the code happens to do - only what can be seen from outside: where the",
+    "  specification says one part calls or uses another, the test checks the outcome that follows - what comes back,",
+    "  what is stored, what the other service received - never that the call was made.",
     "",
     "The first review finds every problem, in that one review - the tests go back once with all of them. A review after",
     "it checks each problem you raised last first - fixed, or still there - and raises a new one only when it is one of",
-    "the above - a test that cannot fail, mocks the software, or leaves out or misdoes what the specification or an",
-    "acceptance test asks for. Not a matter of style or thoroughness the last review let pass: the review is not done",
+    "the above - a test that cannot fail, mocks the software, or leaves out or misdoes what the specification or a",
+    "scenario asks for. Not a matter of style or thoroughness the last review let pass: the review is not done",
     "again from the start.",
     "",
     "Each review ends with submit_review, once: pass when nothing is missing and nothing is bad; otherwise every problem",
     '- the file, the test, its kind - "missing" for a test that is not there, "bad" for one that is weak, wrong or not',
     "black box - and exactly what, with what the specification says instead. Be specific: the agent that fixes them gets",
     "your list and nothing else. Mark a problem blocking when because of it the functionality is not yet tested black",
-    "box - a test or an acceptance test missing, cut down or skipping what it checks, the software mocked or not reached",
+    "box - a scenario's test missing, cut down or skipping what it checks, the software mocked or not reached",
     "from outside, a test that cannot fail. Those are worked on first; the rest - ways to make tests that already do",
     "that better - are let go after a few reviews.",
     "",
@@ -821,12 +775,12 @@ export interface Escalation {
 /** A functionality, by the module it is in and its id there: a conflict can cross modules. */
 export interface FunctionalityRef {
   module: string;
-  frid: string;
+  funcId: string;
 }
 
 /** "billing 4": a functionality as the judge and the person read it. */
 export function refLabel(ref: FunctionalityRef): string {
-  return `${ref.module} ${ref.frid}`;
+  return `${ref.module} ${ref.funcId}`;
 }
 
 export interface Verdict {
@@ -856,14 +810,14 @@ export interface ConflictScope {
   tested?: FunctionalityRef;
 }
 
-const same = (a: FunctionalityRef, b: FunctionalityRef) => a.module === b.module && a.frid === b.frid;
+const same = (a: FunctionalityRef, b: FunctionalityRef) => a.module === b.module && a.funcId === b.funcId;
 
 /** A conflict's functionalities as the judge gave them, tidied: trimmed, and each once. */
-export function conflictRefs(given: Array<{ module?: string; id?: string; frid?: string }> | undefined): FunctionalityRef[] {
+export function conflictRefs(given: Array<{ module?: string; id?: string; funcId?: string }> | undefined): FunctionalityRef[] {
   const refs: FunctionalityRef[] = [];
   for (const item of given ?? []) {
-    const ref = { module: (item.module ?? "").trim(), frid: (item.frid ?? item.id ?? "").trim() };
-    if (ref.module !== "" && ref.frid !== "" && !refs.some((known) => same(known, ref))) refs.push(ref);
+    const ref = { module: (item.module ?? "").trim(), funcId: (item.funcId ?? item.id ?? "").trim() };
+    if (ref.module !== "" && ref.funcId !== "" && !refs.some((known) => same(known, ref))) refs.push(ref);
   }
   return refs;
 }
@@ -894,7 +848,7 @@ export function conflictKey(functionalities: FunctionalityRef[]): string {
 
 export function sortedRefs(functionalities: FunctionalityRef[]): FunctionalityRef[] {
   return conflictRefs(functionalities).sort(
-    (a, b) => a.module.localeCompare(b.module) || a.frid.localeCompare(b.frid, undefined, { numeric: true }),
+    (a, b) => a.module.localeCompare(b.module) || a.funcId.localeCompare(b.funcId, undefined, { numeric: true }),
   );
 }
 
@@ -1045,7 +999,7 @@ export async function judgeFailure(options: {
             module: Type.String({ description: "The module the functionality is in" }),
             id: Type.String({ description: "Its id in that module" }),
           }),
-          { description: 'For spec: the two functionalities that cannot both hold, e.g. [{"module": "billing", "id": "4"}, {"module": "accounts", "id": "1"}]' },
+          { description: 'For spec: the two functionalities that cannot both hold, e.g. [{"module": "billing", "id": "refund"}, {"module": "accounts", "id": "register"}]' },
         ),
       ),
     }),

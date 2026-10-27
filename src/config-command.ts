@@ -123,7 +123,6 @@ export function registerTurriConfig(pi: ExtensionAPI, options: TurriConfigOption
       case "choice":
         return pick(setting.options ?? [], false);
       case "number":
-      case "budget":
         return pick(setting.options ?? []);
       case "path":
         return pick(pathOptions(cwd, setting.key));

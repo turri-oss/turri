@@ -1,0 +1,14 @@
+---
+requires:
+  - shared_export_base
+  - shared_export_middle
+---
+
+***implementation reqs***
+
+- Keys are read through :KeyStore:.
+
+***functional specs***
+
+# a-top-functionality
+A top functionality.

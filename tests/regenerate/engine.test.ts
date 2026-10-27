@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { writePlain } from "../test-plain.ts";
 import { createJobRegistry } from "../../src/regenerate/jobs.ts";
 import { type CatalogModel, describeChoices, type ModelChoices, modelFor, resolveModel } from "../../src/regenerate/engine.ts";
 import { createWorkLoop, type JobRunner } from "../../src/regenerate/loop.ts";
@@ -85,7 +86,7 @@ describe("the model a job runs on", () => {
     process.chdir(dir);
     try {
       writeFileSync(join(dir, "config.yaml"), "conformance-tests: false\n");
-      writeFileSync(join(dir, "app.plain"), "***implementation reqs***\n\n- :Implementation: is Python.\n\n***functional specs***\n\n- One.\n");
+      writePlain(dir, "app.plain", "***implementation reqs***\n\n- :Implementation: is Python.\n\n***functional specs***\n\n# one\nOne.\n");
       const chosen: ModelChoices = {};
       const ranOn: Array<string | undefined> = [];
       const run: JobRunner = async (job) => {
@@ -100,7 +101,7 @@ describe("the model a job runs on", () => {
       const [first] = await loop.bringUp("app.plain");
       chosen.spec_changes = "google/gemini-3.6-flash";
       await loop.drain();
-      writeFileSync(join(dir, "app.plain"), "***implementation reqs***\n\n- :Implementation: is Python.\n\n***functional specs***\n\n- One.\n\n- Two.\n");
+      writePlain(dir, "app.plain", "***implementation reqs***\n\n- :Implementation: is Python.\n\n***functional specs***\n\n# one\nOne.\n\n# two\nTwo.\n");
       const [second] = await loop.bringUp("app.plain");
       await loop.drain();
       expect(ranOn).toEqual(["openai/gpt-5.5", "google/gemini-3.6-flash"]);

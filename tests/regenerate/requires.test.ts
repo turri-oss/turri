@@ -13,7 +13,7 @@ let dir: string;
 let build: string;
 
 const spec = (requires?: string) =>
-  `${requires ? `---\nrequires:\n  - ${requires}\n---\n\n` : ""}***implementation reqs***\n\n- A requirement.\n\n***functional specs***\n\n- Do the thing.\n`;
+  `${requires ? `---\nrequires:\n  - ${requires}\n---\n\n` : ""}***implementation reqs***\n\n- A requirement.\n\n***functional specs***\n\n# do-the-thing\nDo the thing.\n`;
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "turri-requires-"));
@@ -111,17 +111,17 @@ describe("copyRequiredCode", () => {
 
 describe("the parser's two inheritance rules", () => {
   it("requires: a module inherits every required module's functional specs, transitively, bottom first", () => {
-    writeFileSync(join(dir, "base.plain"), spec().replace("- Do the thing.", "- Base one.\n\n- Base two."));
-    writeFileSync(join(dir, "middle.plain"), spec("base").replace("- Do the thing.", "- Middle one."));
+    writeFileSync(join(dir, "base.plain"), spec().replace("# do-the-thing\nDo the thing.", "# base-one\nBase one.\n\n# base-two\nBase two."));
+    writeFileSync(join(dir, "middle.plain"), spec("base").replace("# do-the-thing\nDo the thing.", "# middle-one\nMiddle one."));
     const [, tree] = plainFileParser("top.plain", resolveTemplateDirs(join(dir, "top.plain")));
 
-    expect(getInheritedFunctionalSpecs(tree).map((s) => `${s.module} ${s.frid}: ${s.spec}`)).toEqual([
-      "base 1: - Base one.",
-      "base 2: - Base two.",
-      "middle 1: - Middle one.",
+    expect(getInheritedFunctionalSpecs(tree).map((s) => `${s.module}:${s.funcId}: ${s.spec}`)).toEqual([
+      "base:base-one: Base one.",
+      "base:base-two: Base two.",
+      "middle:middle-one: Middle one.",
     ]);
-    // Its own are numbered on their own.
-    expect([...getFrids(tree)]).toEqual(["1"]);
+    // Its own are its own, by their func-ids.
+    expect([...getFrids(tree)]).toEqual(["do-the-thing"]);
   });
 
   it("counts an ancestor once when requires lists it as well", () => {
@@ -135,7 +135,7 @@ describe("the parser's two inheritance rules", () => {
       join(dir, "shared.plain"),
       "***definitions***\n\n- :Thing: is a thing.\n\n***implementation reqs***\n\n- Shared req.\n\n***test reqs***\n\n- Shared test req.\n",
     );
-    writeFileSync(join(dir, "user.plain"), "---\nimport:\n  - shared\n---\n\n***implementation reqs***\n\n- Own req.\n\n***functional specs***\n\n- Use :Thing:.\n");
+    writeFileSync(join(dir, "user.plain"), "---\nimport:\n  - shared\n---\n\n***implementation reqs***\n\n- Own req.\n\n***functional specs***\n\n# use-thing\nUse :Thing:.\n");
     const [, tree] = plainFileParser("user.plain", resolveTemplateDirs(join(dir, "user.plain")));
     const md = (heading: string) => (getSpecificationItems(tree, heading) ?? []).map((item) => item.markdown);
 
@@ -159,16 +159,16 @@ describe("the tree, when code is copied up the chain", () => {
     copyRequiredCode(from, middle, "middle", "base");
     const carried = readRecord(middle)!;
     expect(carried["functional specs"]).toBeUndefined();
-    expect(carried["required functional specs"]).toEqual([{ markdown: "- Do the thing.", module: "base", frid: "1" }]);
+    expect(carried["required functional specs"]).toEqual([{ id: "do-the-thing", markdown: "Do the thing.", linked_resources: [], module: "base" }]);
 
     // And on up: what middle inherits and what it built, in the order the code was built.
     const middleTree = plainFileParser("middle.plain", resolveTemplateDirs(join(dir, "middle.plain")))[1];
     writeCodeRecord(middle, { ...readRecord(middle)!, "functional specs": middleTree["functional specs"] });
-    recordHistory(middle, "built middle 1");
+    recordHistory(middle, "built middle:do-the-thing");
     copyRequiredCode(middle, top, "top", "middle");
-    expect((readRecord(top)!["required functional specs"] as Array<{ module: string; frid: string }>).map((s) => `${s.module} ${s.frid}`)).toEqual([
-      "base 1",
-      "middle 1",
+    expect((readRecord(top)!["required functional specs"] as Array<{ module: string; id: string }>).map((s) => `${s.module}:${s.id}`)).toEqual([
+      "base:do-the-thing",
+      "middle:do-the-thing",
     ]);
     // Nothing of top's own is built yet.
     expect(readRecord(top)!["functional specs"]).toBeUndefined();
@@ -193,6 +193,7 @@ describe("the conformance tests, when code is copied up the chain", () => {
 });
 
 describe("a module required that the code was not built on", () => {
+  const thing = { id: "do-the-thing", markdown: "Do the thing.", linked_resources: [] };
   /** Code in a module's build, and what it was built from. */
   const built = (module: string, tree: object) => {
     const code = join(build, module, "code");
@@ -203,14 +204,14 @@ describe("a module required that the code was not built on", () => {
   };
 
   it("is nothing while every built module was built on the whole chain below it", () => {
-    built("base", { "functional specs": [{ markdown: "- Do the thing." }] });
-    built("middle", { "required functional specs": [{ markdown: "- Do the thing.", module: "base", frid: "1" }], "functional specs": [{ markdown: "- Do the thing." }] });
+    built("base", { "functional specs": [thing] });
+    built("middle", { "required functional specs": [{ ...thing, module: "base" }], "functional specs": [thing] });
     expect(newlyRequired(resolveRequiresChain(join(dir, "middle.plain"), [], build))).toBeUndefined();
   });
 
   it("is a module below that nothing is built of - the specs split into a new module - with the built ones above to start again", () => {
     // middle was built on its own; now it requires base, which is new.
-    built("middle", { "functional specs": [{ markdown: "- Do the thing." }] });
+    built("middle", { "functional specs": [thing] });
     const chain = resolveRequiresChain(join(dir, "top.plain"), [], build);
     const fresh = newlyRequired(chain)!;
     expect(fresh.modules).toEqual(["base"]);
@@ -218,8 +219,8 @@ describe("a module required that the code was not built on", () => {
   });
 
   it("is a built module the record does not list as inherited", () => {
-    built("base", { "functional specs": [{ markdown: "- Do the thing." }] });
-    built("middle", { "required functional specs": [{ markdown: "- Other.", module: "elsewhere", frid: "1" }], "functional specs": [{ markdown: "- Do the thing." }] });
+    built("base", { "functional specs": [thing] });
+    built("middle", { "required functional specs": [{ id: "other", markdown: "Other.", module: "elsewhere" }], "functional specs": [thing] });
     expect(newlyRequired(resolveRequiresChain(join(dir, "middle.plain"), [], build))?.modules).toEqual(["base"]);
   });
 });

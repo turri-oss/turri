@@ -1,0 +1,13 @@
+---
+requires:
+  - shared_link_helper
+---
+
+***implementation reqs***
+
+- A req.
+
+***functional specs***
+
+# a-functionality-also-the-notes
+A functionality. Also [the notes](notes.md).

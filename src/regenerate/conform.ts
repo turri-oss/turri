@@ -86,8 +86,8 @@ export async function renderSpecDiffConformance(options: RenderSpecDiffConforman
   );
 
   // The change is tested whatever it touches - with or without a functional spec yet.
-  const frids = [...getFrids(tree)];
-  const lastFrid = frids.at(-1);
+  const funcIds = [...getFrids(tree)];
+  const lastFuncId = funcIds.at(-1);
   if ((sectionsOf(tree)[TEST_REQUIREMENTS] ?? []).length === 0) {
     throw new Error(
       `${moduleName} has no ${TEST_REQUIREMENTS}, so conformance tests cannot be written: they say how conformance tests ` +
@@ -112,7 +112,7 @@ export async function renderSpecDiffConformance(options: RenderSpecDiffConforman
   const gapsFrom = gapMark();
   const conformance = await renderConformanceTests({
     plainFile: tip.plainFile,
-    frid: lastFrid,
+    funcId: lastFuncId,
     templateDirs,
     buildDir,
     conformanceDir,
@@ -125,7 +125,7 @@ export async function renderSpecDiffConformance(options: RenderSpecDiffConforman
   });
 
   // What the codebase now has conformance tests for, as their labels say.
-  const tested = () => frids.filter((frid) => missingTestLabels(conformanceDir, frid, []).length === 0);
+  const tested = () => funcIds.filter((funcId) => missingTestLabels(conformanceDir, moduleName, { funcId, conformance: [], acceptance: [] }).length === 0);
   // A gap is the person's to decide, whether the tests passed or not.
   const base = { moduleName, buildDir, conformanceDir, diff: applied, conformance, specGaps: gapsSince(gapsFrom, [buildDir, conformanceDir]) };
 
@@ -148,7 +148,7 @@ export async function renderSpecDiffConformance(options: RenderSpecDiffConforman
     buildDir,
     conformanceRoot,
     moduleName,
-    frids,
+    funcIds,
     tree,
     required: getInheritedFunctionalSpecs(tree),
     scripts,

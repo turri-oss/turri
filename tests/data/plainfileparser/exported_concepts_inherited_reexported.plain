@@ -1,0 +1,16 @@
+---
+requires:
+    - exported_concepts
+exported_concepts:
+    - :Concept:
+---
+
+***definitions***
+- :DependantConcept: depends on the :Concept: concept.
+
+***implementation reqs***
+- The :DependantConcept: concept must be implemented.
+
+***functional specs***
+# implement-a-wrapper-for-the
+Implement a wrapper for the :DependantConcept: concept.

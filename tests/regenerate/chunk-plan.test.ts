@@ -3,12 +3,16 @@ import { groupProblems, planChunks, placeProblems, shortTitle, titleProblems, MA
 import { checkDraft, netChanges, stepsOf, type PlanInput } from "../../src/regenerate/chunk-plan.ts";
 
 const item = (markdown: string) => ({ markdown });
+/** A func-id for a functional spec's text: its first words, as a person would name it. */
+const idOf = (text: string) => text.toLowerCase().match(/[a-z0-9]+/g)!.slice(0, 5).join("-");
+/** A functional spec: its func-id, from its text unless given, and its body. */
+const fspec = (markdown: string, id = idOf(markdown)) => ({ id, markdown });
 const tree = (sections: { definitions?: string[]; impl?: string[]; tests?: string[]; specs?: string[] }) =>
   ({
     ...(sections.definitions ? { definitions: sections.definitions.map(item) } : {}),
     ...(sections.impl ? { "implementation reqs": sections.impl.map(item) } : {}),
     ...(sections.tests ? { "test reqs": sections.tests.map(item) } : {}),
-    ...(sections.specs ? { "functional specs": sections.specs.map(item) } : {}),
+    ...(sections.specs ? { "functional specs": sections.specs.map((markdown) => fspec(markdown)) } : {}),
   }) as never;
 
 function input(base: object, current: object): PlanInput {
@@ -36,7 +40,8 @@ const DEFS = [
   "- :Comment: is a text a :User: writes.",
   "- :Kudos: is a like a :User: gives.",
 ];
-const SPECS = ["- A visitor registers a :User:.", "- A :User: signs in.", "- A :User: writes a :Comment:.", "- A :User: deletes their :Comment:.", "- A :User: gives :Kudos:."];
+const SPECS = ["A visitor registers a :User:.", "A :User: signs in.", "A :User: writes a :Comment:.", "A :User: deletes their :Comment:.", "A :User: gives :Kudos:."];
+const IDS = SPECS.map(idOf);
 
 describe("cutting the queue's work into jobs", () => {
   it("groups the functional specs the agent groups, each with the definitions it uses - through the definitions they use - once", async () => {
@@ -90,7 +95,7 @@ describe("cutting the queue's work into jobs", () => {
 
   it("puts what is built already, changed, first - then the new work", async () => {
     const base = tree({ definitions: DEFS.slice(0, 2), impl: ["- :Implementation: is Python."], specs: SPECS.slice(0, 2) });
-    const current = tree({ definitions: DEFS.slice(0, 3), impl: ["- :Implementation: is Python 3.12."], specs: [SPECS[0]!, "- A :User: signs in with their :Handle:.", SPECS[2]!] });
+    const current = { ...(tree({ definitions: DEFS.slice(0, 3), impl: ["- :Implementation: is Python 3.12."] }) as object), "functional specs": [fspec(SPECS[0]!), fspec("A :User: signs in with their :Handle:.", IDS[1]), fspec(SPECS[2]!)] } as never;
     const from = input(base, current);
     const plan = await planChunks(from);
     const [built, comments] = jobs(plan, from);
@@ -103,25 +108,25 @@ describe("cutting the queue's work into jobs", () => {
 
   it("groups functional specs regenerated again as it groups new ones - those next to each other in one job - apart from the changes to what is built", async () => {
     const built = tree({ definitions: DEFS, specs: SPECS });
-    const marked = { ...built, "functional specs": SPECS.map((markdown, index) => (index === 1 || index === 2 ? { markdown, regenerate_again: true } : { markdown })) } as never;
+    const marked = { ...built, "functional specs": SPECS.map((markdown, index) => (index === 1 || index === 2 ? { ...fspec(markdown), regenerate_again: true } : fspec(markdown))) } as never;
     const from = input(marked, built);
     const chosen = agents({ groups: [{ specs: [1, 2], title: "Signing in and comments, again" }] });
     const plan = await planChunks({ ...from, moduleName: "app" }, chosen);
     expect(checkDraft(from, plan)).toEqual([]);
     expect(plan).toEqual([expect.objectContaining({ title: "Signing in and comments, again", reason: "functional specs regenerated again" })]);
-    // Each by a number to answer with, and which it is: its module, and its id there.
+    // Each by a number to answer with, and which it is: its module, its func-id there and its place among its functional specs.
     expect(chosen.shown.specs).toEqual([
-      { number: 1, text: SPECS[1], id: "2", module: "app", again: true },
-      { number: 2, text: SPECS[2], id: "3", module: "app", again: true },
+      { number: 1, text: SPECS[1], id: IDS[1], place: 2, module: "app", again: true },
+      { number: 2, text: SPECS[2], id: IDS[2], place: 3, module: "app", again: true },
     ]);
   });
 
   it("groups the functional specs of a module below regenerated again here too - next to each other only within their module", async () => {
-    const below = (frid: string, markdown: string) => ({ markdown, module: "base", frid });
-    const built = { "required functional specs": [below("1", "- Base one."), below("2", "- Base two.")], "functional specs": [{ markdown: "- App one." }] } as never;
+    const below = (id: string, markdown: string) => ({ id, markdown, module: "base" });
+    const built = { "required functional specs": [below("base-one", "Base one."), below("base-two", "Base two.")], "functional specs": [fspec("App one.", "app-one")] } as never;
     const marked = {
-      "required functional specs": [{ ...below("1", "- Base one."), regenerate_again: true }, { ...below("2", "- Base two."), regenerate_again: true }],
-      "functional specs": [{ markdown: "- App one.", regenerate_again: true }],
+      "required functional specs": [{ ...below("base-one", "Base one."), regenerate_again: true }, { ...below("base-two", "Base two."), regenerate_again: true }],
+      "functional specs": [{ ...fspec("App one.", "app-one"), regenerate_again: true }],
     } as never;
     const from = { ...input(marked, built), moduleName: "app" };
     const chosen = agents({ groups: [{ specs: [1, 2], title: "Base, again" }, { specs: [3], title: "App, again" }] });
@@ -129,16 +134,16 @@ describe("cutting the queue's work into jobs", () => {
     expect(checkDraft(from, plan)).toEqual([]);
     expect(plan.map((job) => job.title)).toEqual(["Base, again", "App, again"]);
     expect(chosen.shown.specs).toEqual([
-      { number: 1, text: "- Base one.", id: "1", module: "base", again: true },
-      { number: 2, text: "- Base two.", id: "2", module: "base", again: true },
-      { number: 3, text: "- App one.", id: "1", module: "app", again: true },
+      { number: 1, text: "Base one.", id: "base-one", place: 1, module: "base", again: true },
+      { number: 2, text: "Base two.", id: "base-two", place: 2, module: "base", again: true },
+      { number: 3, text: "App one.", id: "app-one", place: 1, module: "app", again: true },
     ]);
     // Base 2 and app 1 are numbered one after the other, but are of two modules: never together.
     expect(groupProblems(chosen.shown.specs as never, { groups: [{ specs: [1], title: "a" }, { specs: [2, 3], title: "b" }] }).join("\n")).toContain("in the same module");
   });
 
   it("splits a group too big to render well, a functional spec a job", async () => {
-    const long = (n: number) => `- A :User: does thing ${n}.\n${Array.from({ length: 70 }, (_, line) => `  - detail ${line}`).join("\n")}`;
+    const long = (n: number) => `A :User: does thing ${n}.\n${Array.from({ length: 70 }, (_, line) => `  - detail ${line}`).join("\n")}`;
     const from = input({}, tree({ definitions: DEFS.slice(0, 2), specs: [long(1), long(2)] }));
     const notes: string[] = [];
     const plan = await planChunks(from, agents({ groups: [{ specs: [1, 2], title: "Both" }] }), notes);
@@ -149,7 +154,7 @@ describe("cutting the queue's work into jobs", () => {
 
   it("splits a group too big into as few pulses as fit - its functional specs kept together in runs, not one a pulse", async () => {
     // Four of 40 lines: two fit in 120 with their definitions, three do not.
-    const mid = (n: number) => `- A :User: does thing ${n}.\n${Array.from({ length: 39 }, (_, line) => `  - detail ${line}`).join("\n")}`;
+    const mid = (n: number) => `A :User: does thing ${n}.\n${Array.from({ length: 39 }, (_, line) => `  - detail ${line}`).join("\n")}`;
     const from = input({}, tree({ definitions: DEFS.slice(0, 2), specs: [mid(1), mid(2), mid(3), mid(4)] }));
     const notes: string[] = [];
     const plan = await planChunks({ ...from, limits: { specs: 4, lines: 120 } }, agents({ groups: [{ specs: [1, 2, 3, 4], title: "All of it" }] }), notes);
@@ -164,7 +169,7 @@ describe("cutting the queue's work into jobs", () => {
     expect(groupProblems(specs5, five).join("\n")).toContain("at most 3");
     expect(groupProblems(specs5, five, 5)).toEqual([]);
     // Two of 70 lines: past 120 - but not past 200.
-    const long = (n: number) => `- A :User: does thing ${n}.\n${Array.from({ length: 70 }, (_, line) => `  - detail ${line}`).join("\n")}`;
+    const long = (n: number) => `A :User: does thing ${n}.\n${Array.from({ length: 70 }, (_, line) => `  - detail ${line}`).join("\n")}`;
     const from = input({}, tree({ definitions: DEFS.slice(0, 2), specs: [long(1), long(2)] }));
     expect(await planChunks({ ...from, limits: { specs: 3, lines: 200 } }, agents({ groups: [{ specs: [1, 2], title: "Both" }] }))).toHaveLength(1);
   });
@@ -201,8 +206,8 @@ describe("cutting the queue's work into jobs", () => {
   });
 
   it("puts what is about everything in a job of its own for the code when the first job is too big - never for the conformance tests, whose every job tests a functional spec", async () => {
-    const long = `- A :User: does a big thing.\n${Array.from({ length: 130 }, (_, line) => `  - detail ${line}`).join("\n")}`;
-    const current = tree({ definitions: DEFS.slice(0, 2), impl: ["- :Implementation: is Python 3.12.", "- :Implementation: uses FastAPI."], specs: [long, "- A :User: signs in."] });
+    const long = `A :User: does a big thing.\n${Array.from({ length: 130 }, (_, line) => `  - detail ${line}`).join("\n")}`;
+    const current = tree({ definitions: DEFS.slice(0, 2), impl: ["- :Implementation: is Python 3.12.", "- :Implementation: uses FastAPI."], specs: [long, "A :User: signs in."] });
     const place: PlaceAnswer = { implementationReqs: [{ req: 1, to: "all" }, { req: 2, to: "all" }], testReqs: [] };
     const code = await planChunks(input({}, current), agents(undefined, place));
     expect(code[0]!.title).toBe("What the whole of it is built with");
@@ -215,7 +220,7 @@ describe("cutting the queue's work into jobs", () => {
     for (const job of steps) expect(job.step.changes.some((change) => change.section === "functional specs")).toBe(true);
     // The reqs go with the first functional spec's tests.
     expect(steps[0]!.step.textDiff).toContain("+- :Implementation: is Python 3.12.");
-    expect(steps[0]!.step.textDiff).toContain("+- A :User: does a big thing.");
+    expect(steps[0]!.step.textDiff).toContain("+A :User: does a big thing.");
   });
 
   /** Agents that count how often they are asked: the conformance tests are grouped without them. */
@@ -229,20 +234,22 @@ describe("cutting the queue's work into jobs", () => {
   };
   const manyReqs = (count: number, what: string) => Array.from({ length: count }, (_, n) => `- :Implementation: ${what} rule ${n + 1}, which runs on\n  over a second line.`);
 
-  it("never puts two groups the conformance tests were asked for in - conform for 1-3, then for 4-6 - in one job", async () => {
-    const six = [...SPECS, "- A :User: reports a :Comment:."];
-    const current = { definitions: DEFS.map(item), "functional specs": six.map((markdown, index) => ({ markdown, frid: String(index + 1) })) } as never;
-    const from = { ...input({}, current), track: "conformance" as const, groups: [["1", "2", "3"], ["4", "5", "6"]] };
+  it("shows a conformance step's scenarios as a diff of each functional spec's test plain file, after the module's - never in the module's file", async () => {
+    const withScenario = (markdown: string) => ({ ...fspec(markdown), conformance_tests: [], acceptance_tests: [{ id: "works", text: `${markdown} It works.` }] });
+    const current = { definitions: DEFS.map(item), "functional specs": SPECS.slice(0, 2).map(withScenario) } as never;
+    const from = { ...input({}, current), track: "conformance" as const, moduleName: "app", testPlainPath: (funcId: string) => `tests/app/${funcId}.plain` };
     const plan = await planChunks(from, counted().given);
-    expect(checkDraft(from, plan)).toEqual([]);
-    expect(plan).toHaveLength(2);
-    const [first, second] = stepsOf(from, plan);
-    expect(first!.step.textDiff).toContain("+- A :User: writes a :Comment:.");
-    expect(first!.step.textDiff).not.toContain("deletes their");
-    expect(second!.step.textDiff).toContain("+- A :User: deletes their :Comment:.");
-    expect(second!.step.textDiff).toContain("+- A :User: reports a :Comment:.");
-    // Without groups: one job, as before.
-    expect(await planChunks({ ...from, groups: undefined }, counted().given)).toHaveLength(1);
+    const [only] = stepsOf(from, plan);
+    const diff = only!.step.textDiff;
+    const [moduleFile, ...testPlainFiles] = diff.split(/^(?=diff --git )/m);
+    expect(moduleFile).toContain(`+# ${IDS[0]}\n+A visitor registers a :User:.`);
+    expect(moduleFile).not.toContain("It works.");
+    expect(testPlainFiles.map((file) => file.split("\n")[0])).toEqual([`diff --git a/tests/app/${IDS[0]}.plain b/tests/app/${IDS[0]}.plain`, `diff --git a/tests/app/${IDS[1]}.plain b/tests/app/${IDS[1]}.plain`]);
+    // New to the tests: shown against the empty test plain file it was.
+    expect(testPlainFiles[0]).toContain(" ***acceptance tests***\n+\n+# works\n+A visitor registers a :User:. It works.");
+    // A code step has no test plain file: its trees carry no scenarios.
+    const code = await planChunks({ ...from, track: "code" as const, current: tree({ definitions: DEFS, specs: SPECS.slice(0, 2) }) }, counted().given);
+    expect(stepsOf({ ...from, track: "code" as const, current: tree({ definitions: DEFS, specs: SPECS.slice(0, 2) }) }, code).map((job) => job.step.textDiff).join("")).not.toContain("tests/app/");
   });
 
   it("writes the conformance tests of every functional spec in one job, asking no agent - however many reqs come with them, as the test reqs a module imports once cut five functional specs into five", async () => {
@@ -259,14 +266,14 @@ describe("cutting the queue's work into jobs", () => {
 
   it("rewrites the tests of functional specs that changed in the same job as it writes those of new ones", async () => {
     const base = tree({ definitions: DEFS, specs: SPECS.slice(0, 3) });
-    const current = tree({ definitions: DEFS, specs: ["- A visitor registers a :User: with a :Handle:.", ...SPECS.slice(1)] });
+    const current = { definitions: DEFS.map(item), "functional specs": [fspec("A visitor registers a :User: with a :Handle:.", IDS[0]), ...SPECS.slice(1).map((markdown) => fspec(markdown))] } as never;
     const from = { ...input(base, current), track: "conformance" as const };
     const plan = await planChunks(from, counted().given);
     expect(plan).toHaveLength(1);
     expect(checkDraft(from, plan)).toEqual([]);
     const [all] = jobs(plan, from);
-    expect(all!.diff).toContain("+- A visitor registers a :User: with a :Handle:.");
-    expect(all!.diff).toContain("+- A :User: gives :Kudos:.");
+    expect(all!.diff).toContain("+A visitor registers a :User: with a :Handle:.");
+    expect(all!.diff).toContain("+A :User: gives :Kudos:.");
   });
 
   it("writes them a job a functional spec when the person asked for that", async () => {
@@ -274,7 +281,7 @@ describe("cutting the queue's work into jobs", () => {
     const plan = await planChunks(from, counted().given);
     expect(plan).toHaveLength(SPECS.length);
     expect(checkDraft(from, plan)).toEqual([]);
-    expect(jobs(plan, from)[2]!.diff).toContain("+- A :User: writes a :Comment:.");
+    expect(jobs(plan, from)[2]!.diff).toContain("+A :User: writes a :Comment:.");
   });
 
   it("begins another conformance job only where the next functional spec would take the job's functional specs and the definitions they bring past the guardrail", async () => {
@@ -288,24 +295,24 @@ describe("cutting the queue's work into jobs", () => {
   });
 
   /** A functional spec of `lines` lines, using `concept`. */
-  const sized = (lines: number, concept: string) => [`- A :User: does ${concept}.`, ...Array.from({ length: lines - 1 }, (_, line) => `  - detail ${line}`)].join("\n");
+  const sized = (lines: number, concept: string, id: string) => fspec([`A :User: does ${concept}.`, ...Array.from({ length: lines - 1 }, (_, line) => `  - detail ${line}`)].join("\n"), id);
 
   it("counts the definitions a conformance job's functional specs bring against the guardrail", async () => {
     // Two functional specs of 59 lines: 118 alone - but each brings a definition of two lines, and 122 is past it.
     const definitions = ["- :A: is a letter.\n  - It is the first.", "- :B: is a letter.\n  - It is the second.", "- :User: is a person."];
-    const from = { ...input({}, tree({ definitions, specs: [sized(59, ":A:"), sized(59, ":B:")] })), track: "conformance" as const };
+    const from = { ...input({}, { definitions: definitions.map(item), "functional specs": [sized(59, ":A:", "a"), sized(59, ":B:", "b")] }), track: "conformance" as const };
     expect(await planChunks(from, counted().given)).toHaveLength(2);
   });
 
   it("keeps a conformance job of exactly as many lines as the guardrail allows in one", async () => {
     // 59 + 59 lines of functional specs and two one-line definitions: 120.
-    const from = { ...input({}, tree({ definitions: ["- :A: is a letter.", "- :User: is a person."], specs: [sized(59, ":A:"), sized(59, ":A:")] })), track: "conformance" as const };
+    const from = { ...input({}, { definitions: ["- :A: is a letter.", "- :User: is a person."].map(item), "functional specs": [sized(59, ":A:", "a-one"), sized(59, ":A:", "a-two")] }), track: "conformance" as const };
     expect(await planChunks(from, counted().given)).toHaveLength(1);
   });
 
   it("leaves conformance work that touches no functional spec as it is - the test reqs changed, say", async () => {
-    const base = tree({ tests: ["- :ConformanceTests: use pytest."], specs: ["- A :User: signs in."] });
-    const from = { ...input(base, tree({ tests: ["- :ConformanceTests: use pytest, one file each."], specs: ["- A :User: signs in."] })), track: "conformance" as const };
+    const base = tree({ tests: ["- :ConformanceTests: use pytest."], specs: ["A :User: signs in."] });
+    const from = { ...input(base, tree({ tests: ["- :ConformanceTests: use pytest, one file each."], specs: ["A :User: signs in."] })), track: "conformance" as const };
     const plan = await planChunks(from, agents());
     expect(plan).toHaveLength(1);
     expect(checkDraft(from, plan)).toEqual([]);
@@ -337,16 +344,15 @@ describe("the checks a plan is held to", () => {
 
   it("never put functional specs of two modules in one job, numbered one after the other as they are", () => {
     const across = [
-      { number: 1, text: "- base 1", id: "1", module: "base" },
-      { number: 2, text: "- app 2", id: "2", module: "app" },
+      { number: 1, text: "base one", id: "base-one", module: "base" },
+      { number: 2, text: "app two", id: "app-two", module: "app" },
     ];
     expect(groupProblems(across, { groups: [{ specs: [1, 2], title: "a" }] }).join("\n")).toContain("only functional specs next to each other in the same module");
-    // Next to each other in the spec, but not by number in their module.
-    const gap = [
-      { number: 1, text: "- app 1", id: "1", module: "app" },
-      { number: 2, text: "- app 3", id: "3", module: "app" },
+    const together = [
+      { number: 1, text: "app one", id: "app-one", module: "app" },
+      { number: 2, text: "app two", id: "app-two", module: "app" },
     ];
-    expect(groupProblems(gap, { groups: [{ specs: [1, 2], title: "a" }] })).toHaveLength(1);
+    expect(groupProblems(together, { groups: [{ specs: [1, 2], title: "a" }] })).toEqual([]);
   });
 
   it("place every req once, where there is such a job", () => {
@@ -368,7 +374,7 @@ describe("the checks a plan is held to", () => {
 
 describe("the check on a plan", () => {
   // Two concepts, the second used by the second functional spec only.
-  const from = input({}, tree({ definitions: ["- :User: is a person.", "- :Comment: is a text a :User: writes."], specs: ["- A :User: signs in.", "- A :User: writes a :Comment:."] }));
+  const from = input({}, tree({ definitions: ["- :User: is a person.", "- :Comment: is a text a :User: writes."], specs: ["A :User: signs in.", "A :User: writes a :Comment:."] }));
   const ids = netChanges(from.base, from.current).map((change) => change.id);
   const [user, comment, signIn, write] = ids;
   const job = (title: string, changes: string[]) => ({ title, reason: "r", changes });
@@ -419,13 +425,13 @@ describe("titling the pulses no agent titled", () => {
   }
 
   it("gives a conformance plan's pulses the agent's titles - told what each tests", async () => {
-    const current = { definitions: DEFS.map(item), "functional specs": SPECS.map((markdown, index) => ({ markdown, frid: String(index + 1) })) } as never;
-    const from = { ...input({}, current), track: "conformance" as const, groups: [["1", "2"], ["3", "4", "5"]] };
+    const current = { definitions: DEFS.map(item), "functional specs": SPECS.map((markdown) => fspec(markdown)) } as never;
+    const from = { ...input({}, current), track: "conformance" as const, separately: true };
     const { asked, given } = titling((group) => `Tests ${group.number}`);
     const plan = await planChunks(from, given);
     expect(checkDraft(from, plan)).toEqual([]);
-    expect(plan.map((job) => job.title)).toEqual(["Tests 1", "Tests 2"]);
-    expect(asked).toEqual([{ groups: [{ number: 1, specs: SPECS.slice(0, 2) }, { number: 2, specs: SPECS.slice(2) }], track: "conformance" }]);
+    expect(plan.map((job) => job.title)).toEqual(SPECS.map((_, index) => `Tests ${index + 1}`));
+    expect(asked).toEqual([{ groups: SPECS.map((spec, index) => ({ number: index + 1, specs: [spec] })), track: "conformance" }]);
     const { titlePrompt } = await import("../../src/regenerate/chunk-plan.ts");
     expect(titlePrompt(asked[0]!.groups, "conformance")).toContain("writes and runs the conformance tests");
     expect(titlePrompt(asked[0]!.groups, "conformance")).toContain("At most 10 words and 70 characters");
@@ -445,7 +451,7 @@ describe("titling the pulses no agent titled", () => {
 
   it("keeps the first lines as titles with no title step, or when its answer fails or does not hold - and says so", async () => {
     const from = { ...input({}, tree({ definitions: DEFS, specs: SPECS })), track: "conformance" as const, separately: true };
-    const firstLines = SPECS.map((spec) => spec.replace(/^- /, ""));
+    const firstLines = SPECS;
     expect((await planChunks(from, agents())).map((job) => job.title)).toEqual(firstLines);
     const failing: ChunkAgents = { ...agents(), title: async () => Promise.reject(new Error("no model")) };
     const notes: string[] = [];

@@ -1,0 +1,5 @@
+***functional specs***
+
+{% if %}
+# a-user-can-add-a
+A :User: can add a :Task:.

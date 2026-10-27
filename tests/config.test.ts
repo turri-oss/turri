@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AGENT_ROLES, budgetFor, modelOnly, projectModels, readProjectConfig, ROLE_THINKING, roleModel, roleTurnLimitMs } from "../src/config.ts";
+import { AGENT_ROLES, modelOnly, projectModels, readProjectConfig, ROLE_THINKING, roleModel, roleTurnLimitMs } from "../src/config.ts";
 
 let root: string;
 beforeEach(() => {
@@ -11,7 +11,7 @@ beforeEach(() => {
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 describe("the project's config.yaml", () => {
-  it("says what to build, on which model, with or without conformance, and where the testing scripts are", () => {
+  it("says what to build, on which model, whether it is reviewed, and where the testing scripts are", () => {
     writeFileSync(
       join(root, "config.yaml"),
       [
@@ -19,7 +19,7 @@ describe("the project's config.yaml", () => {
         "harness-model: anthropic/claude-opus-5-5",
         "coding-model: google/gemini-3.1-flash",
         "judge-model: google/gemini-3.1-pro",
-        "conformance-tests: false",
+        "review: false",
         "unittests-script: test_scripts/run_unittests_rust.sh",
         "conformance-tests-script: test_scripts/run_conformance_tests_rust.sh",
       ].join("\n"),
@@ -29,7 +29,7 @@ describe("the project's config.yaml", () => {
       harnessModel: { model: "anthropic/claude-opus-5-5" },
       codingModel: { model: "google/gemini-3.1-flash" },
       judgeModel: { model: "google/gemini-3.1-pro" },
-      conformanceTests: false,
+      review: false,
       unittestsScript: "test_scripts/run_unittests_rust.sh",
       conformanceTestsScript: "test_scripts/run_conformance_tests_rust.sh",
     });
@@ -75,110 +75,30 @@ describe("the project's config.yaml", () => {
   it("reads underscores as dashes, and ignores keys it does not know and values of the wrong type", () => {
     writeFileSync(
       join(root, "config.yaml"),
-      "module: app.plain\nconformance_tests: true\nunittests_script: run_unittests.sh\nmodel: 42\ntemplate-dir: template\ntest-script-timeout: 600\n",
+      "module: app.plain\nmutation_testing: true\nunittests_script: run_unittests.sh\nmodel: 42\ntemplate-dir: template\ntest-script-timeout: 600\nconformance-tests: true\n",
     );
     expect(readProjectConfig(root)).toEqual({
       module: "app.plain",
       harnessModel: undefined,
       codingModel: undefined,
       judgeModel: undefined,
-      conformanceTests: true,
+      mutationTesting: true,
       unittestsScript: "run_unittests.sh",
       conformanceTestsScript: undefined,
     });
   });
 
-  it("has conformance tests for all the functional specs, for the chosen ones - chosen after each pulse, or once the module is regenerated - or for none - true read as all", () => {
-    const read = (value: string) => {
-      writeFileSync(join(root, "config.yaml"), `conformance-tests: ${value}\n`);
-      return readProjectConfig(root).conformanceTests;
-    };
-    expect(read("all")).toBe(true);
-    expect(read("true")).toBe(true);
-    expect(read("chosen")).toBe("chosen");
-    expect(read("Chosen")).toBe("chosen");
-    expect(read("module")).toBe("module");
-    expect(read("false")).toBe(false);
-    expect(read("some")).toBeUndefined();
-  });
-
-  it("turns the review of the code and its tests on or off, and reads nothing else as either", () => {
-    writeFileSync(join(root, "config.yaml"), "review: false\n");
-    expect(readProjectConfig(root).review).toBe(false);
-    writeFileSync(join(root, "config.yaml"), "review: true\n");
-    expect(readProjectConfig(root).review).toBe(true);
-    writeFileSync(join(root, "config.yaml"), "review: sometimes\n");
-    expect(readProjectConfig(root).review).toBeUndefined();
-  });
-
-  it("reads model:, from before there were two, as the coding model", () => {
-    writeFileSync(join(root, "config.yaml"), "model: amazon-bedrock/eu.anthropic.claude-sonnet-5\n");
-    expect(readProjectConfig(root).codingModel).toEqual({ model: "amazon-bedrock/eu.anthropic.claude-sonnet-5" });
-    writeFileSync(join(root, "config.yaml"), "model: a/old\ncoding_model: b/new\n");
-    expect(readProjectConfig(root).codingModel).toEqual({ model: "b/new" });
-  });
-
-  it("is empty when there is no file, or it does not parse", () => {
-    expect(readProjectConfig(root)).toEqual({});
-    writeFileSync(join(root, "config.yaml"), "module: [unclosed\n");
-    expect(readProjectConfig(root)).toEqual({});
-    writeFileSync(join(root, "config.yaml"), "- a list\n- not a map\n");
-    expect(readProjectConfig(root)).toEqual({});
-  });
-});
-
-describe("parallel-jobs", () => {
-  it("is how many jobs the chat runs at once - the config's, else what the machine holds, and never the environment's", async () => {
-    const { parallelJobs } = await import("../src/extension.ts");
-    const { defaultParallelJobs } = await import("../src/regenerate/jobs.ts");
-    expect(parallelJobs(root)).toBe(defaultParallelJobs());
-    writeFileSync(join(root, "config.yaml"), "parallel-jobs: 6\n");
-    expect(readProjectConfig(root).parallelJobs).toBe(6);
-    expect(parallelJobs(root)).toBe(6);
-    process.env.TURRI_PARALLEL_JOBS = "2";
-    try {
-      expect(parallelJobs(root)).toBe(6);
-    } finally {
-      delete process.env.TURRI_PARALLEL_JOBS;
-    }
-    writeFileSync(join(root, "config.yaml"), "parallel-jobs: 0\n");
-    expect(readProjectConfig(root).parallelJobs).toBeUndefined();
-  });
-});
-
-describe("compact-at", () => {
-  it("is how much of an agent's work it keeps before it is compacted - the project's alone, and a number worth compacting at", () => {
-    writeFileSync(join(root, "config.yaml"), "compact-at: 150000\n");
-    expect(readProjectConfig(root).compactAt).toBe(150_000);
-    writeFileSync(join(root, "config.yaml"), "compact-at: 12\n");
-    expect(readProjectConfig(root).compactAt).toBeUndefined();
-    writeFileSync(join(root, "config.yaml"), "compact-at: lots\n");
-    expect(readProjectConfig(root).compactAt).toBeUndefined();
-    writeFileSync(join(root, "config.turri.yaml"), "compact-at: 150000\n");
-    writeFileSync(join(root, "config.turri.backend.yaml"), "compact-at: 50000\n");
-    expect(readProjectConfig(root, "backend").compactAt).toBe(150_000);
-  });
-});
-
-describe("conformance-budget:", () => {
-  it("is a count or a share of a module's functional specs - a share rounded up, at least one - and unset is no limit", () => {
-    writeFileSync(join(root, "config.yaml"), "conformance-budget: 2\n");
-    expect(readProjectConfig(root).conformanceBudget).toEqual({ count: 2 });
-    writeFileSync(join(root, "config.yaml"), "conformance-budget: 30%\n");
-    const share = readProjectConfig(root).conformanceBudget!;
-    expect(share).toEqual({ share: 0.3 });
-    expect([budgetFor(share, 1), budgetFor(share, 7), budgetFor(share, 10)]).toEqual([1, 3, 3]);
-    writeFileSync(join(root, "config.yaml"), "conformance-budget: lots\n");
-    expect(readProjectConfig(root).conformanceBudget).toBeUndefined();
-    writeFileSync(join(root, "config.yaml"), "conformance-tests: chosen\n");
-    expect(readProjectConfig(root).conformanceBudget).toBeUndefined();
+  it("reads no conformance-tests or conformance-budget: what is tested is the functional specs with scenarios", () => {
+    writeFileSync(join(root, "config.yaml"), "conformance-tests: false\nconformance-budget: 30%\n");
+    expect(readProjectConfig(root)).not.toHaveProperty("conformanceTests");
+    expect(readProjectConfig(root)).not.toHaveProperty("conformanceBudget");
   });
 });
 
 describe("how hard each role thinks when nothing names a level", () => {
   it("has the agents that do the work think low, the ones that judge medium, and leaves the conversation its own", () => {
     for (const role of ["coding", "conformance", "explorer", "release"] as const) expect(ROLE_THINKING[role], role).toBe("low");
-    for (const role of ["reviewer", "test-reviewer", "judge", "arbiter", "debugger", "planner", "chooser", "diagnosis"] as const) expect(ROLE_THINKING[role], role).toBe("medium");
+    for (const role of ["reviewer", "test-reviewer", "judge", "arbiter", "debugger", "planner", "diagnosis"] as const) expect(ROLE_THINKING[role], role).toBe("medium");
     // The sentinel is a chat too: it keeps its own level, as the conversation does.
     expect(ROLE_THINKING.chat).toBeUndefined();
     expect(ROLE_THINKING.sentinel).toBeUndefined();
@@ -240,7 +160,7 @@ describe("models: and turn-limit:", () => {
     // The debugger, unnamed, runs on the coding model it is given - not the default.
     expect(roleModel(config, "debugger")).toBeUndefined();
     // The conversation's side keeps the chat's model unless named.
-    expect(roleModel(config, "chooser")).toBeUndefined();
+    expect(roleModel(config, "planner")).toBeUndefined();
     // The release is not of it: it follows steps, on the model it is given - the coding model - or the default.
     expect(roleModel(config, "release")).toEqual({ model: luna, thinking: "medium" });
     // Nor the diagnosis of a failed job: unnamed, the default - else the coding model it is given, never the chat's.
@@ -290,7 +210,7 @@ describe("models: and turn-limit:", () => {
 describe("a stack's config file", () => {
   /** cognio: a Python backend and a React frontend side by side, each with its own testing scripts. */
   beforeEach(() => {
-    writeFileSync(join(root, "config.turri.yaml"), ["harness-model: anthropic/claude-opus-5-5", "coding-model: google/gemini-3.1-flash:low", "conformance-tests: true"].join("\n"));
+    writeFileSync(join(root, "config.turri.yaml"), ["harness-model: anthropic/claude-opus-5-5", "coding-model: google/gemini-3.1-flash:low", "review: true"].join("\n"));
     writeFileSync(
       join(root, "config.turri.backend.yaml"),
       ["unittests-script: test_scripts/run_unittests_python.sh", "conformance-tests-script: test_scripts/run_conformance_tests_python.sh"].join("\n"),
@@ -301,7 +221,7 @@ describe("a stack's config file", () => {
         "unittests-script: test_scripts/run_unittests_typescript.sh",
         "coding-model:",
         "  thinking: high",
-        "conformance-tests: false",
+        "review: false",
         "harness-model: somebody/else",
         "module: frontend.plain",
       ].join("\n"),
@@ -317,7 +237,7 @@ describe("a stack's config file", () => {
     const { chooseStack, configForSpec, stacksOf } = await import("../src/config.ts");
     expect(stacksOf(root)).toEqual(["backend", "frontend"]);
     // A module named after no stack: the stack chosen for the session builds it.
-    const project = { harnessModel: { model: "anthropic/claude-opus-5-5" }, codingModel: { model: "google/gemini-3.1-flash", thinking: "low" }, conformanceTests: true };
+    const project = { harnessModel: { model: "anthropic/claude-opus-5-5" }, codingModel: { model: "google/gemini-3.1-flash", thinking: "low" }, review: true };
     expect(configForSpec(join(root, "app.plain"))).toEqual(project);
     chooseStack("backend");
     expect(configForSpec(join(root, "app.plain"))).toEqual({
@@ -330,7 +250,7 @@ describe("a stack's config file", () => {
     expect(configForSpec(join(root, "app.plain"))).toEqual({
       harnessModel: { model: "anthropic/claude-opus-5-5" },
       codingModel: { model: "google/gemini-3.1-flash", thinking: "high" },
-      conformanceTests: false,
+      review: false,
       unittestsScript: "test_scripts/run_unittests_typescript.sh",
     });
   });
@@ -391,9 +311,9 @@ describe("config.yaml, before turri had a file of its own", () => {
     expect(readProjectConfig(root).review).toBe(false);
     expect(stacksOf(root)).toEqual(["backend"]);
     expect(readProjectConfig(root, "backend").review).toBe(true);
-    writeFileSync(join(root, "config.turri.yaml"), "conformance-tests: false\n");
+    writeFileSync(join(root, "config.turri.yaml"), "mutation-testing: false\n");
     expect(projectConfigFile(root)).toBe("config.turri.yaml");
-    expect(readProjectConfig(root)).toEqual({ conformanceTests: false });
+    expect(readProjectConfig(root)).toEqual({ mutationTesting: false });
     expect(stacksOf(root)).toEqual([]);
     chooseStack(undefined);
   });

@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished } from "vitest";
+import { testPlainFile } from "../test-plain.ts";
 import { renderConformanceTests } from "../../src/regenerate/conformance.ts";
 import { renderSpecDiff } from "../../src/regenerate/regenerate.ts";
 import { findTestScripts, projectRootFor, requireTestScripts, withTestingScripts } from "../../src/regenerate/test-scripts.ts";
@@ -136,21 +137,23 @@ describe("the testing scripts, in an agent's prompt", () => {
     // Linked from the spec too: it still comes once, as a testing script, never as a resource.
     writeFileSync(
       join(root, "app.plain"),
-      "***implementation reqs***\n\n- Python.\n\n***test reqs***\n\n- Run with [the runner](test_scripts/run_conformance_tests_python.sh).\n\n***functional specs***\n\n- It prints hello.\n",
+      "***implementation reqs***\n\n- Python.\n\n***test reqs***\n\n- Run with [the runner](test_scripts/run_conformance_tests_python.sh).\n\n***functional specs***\n\n# it-prints-hello\nIt prints hello.\n",
     );
+    mkdirSync(join(root, "tests", "app"), { recursive: true });
+    writeFileSync(join(root, "tests", "app", "it-prints-hello.plain"), testPlainFile("app", "it-prints-hello", { conformance: ["# says-hello\nIt prints hello."] }));
     const cwd = process.cwd();
     process.chdir(root);
     onTestFinished(() => process.chdir(cwd));
     const buildDir = join(root, "plain_modules", "app", "code");
 
-    const coding = (await renderSpecDiff({ plainFile: join(root, "app.plain"), diff: "+- It prints hello.", applied: "already applied", cwd: root, dryRun: true })).task!;
+    const coding = (await renderSpecDiff({ plainFile: join(root, "app.plain"), diff: "+It prints hello.", applied: "already applied", cwd: root, dryRun: true })).task!;
     expect(coding).toContain("echo unit-script");
     expect(coding).not.toContain("conformance-script");
 
     // The conformance agent tests code: there is some.
     mkdirSync(buildDir, { recursive: true });
     writeFileSync(join(buildDir, "app.py"), "print('hello')\n");
-    const conformance = (await renderConformanceTests({ plainFile: join(root, "app.plain"), frid: "1", buildDir, dryRun: true })).prompt;
+    const conformance = (await renderConformanceTests({ plainFile: join(root, "app.plain"), funcId: "it-prints-hello", buildDir, dryRun: true })).prompt;
     expect(conformance.match(/echo conformance-script/g)).toHaveLength(1);
     expect(conformance).not.toContain("<linked resources>\n");
   });

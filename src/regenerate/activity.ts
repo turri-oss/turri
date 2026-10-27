@@ -68,10 +68,10 @@ export interface SpecConflict {
   moduleName: string;
   plainFile: string;
   /**
-   * The two functionalities - in that module, or in one it requires - each with its module, its
-   * id there, the .plain file it is in, and its functional spec as that file has it.
+   * The two functional specs - in that module, or in one it requires - each with its module, its
+   * func-id there, the .plain file it is in, and its functional spec as that file has it.
    */
-  specs: Array<{ module: string; frid: string; plainFile: string; text: string }>;
+  specs: Array<{ module: string; funcId: string; plainFile: string; text: string }>;
   /** What the judge said each time it raised it, oldest first. */
   reasons: string[];
 }
@@ -164,11 +164,11 @@ export interface UsageReport {
 }
 
 /**
- * What a stage is about, said so the person knows what the name is: "module backend", or "module
- * backend, functionality 2". A stage leads with it: `${unitOf(moduleName, frid)}: running the tests`.
+ * What a stage is about, said so the person knows what the name is: "module backend", or "functional spec
+ * backend:add-task". A stage leads with it: `${unitOf(moduleName, funcId)}: running the tests`.
  */
-export function unitOf(moduleName: string, frid?: string): string {
-  return frid === undefined ? `module ${moduleName}` : `module ${moduleName}, functionality ${frid}`;
+export function unitOf(moduleName: string, funcId?: string): string {
+  return funcId === undefined ? `module ${moduleName}` : `functional spec ${moduleName}:${funcId}`;
 }
 
 export function reportUsage(usage: UsageReport): void {
@@ -245,7 +245,7 @@ export function describeUsage(usage: UsageReport | undefined): string {
 const store = new AsyncLocalStorage<ActivitySink>();
 
 /**
- * Something an agent did with its model, wherever it ran - in a pulse or not, the planner and the chooser too: what a
+ * Something an agent did with its model, wherever it ran - in a pulse or not, the planner too: what a
  * headless run's report adds up (run-report.ts). A call is one model response; a turn, one request of the harness's
  * to an agent, as many calls as it takes; a compaction, its work summed up - a call of its own. A provider retry is a
  * request the provider failed for a moment, waited out and tried again - by pi, or by turri after pi gave up; a provider

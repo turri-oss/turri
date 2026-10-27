@@ -82,6 +82,25 @@ describe("the changes between two trees", () => {
     expect(changes[0]).toMatchObject({ kind: "add", position: 2, after: '{"markdown":"- One and a half."}' });
   });
 
+  it("names a functional spec by its func-id, one of a module below by its module too, never by its place", () => {
+    const before = { "functional specs": [item("One.", { id: "one" })], "required functional specs": [item("Base.", { id: "base-one", module: "base" })] };
+    const after = { "functional specs": [item("One, loudly.", { id: "one" }), item("Two.", { id: "two" })], "required functional specs": [] };
+    const described = changesOf(before as never, after as never).map(describeChange);
+    expect(described.find((text) => text.includes("functional spec `one`"))).toContain("change the text of functional spec `one`");
+    expect(described.find((text) => text.includes("`two`"))).toContain("add functional spec `two` to functional specs");
+    expect(described.find((text) => text.includes("base:base-one"))).toContain("remove functional spec `base:base-one` from required functional specs");
+    // Each written as its file has it: the heading over its text.
+    expect(described.join("\n")).toContain("# two\n    Two.");
+  });
+
+  it("shows a functional spec's scenarios under it, each under its scenario-id, in its kind's tag", () => {
+    const before = { "functional specs": [item("One.", { id: "one", conformance_tests: [], acceptance_tests: [] })] };
+    const after = { "functional specs": [item("One.", { id: "one", conformance_tests: [{ id: "loud", text: "It is loud." }], acceptance_tests: [{ id: "quiet", text: "It is not\nquiet." }] })] };
+    const [change] = changesOf(before as never, after as never);
+    expect(describeChange(change!)).toContain("change the acceptance scenarios and the conformance scenarios of functional spec `one`");
+    expect(describeChange(change!)).toContain("  <conformance tests>\n      # loud\n      It is loud.\n      </conformance tests>\n      <acceptance tests>\n      # quiet\n      It is not\n      quiet.\n      </acceptance tests>");
+  });
+
   it("a spec changed in place is a change, with what it was and what it becomes", () => {
     const changes = changesOf(tree({ "functional specs": ["- One.", "- Two."] }), tree({ "functional specs": ["- One.", "- Two, reworded."] }));
     expect(changes).toEqual([
@@ -89,12 +108,12 @@ describe("the changes between two trees", () => {
     ]);
   });
 
-  it("an acceptance test changed is a change to the spec it belongs to, and says so", () => {
-    const before = { "functional specs": [item("- One.", { acceptance_tests: [item("- A.")] })] };
-    const after = { "functional specs": [item("- One.", { acceptance_tests: [item("- B.")] })] };
+  it("an acceptance scenario changed is a change to the functional spec it belongs to, and says so", () => {
+    const before = { "functional specs": [item("One.", { id: "one", acceptance_tests: [{ id: "a", text: "A." }] })] };
+    const after = { "functional specs": [item("One.", { id: "one", acceptance_tests: [{ id: "a", text: "B." }] })] };
     const changes = changesOf(before, after);
     expect(changes.map((change) => change.kind)).toEqual(["change"]);
-    expect(describeChange(changes[0]!)).toContain("c1: change the acceptance tests of item 1 of functional specs");
+    expect(describeChange(changes[0]!)).toContain("c1: change the acceptance scenarios of");
   });
 
   it("pairs a removed item with an added one only when they are alike - and keeps what is left over in its place", () => {
@@ -265,9 +284,11 @@ describe("a spec change laid out as the module's file", () => {
     "",
     "***functional specs***",
     "",
-    "- A :User: can sign up.",
+    "# sign-up",
+    "A :User: can sign up.",
     "",
-    "- A :User: can log in and gets a :Token:.",
+    "# log-in",
+    "A :User: can log in and gets a :Token:.",
     "",
   ].join("\n");
 
@@ -283,18 +304,27 @@ describe("a spec change laid out as the module's file", () => {
     expect(plainText(serializeTree(tree), layoutOf(FILE))).toBe(FILE.trimEnd());
   });
 
+  it("writes functional specs a blank line apart whatever the file's reqs do: only definitions and reqs are written tight", async () => {
+    const { layoutOf, plainText, serializeTree } = await import("../../src/regenerate/spec-steps.ts");
+    const file = ["***implementation reqs***", "", "- Python.", "- FastAPI.", "", "***functional specs***", "", "# one", "One.", "", "# two", "Two.", ""].join("\n");
+    const layout = layoutOf(file);
+    expect([...layout.tight]).toEqual(["implementation reqs"]);
+    const tree = { "implementation reqs": [{ markdown: "- Python." }, { markdown: "- FastAPI." }], "functional specs": [{ id: "one", markdown: "One." }, { id: "two", markdown: "Two." }] };
+    expect(plainText(serializeTree(tree as never), layout)).toBe(file.trimEnd());
+  });
+
   it("numbers a step's lines as the file's, so its hunks point where the change is in the file", async () => {
     const { layoutOf, diffSpecText, serializeTree } = await import("../../src/regenerate/spec-steps.ts");
     const before = serializeTree({
       definitions: [{ markdown: "- :User: is a person." }, { markdown: "- :Profile: is what others see of a :User:." }],
       "implementation reqs": [{ markdown: "- :Implementation: is in Python." }, { markdown: "- :Implementation: uses FastAPI." }],
-      "functional specs": [{ markdown: "- A :User: can sign up." }],
+      "functional specs": [{ id: "sign-up", markdown: "A :User: can sign up." }],
     } as never);
     const after = serializeTree({
       // The parser's order - by what uses what - not the file's.
       definitions: [{ markdown: "- :User: is a person." }, { markdown: "- :Token: is a bearer token." }, { markdown: "- :Profile: is what others see of a :User:." }],
       "implementation reqs": [{ markdown: "- :Implementation: is in Python." }, { markdown: "- :Implementation: uses FastAPI." }],
-      "functional specs": [{ markdown: "- A :User: can sign up." }, { markdown: "- A :User: can log in and gets a :Token:." }],
+      "functional specs": [{ id: "sign-up", markdown: "A :User: can sign up." }, { id: "log-in", markdown: "A :User: can log in and gets a :Token:." }],
     } as never);
     const diff = diffSpecText(before, after, "app.plain", layoutOf(FILE));
     // :Token: after :Profile:, as in the file, on the file's line 11.
@@ -303,7 +333,7 @@ describe("a spec change laid out as the module's file", () => {
     expect(diff).not.toMatch(/^index /m);
     expect(diff).toMatch(/^@@ -\d+(,\d+)? \+\d+(,\d+)? @@$/m);
     expect(diff).not.toMatch(/^@@ .* @@ ./m);
-    expect(diff).toContain("+- A :User: can log in and gets a :Token:.");
+    expect(diff).toContain("+A :User: can log in and gets a :Token:.");
     // Three lines of context before it: :Token: goes in at the file's line 11.
     expect(diff).toContain("@@ -8,6 +8,8 @@\n");
   });
@@ -313,7 +343,7 @@ describe("a restructuring of the specs", () => {
   const built = {
     definitions: [item("- :User: is a person."), item("- :Session: is a sign-in.")],
     "implementation reqs": [item("- Python.")],
-    "functional specs": [item("- A :User: can register."), item("- A :User: can log in.")],
+    "functional specs": [item("A :User: can register.", { id: "register" }), item("A :User: can log in.", { id: "log-in" })],
   } as MarshalledPlainSource;
 
   it("is the same spec - definitions moved to a common module, and so read in another order", () => {
@@ -322,17 +352,18 @@ describe("a restructuring of the specs", () => {
   });
 
   it("is the same spec when functional specs move to the module the code already holds them from", () => {
-    const own = { ...built, "functional specs": [item("- A :User: can register."), item("- A :User: can log in.")], "required functional specs": [item("- Say hello.", { module: "base", frid: "1" })] } as MarshalledPlainSource;
-    const movedDown = { ...built, "functional specs": [item("- A :User: can log in.")], "required functional specs": [item("- Say hello.", { module: "base", frid: "1" }), item("- A :User: can register.", { module: "base", frid: "2" })] } as MarshalledPlainSource;
+    const own = { ...built, "required functional specs": [item("Say hello.", { module: "base", id: "say-hello" })] } as MarshalledPlainSource;
+    const movedDown = { ...built, "functional specs": [item("A :User: can log in.", { id: "log-in" })], "required functional specs": [item("Say hello.", { module: "base", id: "say-hello" }), item("A :User: can register.", { module: "base", id: "register" })] } as MarshalledPlainSource;
     expect(sameSpec(own, movedDown)).toBe(true);
   });
 
-  it("is not the same spec when a module is required that the code was not built on, or anything reads differently", () => {
-    const onNew = { ...built, "functional specs": [item("- A :User: can log in.")], "required functional specs": [item("- A :User: can register.", { module: "accounts", frid: "1" })] } as MarshalledPlainSource;
+  it("is not the same spec when a module is required that the code was not built on, or anything reads differently - but is in another order", () => {
+    const onNew = { ...built, "functional specs": [item("A :User: can log in.", { id: "log-in" })], "required functional specs": [item("A :User: can register.", { module: "accounts", id: "register" })] } as MarshalledPlainSource;
     expect(sameSpec(built, onNew)).toBe(false);
     expect(sameSpec(built, { ...built, definitions: [item("- :User: is a student."), item("- :Session: is a sign-in.")] } as MarshalledPlainSource)).toBe(false);
-    // Functional specs in another order are another spec: each is built on the ones before it.
-    expect(sameSpec(built, { ...built, "functional specs": [item("- A :User: can log in."), item("- A :User: can register.")] } as MarshalledPlainSource)).toBe(false);
+    expect(sameSpec(built, { ...built, "functional specs": [item("A :User: can log in.", { id: "log-in" }), item("A :User: can register, twice.", { id: "register" })] } as MarshalledPlainSource)).toBe(false);
+    // Functional specs in another order are the same spec: each is known by its func-id, wherever it is written.
+    expect(sameSpec(built, { ...built, "functional specs": [item("A :User: can log in.", { id: "log-in" }), item("A :User: can register.", { id: "register" })] } as MarshalledPlainSource)).toBe(true);
   });
 });
 
@@ -378,5 +409,28 @@ describe("a linked resource that changed", () => {
     expect(diff).toContain("-api.yaml, linked by :Api: in app.plain and functional spec 2 in base.plain: its content, sha256 aaa");
     expect(diff).toContain("+api.yaml, linked by :Api: in app.plain and functional spec 2 in base.plain: its content changed, sha256 bbb");
     expect(diff).not.toContain("ccc");
+  });
+});
+
+describe("a conformance step's ***plain diff", () => {
+  const before = { "functional specs": [item("One.", { id: "one", conformance_tests: [{ id: "runs", text: "It runs." }], acceptance_tests: [] })] } as MarshalledPlainSource;
+  const after = { "functional specs": [item("One.", { id: "one", conformance_tests: [{ id: "runs", text: "It runs and exits 0." }], acceptance_tests: [{ id: "greets", text: "It greets." }] })] } as MarshalledPlainSource;
+
+  it("has the test plain file of each functional spec whose scenarios changed, rebuilt from the trees, under the file's path", () => {
+    const changes = changesOf(before, after);
+    const step = makeStep("one", "", changes, serializeTree(before), serializeTree(after), "app.plain", undefined, { module: "app", pathOf: (funcId) => `tests/app/${funcId}.plain` });
+    expect(step.textDiff).toContain("--- a/tests/app/one.plain\n+++ b/tests/app/one.plain");
+    expect(step.textDiff).toContain("-It runs.\n+It runs and exits 0.");
+    expect(step.textDiff).toContain(" ***acceptance tests***\n+\n+# greets\n+It greets.");
+    // The module's file has the functional spec alone, unchanged: its scenarios are in its test plain file.
+    expect(step.textDiff).not.toContain("a/app.plain");
+  });
+
+  it("is never given to a code step, whose trees carry no scenarios", () => {
+    const code = { "functional specs": [item("One.", { id: "one" })] } as MarshalledPlainSource;
+    const now = { "functional specs": [item("One, loudly.", { id: "one" })] } as MarshalledPlainSource;
+    const step = makeStep("one", "", changesOf(code, now), serializeTree(code), serializeTree(now), "app.plain");
+    expect(step.textDiff).not.toContain("tests/app");
+    expect(step.textDiff).not.toContain("func_id");
   });
 });

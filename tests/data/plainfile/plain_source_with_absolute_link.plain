@@ -6,4 +6,5 @@
 
 ***functional specs***
 
-- Absolute links are not allowed for now [url_link](/link/to/absolute.file).
+# absolute-links-are-not-allowed
+Absolute links are not allowed for now [url_link](/link/to/absolute.file).

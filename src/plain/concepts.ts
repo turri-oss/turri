@@ -1,7 +1,7 @@
+import { simpleCycles } from "./cycles.ts";
 import { PlainSyntaxError } from "./errors.ts";
 import { renderToMarkdown, type AnyNode, type Section } from "./markdown.ts";
 import {
-  ACCEPTANCE_TESTS,
   DEFINITIONS,
   FUNCTIONAL_REQUIREMENTS,
   NON_FUNCTIONAL_REQUIREMENTS,
@@ -156,12 +156,6 @@ export function validateConcepts(marshalled: MarshalledPlainSource): string[] {
     errors.push(...validateConceptsInSpecGroup(specGroup, marshalled, treeBasedConcepts));
   }
 
-  for (const funcSpec of getSpecificationItems(marshalled, FUNCTIONAL_REQUIREMENTS) ?? []) {
-    for (const test of funcSpec[ACCEPTANCE_TESTS] ?? []) {
-      errors.push(...validateConceptsInSpec(test, treeBasedConcepts, ACCEPTANCE_TESTS));
-    }
-  }
-
   return errors;
 }
 
@@ -217,13 +211,13 @@ function buildAdjacencyList(
 }
 
 /**
- * networkx's topological_sort, reproduced.
+ * The order graphlib's `TopologicalSorter.static_order` gives, reproduced.
  *
- * It flattens `topological_generations`, which is Kahn's algorithm processed one
- * generation at a time with nodes visited in graph insertion order. The ordering of
- * independent concepts therefore depends on insertion order, and the Python tests
- * assert that exact order - a generic topological sort would pass the dependency
- * constraints but produce a different sequence.
+ * It hands out every node that is ready at once, in the order the nodes were first
+ * added, then the nodes each one frees, in the order it frees them - Kahn's algorithm
+ * one generation at a time. The ordering of independent concepts therefore depends on
+ * insertion order, and the Python tests assert that exact order - a generic topological
+ * sort would pass the dependency constraints but produce a different sequence.
  */
 function topologicalSort(successors: Map<string, string[]>): { order: string[]; cycle: string[] | null } {
   const inDegree = new Map<string, number>();
@@ -257,23 +251,68 @@ function topologicalSort(successors: Map<string, string[]>): { order: string[]; 
   return { order, cycle: null };
 }
 
+export const MAX_REPORTED_CYCLES = 10;
+
+/**
+ * The elementary cycles in the graph, each as a "Cycle N: :A: -> :B: -> :A:" line followed by the definition of
+ * every concept in the cycle. Arrows point from a definition to a concept it mentions, each cycle starts at its
+ * earliest-defined concept, and cycles are ordered by definition position, so the report reads top to bottom like
+ * the file. At most MAX_REPORTED_CYCLES are listed; the search stops once one more than that is found.
+ */
+export function formatCyclesError(
+  adjacency: Map<string, string[]>,
+  conceptDefinitions: Map<string, SpecificationItem>,
+): string {
+  const position = new Map([...conceptDefinitions.keys()].map((concept, index) => [concept, index]));
+  const at = (concept: string) => position.get(concept)!;
+  // Keyed in definition order, so a search cut short by the limit has found the earliest cycles.
+  const byPosition = new Map<string, string[]>();
+  for (const concept of [...conceptDefinitions.keys(), ...adjacency.keys()]) {
+    if (!byPosition.has(concept)) byPosition.set(concept, adjacency.get(concept)!);
+  }
+  let cycles: string[][] = [];
+  for (const found of simpleCycles(byPosition, MAX_REPORTED_CYCLES + 1)) {
+    // Reversed, since the edges point from a used concept to the one defined with it.
+    const cycle = [...found].reverse();
+    let first = 0;
+    cycle.forEach((concept, index) => {
+      if (at(concept) < at(cycle[first]!)) first = index;
+    });
+    cycles.push([...cycle.slice(first), ...cycle.slice(0, first)]);
+  }
+  cycles.sort((a, b) => {
+    if (at(a[0]!) !== at(b[0]!)) return at(a[0]!) - at(b[0]!);
+    if (a.length !== b.length) return a.length - b.length;
+    for (let i = 0; i < a.length; i += 1) if (at(a[i]!) !== at(b[i]!)) return at(a[i]!) - at(b[i]!);
+    return 0;
+  });
+
+  let lines: string[];
+  if (cycles.length > MAX_REPORTED_CYCLES) {
+    cycles = cycles.slice(0, MAX_REPORTED_CYCLES);
+    lines = [
+      `Plain syntax error: Found more than ${MAX_REPORTED_CYCLES} cycles in concept definitions. Cycles are not allowed.`,
+      `Showing the first ${MAX_REPORTED_CYCLES}.`,
+    ];
+  } else {
+    lines = [`Plain syntax error: Found ${cycles.length} cycle(s) in concept definitions. Cycles are not allowed.`];
+  }
+  cycles.forEach((cycle, index) => {
+    lines.push("");
+    lines.push(`Cycle ${index + 1}: ` + [...cycle, cycle[0]].join(" -> "));
+    // Concepts defined on one line can share a cycle; that line is printed once.
+    lines.push(...new Set(cycle.map((concept) => conceptDefinitions.get(concept)!.markdown)));
+  });
+  return lines.join("\n");
+}
+
 export function sortDefinitions(definitions: SpecificationItem[]): void {
   if (definitions.length <= 1) return;
 
   const [adjacency, conceptDefinitions] = buildAdjacencyList(definitions);
   const { order, cycle } = topologicalSort(adjacency);
 
-  if (cycle !== null) {
-    let msg = "Found cycles in the concept graph. Cycles are not allowed.";
-    const cyclicDefinitions = cycle
-      .slice(0, 2)
-      .map((concept) => conceptDefinitions.get(concept)?.markdown)
-      .filter((markdown): markdown is string => markdown !== undefined);
-    msg += "Cyclic definitons:\n";
-    msg += cyclicDefinitions.join("\n");
-    msg += "\n";
-    throw new PlainSyntaxError(`Plain syntax error: ${msg}`);
-  }
+  if (cycle !== null) throw new PlainSyntaxError(formatCyclesError(adjacency, conceptDefinitions));
 
   if (order.length === 0) return;
 

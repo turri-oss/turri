@@ -29,11 +29,11 @@ const FIX_TOOLS = ["run_unit_tests", "run_conformance_tests", "update_notes", "r
 const DEFAULT_MAX_REGRESSION_ROUNDS = ATTEMPTS.regression;
 
 /** What a regression run reports as it goes: a run of the suite, a repair. */
-export type RegressionEvent = { type: "run"; command: string; exitCode: number; frids?: string[] } | { type: "repair"; frids: string[] };
+export type RegressionEvent = { type: "run"; command: string; exitCode: number; funcIds?: string[] } | { type: "repair"; funcIds: string[] };
 
 export interface RegressionRun extends TestRun {
   /** Functionalities whose tests took part in this run. */
-  frids: string[];
+  funcIds: string[];
 }
 
 export interface RegressionResult {
@@ -59,7 +59,7 @@ async function repairRegression(input: {
   testsDirs: string[];
   buildDir: string;
   moduleName: string;
-  frids: string[];
+  funcIds: string[];
   tree: MarshalledPlainSource;
   required: RequiredSpec[];
   failure: string;
@@ -70,7 +70,7 @@ async function repairRegression(input: {
   model?: string;
   onDelta?: (delta: string) => void;
 }): Promise<string> {
-  const [specifications] = getSpecificationsForFrid(input.tree, input.frids[input.frids.length - 1]!);
+  const [specifications] = getSpecificationsForFrid(input.tree, input.funcIds[input.funcIds.length - 1]!);
   const runs: TestRun[] = [];
 
   const fence = confinedTools({ workdir: input.buildDir, reportsEnvironment: true });
@@ -100,7 +100,7 @@ async function repairRegression(input: {
       withTestingScripts(
         buildRegressionFixPrompt({
           moduleName: input.moduleName,
-          frids: input.frids,
+          funcIds: input.funcIds,
           specifications,
           modules: sectionModules(input.tree, input.moduleName),
           required: input.required,
@@ -145,7 +145,7 @@ export async function ensureRegressionPasses(input: {
   buildDir: string;
   conformanceRoot: string;
   moduleName: string;
-  frids: string[];
+  funcIds: string[];
   tree: MarshalledPlainSource;
   /** The required modules' functional specs, for the repair agent. */
   required: RequiredSpec[];
@@ -185,7 +185,7 @@ export async function ensureRegressionPasses(input: {
   for (let round = 0; round <= maxRounds; round += 1) {
     reportStage(
       round === 0
-        ? `${unitOf(input.moduleName)}: running the codebase's whole conformance suite - every functionality's tests together (${input.frids.join(", ")})`
+        ? `${unitOf(input.moduleName)}: running the codebase's whole conformance suite - every functionality's tests together (${input.funcIds.join(", ")})`
         : `${unitOf(input.moduleName)}: repair ${round} done - running the whole conformance suite again`,
     );
     const result = await runConformanceScript(input.buildDir, dirs, input.scripts);
@@ -196,7 +196,7 @@ export async function ensureRegressionPasses(input: {
       throw lacking;
     }
     command = result.command;
-    runs.push({ command, exitCode: result.exitCode, frids: input.frids });
+    runs.push({ command, exitCode: result.exitCode, funcIds: input.funcIds });
     // The suite passes and its static checks do not: the findings are in the tests, which no repair may touch - the
     // conformance tests' own job fixes them.
     if (staticChecksOnly(result)) {
@@ -205,7 +205,7 @@ export async function ensureRegressionPasses(input: {
       return { passed: false, runs, repairs, command };
     }
     reportActivity(result.exitCode === 0 ? "  ✓ whole suite passing" : `  ✗ whole suite failing (exit ${result.exitCode})`);
-    input.onEvent?.({ type: "run", command, exitCode: result.exitCode, frids: input.frids });
+    input.onEvent?.({ type: "run", command, exitCode: result.exitCode, funcIds: input.funcIds });
 
     // The whole suite passing is half of it: the unit tests have to pass with it.
     let failure = result.output;
@@ -218,8 +218,8 @@ export async function ensureRegressionPasses(input: {
         abandonWork(start, input.moduleName, "the unit testing script could not run");
         throw lackingUnit;
       }
-      runs.push({ command: unit.command, exitCode: unit.exitCode, frids: input.frids });
-      input.onEvent?.({ type: "run", command: unit.command, exitCode: unit.exitCode, frids: input.frids });
+      runs.push({ command: unit.command, exitCode: unit.exitCode, funcIds: input.funcIds });
+      input.onEvent?.({ type: "run", command: unit.command, exitCode: unit.exitCode, funcIds: input.funcIds });
       if (unit.exitCode !== 0) {
         reportActivity(`  ✗ unit tests failing (exit ${unit.exitCode}) with the conformance suite passing`);
         passing = false;
@@ -236,7 +236,7 @@ export async function ensureRegressionPasses(input: {
     }
     if (round === maxRounds) break;
 
-    input.onEvent?.({ type: "repair", frids: input.frids });
+    input.onEvent?.({ type: "repair", funcIds: input.funcIds });
     record({ kind: "gate.round", gate: "regression", round: round + 1, of: maxRounds });
     reportStage(`${unitOf(input.moduleName)}: an earlier functionality broke - repairing (round ${round + 1} of ${maxRounds})`);
     repairs.push(
@@ -244,11 +244,11 @@ export async function ensureRegressionPasses(input: {
         testsDirs: dirs,
         buildDir: input.buildDir,
         moduleName: input.moduleName,
-        frids: input.frids,
+        funcIds: input.funcIds,
         tree: input.tree,
         required: input.required,
         failure,
-        step: input.step ?? `${input.moduleName} ${input.frids.at(-1)}`,
+        step: input.step ?? `${input.moduleName} ${input.funcIds.at(-1)}`,
         scripts: input.scripts,
         model: input.model,
         onDelta: input.onDelta,

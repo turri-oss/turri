@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { funcIdsIn, newFileDiff, testPlainFile, writePlain } from "./test-plain.ts";
 
 /** What each render was told the change is, and where it landed, in order. */
 const rendered: string[] = [];
@@ -31,10 +32,24 @@ const { readRecord } = await import("../src/regenerate/records.ts");
 
 let dir: string;
 let cwd: string;
+/** A functional spec's func-id, from its text - the same for its corrections, which add a qualifier at the end. */
+const idOf = (text: string) =>
+  text.replace(/ (with email|to a visitor)\.$/, ".").toLowerCase().replace(/[^a-z0-9 ]/g, "").trim().split(/ +/).join("-");
+/** Functional specs, each a func-id heading over its text. */
+const specs = (fs: string[]) => fs.map((text) => `# ${idOf(text)}\n${text}`).join("\n\n");
 const plain = (fs: string[]) =>
-  `***definitions***\n\n- :User: is a person.\n\n***implementation reqs***\n\n- Python.\n${fs.length ? `\n***functional specs***\n\n${fs.join("\n\n")}\n` : ""}`;
-const fileDiff = (file: string, before: string, after: string) =>
-  [
+  `***definitions***\n\n- :User: is a person.\n\n***implementation reqs***\n\n- Python.\n${fs.length ? `\n***functional specs***\n\n${specs(fs)}\n` : ""}`;
+/** A git diff that removes a file, as taking a functional spec out removes its test plain file. */
+const goneFileDiff = (path: string, text: string) => {
+  const lines = text.split("\n").slice(0, -1);
+  return [`diff --git a/${path} b/${path}`, "deleted file mode 100644", `--- a/${path}`, "+++ /dev/null", `@@ -1,${lines.length} +0,0 @@`, ...lines.map((line) => `-${line}`), ""].join("\n");
+};
+/** The change to a module's file, with the test plain files of the functional specs it adds or takes out. */
+const fileDiff = (file: string, before: string, after: string) => {
+  const module = file.replace(/^.*\//, "").replace(/\.plain$/, "");
+  const was = funcIdsIn(before);
+  const is = funcIdsIn(after);
+  return [
     `diff --git a/${file} b/${file}`,
     `--- a/${file}`,
     `+++ b/${file}`,
@@ -42,7 +57,10 @@ const fileDiff = (file: string, before: string, after: string) =>
     ...before.split("\n").slice(0, -1).map((line) => `-${line}`),
     ...after.split("\n").slice(0, -1).map((line) => `+${line}`),
     "",
-  ].join("\n");
+  ].join("\n") +
+    is.filter((id) => !was.includes(id)).map((id) => newFileDiff(`tests/${module}/${id}.plain`, testPlainFile(module, id))).join("") +
+    was.filter((id) => !is.includes(id)).map((id) => goneFileDiff(`tests/${module}/${id}.plain`, testPlainFile(module, id))).join("");
+};
 const diffOf = (before: string, after: string) => fileDiff("app.plain", before, after);
 
 function setup(options: { paced?: boolean; free?: () => boolean } = {}) {
@@ -67,30 +85,30 @@ afterEach(() => {
 
 describe("change_plain", () => {
   it("applies the change and starts building it, in one call", async () => {
-    writeFileSync(join(dir, "app.plain"), plain(["- A :User: can register."]));
+    writePlain(dir, "app.plain", plain(["A :User: can register."]));
     const { call, loop } = setup();
-    const diff = diffOf(plain(["- A :User: can register."]), plain(["- A :User: can register.", "- A :User: can log in."]));
+    const diff = diffOf(plain(["A :User: can register."]), plain(["A :User: can register.", "A :User: can log in."]));
 
     const result = await call({ plain_file: "app.plain", diff });
     await loop.drain();
 
-    expect(readFileSync(join(dir, "app.plain"), "utf8")).toContain("- A :User: can log in.");
+    expect(readFileSync(join(dir, "app.plain"), "utf8")).toContain("\nA :User: can log in.");
     expect(result.details.jobIds).toHaveLength(1);
     expect(result.content[0]!.text).toContain("Building in the background");
     expect(JSON.stringify(readRecord(join(dir, "plain_modules", "app", "code")))).toContain("can log in.");
   });
 
   it("needs an answer before the next change, but not for a correction", async () => {
-    const one = plain(["- A :User: can register."]);
-    const two = plain(["- A :User: can register.", "- A :User: can log in."]);
-    writeFileSync(join(dir, "app.plain"), one);
+    const one = plain(["A :User: can register."]);
+    const two = plain(["A :User: can register.", "A :User: can log in."]);
+    writePlain(dir, "app.plain", one);
     const { call, pace } = setup();
     await call({ plain_file: "app.plain", diff: diffOf(one, two) });
 
-    const three = plain(["- A :User: can register.", "- A :User: can log in.", "- A :User: can log out."]);
+    const three = plain(["A :User: can register.", "A :User: can log in.", "A :User: can log out."]);
     await expect(call({ plain_file: "app.plain", diff: diffOf(two, three) })).rejects.toThrow(/No question has been answered/);
 
-    const fixed = plain(["- A :User: can register.", "- A :User: can log in with email."]);
+    const fixed = plain(["A :User: can register.", "A :User: can log in with email."]);
     await expect(call({ plain_file: "app.plain", diff: diffOf(two, fixed), fixes_earlier: true })).resolves.toBeDefined();
 
     pace.answered();
@@ -98,10 +116,10 @@ describe("change_plain", () => {
   });
 
   it("writes changes the interview decided itself without an answer before them, in a phase where each answer owes one instead", async () => {
-    const one = plain(["- A :User: can register."]);
-    const two = plain(["- A :User: can register.", "- A :User: can log in."]);
-    const three = plain(["- A :User: can register.", "- A :User: can log in.", "- A :User: can log out."]);
-    writeFileSync(join(dir, "app.plain"), one);
+    const one = plain(["A :User: can register."]);
+    const two = plain(["A :User: can register.", "A :User: can log in."]);
+    const three = plain(["A :User: can register.", "A :User: can log in.", "A :User: can log out."]);
+    writePlain(dir, "app.plain", one);
     let free = false;
     const { call, pace } = setup({ free: () => free });
     await call({ plain_file: "app.plain", diff: diffOf(one, two) });
@@ -119,10 +137,10 @@ describe("change_plain", () => {
   });
 
   it("writes one change after another without an answer between them for a skill that writes the specs on its own", async () => {
-    const one = plain(["- A :User: can register."]);
-    const two = plain(["- A :User: can register.", "- A :User: can log in."]);
-    const three = plain(["- A :User: can register.", "- A :User: can log in.", "- A :User: can log out."]);
-    writeFileSync(join(dir, "app.plain"), one);
+    const one = plain(["A :User: can register."]);
+    const two = plain(["A :User: can register.", "A :User: can log in."]);
+    const three = plain(["A :User: can register.", "A :User: can log in.", "A :User: can log out."]);
+    writePlain(dir, "app.plain", one);
     const { call, loop } = setup({ paced: false });
     await call({ plain_file: "app.plain", diff: diffOf(one, two) });
     const second = await call({ plain_file: "app.plain", diff: diffOf(two, three) });
@@ -135,19 +153,19 @@ describe("change_plain", () => {
   });
 
   it("undoes a change that stops the spec parsing, and builds nothing", async () => {
-    const one = plain(["- A :User: can register."]);
-    writeFileSync(join(dir, "app.plain"), one);
+    const one = plain(["A :User: can register."]);
+    writePlain(dir, "app.plain", one);
     const { call } = setup();
     await expect(
-      call({ plain_file: "app.plain", diff: diffOf(one, plain(["- A :User: can register.", "- An :Undefined: thing."])) }),
-    ).rejects.toThrow(/no longer parses/);
+      call({ plain_file: "app.plain", diff: diffOf(one, plain(["A :User: can register.", "An :Undefined: thing."])) }),
+    ).rejects.toThrow(/no longer checks/);
     expect(readFileSync(join(dir, "app.plain"), "utf8")).toBe(one);
     expect(rendered).toEqual([]);
   });
 
   it("builds a change that touches only a definition, before any functional spec exists", async () => {
     const none = plain([]);
-    writeFileSync(join(dir, "app.plain"), none);
+    writePlain(dir, "app.plain", none);
     const { call, loop, pace } = setup();
     await call({ plain_file: "app.plain", diff: diffOf(none, none.replace("- Python.", "- Python 3.13.")) });
     await loop.drain();
@@ -163,7 +181,7 @@ describe("change_plain", () => {
     mkdirSync(join(dir, "template"), { recursive: true });
     writeFileSync(join(dir, "template", "base.plain"), "***implementation reqs***\n\n- Log in JSON.\n");
     const before = `---\nimport:\n  - base\n---\n\n${plain([])}`;
-    writeFileSync(join(dir, "app.plain"), before);
+    writePlain(dir, "app.plain", before);
     const { call, loop, pace } = setup();
     const first = before.replace("import:", "description: A study tracker.\nimport:");
     await call({ plain_file: "app.plain", diff: fileDiff("app.plain", before, first) });
@@ -185,8 +203,8 @@ describe("change_plain", () => {
     mkdirSync(join(dir, "template"), { recursive: true });
     const base = "***implementation reqs***\n\n- Log in JSON.\n";
     writeFileSync(join(dir, "template", "base.plain"), base);
-    writeFileSync(join(dir, "app.plain"), `---\nimport:\n  - base\n---\n\n${plain(["- A :User: can register."])}`);
-    writeFileSync(join(dir, "later.plain"), `---\nimport:\n  - base\n---\n\n${plain([])}`);
+    writePlain(dir, "app.plain", `---\nimport:\n  - base\n---\n\n${plain(["A :User: can register."])}`);
+    writePlain(dir, "later.plain", `---\nimport:\n  - base\n---\n\n${plain([])}`);
     const { call, loop, pace } = setup();
 
     // Nothing that imports it is built yet: there is nothing to build.
@@ -208,33 +226,33 @@ describe("change_plain", () => {
 });
 
 describe("a spec diff across two modules of a chain", () => {
-  const accounts = (fs: string[]) => `***definitions***\n\n- :User: is a person.\n\n***implementation reqs***\n\n- Python.\n\n***functional specs***\n\n${fs.join("\n\n")}\n`;
-  const onAccounts = (fs: string[]) => `---\nrequires:\n  - accounts\n---\n\n***implementation reqs***\n\n- Python.\n\n***functional specs***\n\n${fs.join("\n\n")}\n`;
+  const accounts = (fs: string[]) => `***definitions***\n\n- :User: is a person.\n\n***implementation reqs***\n\n- Python.\n\n***functional specs***\n\n${specs(fs)}\n`;
+  const onAccounts = (fs: string[]) => `---\nrequires:\n  - accounts\n---\n\n***implementation reqs***\n\n- Python.\n\n***functional specs***\n\n${specs(fs)}\n`;
 
   it("builds the module below first when the one above is not built yet, then the one above from its code", async () => {
-    writeFileSync(join(dir, "accounts.plain"), accounts(["- A :User: can register."]));
-    writeFileSync(join(dir, "app.plain"), onAccounts(["- Show the home page."]));
+    writePlain(dir, "accounts.plain", accounts(["A :User: can register."]));
+    writePlain(dir, "app.plain", onAccounts(["Show the home page."]));
     const { call, loop } = setup();
     const diff =
-      fileDiff("accounts.plain", accounts(["- A :User: can register."]), accounts(["- A :User: can register.", "- A :User: can log in."])) +
-      fileDiff("app.plain", onAccounts(["- Show the home page."]), onAccounts(["- Show the home page to a visitor."]));
+      fileDiff("accounts.plain", accounts(["A :User: can register."]), accounts(["A :User: can register.", "A :User: can log in."])) +
+      fileDiff("app.plain", onAccounts(["Show the home page."]), onAccounts(["Show the home page to a visitor."]));
     await call({ plain_file: "app.plain", diff });
     await loop.drain();
     expect(renderedIn).toEqual(["accounts", "accounts", "app"]);
     // Built on the code below, it has what that implements already: only its own functional spec is new.
-    expect(rendered[2]).toContain("+- Show the home page to a visitor.");
+    expect(rendered[2]).toContain("+Show the home page to a visitor.");
     expect(rendered[2]).not.toContain("+- Python.");
   });
 
   it("makes the change below in the codebase above once that is built, where the code now lives", async () => {
-    writeFileSync(join(dir, "accounts.plain"), accounts(["- A :User: can register."]));
-    writeFileSync(join(dir, "app.plain"), onAccounts(["- Show the home page."]));
+    writePlain(dir, "accounts.plain", accounts(["A :User: can register."]));
+    writePlain(dir, "app.plain", onAccounts(["Show the home page."]));
     const { call, loop, pace } = setup();
-    await call({ plain_file: "app.plain", diff: fileDiff("app.plain", onAccounts(["- Show the home page."]), onAccounts(["- Show the home page to a visitor."])) });
+    await call({ plain_file: "app.plain", diff: fileDiff("app.plain", onAccounts(["Show the home page."]), onAccounts(["Show the home page to a visitor."])) });
     await loop.drain();
     renderedIn.length = 0;
     pace.answered();
-    await call({ plain_file: "accounts.plain", diff: fileDiff("accounts.plain", accounts(["- A :User: can register."]), accounts(["- A :User: can register.", "- A :User: can log in."])) });
+    await call({ plain_file: "accounts.plain", diff: fileDiff("accounts.plain", accounts(["A :User: can register."]), accounts(["A :User: can register.", "A :User: can log in."])) });
     await loop.drain();
     expect(renderedIn).toEqual(["app"]);
   });

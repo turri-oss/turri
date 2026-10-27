@@ -1,0 +1,14 @@
+---
+requires:
+  - chain_base
+  - chain_middle
+---
+
+***implementation reqs***
+
+- Fork implementation requirement.
+
+***functional specs***
+
+# a-fork-functionality
+A fork functionality.

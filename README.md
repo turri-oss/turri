@@ -178,7 +178,7 @@ Without a conversation, the same work is on the command line:
 turri validate app.plain    # validate ***plain - no model, no API key
 turri drift app.plain       # what is left to regenerate - starts nothing
 turri regenerate app.plain      # regenerate the code from ***plain: planned into jobs, run until it is done
-turri regenerate app.plain 3    # regenerate functionality 3, changed or not
+turri regenerate app.plain app:add-task    # regenerate one functional spec again, changed or not
 ```
 
 More: [using **turri**](docs/using.md); to regenerate \*\*\*plain overnight, see [running unattended](docs/headless.md).

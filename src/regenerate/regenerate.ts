@@ -5,6 +5,8 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { IMPORT_DIRECTIVE, plainFileParser, readPlainSourceMetadata, withParseCache } from "../plain/parser.ts";
 import { isStdlibModule, STDLIB_ROOT } from "../plain/stdlib.ts";
 import {
+  CONFORMANCE_TESTS,
+  ACCEPTANCE_TESTS,
   FUNCTIONAL_REQUIREMENTS,
   getFrids,
   getInheritedFunctionalSpecs,
@@ -52,10 +54,10 @@ import { createCopyResourceTool, loadLinkedResources, resourceImages } from "./r
 import { markTold, waitingSteer, type JobSteering } from "./steering.ts";
 import { misplacedConformanceTests, misplacedTestsPrompt } from "./test-kinds.ts";
 import { sectionsOf } from "./state.ts";
-import { inheritedRecord, readRecord, withResourceDigests, writeCodeRecord } from "./records.ts";
+import { codeTree, inheritedRecord, readRecord, withResourceDigests, writeCodeRecord } from "./records.ts";
 import { changesBetween, sameSpec, serializeTree } from "./spec-steps.ts";
 import { untilUnitTestsReviewed } from "./unit-review.ts";
-import { configForSpec, inheritModel, modelOnly, modelSpec, splitModelSpec } from "../config.ts";
+import { configForSpec, inheritModel, modelOnly, modelSpec, splitModelSpec, testDirOf } from "../config.ts";
 import {
   findTestRemovals,
   inventoryTests,
@@ -209,7 +211,7 @@ export function snapshotSpec(
     findCodebaseTip(resolve(cwd, plainFile), { templateDirs, inModule: options.inModule, allowNoFunctionalities: true }),
   );
   const dirs = resolveTemplateDirs(tip.plainFile, templateDirs);
-  const [moduleName, parsed] = plainFileParser(basename(tip.plainFile), dirs, { allowNoFunctionalities: true });
+  const [moduleName, parsed] = plainFileParser(basename(tip.plainFile), dirs, { allowNoFunctionalities: true, testDir: testDirOf(tip.plainFile) });
   // What a linked resource holds is part of the spec: hashed beside its link, as the work loop has it.
   return { moduleName, plainFile: tip.plainFile, tree: withResourceDigests(parsed, dirs), chain };
 }
@@ -306,7 +308,7 @@ export async function renderSpecDiff(options: RenderSpecDiffOptions): Promise<Re
   // of the chain: the code already is what the spec says. Nothing to render; the spec is recorded
   // as it is now laid out.
   const builtBefore = readRecord(tip.buildDir, { onDisk: true });
-  if (builtBefore !== null && sameSpec(builtBefore, tree) && !dryRun) {
+  if (builtBefore !== null && sameSpec(builtBefore, codeTree(tree)) && !dryRun) {
     stage("the specs were only restructured - nothing to render; recording the spec as it is now laid out");
     writeCodeRecord(tip.buildDir, tree);
     landWork(tip.buildDir, `spec restructured: ${summarizeDiff(options.diff)}`, options.diff);
@@ -331,7 +333,7 @@ export async function renderSpecDiff(options: RenderSpecDiffOptions): Promise<Re
   const scripts = withoutConformance(findTestScripts(root, tip.plainFile, tip.buildDir));
   requireTestScripts(moduleName, scripts, { conformance: false });
   reportLogNote(`  unit testing script: ${relative(root, scripts.unit)}`);
-  const lastFrid = [...getFrids(tree)].at(-1);
+  const lastFuncId = [...getFrids(tree)].at(-1);
   const buildDir = tip.buildDir;
   // From scratch there is no build directory yet, and everything the agent runs runs in it.
   if (!dryRun) mkdirSync(buildDir, { recursive: true });
@@ -367,16 +369,19 @@ export async function renderSpecDiff(options: RenderSpecDiffOptions): Promise<Re
     const now = changesBetween(serializeTree(builtNow), serializeTree(options.steering.agent)).filter((change) => change.section !== TEST_REQUIREMENTS);
     return now.length > 0 ? describeSpecChange(now, moduleName) : undefined;
   };
-  const builtFrids = [...getFrids(builtNow)];
+  const builtFuncIds = [...getFrids(builtNow)];
   const specificationsBefore: Specifications =
-    builtFrids.length > 0 ? getSpecificationsForFrid(builtNow, builtFrids.at(-1)!)[0] : { ...sectionsOf(builtNow), [FUNCTIONAL_REQUIREMENTS]: [] };
-  const linkedResources = loadLinkedResources(tree, lastFrid ?? null, resolveTemplateDirs(tip.plainFile, templateDirs));
+    builtFuncIds.length > 0
+      ? getSpecificationsForFrid(builtNow, builtFuncIds.at(-1)!)[0]
+      : { ...sectionsOf(builtNow), [FUNCTIONAL_REQUIREMENTS]: [], [CONFORMANCE_TESTS]: [], [ACCEPTANCE_TESTS]: [] };
+  const linkedResources = loadLinkedResources(tree, lastFuncId ?? null, resolveTemplateDirs(tip.plainFile, templateDirs));
   const prompt = buildSpecDiffPrompt({
     moduleName,
     diff: options.diff,
     // The change as it is to the code: from what it is built from to the spec this job records, section by section.
     changes: codingChanges,
     specifications: specificationsBefore,
+    funcIds: builtFuncIds,
     modules: sectionModules(builtNow, moduleName),
     required: getInheritedFunctionalSpecs(builtNow),
     linkedResources,
@@ -645,7 +650,7 @@ export async function renderSpecDiff(options: RenderSpecDiffOptions): Promise<Re
         what: `the spec change to module \`${moduleName}\``,
         // As the coding agent had it: the spec the code was built from, and the change.
         // Steered before the review, the change as the agent has it now.
-        spec: reviewedSpec({ moduleName, specifications: specificationsBefore, modules: sectionModules(builtNow, moduleName), required: getInheritedFunctionalSpecs(builtNow), change: steeredChange() ?? codingText ?? changeText ?? options.diff }),
+        spec: reviewedSpec({ moduleName, specifications: specificationsBefore, funcIds: builtFuncIds, modules: sectionModules(builtNow, moduleName), required: getInheritedFunctionalSpecs(builtNow), change: steeredChange() ?? codingText ?? changeText ?? options.diff }),
         forChange: true,
         ...(options.cases !== undefined ? { cases: options.cases } : {}),
         label: `${moduleName} spec change`,

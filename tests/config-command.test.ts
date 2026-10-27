@@ -56,23 +56,23 @@ describe("/turri-config", () => {
   });
 
   it("copies the config.yaml turri read until now to config.turri.yaml before its first setting, and says so", async () => {
-    writeFileSync(join(dir, "config.yaml"), "conformance-tests: false\n");
+    writeFileSync(join(dir, "config.yaml"), "mutation-testing: false\n");
     const { run, said } = setUp();
     await run("review false");
-    expect(readFileSync(join(dir, "config.yaml"), "utf8")).toBe("conformance-tests: false\n");
-    expect(readFileSync(join(dir, "config.turri.yaml"), "utf8")).toBe("conformance-tests: false\nreview: false\n");
+    expect(readFileSync(join(dir, "config.yaml"), "utf8")).toBe("mutation-testing: false\n");
+    expect(readFileSync(join(dir, "config.turri.yaml"), "utf8")).toBe("mutation-testing: false\nreview: false\n");
     expect(said[0]).toContain("config.yaml was copied to config.turri.yaml first");
   });
 
   it("lists every setting with what it is now, then asks for the value as the setting takes it", async () => {
     writeFileSync(join(dir, "config.yaml"), "review: false\n");
-    const { run, asked, said } = setUp(["conformance-tests: (unset - all, where a module has test reqs)", "chosen"]);
+    const { run, asked, said } = setUp(["testing-scripts-run-on: (unset - in-place)", "copy"]);
     await run("");
     expect(asked[0]!.options).toContain("review: false");
     expect(asked[0]!.options!.at(-1)).toContain("models.<role>");
-    expect(asked[1]!.options).toEqual(["all", "chosen", "module", "false", "unset - all, where a module has test reqs"]);
-    expect(readProjectConfig(dir).conformanceTests).toBe("chosen");
-    expect(said[0]).toContain("in effect the next time the work is planned");
+    expect(asked[1]!.options).toEqual(["in-place", "copy", "unset - in-place"]);
+    expect(readProjectConfig(dir).testingScriptsRunOn).toBe("copy");
+    expect(said[0]).toContain("in effect from the next test run");
   });
 
   it("switches the conversation's model now, offering the models this machine can reach and how hard it thinks", async () => {
@@ -114,7 +114,7 @@ describe("/turri-config", () => {
     const { complete } = setUp();
     expect((complete("rev") as Array<{ value: string }>).map((item) => item.value)).toEqual(["review "]);
     expect((complete("review ") as Array<{ value: string }>).map((item) => item.value)).toEqual(["review true", "review false", "review unset"]);
-    expect((complete("conformance-tests c") as Array<{ value: string }>).map((item) => item.value)).toEqual(["conformance-tests chosen"]);
+    expect((complete("testing-scripts-run-on c") as Array<{ value: string }>).map((item) => item.value)).toEqual(["testing-scripts-run-on copy"]);
   });
 
   it("says when there is no such setting, and which it may have meant", async () => {

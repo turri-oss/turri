@@ -1,6 +1,9 @@
 import { readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  marshallPlainSource,
   normalizeLineEndings,
   parsePlainSource,
   plainFileParser,
@@ -33,7 +36,15 @@ describe("plain file parser", () => {
         { markdown: "- First implementation requirement." },
         { markdown: "- Second implementation requirement." },
       ],
-      "functional specs": [{ markdown: '- Display "hello, world"' }],
+      "functional specs": [
+        {
+          id: "display-hello-world",
+          markdown: 'Display "hello, world"',
+          linked_resources: [],
+          conformance_tests: [],
+          acceptance_tests: [],
+        },
+      ],
     });
   });
 
@@ -44,7 +55,7 @@ describe("plain file parser", () => {
 ***Unknown Section:***
 `;
     expect(() => parsePlainSource(plainSource, {}, [], [], [])).toThrow(
-      "Syntax error at line 4: Invalid specification heading (`Unknown Section:`). Allowed headings: definitions, implementation reqs, test reqs, functional specs, acceptance tests",
+      "Syntax error at line 4: Invalid specification heading (`Unknown Section:`). Allowed headings: definitions, implementation reqs, test reqs, functional specs",
     );
   });
 
@@ -67,7 +78,7 @@ code block
 \`\`\`
 `;
     expect(() => parsePlainSource(plainSource, {}, [], [], [])).toThrow(
-      "Syntax error at line 3: Invalid source structure  (`code block`)",
+      "Syntax error at line 3: Invalid source structure (`code block`)",
     );
   });
 
@@ -110,7 +121,15 @@ description: 'Plain file with frontmatter'
     expect(plainSections).toEqual({
       definitions: [],
       "implementation reqs": [{ markdown: "- Second implementation requirement." }],
-      "functional specs": [{ markdown: '- Display "hello, world"' }],
+      "functional specs": [
+        {
+          id: "display-hello-world",
+          markdown: 'Display "hello, world"',
+          linked_resources: [],
+          conformance_tests: [],
+          acceptance_tests: [],
+        },
+      ],
     });
   });
 
@@ -124,7 +143,15 @@ description: 'Plain file with frontmatter'
         { markdown: "- First implementation requirement." },
         { markdown: "- Second implementation requirement." },
       ],
-      "functional specs": [{ markdown: '- Display "hello, world"' }],
+      "functional specs": [
+        {
+          id: "display-hello-world",
+          markdown: 'Display "hello, world"',
+          linked_resources: [],
+          conformance_tests: [],
+          acceptance_tests: [],
+        },
+      ],
     });
   });
 
@@ -140,14 +167,28 @@ description: 'Plain file with frontmatter'
     ).toThrow("Only relative links are allowed");
   });
 
+  it("lists the folders it searched for a missing link", () => {
+    const folder = dataPath("data/plainfile");
+    let message = "";
+    try {
+      plainFileParser("plain_source_with_missing_link.plain", [folder]);
+    } catch (error) {
+      expect(error).toBeInstanceOf(PlainSyntaxError);
+      message = (error as Error).message;
+    }
+    expect(message).toContain("resources/missing_resource.yaml does not exist");
+    expect(message).toContain("highest to lowest precedence");
+    expect(message).toContain(folder);
+  });
+
   it("parses reference links", () => {
     const [, plainSections] = plainFileParser("task_manager_with_reference_links.plain", [
       dataPath("data/plainfile"),
     ]);
 
     const assertedResources = [
-      "tests/data/plainfile/task_list_ui_specification.yaml",
-      "tests/data/plainfile/add_new_task_modal_specification.yaml",
+      "task_list_ui_specification.yaml",
+      "add_new_task_modal_specification.yaml",
     ];
     const functionalSpecs = getSpecificationItems(plainSections, FUNCTIONAL_REQUIREMENTS)!;
 
@@ -168,27 +209,45 @@ description: 'Plain file with frontmatter'
     expect(functionalSpecs[1]!.linked_resources).toEqual([
       {
         text: "task_list_ui_specification.yaml",
-        target: "tests/data/plainfile/task_list_ui_specification.yaml",
+        target: "task_list_ui_specification.yaml",
       },
     ]);
     expect(functionalSpecs[2]!.linked_resources).toEqual([
       {
         text: "add_new_task_modal_specification.yaml",
-        target: "tests/data/plainfile/add_new_task_modal_specification.yaml",
+        target: "add_new_task_modal_specification.yaml",
       },
     ]);
   });
 
+  it("resolves links against the folder of the plain file, wherever it is run from", () => {
+    const folder = resolve(dataPath("data/plainfile"));
+    const before = process.cwd();
+    process.chdir(tmpdir());
+    try {
+      const [, plainSections] = plainFileParser("task_manager_with_reference_links.plain", [folder]);
+      const functionalSpecs = getSpecificationItems(plainSections, FUNCTIONAL_REQUIREMENTS)!;
+      expect(functionalSpecs[1]!.linked_resources).toEqual([
+        { text: "task_list_ui_specification.yaml", target: "task_list_ui_specification.yaml" },
+      ]);
+      expect(functionalSpecs[2]!.linked_resources).toEqual([
+        { text: "add_new_task_modal_specification.yaml", target: "add_new_task_modal_specification.yaml" },
+      ]);
+    } finally {
+      process.chdir(before);
+    }
+  });
+
   it("rejects an invalid specification order", () => {
     expect(() => plainFileParser("invalid_specification_order.plain", [dataPath("data/plainfile")])).toThrow(
-      "Syntax error at line 6: Definitions specification must be the first specification in the section",
+      "Syntax error at line 6 in module 'invalid_specification_order': Definitions specification must be the first specification in the section (`definitions`)",
     );
   });
 
   it("rejects a duplicate specification heading in a file", () => {
     expect(() =>
       plainFileParser("duplicate_specification_heading.plain", [dataPath("data/plainfile")]),
-    ).toThrow("Syntax error at line 6: Duplicate specification heading (`definitions`)");
+    ).toThrow("Syntax error at line 6 in module 'duplicate_specification_heading': Duplicate specification heading (`definitions`)");
   });
 
   it("rejects missing implementation reqs", () => {
@@ -230,7 +289,9 @@ description: 'Plain file with frontmatter'
   it("rejects an empty functional specs section", () => {
     expect(() =>
       plainFileParser("empty_functional_specs_section.plain", [dataPath("data/plainfile")]),
-    ).toThrow("has an empty 'functional specs' section");
+    ).toThrow(
+      "has a 'functional specs' section without a `# <func-id>` heading. A functionality is a `# <func-id>` heading followed by its body; the previous syntax is not supported.",
+    );
   });
 
   it("renders indented include tags", () => {
@@ -317,9 +378,10 @@ description: 'Plain file with frontmatter'
 - Second implementation requirement.
 
 ***functional specs***
-- Implement something nice and useful
-    - the nice thing should be really ${keys[0]}
-    - the useful thing should be really useful
+# implement
+Implement something nice and useful
+  - the nice thing should be really ${keys[0]}
+  - the useful thing should be really useful
 `);
 
     const [, parsed] = plainFileParser("code_variables.plain", [dataPath("data/templates")]);
@@ -331,8 +393,12 @@ description: 'Plain file with frontmatter'
       ],
       "functional specs": [
         {
+          id: "implement",
           markdown:
-            "- Implement something nice and useful\n    - the nice thing should be really {{ variable_name }}\n    - the useful thing should be really useful",
+            "Implement something nice and useful\n  - the nice thing should be really {{ variable_name }}\n  - the useful thing should be really useful",
+          linked_resources: [],
+          conformance_tests: [],
+          acceptance_tests: [],
           code_variables: [{ name: "variable_name", value: "nice" }],
         },
       ],
@@ -359,9 +425,10 @@ description: 'Plain file with frontmatter'
 - Second implementation requirement ${keys[1]}.
 
 ***functional specs***
-- Implement something nice and useful
-    - the nice thing should be really ${keys[2]}
-    - the useful thing should be really useful
+# implement
+Implement something nice and useful
+  - the nice thing should be really ${keys[2]}
+  - the useful thing should be really useful
 `);
 
     const [, parsed] = plainFileParser("template_include.plain", [dataPath("data/templates")]);
@@ -379,104 +446,149 @@ description: 'Plain file with frontmatter'
       ],
       "functional specs": [
         {
+          id: "implement",
           markdown:
-            "- Implement something nice and useful\n    - the nice thing should be really {{ variable_name_1 }}\n    - the useful thing should be really useful",
+            "Implement something nice and useful\n  - the nice thing should be really {{ variable_name_1 }}\n  - the useful thing should be really useful",
+          linked_resources: [],
+          conformance_tests: [],
+          acceptance_tests: [],
           code_variables: [{ name: "variable_name_1", value: "nice" }],
         },
       ],
     });
   });
 
-  it("keeps structure for a block level include with a trailing newline", () => {
+  it("keeps structure for a block level include with a trailing newline in a functionality body", () => {
     expect(() => plainFileParser("block_level_include.plain", [dataPath("data/templates")])).not.toThrow();
   });
 
-  it("rejects top level acceptance tests", () => {
-    const plainSource = `
-***acceptance tests***
+  const SPEC_HEAD = "***definitions***\n\n- :Task: is a thing to do.\n\n***implementation reqs***\n\n- A req.\n\n";
+  const marshal = (plainSource: string) => marshallPlainSource(parsePlainSource(plainSource, {}, [], [], []).plainSource);
+  const messageOf = (run: () => unknown) => {
+    try {
+      run();
+    } catch (error) {
+      expect(error).toBeInstanceOf(PlainSyntaxError);
+      return (error as Error).message;
+    }
+    throw new Error("it parsed");
+  };
+  const item = (id: string, markdown: string) => ({ id, markdown, linked_resources: [], conformance_tests: [], acceptance_tests: [] });
 
-- Test something.
-`;
-    expect(() => parsePlainSource(plainSource, {}, [], [], [])).toThrow(
-      "Syntax error at line 2: acceptance tests heading should be nested under specific functional spec.",
+  it("reads a functionality as its heading's id and its body", () => {
+    const plainSource =
+      SPEC_HEAD +
+      "***functional specs***\n\n" +
+      "# add-task\nA :Task: can be added.\nIt gets an id.\n  - Only a :Task: with a name is added.\n    - The name is trimmed.\n\n" +
+      "# list-tasks\n> A comment between the heading and the body.\n\nEvery :Task: is listed.\n";
+    expect(marshal(plainSource)[FUNCTIONAL_REQUIREMENTS]).toEqual([
+      item("add-task", "A :Task: can be added.\nIt gets an id.\n  - Only a :Task: with a name is added.\n    - The name is trimmed."),
+      item("list-tasks", "Every :Task: is listed."),
+    ]);
+  });
+
+  it("lets a functionality's body start with a list", () => {
+    const plainSource = SPEC_HEAD + "***functional specs***\n\n# add-task\n  - A :Task: can be added.\n";
+    expect((marshal(plainSource)[FUNCTIONAL_REQUIREMENTS] as Array<{ markdown: string }>)[0]!.markdown).toBe("  - A :Task: can be added.");
+  });
+
+  it("takes bullets without a heading for the previous syntax", () => {
+    expect(messageOf(() => plainFileParser("old_syntax_functional_specs.plain", [dataPath("data/plainfileparser")]))).toBe(
+      "Plain syntax error: Syntax error at line 11 in module 'old_syntax_functional_specs': Content before the " +
+        'first `# <func-id>` heading in the functional specs section (`Display "hello, world"`). A functionality is ' +
+        "a `# <func-id>` heading followed by its body; the previous syntax is not supported.",
     );
   });
 
-  it("rejects top level acceptance tests after other headings", () => {
-    const plainSource = `***definitions***
-
-- :concept: is a concept.
-
-***acceptance tests***
-
-- Test something.
-`;
-    expect(() => parsePlainSource(plainSource, {}, [], [], [])).toThrow(
-      "Syntax error at line 5: acceptance tests heading should be nested under specific functional spec.",
+  it("takes a list flush left after a heading as the body", () => {
+    const plainSource = SPEC_HEAD + "***functional specs***\n\n# add-task\nA :Task: can be added.\n\n- A :Task: has a name.\n    - Deeper, four spaces in.\n";
+    expect((marshal(plainSource)[FUNCTIONAL_REQUIREMENTS] as Array<{ markdown: string }>)[0]!.markdown).toBe(
+      "A :Task: can be added.\n\n- A :Task: has a name.\n    - Deeper, four spaces in.",
     );
   });
 
-  it("rejects acceptance tests nested under definitions", () => {
-    const plainSource = `***definitions***
-
-- :concept: is a concept.
-
-    ***acceptance tests***
-
-    - Test the :concept:.
-
-***functional specs***
-
-- Display "hello, world"
-`;
-    expect(() => parsePlainSource(plainSource, {}, [], [], [])).toThrow(
-      "Syntax error at line 5: acceptance tests heading should be nested under specific functional spec.",
+  it.each(["acceptance tests", "conformance tests"])("rejects a %s section in a spec plain file", (heading) => {
+    const plainSource = `***definitions***\n\n- :Task: is a thing to do.\n\n***${heading}***\n\n# add\nAdding works.\n`;
+    expect(messageOf(() => parsePlainSource(plainSource, {}, [], [], []))).toBe(
+      `Plain syntax error: Syntax error at line 5: The \`${heading}\` section is not allowed in a spec plain file; test scenarios live in test plain files.`,
     );
   });
 
-  it("rejects acceptance tests nested under implementation reqs", () => {
-    const plainSource = `***implementation reqs***
+  it("rejects an acceptance tests section nested under a functionality", () => {
+    const plainSource =
+      SPEC_HEAD + "***functional specs***\n\n# add-task\nA :Task: can be added.\n\n    ***acceptance tests***\n\n    - Adding a :Task: shows it.\n";
+    expect(messageOf(() => parsePlainSource(plainSource, {}, [], [], []))).toContain("Syntax error at line 14: The `acceptance tests` section");
+  });
 
-- First implementation requirement.
-
-    ***acceptance tests***
-
-    - Test something.
-`;
-    expect(() => parsePlainSource(plainSource, {}, [], [], [])).toThrow(
-      "Syntax error at line 5: acceptance tests heading should be nested under specific functional spec.",
+  it("rejects a heading outside the functional specs", () => {
+    expect(messageOf(() => parsePlainSource("***implementation reqs***\n\n# add-task\n- A req.\n", {}, [], [], []))).toContain(
+      "Syntax error at line 3: A `# <func-id>` heading is allowed only in the functional specs section (`add-task`).",
     );
   });
 
-  it("rejects acceptance tests nested under test reqs", () => {
-    const plainSource = `***test reqs***
-
-- First test requirement.
-
-    ***acceptance tests***
-
-    - Test something.
-`;
-    expect(() => parsePlainSource(plainSource, {}, [], [], [])).toThrow(
-      "Syntax error at line 5: acceptance tests heading should be nested under specific functional spec.",
+  it("rejects a heading of another level", () => {
+    expect(messageOf(() => parsePlainSource(SPEC_HEAD + "***functional specs***\n\n## add-task\nA :Task: can be added.\n", {}, [], [], []))).toContain(
+      "Syntax error at line 11: Invalid heading level 2 (`add-task`). A functionality heading is `# <func-id>`.",
     );
   });
 
-  it("allows acceptance tests nested under a functional spec", () => {
-    const plainSource = `***definitions***
+  it("rejects a func-id with other characters", () => {
+    expect(messageOf(() => plainFileParser("func_id_invalid.plain", [dataPath("data/plainfileparser")]))).toBe(
+      "Plain syntax error: Syntax error at line 10 in module 'func_id_invalid': Invalid func-id (`Add Task 2`). " +
+        "A func-id is lowercase letters and digits, with single hyphens between them.",
+    );
+  });
 
-- :concept: is a concept.
+  it.each(["#", "# ", "# add_task", "# add-task!", "# Ädd", "# -add-task", "# add-task-", "# add--task", "# -", "# ---"])(
+    "checks the syntax of the func-id in %j",
+    (heading) => {
+      expect(messageOf(() => parsePlainSource(SPEC_HEAD + `***functional specs***\n\n${heading}\nA :Task: can be added.\n`, {}, [], [], []))).toContain(
+        "Syntax error at line 11: Invalid func-id",
+      );
+    },
+  );
 
-***functional specs***
+  it("rejects a func-id used twice", () => {
+    expect(messageOf(() => plainFileParser("func_id_duplicate.plain", [dataPath("data/plainfileparser")]))).toBe(
+      "Plain syntax error: Syntax error at line 13 in module 'func_id_duplicate': Duplicate func-id `add-task`; it is first used at line 7.",
+    );
+  });
 
-- Display "hello, world"
+  it.each(["A :Task: can be added.", "  - A :Task: can be added."])("rejects content before the first heading: %j", (content) => {
+    const plainSource = SPEC_HEAD + `***functional specs***\n\n${content}\n\n# add-task\nA :Task: can be added.\n`;
+    expect(messageOf(() => parsePlainSource(plainSource, {}, [], [], []))).toContain(
+      "Syntax error at line 11: Content before the first `# <func-id>` heading in the functional specs section " +
+        "(`A :Task: can be added.`). A functionality is a `# <func-id>` heading followed by its body; the " +
+        "previous syntax is not supported.",
+    );
+  });
 
-    ***acceptance tests***
+  it.each(["\n# list-tasks\nEvery :Task: is listed.\n", "\n***test reqs***\n\n- A test req.\n", "", "\n> Only a comment.\n"])(
+    "rejects a functionality without a body, followed by %j",
+    (tail) => {
+      expect(messageOf(() => parsePlainSource(SPEC_HEAD + "***functional specs***\n\n# add-task\n" + tail, {}, [], [], []))).toContain(
+        "Syntax error at line 11: Functionality `add-task` has no body.",
+      );
+    },
+  );
 
-    - Test the :concept:.
-`;
-    const result = parsePlainSource(plainSource, {}, [], [], []);
-    expect(FUNCTIONAL_REQUIREMENTS in result.plainSource).toBe(true);
+  it("takes any block after a heading as the body", () => {
+    const plainSource =
+      SPEC_HEAD +
+      "***functional specs***\n\n# add-task\nA :Task: can be added.\n\n```\ntodo add\n```\n\n" +
+      "| id | name |\n|---|---|\n| 1 | Buy milk |\n\n# list-tasks\nEvery :Task: is listed.\n";
+    const functionalities = marshal(plainSource)[FUNCTIONAL_REQUIREMENTS] as Array<{ markdown: string }>;
+    // The table is re-rendered with padded cells; the blank lines between the blocks are kept.
+    expect(functionalities[0]!.markdown).toBe(
+      "A :Task: can be added.\n\n```\ntodo add\n```\n\n| id  | name     |\n| --- | -------- |\n| 1   | Buy milk |",
+    );
+    expect(functionalities[1]!.markdown).toBe("Every :Task: is listed.");
+  });
+
+  it("still rejects a block in a list section", () => {
+    expect(messageOf(() => parsePlainSource("***implementation reqs***\n\n- A req.\n\n```\ncode\n```\n", {}, [], [], []))).toContain(
+      "Syntax error at line 5: Invalid source structure",
+    );
   });
 
   describe("concept validation", () => {
@@ -484,7 +596,7 @@ description: 'Plain file with frontmatter'
 
     it("accepts valid definitions and rejects malformed ones", () => {
       expect(() => parse("concept_validation_definition.plain")).not.toThrow();
-      expect(() => parse("concept_validation_noconcepts.plain")).toThrow(PlainSyntaxError);
+      expect(() => parse("concept_validation_noconcepts.plain")).toThrow("Invalid definition specification text");
     });
 
     it("checks concept usage", () => {
@@ -495,7 +607,7 @@ description: 'Plain file with frontmatter'
     });
 
     it("rejects redefinition", () => {
-      expect(() => parse("concept_validation_redefinition.plain")).toThrow(PlainSyntaxError);
+      expect(() => parse("concept_validation_redefinition.plain")).toThrow("Concepts were defined multiple times");
     });
 
     it("allows non-concept usage", () => {
@@ -506,10 +618,6 @@ description: 'Plain file with frontmatter'
       expect(() => parse("concept_validation_several_concepts.plain")).not.toThrow();
     });
 
-    it("validates concepts inside acceptance tests", () => {
-      expect(() => parse("concept_validation_acceptance_tests.plain")).not.toThrow();
-      expect(() => parse("concept_validation_acceptance_tests_nondefined.plain")).toThrow(PlainSyntaxError);
-    });
   });
 
   describe("module directives", () => {
@@ -523,11 +631,28 @@ description: 'Plain file with frontmatter'
       expect(() => parse("required_concepts_partial_duplicate.plain")).toThrow(PlainSyntaxError);
     });
 
-    it("resolves exported concepts", () => {
-      expect(() => parse("exported_concepts_example.plain")).not.toThrow();
-      expect(() => parse("exported_concepts_nested_example.plain")).not.toThrow();
-      expect(() => parse("exported_concepts_missing_example.plain")).toThrow(PlainSyntaxError);
-      expect(() => parse("exported_concepts_transitive_example.plain")).toThrow(PlainSyntaxError);
+    it.each([
+      "exported_concepts_example.plain",
+      "exported_concepts_imported_exported.plain",
+      "exported_concepts_multiple_per_bullet.plain",
+      "exported_concepts_nested_example.plain",
+    ])("accepts the exported concepts of %s", (fixture) => {
+      expect(() => parse(fixture)).not.toThrow();
+    });
+
+    it.each([
+      ["exported_concepts_defaults_exported.plain", "cannot export default concept"],
+      ["exported_concepts_inherited_reexported.plain", "cannot be re-exported"],
+      ["exported_concepts_malformed.plain", "exports an invalid concept"],
+      ["exported_concepts_missing_definition_example.plain", "'exported_concepts_missing_definition' exports"],
+      ["exported_concepts_missing_definition.plain", "exports undefined concept"],
+      ["exported_concepts_multiple_per_bullet_undefined.plain", "exports undefined concept"],
+      ["exported_concepts_no_definitions.plain", "exports undefined concept"],
+      ["exported_concepts_not_declared_example.plain", "not defined"],
+      ["exported_concepts_transitive_example.plain", "not defined"],
+    ])("rejects the exported concepts of %s, saying it %s", (fixture, expected) => {
+      expect(() => parse(fixture)).toThrow(PlainSyntaxError);
+      expect(() => parse(fixture)).toThrow(expected);
     });
   });
 
@@ -557,6 +682,57 @@ description: 'Plain file with frontmatter'
       { markdown: "- :Concept4: is a concept that depends on the :Concept3: concept." },
       { markdown: "- :Concept6: is a concept that depends on the :Concept1: and :Concept4: concepts." },
     ]);
+  });
+
+  describe("cyclic definitions", () => {
+    const parse = (name: string) => plainFileParser(name, [dataPath("data/plainfileparser")]);
+    const messageOf = (name: string) => {
+      try {
+        parse(name);
+      } catch (error) {
+        expect(error).toBeInstanceOf(PlainSyntaxError);
+        return (error as Error).message;
+      }
+      throw new Error(`${name} parsed`);
+    };
+
+    it("rejects a cycle in the definitions", () => {
+      expect(messageOf("cyclic_definitions.plain")).toMatch(/cycle\(s\) in concept definitions/);
+    });
+
+    it("reports every definition on the cycle, and none off it", () => {
+      const message = messageOf("cyclic_definitions_long.plain");
+      for (const definition of ["- :A: uses :B:.", "- :B: uses :C:.", "- :C: uses :A:."]) expect(message).toContain(definition);
+      expect(message).not.toContain("- :D: is on its own.");
+    });
+
+    it("finds a cycle across an import", () => {
+      const message = messageOf("cyclic_definitions_across_import.plain");
+      expect(message).toContain("Found 1 cycle");
+      expect(message).toContain("- :DependantConcept: is a concept that depends on the :Concept: concept.");
+      expect(message).toContain("- :Concept: is the concept that :DependantConcept: builds on.");
+    });
+
+    it("finds a cycle through a sub-bullet", () => {
+      const message = messageOf("cyclic_definitions_sub_bullet.plain");
+      expect(message).toContain("Cycle 1: :Order: -> :Customer: -> :Order:");
+      expect(message).toContain("- :Order: is a purchase.\n  - It is placed by a :Customer:.");
+      expect(message).not.toContain(":Receipt:");
+    });
+  });
+
+  it("sorts definitions topologically across an import", () => {
+    const [, plainSource] = plainFileParser("required_concepts_module.plain", [dataPath("data/plainfileparser")]);
+    expect(plainSource[DEFINITIONS]).toEqual([
+      { markdown: "- :Concept: is a concept." },
+      { markdown: "- :DependantConcept: is a concept that depends on the :Concept: concept." },
+    ]);
+  });
+
+  it("names the module in a Liquid syntax error", () => {
+    expect(() => plainFileParser("unterminated_output.plain", [dataPath("data/templates")])).toThrow(
+      "Plain syntax error: Invalid Liquid at unterminated_output:",
+    );
   });
 
   it("rejects a non .plain extension", () => {

@@ -1,0 +1,10 @@
+***definitions***
+- :A: relates to :B:.
+- :B: relates to :A:.
+
+***implementation reqs***
+- The :A: concept must be implemented.
+
+***functional specs***
+# implement-a-wrapper-for-the
+Implement a wrapper for the :A: concept.

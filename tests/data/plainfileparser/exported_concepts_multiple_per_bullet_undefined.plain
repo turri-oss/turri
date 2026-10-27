@@ -1,0 +1,14 @@
+---
+exported_concepts:
+    - :NewConcept:, :OtherConcept:
+---
+
+***definitions***
+- :NewConcept: is a new concept.
+
+***implementation reqs***
+- The :NewConcept: concept must be implemented.
+
+***functional specs***
+# implement-a-wrapper-for-the
+Implement a wrapper for the :NewConcept: concept.

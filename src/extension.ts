@@ -1,5 +1,6 @@
 // Whether the terminal shows images, before anything draws: the banner's jellyfish is a picture or text.
 import "./terminal-images.ts";
+import { moduleOfTestPlainFile, refuseTestPlainFile, testPlainFileRefusal } from "./test-plain-files.ts";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
@@ -74,7 +75,6 @@ import { noticeDialogs, registerSentinel } from "./sentinel-chat.ts";
 import { currentChat } from "./chat-scope.ts";
 import { registerChats } from "./chat-commands.ts";
 import { turriIdentity } from "./environment.ts";
-import { conformanceChooser } from "./regenerate/choose-conformance.ts";
 import { answerSideQuestion, askWithAsides, BTW_HOW, runningSkill, skillRunStarted, skillSessionText, transcriptOf } from "./btw.ts";
 import {
   createJobRegistry,
@@ -993,10 +993,15 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
             ? "It changed no file in the project - whatever it said it wrote is not there. Say so to the user; do not report the work as done."
             : "It only reads: what it found is the artifact below.";
       // A skill that edits the specs with the file tools builds nothing: the change is the conversation's to render.
+      // A test plain file is its module's: the module is what regenerate is called for, its scenarios' tests brought up with it.
       const specsChanged = changes.filter((path) => path.endsWith(".plain"));
+      const named = specsChanged.map((path) => {
+        const owner = moduleOfTestPlainFile(resolve(cwd, path));
+        return owner === undefined ? path : `${path} (a test plain file of ${owner.plainFile !== undefined ? relative(cwd, owner.plainFile) : owner.module})`;
+      });
       const unrendered =
         specsChanged.length > 0 && !skill.allowedTools.includes("change_plain")
-          ? `${specsChanged.join(", ")} changed, and nothing is regenerated from that yet: call regenerate for it, and the code is brought up to the spec.`
+          ? `${named.join(", ")} changed, and nothing is regenerated from that yet: call regenerate for ${named.length === 1 ? "its module" : "their modules"}, and the code and its conformance tests are brought up to the spec.`
           : "";
       const gated = skill.steps.some((step) => step.gate !== undefined);
       const first = skill.allowedTools.includes("change_plain") ? firstRegeneration(jobs.list(), began) : {};
@@ -1045,7 +1050,7 @@ function registerRegenerate(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
   // by the planner: one functional spec at a time, a few together or the whole module in one, as it judges. What
   // follows the module is guidance for that plan, in the person's words.
   pi.registerCommand("regenerate", {
-    description: "Regenerate a module from its ***plain as it is now, in pulses the planner cuts - named functionalities though they did not change, or all of it from scratch, its whole chain too when asked: /regenerate [module | file.plain] [functionality ...] [from scratch [whole chain]] [how to cut the work]",
+    description: "Regenerate a module from its ***plain as it is now, in pulses the planner cuts - named functional specs though they did not change, or all of it from scratch, its whole chain too when asked: /regenerate [module | file.plain] [module:func-id ...] [from scratch [whole chain]] [how to cut the work]",
     handler: async (args, ctx) => {
       const command = `/regenerate ${args.trim()}`.trim();
       await echoCommand(pi, command);
@@ -1057,10 +1062,10 @@ function registerRegenerate(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
         say(`There is no ${first} here.`, "error");
         return;
       }
-      // Functionalities named first, by id - 3, 2.1, fs 4 - as on the command line; what follows them is guidance.
+      // Functional specs named first, each as module:func-id, as on the command line; what follows them is guidance.
       const words = rest;
       const again: string[] = [];
-      while (words.length > 0 && /^(fs)?\d+(\.\d+)*,?$/i.test(words[0]!)) again.push(words.shift()!.replace(/^fs/i, "").replace(/,$/, ""));
+      while (words.length > 0 && /^[^\s:]+:[a-z0-9-]+,?$/.test(words[0]!)) again.push(words.shift()!.replace(/,$/, ""));
       const guidance = words.join(" ").trim();
       let plainFile = named;
       if (plainFile === undefined) {
@@ -1079,7 +1084,7 @@ function registerRegenerate(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
       }
       const check = checkPlainFile(plainFile);
       if (!check.ok) {
-        say(`${relative(cwd, plainFile) || plainFile} does not parse, so nothing can be regenerated from it yet: ${check.error}`, "error");
+        say(`${relative(cwd, plainFile) || plainFile} does not parse, so nothing can be regenerated from it yet:\n${formatCheckResults([check])}`, "error");
         return;
       }
       // From scratch - started over, its code deleted - asked in the person's words: started at once, as asked.
@@ -1088,7 +1093,7 @@ function registerRegenerate(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
       const chain = scratch && asksWholeChain(guidance);
       const module = basename(plainFile).replace(/\.plain$/, "");
       if (scratch && again.length > 0) {
-        say("Name functionalities or ask for it from scratch, not both: from scratch regenerates every one of them.", "warning");
+        say("Name functional specs or ask for it from scratch, not both: from scratch regenerates every one of them.", "warning");
         return;
       }
       const loop = workLoopFor(jobs, cwd, ctx);
@@ -1100,7 +1105,7 @@ function registerRegenerate(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
         scratch
           ? `Deleting ${module}'s code${chain ? " and its whole chain's" : ""}, then planning all of it again…`
           : again.length > 0
-            ? `Planning ${module}'s functionalit${again.length === 1 ? "y" : "ies"} ${again.join(", ")} again…`
+            ? `Planning ${again.join(", ")} again…`
             : `Planning ${module}'s pulses…`,
         "info",
       );
@@ -1121,7 +1126,7 @@ function registerRegenerate(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
           // Nothing to do: say how to build it again anyway.
           const upToDate = statuses.length > 0 && statuses.every(isUpToDate);
           const hint = upToDate
-            ? `\nTo regenerate parts of it anyway, name their functionalities - /regenerate ${basename(target)} 2.1 - or start over with /regenerate ${basename(target)} from scratch.`
+            ? `\nTo regenerate parts of it anyway, name their functional specs - /regenerate ${basename(target)} ${module}:<func-id> - or start over with /regenerate ${basename(target)} from scratch.`
             : "";
           // Pulses started: the agent says so, and that the person need not wait - a plan alone leaves the chat silent.
           shownAfterCommand(pi, ctx, command, describeModules(statuses) + hint, "info", true, upToDate ? undefined : COMMAND_STARTED_REACTION);
@@ -1219,7 +1224,8 @@ export function moduleNamedFirst(cwd: string, words: string[]): { named?: string
 function plainFileNamed(cwd: string, word: string): string | undefined {
   for (const candidate of [word, `${word}.plain`]) {
     const path = resolve(cwd, candidate);
-    if (path.endsWith(".plain") && existsSync(path)) return path;
+    // A test plain file names no module: it is refused where the module is taken.
+    if (path.endsWith(".plain") && existsSync(path) && testPlainFileRefusal(path) === undefined) return path;
   }
   return undefined;
 }
@@ -1255,33 +1261,26 @@ function conformTool(options: {
     name: "conform",
     label: "Conform",
     description:
-      "Write and run the black-box conformance tests of a module's functional specs - the ones named, or every one - on " +
-      "the code as it is built, in a pulse of their own - every functional spec tested in one, as far as a size guardrail " +
-      "lets, or one a functional spec when the user asks for that: each writes its tests from the spec's test reqs and acceptance " +
-      "tests, runs them with the whole suite the module inherits, and, where one fails, fixes the test or the code, " +
-      "whichever is wrong. What they are written for is recorded apart from the code. For this session, whatever the " +
-      "config's conformance-tests says. Functional specs not built yet can be named: the conformance pulse is scheduled at " +
-      "once and starts when the module's code is built - every code pulse of it landed - before anything is built on it. A functional spec " +
-      "the spec does not have, or a module without test reqs, is refused. A conformance pulse checks, as it starts, that " +
-      "the code record has every functional spec it tests, and does not start otherwise.",
-    promptSnippet: "conform: write and run conformance tests for functional specs - now, or ahead of their code",
+      "Write and run the black-box conformance tests of a module's functional specs - the ones named, or every one with " +
+      "scenarios - on the code as it is built, in a pulse of their own - every functional spec tested in one, as far as a size " +
+      "guardrail lets, or one a functional spec when the user asks for that: each implements exactly the functional spec's " +
+      "conformance and acceptance scenarios, at least one test each, by the spec's test reqs, runs them with the whole suite " +
+      "the module inherits, and, where one fails, fixes the test or the code, whichever is wrong. What they are written for is " +
+      "recorded apart from the code. The work loop starts these pulses by itself for every functional spec with scenarios whose " +
+      "tests are behind, once the module's code is built; conform starts them now, or for the functional specs named. A " +
+      "functional spec with no scenarios - an empty test plain file - is refused: there is nothing to test until scenarios " +
+      "are written. So is one the spec does not have, or a module without test reqs.",
+    promptSnippet: "conform: write and run the conformance tests of functional specs with scenarios",
     promptGuidelines: [
-      "When the user asks for conformance tests - for a module, or some of its functional specs - call conform. Never edit config.turri.yaml for it, and never regenerate a functionality to get them.",
-      "Under conformance-tests: chosen or module, the chooser decides which functional specs get conformance tests - under chosen as each code pulse ends, under module once the whole module is regenerated - and a pulse's report says what it chose and why. You do not choose them: call conform only when the user asks for conformance tests. The ones named are added to those chosen before; a functional spec tested already keeps its tests.",
-      "What the user asks for comes first: for a module already regenerated, while a module built on it is being regenerated, conform stops that pulse, deletes the codebase built on it, writes the tests, and the module above is regenerated from it after - say so. For a module not regenerated yet - one above the one being regenerated - the tests are scheduled now and written once its code is built, before anything is built on it.",
+      "What is tested is the scenarios: a functional spec's conformance and acceptance scenarios, in its test plain file, tests/<module>/<func-id>.plain. When the user asks for conformance tests, decide in a sentence or two which scenarios to write, and write them with change_plain - a test plain file's ***conformance tests*** and ***acceptance tests***, each scenario a # <scenario-id> heading and its text. Every scenario written is tested once the code is built: the loop starts the conformance pulse by itself. Never edit config.turri.yaml for it, and never regenerate a functionality to get them.",
+      "Call conform when the user asks for the conformance tests to be written or run now, for a module or some of its functional specs with scenarios.",
+      "What the user asks for comes first: for a module already regenerated, while a module built on it is being regenerated, conform stops that pulse, deletes the codebase built on it, writes the tests, and the module above is regenerated from it after - say so. For a module not regenerated yet, its tests are written once its code is built, before anything is built on it.",
       "Conformance tests go in one pulse for all the functional specs tested. Set one_by_one only when the user asks for a pulse a functional spec - one at a time, separately, or the like.",
-      "When the user asks for the conformance tests in pulses of their own grouping - 1-3 and 4-6 - pass those groups as groups, in one call: each group is a pulse of its own, never sharing one with another. Without groups, every functional spec named goes in one pulse.",
-      "A conformance pulse that did not start because its code is not built: tell the user which functional specs it waits for, and which code pulse builds them.",
     ],
     parameters: Type.Object({
       plain_file: Type.String({ description: "A .plain file of the module" }),
       working_dir: WORKING_DIR_PARAM,
-      frids: Type.Optional(Type.Array(Type.String(), { description: "The functional specs to test, by id - added to those chosen before. Omitted: every one" })),
-      groups: Type.Optional(
-        Type.Array(Type.Array(Type.String()), {
-          description: "Only when the user asks for them in pulses of their own grouping: the functional specs by id, a list a pulse - [[\"1\",\"2\",\"3\"],[\"4\",\"5\",\"6\"]]. Each is tested in a pulse of its own; they are added to those chosen, as frids are",
-        }),
-      ),
+      funcIds: Type.Optional(Type.Array(Type.String(), { description: "The functional specs to test, each as module:func-id (todo:add-task) - each with scenarios. Omitted: every one with scenarios" })),
       one_by_one: Type.Optional(
         Type.Boolean({ description: "Only when the user asks for it: a pulse a functional spec. Omitted: every functional spec tested in one pulse, as far as the size guardrail lets" }),
       ),
@@ -1292,12 +1291,12 @@ function conformTool(options: {
     async execute(_id, given, _signal, _onUpdate, ctx) {
       const params = fromWorkingDir(cwd, given);
       const plainFile = resolve(params.base, params.plain_file);
+      refuseTestPlainFile(plainFile);
       return withCallStack(plainFile, params.stack, async () => {
         const model = options.model(ctx, plainFile, params.model);
         const loop = options.loop(ctx);
         const statuses = await loop.conformance(plainFile, {
-          ...(params.frids !== undefined ? { frids: params.frids } : {}),
-          ...(params.groups !== undefined ? { groups: params.groups } : {}),
+          ...(params.funcIds !== undefined ? { funcIds: params.funcIds } : {}),
           ...(model !== undefined ? { model } : {}),
           ...(params.one_by_one === true ? { separately: true } : {}),
         });
@@ -1327,6 +1326,7 @@ function registerGlimpse(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
     async execute(_id, given, _signal, _onUpdate, ctx) {
       const params = fromWorkingDir(cwd, given);
       const plainFile = resolve(params.base, params.plain_file);
+      refuseTestPlainFile(plainFile);
       return withCallStack(plainFile, params.stack, async () => {
         const running = new Set(workLoopFor(jobs, cwd, ctx).status().filter((status) => status.running !== undefined).map((status) => status.module));
         const planner = chatModelOf(ctx);
@@ -1513,15 +1513,9 @@ export function projectConfigBlock(root: string): string {
       heading,
       ...[
         config.module !== undefined && of !== "stack" ? `- module: ${config.module}${where} - the module to build when the user does not name one.` : undefined,
-        config.conformanceTests === false
-          ? "- conformance-tests: false - conformance tests are OFF: no new ones are written, unless the user asks for them in this conversation. The ones there are are kept up to date: a functional spec that has conformance tests and is regenerated - changed, regenerated again or taken out - gets a conformance pulse for it alone once its code lands. A functional spec with none gets none."
-          : config.conformanceTests === "chosen"
-            ? "- conformance-tests: chosen - conformance tests are on for the functional specs chosen: those with acceptance tests always, those the chooser picks as each code pulse ends from what it regenerated, and those the user asks for with conform. A conformance pulse starts once the module's code is built, before anything is built on it. Once chosen, a functional spec keeps them."
-            : config.conformanceTests === "module"
-            ? "- conformance-tests: module - conformance tests are on for the functional specs chosen: those with acceptance tests always, those the chooser picks - and plans into pulses - once the whole module is regenerated, and those the user asks for with conform. They run before anything is built on the module. Once chosen, a functional spec keeps them."
-            : config.conformanceTests === true
-            ? "- conformance-tests: all - conformance tests are on, for every functional spec of every module that has test reqs."
-            : "- conformance-tests: not set - conformance tests are OFF, as with false: no new ones are written, unless the user asks for them in this conversation; the ones there are are kept up to date - a functional spec that has them and is regenerated gets a conformance pulse for it alone once its code lands.",
+        of !== "stack"
+          ? "- conformance tests: written for every functional spec with scenarios - the conformance and acceptance scenarios of its test plain file - once the module's code is built, before anything is built on it. A functional spec with an empty test plain file is not tested. To have one tested, write its scenarios with change_plain."
+          : undefined,
         config.review === true
           ? "- review: true - the code and its tests are reviewed once they pass: two reviews at most, the arbiter weighing the second."
           : `- review: ${config.review === false ? "false" : "not set, so off"} - the code and its tests are not reviewed: a pulse lands once its tests pass.`,
@@ -1779,9 +1773,6 @@ function workLoopFor(jobs: JobRegistry, cwd: string, ctx: ExtensionContext): Wor
       modelFor: (plainFile) => modelFor(chosenModels, "spec_changes", projectModel(from.ctx, plainFile) ?? chatModelOf(from.ctx)),
       // The planner reasons about the whole of the work: it runs on the chat's model.
       plannerModel: () => chatModelOf(from.ctx),
-      // Under conformance-tests: chosen or module, the chooser decides as a pulse ends - on the chat's model - so the choice
-      // is made before anything is built on the module; the pulse's report says what it chose, and why.
-      onChoose: conformanceChooser({ model: () => chatModelOf(from.ctx) }),
       // How the work is to be planned: the conversation's steering, and AGENTS.md's - read afresh each plan.
       steering: (plainFile) => steeringFor(plainFile, cwd, steeringStore),
       // Under release-after-pulse, a pulse releases what it landed itself, before the next starts - on the model that
@@ -2323,7 +2314,7 @@ function sidePanelOf(jobs: JobRegistry, cwd: string): SidePanelHost {
             warning: (text) => theme.fg("warning", text),
             added: (text) => theme.fg("toolDiffAdded", text),
             removed: (text) => theme.fg("toolDiffRemoved", text),
-            // A spec diff's ***plain highlighted as plyn highlights it, and its added and removed lines filled.
+            // A spec diff's ***plain highlighted by turri's grammar, and its added and removed lines filled.
             diff: plainPaint(theme),
             // What conformance tests show does what its spec says: neon.
             conforms: brandNeon(theme),
@@ -2677,9 +2668,11 @@ function checkPlainTool(cwd: string) {
     name: "validate",
     label: "Validate spec",
     description:
-      "Validate one or more .plain specifications without rendering: parses each file, resolves its " +
-      "imports and required modules, and reports every syntax, concept and structure error with the " +
-      "line it is on. Pass a directory to check every .plain file in it. Fast, free, and offline.",
+      "Validate one or more .plain modules without rendering: parses each with its test plain files, resolves its " +
+      "imports and required modules, and reports every syntax, concept and structure error with the line it is on, " +
+      "every functional spec without a test plain file, and every test plain file outside its module's folder. A " +
+      "module that passes lists each functional spec with its test plain file and its scenarios. Pass a directory to " +
+      "check every .plain module in it; a test plain file or test folder is refused - name its module. Fast, free, and offline.",
     promptSnippet: "validate a .plain spec, regenerating nothing",
     promptGuidelines: [
       "Run validate after editing a .plain file, and before telling the user a spec is valid or ready. Never shell out to another renderer to check one.",
@@ -2761,7 +2754,7 @@ function specConflictTask(conflict: SpecConflict): string {
     describeSpecConflict(conflict),
     "",
     `The render stopped on it: the conformance run's judge found them conflicting, ${conflict.reasons.length} times -`,
-    `functional spec ${one!.frid} of ${one!.module} (${one!.plainFile}) and functional spec ${two!.frid} of ${two!.module} (${two!.plainFile}). Now:`,
+    `functional spec ${one!.module}:${one!.funcId} (${one!.plainFile}) and functional spec ${two!.module}:${two!.funcId} (${two!.plainFile}). Now:`,
     "1. Run the analyze-2-func-specs skill (cultivate) on these two functional specs, to confirm they conflict.",
     "2. If they do, run the resolve-spec-conflict skill on the pair, to work out what could be changed - but change nothing yet.",
     "3. Tell the user exactly what the conflict is - both specs as they read, and the behaviour that cannot satisfy both -",

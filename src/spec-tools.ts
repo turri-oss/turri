@@ -1,11 +1,9 @@
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { resolve } from "node:path";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { plainFileParser } from "./plain/parser.ts";
-import { importingModules, isImportModule } from "./regenerate/requires.ts";
-import { resolveTemplateDirs } from "./regenerate/paths.ts";
+import { checkTouchedPlain, formatCheckResults } from "./plain/check.ts";
 import { applySpecDiff, plainFilesOf, revertSpecDiff } from "./regenerate/regenerate.ts";
-import { MissingFunctionalitiesError } from "./plain/errors.ts";
+import { refuseTestPlainFile } from "./test-plain-files.ts";
 import { describeModules, type WorkLoop } from "./regenerate/loop.ts";
 import { reviewNote, type LiveReviewer } from "./tools.ts";
 import { STACK_PARAM, stacklessBuild, withCallStack } from "./loop-tools.ts";
@@ -57,10 +55,13 @@ export function createSpecDiffTools(options: {
       "Apply a change to the ***plain specs, given as a git diff of the .plain files, and start building it in " +
       "the background. The diff is applied with git; if the specs no longer parse, it is undone and nothing is " +
       "built. Any section may change - definitions, implementation reqs, functional specs, added, changed or removed - and " +
-      "every change is built, whatever it touches.",
+      "every change is built, whatever it touches. A diff may touch test plain files too - tests/<module>/<func-id>.plain, " +
+      "a functional spec's conformance and acceptance scenarios: a new functional spec needs its test plain file in the " +
+      "same diff, with no scenario in it or with some.",
     promptSnippet: "apply a git diff of the .plain specs and start building it",
     promptGuidelines: [
       "Every change to a .plain file in the product phase goes through change_plain, as a git diff with paths relative to the project root. It writes the change and starts its build in one step.",
+      "A functional spec is a `# <func-id>` heading and its text; each has a test plain file, tests/<module>/<func-id>.plain, written in the same diff as the spec: its `module:` and `func_id:`, then `***conformance tests***` and `***acceptance tests***`, each scenario a `# <scenario-id>` heading and its text. plain_file stays the module's .plain file when the diff touches only its test plain files.",
       skillPaced
         ? "One change per answer, and a new one only after the user has answered a question about it. Set fixes_earlier to correct something already written."
         : "Write the changes one after another, on your own: no answer is needed between them, and none is asked for. Set fixes_earlier to correct something already written.",
@@ -94,30 +95,16 @@ export function createSpecDiffTools(options: {
       const touched = plainFilesOf(params.diff);
       if (touched.length === 0) throw new Error("The diff changes no .plain file. Nothing was written.");
 
+      refuseTestPlainFile(resolve(cwd, params.plain_file));
       const result = applySpecDiff(params.diff, cwd);
-      // A change that breaks a spec is not written at all, so nothing is ever built from a
-      // file that cannot be parsed. A module with no functional specs yet is not broken. An import
-      // module - definitions only, say - is not a module of its own: it is parsed as the modules
-      // that import it read it, the one the change is built for among them.
-      const toParse = [
-        ...new Set(
-          [params.plain_file, ...touched].flatMap((file) => {
-            const path = resolve(cwd, file);
-            const importing = isImportModule(path) ? importingModules(path) : [];
-            return importing.length > 0 ? importing : [path];
-          }),
-        ),
-      ];
-      for (const path of toParse) {
-        const file = relative(cwd, path);
-        try {
-          plainFileParser(basename(path), resolveTemplateDirs(path), { allowNoFunctionalities: true });
-        } catch (error) {
-          if (error instanceof MissingFunctionalitiesError) continue;
-          if (result === "applied") revertSpecDiff(params.diff, cwd);
-          const reason = error instanceof Error ? error.message : String(error);
-          throw new Error(`Nothing was written: with this change ${file} no longer parses. ${reason}`);
-        }
+      // A change that breaks a spec is not written at all, so nothing is ever built from a file that cannot be parsed:
+      // each module it touched is parsed with its test plain files - an import module as the modules that import it
+      // read it, a test plain file as its module - as validate parses them. A module with no functional specs yet is
+      // not broken.
+      const failed = checkTouchedPlain([params.plain_file, ...touched].map((file) => resolve(cwd, file))).filter((check) => !check.ok);
+      if (failed.length > 0) {
+        if (result === "applied") revertSpecDiff(params.diff, cwd);
+        throw new Error(`Nothing was written: with this change the ***plain no longer checks.\n${formatCheckResults(failed)}`);
       }
       if (params.fixes_earlier !== true) answeredSinceLastDiff = false;
       owed = false;

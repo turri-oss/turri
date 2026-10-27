@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { writePlain } from "./test-plain.ts";
 import { checkPlainFile } from "../src/plain/check.ts";
 import { plainFileParser } from "../src/plain/parser.ts";
 import { resolveTemplateDirs } from "../src/regenerate/paths.ts";
@@ -27,7 +28,7 @@ const stacks = templates.filter(isStack);
 const text = (name: string) => templates.find((template) => template.name === name)!.text;
 const kindOf = (name: string) => name.split("/")[1]!;
 const importing = (...names: string[]) =>
-  `---\nimport:\n${names.map((name) => `  - ${name}\n`).join("")}---\n\n***definitions***\n\n- :Greeting: is the text \`hello\`.\n\n***functional specs***\n\n- The app answers with :Greeting:.\n`;
+  `---\nimport:\n${names.map((name) => `  - ${name}\n`).join("")}---\n\n***definitions***\n\n- :Greeting: is the text \`hello\`.\n\n***functional specs***\n\n# answer\nThe app answers with :Greeting:.\n`;
 const parse = (file: string) => plainFileParser(file, resolveTemplateDirs(join(root, file)))[1];
 
 describe("the standard library", () => {
@@ -44,7 +45,7 @@ describe("the standard library", () => {
   });
 
   it.each(stacks.map((template) => template.name))("gives a spec importing %s its stack's, its language's and its kind's implementation reqs, no test reqs, and no concept of its own", (name) => {
-    writeFileSync(join(root, "app.plain"), importing(name));
+    writePlain(root, "app.plain", importing(name));
     const result = checkPlainFile(join(root, "app.plain"));
     expect(result.ok, result.ok ? "" : result.error).toBe(true);
     const tree = parse("app.plain");
@@ -65,7 +66,7 @@ describe("the standard library", () => {
   it.each(stacks.map((template) => template.name))("has conformance tests for %s apart, as test reqs only - its own and its kind's", (name) => {
     const conformance = conformanceOf(name);
     expect(templates.map((template) => template.name)).toContain(conformance);
-    writeFileSync(join(root, "app.plain"), importing(name, conformance));
+    writePlain(root, "app.plain", importing(name, conformance));
     const result = checkPlainFile(join(root, "app.plain"));
     expect(result.ok, result.ok ? "" : result.error).toBe(true);
     const tests = (parse("app.plain")["test reqs"] ?? []).map((item) => item.markdown).join("\n");
@@ -80,14 +81,14 @@ describe("the standard library", () => {
   ])("refuses a project module at a stdlib/ path %s - the name is reserved", (_where, folder) => {
     mkdirSync(join(root, folder, "stdlib", "backend"), { recursive: true });
     writeFileSync(join(root, folder, "stdlib", "backend", "python-fastapi.plain"), "***implementation reqs***\n\n- :Implementation: is the project's own FastAPI stack.\n");
-    writeFileSync(join(root, "app.plain"), importing("stdlib/backend/python-fastapi"));
+    writePlain(root, "app.plain", importing("stdlib/backend/python-fastapi"));
     const result = checkPlainFile(join(root, "app.plain"));
     expect(result.ok).toBe(false);
     expect(result.ok ? "" : result.error).toMatch(/'stdlib\/backend\/python-fastapi' is a reserved name .* but .*stdlib\/backend\/python-fastapi\.plain is a module of that name/);
   });
 
   it("says a stdlib/ name it does not have is not in the standard library, whatever the project holds", () => {
-    writeFileSync(join(root, "app.plain"), importing("stdlib/backend/cobol-cics"));
+    writePlain(root, "app.plain", importing("stdlib/backend/cobol-cics"));
     const result = checkPlainFile(join(root, "app.plain"));
     expect(result.ok ? "" : result.error).toContain("the standard library has no stdlib/backend/cobol-cics");
   });
@@ -95,7 +96,7 @@ describe("the standard library", () => {
   it("leaves every other import to the project's own folders", () => {
     mkdirSync(join(root, "template", "backend"), { recursive: true });
     writeFileSync(join(root, "template", "backend", "python-fastapi.plain"), "***implementation reqs***\n\n- :Implementation: is the project's own FastAPI stack.\n");
-    writeFileSync(join(root, "app.plain"), importing("backend/python-fastapi"));
+    writePlain(root, "app.plain", importing("backend/python-fastapi"));
     expect(parse("app.plain")["implementation reqs"]!.map((item) => item.markdown)).toEqual(["- :Implementation: is the project's own FastAPI stack."]);
   });
 

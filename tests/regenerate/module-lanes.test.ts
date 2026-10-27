@@ -12,7 +12,7 @@ beforeEach(() => {
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 const scaffold = "---\ndescription: x\n---\n\n***definitions***\n\n- :A: is a thing.\n\n***implementation reqs***\n\n- :Implementation: is TypeScript.\n";
-const withSpecs = `${scaffold}\n***functional specs***\n\n- Say hello.\n`;
+const withSpecs = `${scaffold}\n***functional specs***\n\n# say-hello\nSay hello.\n`;
 
 describe("a job's lanes", () => {
   it("are its module's folder from the first job on - the scaffold before any functional spec - so every job on the module waits for the one before", () => {
@@ -33,7 +33,7 @@ describe("a job's lanes", () => {
 
   it("take in every module the spec requires", () => {
     writeFileSync(join(root, "base.plain"), withSpecs);
-    writeFileSync(join(root, "app.plain"), `---\nrequires: [base]\n---\n\n***implementation reqs***\n\n- :Implementation: is TypeScript.\n\n***functional specs***\n\n- Greet.\n`);
+    writeFileSync(join(root, "app.plain"), `---\nrequires: [base]\n---\n\n***implementation reqs***\n\n- :Implementation: is TypeScript.\n\n***functional specs***\n\n# greet\nGreet.\n`);
     mkdirSync(join(root, "plain_modules"), { recursive: true });
     // The parser finds a required module from the process's folder, as it does in a project.
     const cwd = process.cwd();

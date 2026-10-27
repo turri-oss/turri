@@ -2,7 +2,8 @@ import { existsSync, readFileSync, rmSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { plainFileParser, withParseCache } from "../plain/parser.ts";
 import { STDLIB_ROOT } from "../plain/stdlib.ts";
-import { ACCEPTANCE_TESTS, FUNCTIONAL_REQUIREMENTS, REQUIRED_FUNCTIONAL_SPECS, TEST_REQUIREMENTS, type MarshalledPlainSource } from "../plain/spec.ts";
+import { ACCEPTANCE_TESTS, CONFORMANCE_TESTS, FUNCTIONAL_REQUIREMENTS, REQUIRED_FUNCTIONAL_SPECS, TEST_PLAIN_FILES, TEST_REQUIREMENTS, type MarshalledPlainSource, type TestPlainFileBinding } from "../plain/spec.ts";
+import { testPlainFilesOf } from "../test-plain-files.ts";
 import { reportActivity, reportStage } from "./activity.ts";
 import { llmChunkAgents, MAX_LINES_PER_JOB, MAX_SPECS_PER_JOB, planChunks, stepsOf, type ChunkAgents, type PlanInput } from "./chunk-plan.ts";
 import { commitNotes, landWork, recordHistory, resetToLastCommit } from "./lineage.ts";
@@ -19,18 +20,20 @@ import {
   marksRegenerateAgain,
   REGENERATE_AGAIN,
   inheritedRecord,
+  isOldRecord,
   notBuilt,
   readRecord,
   RECORD_FILE,
   withResourceDigests,
   writeCodeRecord,
   writeTestsRecord,
-  type Chosen,
+  hasScenarios,
+  testedFuncIds,
 } from "./records.ts";
 import { describeSpecDiffConformance, renderSpecDiffConformance } from "./conform.ts";
 import { conformanceDirFor } from "./conformance.ts";
 import { modulesRoot, projectRootOf } from "./paths.ts";
-import { budgetFor, choosingWhen, configForSpec, conformanceSwitchedOn, stackForModule, stackPinned, withStack } from "../config.ts";
+import { configForSpec, stackForModule, stackPinned, testDirOf, withStack } from "../config.ts";
 import { describeSpecChange } from "./prompt.ts";
 import { resolveTemplateDirs } from "./paths.ts";
 import { builtTips, copyRequiredCode, importingModules, isImportModule, newlyRequired, resolveRequiresChain, startFromScratch, type ChainEntry } from "./requires.ts";
@@ -101,12 +104,12 @@ export interface ModuleStatus {
   /** The job running now, if one is. */
   running?: { jobId: string; title: string; steered?: string[] };
   /**
-   * The jobs planned after it, in order: the module's code jobs, then its conformance jobs. A conformance job scheduled
-   * for functional specs not all built yet - `waitsFor`, those that are not - comes after the module's last code job.
-   * The module's conformance tests, wanted for all of it while its code is still to build - `afterCode` - come last:
-   * they are planned into pulses only once the code is built, but are shown, so asking for them is seen to have worked.
+   * The jobs planned after it, in order: the module's code jobs, then its conformance jobs. The conformance tests of
+   * its functional specs with scenarios, behind while its code is still to build - `afterCode`, `specs` those
+   * functional specs as `module:func-id` - come last: they are planned into pulses only once the code is built, but are
+   * shown, so what follows the code is seen.
    */
-  planned: Array<{ title: string; cases: JobCases; track: Track; waitsFor?: string[]; planning?: true; afterCode?: true }>;
+  planned: Array<{ title: string; cases: JobCases; track: Track; planning?: true; afterCode?: true; specs?: string[] }>;
   /**
    * What the plan of its code did not do as asked: the person's wishes its planner did not follow and why, an answer
    * that did not hold, a group split for its size.
@@ -114,14 +117,16 @@ export interface ModuleStatus {
   planNotes?: string[];
   /** Why nothing runs there, when nothing does. */
   why?: string;
-  /** What asking for conformance tests changed there, when it changed nothing: they were on for the whole module already. */
+  /** What asking for conformance tests changed there, when it changed nothing: they are written for what is built already. */
   conformanceNote?: string;
   /**
    * It now requires modules its code was not built on - `requires` - and is built only once its code is started
    * over on them: these codebases' code and tests taken out, kept in their history, and built again from the
-   * bottom of the chain. Never done unasked: `startOver` does it.
+   * bottom of the chain. Or - `old` - these codebases were built when functional specs were numbered, before they had
+   * func-ids: nothing is built on them, and the whole chain is regenerated from scratch. Never done unasked:
+   * `startOver` does it.
    */
-  startOver?: { requires: string[]; codebases: string[] };
+  startOver?: { requires: string[]; codebases: string[]; old?: true };
   /** The stack it is built with - its config.turri.<stack>.yaml over config.turri.yaml - when one is. */
   stack?: string;
 }
@@ -158,23 +163,8 @@ interface ModuleState {
     /** Stopped for the conformance tests of a module below - asked for by the person - and why: its codebase is deleted once it settles. */
     discard?: string;
   };
-  /**
-   * Conformance tests asked for in the conversation - over a config that has them off - and for which functional
-   * specs: none named, every one. Not asked: as the config says.
-   */
-  conformance?: { chosen?: Set<string> };
   /** The conformance tests a job a functional spec, as the person asked when they asked for them - not one job for all. */
   conformanceSeparately?: boolean;
-  /** The groups the person asked for the conformance tests in, by frid - 1-3 and 4-6: never two in one job. */
-  conformanceGroups?: string[][];
-  /**
-   * Conformance tests the conversation scheduled, one group a request, for functional specs not all built yet -
-   * `unbuilt`, those that are not, as of the last look. A group is chosen once the code record has every one of
-   * them as the spec has it, and its tests are then written once the module's code is built.
-   */
-  scheduled?: Array<{ specs: TouchedSpec[]; unbuilt: string[] }>;
-  /** The groups scheduled that are chosen now, their tests not written yet: shown as what is planned while it is planned. */
-  together?: TouchedSpec[][];
   /** The track being planned into jobs now, nothing running: what is next is shown while it is. */
   planning?: Track;
   /** When the planning now going on began: what the live panel counts from. */
@@ -208,8 +198,6 @@ export interface DriftReport {
   code: JobCases | null | undefined;
   /** The conformance tests' work: null, none; undefined, none are written here. */
   conformance: JobCases | null | undefined;
-  /** Conformance tests scheduled ahead of their code, and which of their functional specs are not built yet. */
-  scheduled: Array<{ frids: string[]; unbuilt: string[] }>;
   running?: { jobId: string; title: string };
   /** Why nothing is regenerated there: halted, or its spec does not parse. */
   why?: string;
@@ -225,7 +213,7 @@ export function describeDrift(reports: DriftReport[]): string {
   // land leaves its work undone, so it shows as drift.
   // conformance: null is no drift, undefined none written here - either is regenerated; a case list is work left.
   const regenerated = reports.every((report) => report.code === null && (report.conformance === null || report.conformance === undefined));
-  const settled = reports.every((report) => report.running === undefined && report.why === undefined && report.startOver === undefined && report.scheduled.length === 0);
+  const settled = reports.every((report) => report.running === undefined && report.why === undefined && report.startOver === undefined);
   const verdict = regenerated && settled ? "\nFully regenerated: every codebase is regenerated from the spec as it is, and nothing is regenerating." : "";
   return reports
     .map((report) => {
@@ -233,12 +221,17 @@ export function describeDrift(reports: DriftReport[]): string {
       if (report.code === null) lines.push("  code: regenerated from the spec as it is - no drift");
       else if (report.code !== undefined) lines.push(`  code: drifted from the spec - to regenerate: ${cases(report.code)}`);
       if (report.conformance === null) lines.push("  conformance tests: written for what is built - no drift");
-      else if (report.conformance !== undefined) lines.push(`  conformance tests: to write or change - ${cases(report.conformance)}`);
+      else if (report.conformance !== undefined) lines.push("  conformance tests: to write or change - written once the code is built, or now with conform", ...conformanceLines(report.module, report.conformance));
       else lines.push("  conformance tests: none written here");
-      for (const group of report.scheduled) lines.push(`  conformance tests ahead of their code: fs ${group.frids.join(", fs ")} - once ${group.unbuilt.map((frid) => `fs ${frid}`).join(", ")} ${group.unbuilt.length === 1 ? "is" : "are"} regenerated`);
       if (report.running !== undefined) lines.push(`  regenerating now: pulse ${report.running.jobId} - ${report.running.title}`);
       if (report.why !== undefined) lines.push(`  ${report.why}`);
-      if (report.startOver !== undefined) lines.push(`  it has to be regenerated from scratch on ${report.startOver.requires.join(", ")} before anything more is regenerated there`);
+      if (report.startOver !== undefined) {
+        lines.push(
+          report.startOver.old === true
+            ? `  it has to be regenerated from scratch, with its whole chain, before anything more is regenerated there: ${OLD_RECORDS_WHY(report.startOver.codebases)}`
+            : `  it has to be regenerated from scratch on ${report.startOver.requires.join(", ")} before anything more is regenerated there`,
+        );
+      }
       return lines.join("\n");
     })
     .join("\n") + verdict;
@@ -254,12 +247,12 @@ export interface WorkLoop {
    */
   bringUp(plainFile: string, options?: { model?: string; guidance?: string; specChange?: boolean }): Promise<ModuleStatus[]>;
   /**
-   * Regenerate functional specs of a module again, their spec changed or not: each is marked to regenerate again in
+   * Regenerate functional specs of a module again, their spec changed or not - each named by its func-id: each is marked to regenerate again in
    * the record of every codebase it is built in - committed - and they are brought up to their spec, the marked ones
    * planned as any change is. Their code is there: the jobs that regenerate them are told to regenerate it again, not
    * to build it anew.
    */
-  regenerateAgain(plainFile: string, frids: string | string[], options?: { model?: string; guidance?: string }): Promise<ModuleStatus[]>;
+  regenerateAgain(plainFile: string, funcIds: string | string[], options?: { model?: string; guidance?: string }): Promise<ModuleStatus[]>;
   /**
    * What is left to regenerate, for a spec's module, in each codebase where its code lives: the code's work from its
    * record to the spec now, and the conformance tests' - planning nothing, starting nothing.
@@ -270,7 +263,7 @@ export interface WorkLoop {
    * code as it is built, in the codebases where its code lives: for this session, whatever the config says. Asked
    * again, it clears a halt. Says what it planned.
    */
-  conformance(plainFile: string, options?: { frids?: string[]; model?: string; separately?: boolean; groups?: string[][] }): Promise<ModuleStatus[]>;
+  conformance(plainFile: string, options?: { funcIds?: string[]; model?: string; separately?: boolean }): Promise<ModuleStatus[]>;
   /**
    * Start over the codebases of a spec's module that now require a module their code was not built on (see
    * `ModuleStatus.startOver`): their code and conformance tests taken out - committed, so their history keeps
@@ -326,8 +319,8 @@ export interface MapPulse {
   before: string;
   after: string;
   /**
-   * A conformance pulse scheduled ahead of its code - not planned, so with no trees: the texts of the functional specs
-   * it writes tests for.
+   * The conformance tests that follow the code still to build - not planned, so with no trees: the functional specs they
+   * are written for, each as `module:func-id`.
    */
   specs?: string[];
 }
@@ -343,11 +336,11 @@ export interface MapCodebase {
   planning?: Track;
   /** The module below it that it waits for. */
   waitsFor?: string;
-  /** Its conformance tests are on: by the config, or asked for this session. */
+  /** Whether any of its functional specs has scenarios, and so conformance tests. */
   conformance: boolean;
   /** Why nothing runs there, when nothing does. */
   why?: string;
-  /** What asking for conformance tests changed there, when it changed nothing: they were on for the whole module already. */
+  /** What asking for conformance tests changed there, when it changed nothing: they are written for what is built already. */
   conformanceNote?: string;
   /**
    * Halted, or the planner found no plan: it needs the person. `pulse`, the pulse that did not land; `cause`, what went
@@ -372,7 +365,8 @@ export function chainSpec(chain: ChainEntry[]): SpecSnapshot {
   // Each module's linked resources hashed where its links point: what a file holds is part of the spec.
   const trees = chain.map((entry) => {
     const dirs = resolveTemplateDirs(entry.plainFile);
-    return { module: entry.moduleName, tree: withResourceDigests(plainFileParser(basename(entry.plainFile), dirs, { allowNoFunctionalities: true })[1], dirs) };
+    // Its test plain files bound to it: each functional spec with its scenarios, and every one of them with a test plain file.
+    return { module: entry.moduleName, tree: withResourceDigests(plainFileParser(basename(entry.plainFile), dirs, { allowNoFunctionalities: true, testDir: testDirOf(entry.plainFile) })[1], dirs) };
   });
   const tip = tipOf(chain);
   return { moduleName: tip.moduleName, plainFile: tip.plainFile, tree: chainTree(trees), chain };
@@ -416,11 +410,13 @@ export interface ModuleCompletion {
   specified: number;
   /** Of those, the ones the delivered codebase's code record has as the spec has them now. */
   completed: number;
-  /** Of the completed ones, those its conformance tests are recorded as written for, as the spec has them now. */
+  /** Its own functional specs with scenarios: those that are tested - one with an empty test plain file is not. */
+  withScenarios: number;
+  /** Of the completed ones, those its conformance tests are recorded as written for, as the spec has them now - their scenarios too. */
   conformanceTested: number;
-  /** Those conformance-tested ones, by number: for a host that shows each functional spec's state. */
+  /** Those conformance-tested ones, by func-id: for a host that shows each functional spec's state. */
   tested: string[];
-  /** Its functional specs not completed, by number. */
+  /** Its functional specs not completed, by func-id. */
   incomplete: string[];
 }
 
@@ -439,7 +435,24 @@ export function functionalityCompletion(plainFile: string): Array<{ codebase: st
       chain.forEach((entry, index) => {
         if (readRecord(entry.buildDir) !== null) delivered = index;
       });
-      const counts: ModuleCompletion[] = chain.map((entry) => ({ module: entry.moduleName, specified: entry.frids.length, completed: 0, conformanceTested: 0, tested: [], incomplete: [...entry.frids] }));
+      // Of each module's functional specs, those with scenarios: what "tested of specified" counts over.
+      let whole: MarshalledPlainSource | undefined;
+      try {
+        whole = chainSpec(chain).tree;
+      } catch {
+        whole = undefined;
+      }
+      const ownItems = (tree: MarshalledPlainSource | undefined, module: string, own: boolean) =>
+        ((tree?.[own ? FUNCTIONAL_REQUIREMENTS : REQUIRED_FUNCTIONAL_SPECS] as Array<{ markdown: string; module?: string; id: string }> | undefined) ?? []).filter((item) => own || item.module === module);
+      const counts: ModuleCompletion[] = chain.map((entry, index) => ({
+        module: entry.moduleName,
+        specified: entry.funcIds.length,
+        withScenarios: ownItems(whole, entry.moduleName, index === chain.length - 1).filter(hasScenarios).length,
+        completed: 0,
+        conformanceTested: 0,
+        tested: [],
+        incomplete: [...entry.funcIds],
+      }));
       if (delivered === -1) return { codebase: tipOf(chain).buildDir, modules: counts };
       const codebase = chain.slice(0, delivered + 1);
       const tip = tipOf(codebase);
@@ -448,33 +461,36 @@ export function functionalityCompletion(plainFile: string): Array<{ codebase: st
       const changes = codeWork(record, spec);
       // Its own: what the work loop would regenerate - new, changed, a concept it uses changed, or marked again.
       const cases = casesOf(codeTree(record ?? {}), changes, { module: tip.moduleName });
-      const touched = new Set([...cases.add, ...cases.patch, ...cases.again].map((spec) => `${spec.module ?? tip.moduleName}:${spec.frid}`));
+      const touched = new Set([...cases.add, ...cases.patch, ...cases.again].map((spec) => `${spec.module ?? tip.moduleName}:${spec.funcId}`));
       // The modules' below it: an item the record does not have as the spec has it.
       for (const change of changes) {
         if (change.section !== REQUIRED_FUNCTIONAL_SPECS || change.after === undefined) continue;
         try {
-          const item = JSON.parse(change.after) as { module?: string; frid?: string };
-          if (item.module !== undefined && item.frid !== undefined) touched.add(`${item.module}:${item.frid}`);
+          const item = JSON.parse(change.after) as { module?: string; id?: string };
+          if (item.module !== undefined && item.id !== undefined) touched.add(`${item.module}:${item.id}`);
         } catch {
           /* not an item */
         }
       }
-      const specText = (module: string, frid: string): string | undefined => {
-        const own = module === tip.moduleName;
-        const items = (spec[own ? FUNCTIONAL_REQUIREMENTS : REQUIRED_FUNCTIONAL_SPECS] as Array<{ markdown: string; module?: string; frid?: string }> | undefined) ?? [];
-        return (own ? items[Number(frid) - 1] : items.find((item) => item.module === module && item.frid === frid))?.markdown.trim();
+      // A functional spec as the tests are written for it: its text and its scenarios.
+      const reads = (item: Record<string, unknown> | undefined): string | undefined => {
+        if (item === undefined) return undefined;
+        const scenarios = (key: string) => ((item[key] as Array<{ id?: string; text?: string }> | undefined) ?? []).map((scenario) => [scenario.id, scenario.text]);
+        return JSON.stringify([String(item.markdown ?? "").trim(), scenarios(CONFORMANCE_TESTS), scenarios(ACCEPTANCE_TESTS)]);
       };
+      const specText = (module: string, funcId: string): string | undefined =>
+        reads(ownItems(spec, module, module === tip.moduleName).find((item) => item.id === funcId) as Record<string, unknown> | undefined);
       codebase.forEach((entry, index) => {
         const count = counts[index]!;
-        const completed = entry.frids.filter((frid) => !touched.has(`${entry.moduleName}:${frid}`));
+        const completed = entry.funcIds.filter((funcId) => !touched.has(`${entry.moduleName}:${funcId}`));
         // Tests marked to regenerate again were written against code since replaced: not conformance tested until rewritten.
-        const tested = ((readRecord(conformanceDirFor(entry.moduleName, modulesRoot(projectDirOf(entry.plainFile))))?.[FUNCTIONAL_REQUIREMENTS] as Array<{ markdown: string; frid?: string }> | undefined) ?? []).filter(
-          (item) => item.frid !== undefined && !marksRegenerateAgain(item) && item.markdown.trim() === specText(entry.moduleName, item.frid),
+        const tested = ((readRecord(conformanceDirFor(entry.moduleName, modulesRoot(projectDirOf(entry.plainFile))))?.[FUNCTIONAL_REQUIREMENTS] as Array<{ markdown: string; id?: string }> | undefined) ?? []).filter(
+          (item) => item.id !== undefined && !marksRegenerateAgain(item) && reads(item as Record<string, unknown>) === specText(entry.moduleName, item.id),
         );
         count.completed = completed.length;
-        count.tested = completed.filter((frid) => tested.some((item) => item.frid === frid));
+        count.tested = completed.filter((funcId) => tested.some((item) => item.id === funcId));
         count.conformanceTested = count.tested.length;
-        count.incomplete = entry.frids.filter((frid) => !completed.includes(frid));
+        count.incomplete = entry.funcIds.filter((funcId) => !completed.includes(funcId));
       });
       return { codebase: tip.buildDir, modules: counts };
     }),
@@ -505,21 +521,6 @@ export function createWorkLoop(options: {
   run?: JobRunner;
   /** Writes and runs a conformance job's tests. Default: a spec diff's conformance run, the whole suite with it. */
   runConformance?: JobRunner;
-  /** Whether the config has a module's conformance tests on. Default: its `conformance-tests:`, off unless it turns them on. */
-  conformanceOn?: (plainFile: string) => boolean;
-  /**
-   * Whether a module's conformance tests are for the functional specs chosen, not every one: those with acceptance
-   * tests, those the conversation asked for, and those tested already. Default: `conformance-tests: chosen`.
-   */
-  conformanceChosen?: (plainFile: string) => boolean;
-  /**
-   * Under `conformance-tests: chosen`, asked what a code job that landed built or changed that no conformance test is
-   * for - by whoever chooses without a conversation (`turri regenerate`) - before the job ends: the functional specs it
-   * names are scheduled as conform schedules them. The conversation is told in the job's report instead.
-   */
-  onChoose?: (plainFile: string, specs: TouchedSpec[], budget: number | undefined, when: "pulse" | "module") => Promise<{ frids: string[]; groups?: string[][]; why?: string } | undefined>;
-  /** When the chooser is asked: after each code pulse, once the module is regenerated, or never. Default: `conformance-tests:`. */
-  conformanceChoosing?: (plainFile: string) => "pulse" | "module" | undefined;
   /**
    * Under `release-after-pulse: true`, what releases a pulse that landed, as its last stage - before the pulse ends, so
    * the module's next pulse starts on what is released. Its last reply goes in the pulse's report. Not given: nothing is.
@@ -532,18 +533,6 @@ export function createWorkLoop(options: {
   const order: string[] = [];
   const run: JobRunner = options.run ?? defaultRunner;
   const runConformance: JobRunner = options.runConformance ?? defaultConformanceRunner;
-  // Off unless the config turns it on: all (true), or chosen.
-  const configConformance = options.conformanceOn ?? ((plainFile: string) => conformanceSwitchedOn(configForSpec(plainFile).conformanceTests));
-  /** When the chooser decides: after each code pulse (chosen), once the module is regenerated (module), or never. */
-  const chooseWhen = (plainFile: string): "pulse" | "module" | undefined =>
-    options.conformanceChoosing !== undefined
-      ? options.conformanceChoosing(plainFile)
-      : options.conformanceChosen !== undefined
-        ? options.conformanceChosen(plainFile)
-          ? "pulse"
-          : undefined
-        : choosingWhen(configForSpec(plainFile).conformanceTests);
-  const configChosen = (plainFile: string) => chooseWhen(plainFile) !== undefined;
   // One tick at a time: each reads the records and the spec, and decides.
   let ticking: Promise<void> = Promise.resolve();
 
@@ -580,163 +569,45 @@ export function createWorkLoop(options: {
   const codeKeyOf = (state: ModuleState): string => serializeTree(readRecord(tipEntry(state).buildDir) ?? {});
 
   /**
-   * What the conformance tests are to be written for now: of what the code is built from, what is chosen, with the test
-   * reqs as the spec has them. `from`: the tests the work starts from - what a running pulse will land, when the work
+   * What the conformance tests are to be written for now: of what the code is built from, the functional specs with
+   * scenarios, with the test reqs as the spec has them. `from`: the tests the work starts from - what a running pulse will land, when the work
    * after it is planned ahead - else the tests record as it is. Read from the record alone, a pulse still writing a
    * functional spec's tests would not count them: one whose code is behind the spec would be planned out, its tests
    * taken out again once they landed.
    */
   const conformanceOf = (state: ModuleState, spec: SpecSnapshot, from?: MarshalledPlainSource): MarshalledPlainSource => {
     const tests = from ?? readRecord(testsDirOf(state));
-    const target = conformanceTarget(readRecord(tipEntry(state).buildDir), tests, spec.tree, chosenOf(state, spec, tests));
+    const target = conformanceTarget(readRecord(tipEntry(state).buildDir), tests, spec.tree);
     // No functional spec to test, and none tested: nothing to write - the reqs alone are no conformance job.
     const specsIn = (tree: MarshalledPlainSource | null) => ((tree?.[FUNCTIONAL_REQUIREMENTS] as unknown[] | undefined) ?? []).length;
     return specsIn(target) === 0 && specsIn(tests) === 0 ? (tests ?? {}) : target;
   };
 
   /**
-   * Which functional specs the conformance tests are for: every one - unless the config has them for the chosen ones,
-   * or the conversation named some over a config that has them off. Then: those named, those with acceptance tests
-   * when the config chooses, and those tested already - a choice is kept, and tests are never taken out because
-   * other functional specs were named. Off in the config and not asked for: those tested already alone - their tests
-   * kept up to date, and none written for any other.
+   * Whether a codebase's conformance tests are written: with test reqs to write them by, and code to test. What they are
+   * written for is the functional specs with scenarios (conformanceOf): a scenario added, changed or taken out, the
+   * functional spec's text changed, regenerated again or taken out - the tests of each are behind, and are written.
    */
-  const chosenOf = (state: ModuleState, spec: SpecSnapshot, tests: MarshalledPlainSource | null): Chosen | undefined => {
-    const named = state.conformance?.chosen;
-    const choosing = configChosen(tipEntry(state).plainFile);
-    const tested = new Set(((tests?.[FUNCTIONAL_REQUIREMENTS] as Array<{ frid?: string }> | undefined) ?? []).map((item) => item.frid));
-    if (state.conformance === undefined && !configConformance(tipEntry(state).plainFile)) return (frid) => tested.has(frid);
-    if (!choosing && (state.conformance === undefined || named === undefined || configConformance(tipEntry(state).plainFile))) return undefined;
-    if (choosing && state.conformance !== undefined && named === undefined) return undefined;
-    const specs = (spec.tree[FUNCTIONAL_REQUIREMENTS] as Array<{ [ACCEPTANCE_TESTS]?: unknown[] }> | undefined) ?? [];
-    const accepted = (frid: string) => (specs[Number(frid) - 1]?.[ACCEPTANCE_TESTS] ?? []).length > 0;
-    return (frid) => tested.has(frid) || named?.has(frid) === true || (choosing && accepted(frid));
-  };
+  const conformanceWanted = (state: ModuleState, spec: SpecSnapshot): boolean =>
+    ((spec.tree[TEST_REQUIREMENTS] as unknown[] | undefined) ?? []).length > 0 && readRecord(tipEntry(state).buildDir) !== null;
 
   /**
-   * Under `conformance-tests: chosen`: the functional specs a code job built or changed that no conformance test is
-   * for or is to be for - for the conversation to choose from.
+   * The functional specs conform is asked for, as the spec has them now - refused when one is not in the spec, has no
+   * scenarios to test, or the module has no test reqs to write tests by.
    */
-  const toChoose = (state: ModuleState, planned: PlannedJob, spec: SpecSnapshot): TouchedSpec[] => {
-    if (planned.track !== "code" || !configChosen(tipEntry(state).plainFile)) return [];
-    const chosen = chosenOf(state, spec, readRecord(testsDirOf(state)));
-    if (chosen === undefined) return [];
-    const scheduled = new Set((state.scheduled ?? []).flatMap((group) => group.specs.map((touched) => touched.frid)));
-    return [...planned.cases.add, ...planned.cases.patch].filter((touched) => !chosen(touched.frid) && !scheduled.has(touched.frid));
-  };
-
-  /**
-   * Under `conformance-budget:`: how many more of the module's functional specs may be chosen - the budget less every
-   * one chosen for it already, tested or scheduled, whenever that was; those with acceptance tests do not count. Undefined:
-   * no budget.
-   */
-  const budgetLeft = (state: ModuleState, spec: SpecSnapshot): number | undefined => {
-    const budget = configForSpec(tipEntry(state).plainFile).conformanceBudget;
-    if (budget === undefined) return undefined;
-    const items = (spec.tree[FUNCTIONAL_REQUIREMENTS] as Array<{ [ACCEPTANCE_TESTS]?: unknown[] }> | undefined) ?? [];
-    const tests = readRecord(testsDirOf(state));
-    const tested = new Set(((tests?.[FUNCTIONAL_REQUIREMENTS] as Array<{ frid?: string }> | undefined) ?? []).map((item) => item.frid));
-    const named = state.conformance?.chosen ?? new Set<string>();
-    const scheduled = new Set((state.scheduled ?? []).flatMap((group) => group.specs.map((touched) => touched.frid)));
-    const used = items.filter((item, index) => {
-      const frid = String(index + 1);
-      return (item[ACCEPTANCE_TESTS] ?? []).length === 0 && (tested.has(frid) || named.has(frid) || scheduled.has(frid));
-    }).length;
-    return Math.max(0, budgetFor(budget, items.length) - used);
-  };
-
-  /**
-   * Under `conformance-tests: chosen`: every functional spec of the module that is built and that no conformance test
-   * is for, chosen or scheduled - the module's whole choice, once its code is built.
-   */
-  const moduleToChoose = (state: ModuleState, spec: SpecSnapshot): TouchedSpec[] => {
-    if (!configChosen(tipEntry(state).plainFile)) return [];
-    const chosen = chosenOf(state, spec, readRecord(testsDirOf(state)));
-    if (chosen === undefined) return [];
-    const scheduled = new Set((state.scheduled ?? []).flatMap((group) => group.specs.map((touched) => touched.frid)));
-    const items = (spec.tree[FUNCTIONAL_REQUIREMENTS] as Array<{ markdown: string }> | undefined) ?? [];
-    const frids = items.map((_, index) => String(index + 1));
-    const unbuilt = new Set(notBuilt(readRecord(tipEntry(state).buildDir), spec.tree, frids));
-    return frids
-      .filter((frid) => !unbuilt.has(frid) && !chosen(frid) && !scheduled.has(frid))
-      .map((frid) => ({ frid, text: items[Number(frid) - 1]!.markdown.trim().split("\n")[0]!.replace(/^-\s*/, "").trim() }));
-  };
-
-  /**
-   * The groups scheduled whose functional specs are all built, as the spec has them: chosen, so their tests are
-   * written. A functional spec taken out of the spec is dropped from its group.
-   */
-  const promote = (state: ModuleState, spec: SpecSnapshot) => {
-    const chosen = state.conformance?.chosen;
-    if (state.scheduled === undefined || chosen === undefined) return;
-    const count = ((spec.tree[FUNCTIONAL_REQUIREMENTS] as unknown[] | undefined) ?? []).length;
-    const code = readRecord(tipEntry(state).buildDir);
-    state.scheduled = state.scheduled.flatMap((group) => {
-      const specs = group.specs.filter((touched) => Number(touched.frid) <= count);
-      const unbuilt = notBuilt(code, spec.tree, specs.map((touched) => touched.frid));
-      if (specs.length === 0) return [];
-      if (unbuilt.length > 0) return [{ specs, unbuilt }];
-      for (const touched of specs) chosen.add(touched.frid);
-      state.together = [...(state.together ?? []), specs];
-      // What the tests are to be written for changed: planned again - after the running job, when one runs.
-      state.conformancePlan = undefined;
-      return [];
-    });
-  };
-
-  /**
-   * Whether a codebase's conformance tests are written: asked for, or on in the config - with test reqs to write them
-   * from, and code to test. Off and not asked for, the tests there are are still kept up to date: wanted when a
-   * functional spec that has conformance tests was added, changed, regenerated again or taken out in the code - the
-   * work then is for those alone (chosenOf). Work for the test reqs or definitions alone does not start it.
-   */
-  const conformanceWanted = (state: ModuleState, spec: SpecSnapshot): boolean => {
-    if (((spec.tree[TEST_REQUIREMENTS] as unknown[] | undefined) ?? []).length === 0 || readRecord(tipEntry(state).buildDir) === null) return false;
-    if (state.conformance !== undefined || configConformance(tipEntry(state).plainFile)) return true;
-    const tested = testedOf(state);
-    const cases = casesOf(tested, workOf("conformance", tested, state, spec), { module: tipEntry(state).moduleName });
-    return cases.add.length + cases.patch.length + cases.again.length + cases.delete.length > 0;
-  };
-
-  /**
-   * The functional specs a conformance job is scheduled for, as the spec has them now - refused when one is not in
-   * the spec, or the module has no test reqs to write tests from: no code job would build it, or no test be written.
-   */
-  const scheduledSpecs = (state: ModuleState, frids: string[]): TouchedSpec[] => {
-    const tip = tipEntry(state);
-    const spec = chainSpec(state.chain);
-    const items = (spec.tree[FUNCTIONAL_REQUIREMENTS] as Array<{ markdown: string }> | undefined) ?? [];
-    const unknown = frids.filter((frid) => !/^[1-9]\d*$/.test(frid) || Number(frid) > items.length);
-    if (unknown.length > 0) {
+  const askedSpecs = (moduleName: string, spec: MarshalledPlainSource, funcIds: string[]): void => {
+    const items = (spec[FUNCTIONAL_REQUIREMENTS] as Array<{ id: string }> | undefined) ?? [];
+    const unknown = funcIds.filter((funcId) => !items.some((item) => item.id === funcId));
+    if (unknown.length > 0) throw new Error(`${moduleName} has no functional spec ${namesOf(moduleName, unknown)}. Nothing was started.`);
+    const untested = funcIds.filter((funcId) => !hasScenarios(items.find((item) => item.id === funcId)));
+    if (untested.length > 0) {
       throw new Error(
-        `${tip.moduleName} has ${items.length} functional spec${items.length === 1 ? "" : "s"}, and ${unknown.map((frid) => `fs ${frid}`).join(", ")} ` +
-          `${unknown.length === 1 ? "is not one of them" : "are not among them"}: no code pulse builds ${unknown.length === 1 ? "it" : "them"}, so no conformance ` +
-          "test could ever be written for it. Nothing was scheduled.",
+        `${namesOf(moduleName, untested)} ${untested.length === 1 ? "has" : "have"} no scenarios - ${untested.length === 1 ? "its" : "their"} test plain file${untested.length === 1 ? " is" : "s are"} empty, so there is nothing to test: ` +
+          "write the conformance or acceptance scenarios first, with change_plain, and their tests are written once the code is built. Nothing was started.",
       );
     }
-    if (((spec.tree[TEST_REQUIREMENTS] as unknown[] | undefined) ?? []).length === 0) {
-      throw new Error(`${tip.moduleName} has no ***test reqs***: conformance tests are written from them, so none can be. Nothing was scheduled.`);
-    }
-    return frids.map((frid) => ({ frid, text: items[Number(frid) - 1]!.markdown.trim().split("\n")[0]!.replace(/^-\s*/, "").trim() }));
-  };
-
-  /** Functional specs of a module scheduled for conformance tests, beside those chosen before - as conform does for the module's own - in the chooser's pulses, when it planned them. */
-  const schedule = (state: ModuleState, frids: string[], groups?: string[][]) => {
-    const before = state.conformance;
-    // Every one is tested already: nothing to add.
-    if (before !== undefined && before.chosen === undefined) return;
-    let specs: TouchedSpec[];
-    try {
-      specs = scheduledSpecs(state, frids);
-    } catch (error) {
-      reportActivity(`  ${tipEntry(state).moduleName}: the conformance tests chosen were not scheduled - ${error instanceof Error ? error.message : String(error)}`);
-      return;
-    }
-    state.conformance = { chosen: before?.chosen ?? new Set() };
-    state.scheduled = [...(state.scheduled ?? []), { specs, unbuilt: specs.map((touched) => touched.frid) }];
-    if (groups !== undefined && groups.length > 0) {
-      state.conformanceGroups = [...(state.conformanceGroups ?? []), ...groups];
-      state.conformancePlan = undefined;
+    if (((spec[TEST_REQUIREMENTS] as unknown[] | undefined) ?? []).length === 0) {
+      throw new Error(`${moduleName} has no ***test reqs***: conformance tests are written by them, so none can be. Nothing was started.`);
     }
   };
 
@@ -762,7 +633,6 @@ export function createWorkLoop(options: {
       const spec = chainSpec(below.chain);
       if (codeWork(builtOf(below), spec.tree).length > 0) return waiting("the code it is built on is not built yet");
       if (below.conformanceHalted !== undefined) return waiting(`its conformance tests did not pass - ${below.conformanceHalted.why}`);
-      if ((below.scheduled ?? []).length > 0) return waiting("the conformance tests chosen for it are not written yet");
       if (conformanceWanted(below, spec) && workOf("conformance", testedOf(below), below, spec).length > 0) return waiting("its conformance tests are not written yet");
     }
     return undefined;
@@ -828,9 +698,8 @@ export function createWorkLoop(options: {
     // How big a pulse may be: the module's config, else the defaults.
     const config = configForSpec(tip.plainFile);
     const limits = { specs: config.maxSpecsPerPulse ?? MAX_SPECS_PER_JOB, lines: config.maxLinesPerPulse ?? MAX_LINES_PER_JOB };
-    // The conformance tests the person asked for in groups of their own - 1-3, then 4-6: a group never shares a job with another.
-    const groups = track === "conformance" && state.conformanceGroups !== undefined && state.conformanceGroups.length > 0 ? state.conformanceGroups : undefined;
-    const input: PlanInput = { base: from, current, specFile, specText, steering, track, moduleName: tip.moduleName, limits, ...(separately ? { separately } : {}), ...(groups !== undefined ? { groups } : {}) };
+    const testPlainPath = track === "conformance" ? testPlainPathOf(spec.tree, tip.moduleName, tip.plainFile, dirname(specFile)) : undefined;
+    const input: PlanInput = { base: from, current, specFile, specText, steering, track, moduleName: tip.moduleName, limits, ...(separately ? { separately } : {}), ...(testPlainPath !== undefined ? { testPlainPath } : {}) };
     const model = typeof options.plannerModel === "function" ? options.plannerModel() : options.plannerModel;
     const agents = options.planner === false ? undefined : (options.planner ?? llmChunkAgents({ cwd: options.cwd, model: model ?? state.model, label: `${basename(tip.plainFile)} planner` }));
     reportStage(`${tip.moduleName}: planning the ${track === "code" ? "work" : "conformance tests"} into pulses`);
@@ -878,11 +747,14 @@ export function createWorkLoop(options: {
     const conformance = planned.track === "conformance";
     // A code job can be steered while it regenerates: its target moves with the spec, inside what it regenerates.
     const steering = conformance ? undefined : createSteering(planned.step.tree, tip.moduleName);
-    // Shown as its agent is given it: the job's own items, from whichever file they are written in - its imports too.
+    // Shown as its agent is given it: the job's own items, from whichever file they are written in - its imports too, and
+    // for the conformance tests the test plain files of the functional specs whose scenarios it carries out.
+    const moduleFile = relative(projectDirOf(tip.plainFile), tip.plainFile) || basename(tip.plainFile);
     const shown = changeDiffInFiles(
       agentChanges(planned.step.changes, planned.track),
-      relative(projectDirOf(tip.plainFile), tip.plainFile) || basename(tip.plainFile),
+      moduleFile,
       (diff) => whereInFiles(diff, state.chain),
+      conformance ? { module: tip.moduleName, pathOf: testPlainPathOf(spec.tree, tip.moduleName, tip.plainFile, dirname(moduleFile)) } : undefined,
     );
     const job: Job = options.registry.start({
       kind: conformance ? "conformance" : "regenerate",
@@ -902,14 +774,14 @@ export function createWorkLoop(options: {
       run: async (onDelta) => {
         // The guardrail: a conformance job tests only code that is built - the code record, read as the job starts, has every functional spec it tests as it tests it.
         if (conformance) {
-          const testing = [...planned.cases.add, ...planned.cases.patch, ...planned.cases.again].map((touched) => touched.frid);
+          const testing = [...planned.cases.add, ...planned.cases.patch, ...planned.cases.again].map((touched) => touched.funcId);
           const missing = notBuilt(readRecord(tip.buildDir), planned.step.tree, testing);
           if (missing.length > 0) {
             const record = relative(options.cwd, join(tip.buildDir, RECORD_FILE));
-            const notBuiltText = `${missing.map((frid) => `fs ${frid}`).join(", ")} ${missing.length === 1 ? "is" : "are"} not built`;
+            const notBuiltText = `${namesOf(tip.moduleName, missing)} ${missing.length === 1 ? "is" : "are"} not built`;
             return {
               report:
-                `Not started: this conformance pulse is to test ${testing.map((frid) => `fs ${frid}`).join(", ")}, and ${notBuiltText} - ` +
+                `Not started: this conformance pulse is to test ${namesOf(tip.moduleName, testing)}, and ${notBuiltText} - ` +
                 `${record} does not have ${missing.length === 1 ? "it" : "them"} as the spec has ${missing.length === 1 ? "it" : "them"}. ` +
                 "No conformance test is written for code that is not built. Tell the user, and see with drift which code pulse regenerates it.",
               details: { passed: false, landed: false, notBuilt: notBuiltText },
@@ -926,7 +798,7 @@ export function createWorkLoop(options: {
             if (existsSync(join(testsDirOf(state), RECORD_FILE))) writeTestsRecord(testsDirOf(state), {});
           }
         }
-        // A conformance job is shown the spec whole - its test reqs and acceptance tests are its to write from.
+        // A conformance job is shown the spec whole - its test reqs and scenarios are its to write from.
         const result = await (conformance ? runConformance : run)(
           {
             plainFile: tip.plainFile,
@@ -940,32 +812,7 @@ export function createWorkLoop(options: {
           },
           onDelta,
         );
-        // Under conformance-tests: chosen or module, the chooser decides as the pulse's last stage - before it ends, so the
-        // choice is made, and its conformance pulse scheduled, before anything can be built on the module. Under chosen, of
-        // what this pulse regenerated; under module, once the module is regenerated, of all of it - and in which pulses.
-        let chose: string | undefined;
-        const when = chooseWhen(tip.plainFile);
-        if (result.landed && planned.track === "code" && when !== undefined && options.onChoose !== undefined) {
-          const now = chainSpec(state.chain);
-          const candidates = when === "pulse" ? toChoose(state, planned, now) : codeWork(builtOf(state), now.tree).length === 0 ? moduleToChoose(state, now) : [];
-          const left = budgetLeft(state, now);
-          if (candidates.length > 0 && left === 0) chose = `conformance: the module's conformance budget is spent - none of fs ${candidates.map((touched) => touched.frid).join(", ")} is chosen`;
-          else if (candidates.length > 0) {
-            reportStage(`module ${tip.moduleName}: choosing its conformance tests`);
-            const picked = await options.onChoose(tip.plainFile, candidates, left, when);
-            // Within the budget, whatever was answered: the first that fit.
-            const frids = picked === undefined ? [] : left !== undefined ? picked.frids.slice(0, left) : picked.frids;
-            const groups = picked?.groups?.map((group) => group.filter((frid) => frids.includes(frid))).filter((group) => group.length > 0);
-            if (frids.length > 0) schedule(state, frids, groups);
-            const why = picked?.why !== undefined ? ` - ${picked.why.replace(/\s+/g, " ").trim()}` : "";
-            chose =
-              frids.length > 0
-                ? `conformance: fs ${frids.join(", ")} chosen${groups !== undefined && groups.length > 1 ? `, in ${groups.length} pulses (${groups.map((group) => group.join(", ")).join(" / ")})` : ""}${why}`
-                : `conformance: none of fs ${candidates.map((touched) => touched.frid).join(", ")} chosen${why}`;
-          }
-          if (chose !== undefined) reportActivity(`  ${tip.moduleName}: ${chose}`);
-        }
-        const report = chose !== undefined ? `${result.report}\n\n${chose}` : result.report;
+        const report = result.report;
         // Released as its last stage, when the config says so: the module's next pulse starts on what is released.
         let released: string | undefined;
         if (result.landed && options.release !== undefined && configForSpec(tip.plainFile).releaseAfterPulse === true) {
@@ -1020,7 +867,6 @@ export function createWorkLoop(options: {
     if (state === undefined) return;
     state.plan = undefined;
     state.conformancePlan = undefined;
-    // What the person asked of it - conformance tests chosen or scheduled - stays: it is asked of the code regenerated.
     state.halted = undefined;
     state.conformanceHalted = undefined;
     state.startOver = undefined;
@@ -1237,7 +1083,6 @@ export function createWorkLoop(options: {
     }
     const specKey = keyOf(spec);
     state.seen = spec;
-    promote(state, spec);
 
     if (state.running !== undefined) {
       if (state.running.stopping === true) return;
@@ -1297,8 +1142,15 @@ export function createWorkLoop(options: {
       }
       state.halted = undefined;
     }
-    const fresh = newlyRequired(state.chain);
     state.startOver = undefined;
+    // Built when functional specs were numbered, before func-ids: nothing is built on it - its chain starts over.
+    const old = oldCodebases(state.chain);
+    if (old.length > 0) {
+      state.startOver = { requires: [], codebases: old.map((entry) => entry.moduleName), old: true };
+      state.why = OLD_RECORDS_WHY(old.map((entry) => entry.moduleName));
+      return;
+    }
+    const fresh = newlyRequired(state.chain);
     if (fresh !== undefined && fresh.rebuild.some((entry) => entry.buildDir === tip.buildDir)) {
       const codebases = fresh.rebuild.map((entry) => entry.moduleName);
       state.startOver = { requires: fresh.modules, codebases };
@@ -1336,8 +1188,6 @@ export function createWorkLoop(options: {
         }
       } else {
         state.conformancePlan = undefined;
-        state.together = undefined;
-        state.conformanceGroups = undefined;
       }
     }
     if (!codeLeft) {
@@ -1376,7 +1226,7 @@ export function createWorkLoop(options: {
 
   /** A codebase's status, and beside each job it lists as planned, the planned job it is - none for one being planned or scheduled. */
   const describe = (state: ModuleState): ReturnType<typeof describeIn> => inStack(state, () => describeIn(state));
-  const describeIn = (state: ModuleState): { status: ModuleStatus; jobs: Array<PlannedJob | undefined>; scheduled: Array<{ title: string; specs: string[] } | undefined> } => {
+  const describeIn = (state: ModuleState): { status: ModuleStatus; jobs: Array<PlannedJob | undefined>; ahead: Array<{ title: string; specs: string[] } | undefined> } => {
     // What runs next: the code's jobs, then the conformance tests' - the module's, once its code is built - the running job first.
     const running = state.running?.planned;
     const own = (jobs: PlannedJob[] | undefined) => (jobs ?? []).filter((job) => job !== running);
@@ -1389,41 +1239,32 @@ export function createWorkLoop(options: {
       ...(replanning === "code" ? [] : own(state.plan?.jobs)),
       ...(replanning === "conformance" ? [] : own(state.conformancePlan?.jobs)),
     ];
-    // A scheduled conformance job comes after the module's last code job - last, when none is planned.
     const lastCode = jobs.findLastIndex((job) => job.track === "code");
-    const after = (state.scheduled ?? []).map(() => lastCode);
-    const scheduledAt = (index: number): ModuleStatus["planned"] =>
-      (state.scheduled ?? []).flatMap((group, at) =>
-        after[at] !== index
-          ? []
-          : [{ title: group.specs.map((touched) => `fs ${touched.frid}`).join(", "), cases: { fresh: false, add: group.specs, patch: [], again: [], delete: [], mechanical: false }, track: "conformance" as const, waitsFor: group.unbuilt }],
-      );
-    // Being planned, nothing running: what is next - for the conformance tests, the groups chosen that it plans - not nothing.
-    const together = (state.together ?? []).flat().map((touched) => `fs ${touched.frid}`);
     const planningNow: ModuleStatus["planned"] =
       planningTrack !== undefined
         ? [
             {
-              title: planningTrack === "conformance" ? (together.length > 0 ? together.join(", ") : "the conformance tests") : "the work",
+              title: planningTrack === "conformance" ? "the conformance tests" : "the work",
               cases: { fresh: false, add: [], patch: [], again: [], delete: [], mechanical: false },
               track: planningTrack,
               planning: true,
             },
           ]
         : [];
-    // The module's conformance tests, wanted for all of it while code is still to build: planned once it is built, shown now.
+    // The conformance tests that follow the code still to build - of its functional specs with scenarios whose tests
+    // are not written for them as they read now: planned once the code is built, shown now.
     const codeToBuild = lastCode !== -1 || planningTrack === "code";
-    const testReqs = ((state.seen?.tree[TEST_REQUIREMENTS] as unknown[] | undefined) ?? []).length > 0;
-    const plainFile = tipEntry(state).plainFile;
-    const wholeModule = (state.conformance !== undefined && state.conformance.chosen === undefined) || (configConformance(plainFile) && !configChosen(plainFile));
+    const seen = state.seen?.tree;
+    const testReqs = ((seen?.[TEST_REQUIREMENTS] as unknown[] | undefined) ?? []).length > 0;
+    const written = new Set(((testedOf(state)[FUNCTIONAL_REQUIREMENTS] as unknown[] | undefined) ?? []).map((item) => JSON.stringify(item)));
+    const behind = ((seen?.[FUNCTIONAL_REQUIREMENTS] as Array<{ id: string }> | undefined) ?? []).filter((item) => hasScenarios(item) && !written.has(JSON.stringify(item)));
     const afterCode: ModuleStatus["planned"] =
-      codeToBuild && testReqs && wholeModule && state.conformanceHalted === undefined && !jobs.some((job) => job.track === "conformance")
-        ? [{ title: "conformance tests", cases: { fresh: false, add: [], patch: [], again: [], delete: [], mechanical: false }, track: "conformance", afterCode: true }]
+      codeToBuild && testReqs && behind.length > 0 && state.conformanceHalted === undefined && !jobs.some((job) => job.track === "conformance")
+        ? [{ title: "conformance tests", cases: { fresh: false, add: [], patch: [], again: [], delete: [], mechanical: false }, track: "conformance", afterCode: true, specs: behind.map((item) => `${tipEntry(state).moduleName}:${item.id}`) }]
         : [];
     const listed: Array<{ entry: ModuleStatus["planned"][number]; job?: PlannedJob }> = [
       ...planningNow.map((entry) => ({ entry })),
-      ...jobs.flatMap((job, index) => [{ entry: { title: job.title, cases: job.cases, track: job.track }, job }, ...scheduledAt(index).map((entry) => ({ entry }))]),
-      ...scheduledAt(-1).map((entry) => ({ entry })),
+      ...jobs.map((job) => ({ entry: { title: job.title, cases: job.cases, track: job.track }, job })),
       ...afterCode.map((entry) => ({ entry })),
     ];
     const planned = listed.map((item) => item.entry);
@@ -1446,7 +1287,8 @@ export function createWorkLoop(options: {
       ...(state.running === undefined && state.why !== undefined ? { why: state.why } : {}),
       ...(state.running === undefined && state.startOver !== undefined ? { startOver: state.startOver } : {}),
     };
-    return { status, jobs: (state.running !== undefined ? listed.slice(1) : listed).map((item) => item.job), scheduled: (state.running !== undefined ? listed.slice(1) : listed).map((item) => (item.entry.waitsFor !== undefined ? { title: item.entry.title, specs: item.entry.cases.add.map((touched) => touched.text) } : undefined)) };
+    const shown = state.running !== undefined ? listed.slice(1) : listed;
+    return { status, jobs: shown.map((item) => item.job), ahead: shown.map((item) => (item.entry.afterCode === true ? { title: item.entry.title, specs: item.entry.specs ?? [] } : undefined)) };
   };
 
   /**
@@ -1501,10 +1343,10 @@ export function createWorkLoop(options: {
     },
     async regenerateAgain(plainFile, given, request = {}) {
       return preparingFor(plainFile, async () => {
-        const frids = [...new Set(Array.isArray(given) ? given : [given])];
         const asked = resolve(options.cwd, plainFile);
         const own = resolveRequiresChain(asked, [], undefined, { allowNoFunctionalities: true });
         const module = tipOf(own).moduleName;
+        const funcIds = funcIdsNamed(module, [...new Set(Array.isArray(given) ? given : [given])]);
         const chains = chainsFor(asked);
         for (const chain of chains) {
           const tip = tipOf(chain);
@@ -1516,31 +1358,30 @@ export function createWorkLoop(options: {
           const record = readRecord(tip.buildDir);
           if (record === null) continue;
           const section = tip.moduleName === module ? FUNCTIONAL_REQUIREMENTS : REQUIRED_FUNCTIONAL_SPECS;
-          const items = (record[section] as Array<{ module?: string; frid?: string }> | undefined) ?? [];
-          const named = (item: { module?: string; frid?: string }, index: number) =>
-            section === FUNCTIONAL_REQUIREMENTS ? String(index + 1) : item.module === module ? (item.frid ?? "") : "";
-          const taken = items.flatMap((item, index) => (frids.includes(named(item, index)) ? [named(item, index)] : []));
+          const items = (record[section] as Array<{ module?: string; id?: string }> | undefined) ?? [];
+          const named = (item: { module?: string; id?: string }) => (section === FUNCTIONAL_REQUIREMENTS || item.module === module ? (item.id ?? "") : "");
+          const taken = items.flatMap((item) => (funcIds.includes(named(item)) ? [named(item)] : []));
           if (taken.length === 0) continue;
-          for (const frid of taken) found.add(frid);
-          const marked = items.map((item, index) => (frids.includes(named(item, index)) ? { ...item, [REGENERATE_AGAIN]: true } : item));
+          for (const funcId of taken) found.add(funcId);
+          const marked = items.map((item) => (funcIds.includes(named(item)) ? { ...item, [REGENERATE_AGAIN]: true } : item));
           writeCodeRecord(tip.buildDir, { ...record, [section]: marked } as MarshalledPlainSource);
           // Its conformance tests were written against the code being replaced: marked with it, they are written again -
           // checked against the new code, and rewritten where they relied on what the old code chose - once it lands.
           if (section === FUNCTIONAL_REQUIREMENTS) {
             const testsDir = conformanceDirFor(tip.moduleName, modulesRoot(projectDirOf(tip.plainFile)));
             const tests = readRecord(testsDir);
-            const tested = (tests?.[FUNCTIONAL_REQUIREMENTS] as Array<{ frid?: string }> | undefined) ?? [];
-            if (tested.some((item) => item.frid !== undefined && taken.includes(item.frid))) {
-              const again = tested.map((item) => (item.frid !== undefined && taken.includes(item.frid) ? { ...item, [REGENERATE_AGAIN]: true } : item));
+            const tested = (tests?.[FUNCTIONAL_REQUIREMENTS] as Array<{ id?: string }> | undefined) ?? [];
+            if (tested.some((item) => item.id !== undefined && taken.includes(item.id))) {
+              const again = tested.map((item) => (item.id !== undefined && taken.includes(item.id) ? { ...item, [REGENERATE_AGAIN]: true } : item));
               writeTestsRecord(testsDir, { ...tests, [FUNCTIONAL_REQUIREMENTS]: again } as MarshalledPlainSource);
             }
           }
-          recordHistory(tip.buildDir, `${module} functional spec${taken.length === 1 ? "" : "s"} ${taken.join(", ")} to regenerate again`);
+          recordHistory(tip.buildDir, `${namesOf(module, taken)} to regenerate again`);
         }
-        const missing = frids.filter((frid) => !found.has(frid));
-        if (found.size === 0) throw new Error(`${module} has no functional spec ${missing.join(", ")} built anywhere, so there is nothing to regenerate again: regenerate builds what is not built.`);
+        const missing = funcIds.filter((funcId) => !found.has(funcId));
+        if (found.size === 0) throw new Error(`${namesOf(module, missing)} ${missing.length === 1 ? "is" : "are"} not built anywhere, so there is nothing to regenerate again: regenerate builds what is not built.`);
         const statuses = await loop.bringUp(plainFile, request);
-        if (missing.length > 0) reportActivity(`  ${module}: functional spec ${missing.join(", ")} is not built anywhere - nothing to regenerate again there`);
+        if (missing.length > 0) reportActivity(`  ${namesOf(module, missing)} ${missing.length === 1 ? "is" : "are"} not built anywhere - nothing to regenerate again there`);
         return statuses;
       });
     },
@@ -1554,7 +1395,7 @@ export function createWorkLoop(options: {
             // The codebase as the loop knows it, or - never asked for - as its records have it.
             const state = modules.get(tip.buildDir) ?? { chain: codebase, askedFile: file, guidance: [] };
             return inStack(state, (): DriftReport => {
-              const report: DriftReport = { module: tip.moduleName, plainFile: tip.plainFile, code: undefined, conformance: undefined, scheduled: [] };
+              const report: DriftReport = { module: tip.moduleName, plainFile: tip.plainFile, code: undefined, conformance: undefined };
               let spec: SpecSnapshot;
               try {
                 spec = chainSpec(codebase);
@@ -1570,11 +1411,12 @@ export function createWorkLoop(options: {
                 const tests = workOf("conformance", tested, state, spec);
                 report.conformance = tests.length === 0 ? null : casesOf(tested, tests, { module: tip.moduleName });
               }
-              report.scheduled = (state.scheduled ?? []).map((group) => ({ frids: group.specs.map((touched) => touched.frid), unbuilt: group.unbuilt }));
               if (state.running !== undefined) report.running = { jobId: state.running.jobId, title: state.running.planned.title };
               const halted = state.held?.why ?? state.halted?.why ?? state.conformanceHalted?.why;
               if (halted !== undefined) report.why = halted;
               if (state.startOver !== undefined) report.startOver = state.startOver;
+              const old = oldCodebases(codebase);
+              if (old.length > 0) report.startOver = { requires: [], codebases: old.map((entry) => entry.moduleName), old: true };
               return report;
             });
           }),
@@ -1590,10 +1432,19 @@ export function createWorkLoop(options: {
       // a codebase built on it - by a module above - is disposable, and is deleted, a pulse running there stopped first;
       // the module above is regenerated from it once they pass. Only when there are tests to write: asked again for tests
       // it has, nothing is touched.
-      const wanted = new Set([...(request.frids ?? []), ...(request.groups ?? []).flat()]);
-      const tested = new Set(((readRecord(conformanceDirFor(self.moduleName, modulesRoot(projectDirOf(self.plainFile))))?.[FUNCTIONAL_REQUIREMENTS] as Array<{ frid?: string }> | undefined) ?? []).map((item) => item.frid));
-      const ownSpecs = ((chainSpec(own).tree[FUNCTIONAL_REQUIREMENTS] as unknown[] | undefined) ?? []).map((_, index) => String(index + 1));
-      const toWrite = (wanted.size > 0 ? [...wanted] : ownSpecs).some((frid) => !tested.has(frid));
+      const named = request.funcIds === undefined ? undefined : funcIdsNamed(self.moduleName, [...new Set(request.funcIds)]);
+      const ownSpec = chainSpec(own).tree;
+      const withScenarios = testedFuncIds(ownSpec);
+      // Refused before anything is touched: nothing to test, a functional spec not there, or one with no scenarios.
+      if (withScenarios.length === 0) {
+        throw new Error(
+          `No functional spec of ${self.moduleName} has scenarios - every test plain file of it is empty, so there is nothing to test: ` +
+            "write the conformance or acceptance scenarios first, with change_plain, and their tests are written once the code is built. Nothing was started.",
+        );
+      }
+      if (named !== undefined && named.length > 0) askedSpecs(self.moduleName, ownSpec, named);
+      const tested = new Set(((readRecord(conformanceDirFor(self.moduleName, modulesRoot(projectDirOf(self.plainFile))))?.[FUNCTIONAL_REQUIREMENTS] as Array<{ id?: string }> | undefined) ?? []).map((item) => item.id));
+      const toWrite = (named !== undefined && named.length > 0 ? named : withScenarios).some((funcId) => !tested.has(funcId));
       let wentBack = false;
       if (readRecord(self.buildDir) !== null && toWrite) {
         const why = `${self.moduleName}'s conformance tests were asked for, and they come before anything is built on it`;
@@ -1626,39 +1477,16 @@ export function createWorkLoop(options: {
       const asking = tracked.find((state) => tipEntry(state).buildDir === self.buildDir);
       const states = asking !== undefined ? tracked.filter((state) => own.some((entry) => entry.buildDir === tipEntry(state).buildDir)) : tracked;
       const tip = asking ?? states.at(-1);
-      // In groups of the person's own - 1-3 and 4-6: every functional spec of them asked for, each group a pulse of its own.
-      const groups = request.groups?.map((group) => [...new Set(group)]).filter((group) => group.length > 0);
-      const named = [...(request.frids ?? []), ...(groups ?? []).flat()];
-      const asks = named.length > 0 ? [...new Set(named)] : undefined;
+      const asks = named !== undefined && named.length > 0 ? named : undefined;
       // Its tests are written already, and a codebase built on it holds its code: nothing to write, nothing touched.
       if (asking === undefined && asks !== undefined && tip !== undefined) {
-        throw new Error(`${self.moduleName}'s conformance tests for fs ${asks.join(", ")} are written already. Nothing was scheduled.`);
+        throw new Error(`${self.moduleName}'s conformance tests for ${namesOf(self.moduleName, asks)} are written already. Nothing was started.`);
       }
-      // Refused before anything is chosen: a functional spec the spec does not have is built by no code job, so its tests could never be written.
-      const specs = tip !== undefined && asks !== undefined ? scheduledSpecs(tip, asks) : undefined;
-      // On for the whole module already - asked for before, or by the config: asked again, nothing changes, and it is said.
-      const already = new Set(states.filter((state) => {
-        const file = tipEntry(state).plainFile;
-        return (state.conformance !== undefined && state.conformance.chosen === undefined) || inStack(state, () => configConformance(file) && !configChosen(file));
-      }));
-      // Only the module asked for: the modules below it keep their conformance tests as their config and choices have them.
+      // Only the module asked for: one job for all of its tests, or one a functional spec, as this request asks; a halt cleared.
       for (const state of tip !== undefined ? [tip] : []) {
-        // The functional specs named are the module's own: they are scheduled in its codebase, beside those chosen before.
-        const named = specs;
-        const before = state.conformance;
-        // Asked for every one before, or now: every one.
-        const all = (before !== undefined && before.chosen === undefined) || named === undefined;
-        state.conformance = all ? {} : { chosen: before?.chosen ?? new Set() };
-        // Scheduled now, chosen once all of them are built - at once, those that are.
-        state.scheduled = all ? undefined : [...(state.scheduled ?? []), { specs: named, unbuilt: named.map((touched) => touched.frid) }];
-        // One job for all of them, or one a functional spec: as this request asks. Changed, the plan is made again.
         const separately = request.separately === true;
         if ((state.conformanceSeparately === true) !== separately) state.conformancePlan = undefined;
         state.conformanceSeparately = separately;
-        if (state === tip && groups !== undefined && groups.length > 0) {
-          state.conformanceGroups = [...(state.conformanceGroups ?? []), ...groups];
-          state.conformancePlan = undefined;
-        }
         state.conformanceHalted = undefined;
         state.halted = undefined;
         state.held = undefined;
@@ -1666,9 +1494,9 @@ export function createWorkLoop(options: {
       await tick();
       return [...new Set(states)].map((state) => {
         const status = statusOf(state);
-        if (!already.has(state)) return status;
-        const built = status.planned.some((job) => job.afterCode === true) ? "they are planned into pulses once its code is built" : "every functional spec of it is tested";
-        return { ...status, conformanceNote: `conformance tests were on for the whole of ${status.module} already: ${built}` };
+        const writing = status.running !== undefined || status.planned.some((job) => job.track === "conformance");
+        if (state !== tip || writing) return status;
+        return { ...status, conformanceNote: `the conformance tests of ${status.module} are written for every functional spec with scenarios, as built: there is nothing to write` };
       });
     },
     async startOver(plainFile, request = {}) {
@@ -1679,7 +1507,11 @@ export function createWorkLoop(options: {
         const fresh = newlyRequired(chain);
         for (const entry of fresh?.rebuild ?? []) rebuild.set(entry.buildDir, { entry, requires: fresh!.modules });
       }
-      if (rebuild.size === 0) throw new Error(`Nothing of ${tipOf(own).moduleName} has to be started over: its code is built on every module it requires.`);
+      if (rebuild.size === 0) {
+        // Built when functional specs were numbered: the whole chain is regenerated from scratch.
+        if ([...chainsFor(file), own].some((chain) => oldCodebases(chain).length > 0)) return loop.fromScratch(plainFile, { ...request, chain: true });
+        throw new Error(`Nothing of ${tipOf(own).moduleName} has to be started over: its code is built on every module it requires.`);
+      }
       for (const { entry } of rebuild.values()) {
         if (modules.get(entry.buildDir)?.running !== undefined) throw new Error(`${entry.moduleName} has a pulse running: ask again once it is done.`);
       }
@@ -1814,10 +1646,8 @@ export function createWorkLoop(options: {
           const planned = row(
             `planned-${tip.moduleName}-${index + 1}`,
             `${basename(tip.plainFile)} ${job.track === "conformance" ? "conformance: " : ""}${job.title}`,
-            job.waitsFor !== undefined
-              ? `Scheduled, not started: the conformance tests of ${job.title}, once ${waitsText(job.waitsFor)} built - the code record has to have them first.`
-            : job.afterCode === true
-              ? "Not planned yet: the module's conformance tests are planned into pulses once its code is built."
+            job.afterCode === true
+              ? `Not planned yet: the conformance tests${job.specs !== undefined && job.specs.length > 0 ? ` of ${job.specs.join(", ")}` : ""} are planned into pulses once the module's code is built.`
             : job.planning === true
               ? `Being planned into pulses now: ${job.title}. The first starts as soon as the plan is made.`
               : `Planned, not started: ${casesText(job.cases)}. It is planned again whenever the spec changes or a pulse before it ends.`,
@@ -1844,7 +1674,7 @@ export function createWorkLoop(options: {
         codebases: order.map((key): MapCodebase => {
           const state = modules.get(key)!;
           const tip = tipEntry(state);
-          const { jobs, scheduled } = describe(state);
+          const { jobs, ahead } = describe(state);
           const running = state.running;
           let next = running?.number ?? state.pulses ?? 0;
           const pulses: MapPulse[] = [
@@ -1853,9 +1683,9 @@ export function createWorkLoop(options: {
               : []),
             ...jobs.flatMap((job, index): MapPulse[] => {
               const rowId = `planned-${tip.moduleName}-${index + 1}`;
-              // Scheduled ahead of its code: numbered among the rest, its functional specs by their text.
-              const ahead = scheduled[index];
-              if (ahead !== undefined) return [{ number: (next += 1), title: ahead.title, track: "conformance", running: false, rowId, before: "", after: "", specs: ahead.specs }];
+              // The conformance tests that follow the code still to build: numbered among the rest, their functional specs by name.
+              const following = ahead[index];
+              if (following !== undefined) return [{ number: (next += 1), title: following.title, track: "conformance", running: false, rowId, before: "", after: "", specs: following.specs }];
               return job === undefined ? [] : [{ number: (next += 1), title: job.title, track: job.track, running: false, rowId, before: job.step.before, after: job.step.after }];
             }),
           ];
@@ -1866,7 +1696,7 @@ export function createWorkLoop(options: {
             plainFile: tip.plainFile,
             buildDir: tip.buildDir,
             pulses,
-            conformance: state.conformance !== undefined || inStack(state, () => configConformance(tip.plainFile)),
+            conformance: testedFuncIds(state.seen?.tree).length > 0,
             ...(state.planning !== undefined ? { planning: state.planning } : {}),
             ...(running === undefined && state.waitsFor !== undefined ? { waitsFor: state.waitsFor } : {}),
             ...(running === undefined && state.why !== undefined ? { why: state.why } : {}),
@@ -1892,16 +1722,39 @@ export function createWorkLoop(options: {
   return loop;
 }
 
+/** The codebases of a chain built when functional specs were numbered, before func-ids: their code or tests record is old. */
+function oldCodebases(chain: ChainEntry[]): ChainEntry[] {
+  return chain.filter((entry) => isOldRecord(readRecord(entry.buildDir)) || isOldRecord(readRecord(conformanceDirFor(entry.moduleName, modulesRoot(projectDirOf(entry.plainFile))))));
+}
+
+/** Why nothing is built on codebases with old records. */
+const OLD_RECORDS_WHY = (codebases: string[]): string =>
+  `${codebases.join(", ")} ${codebases.length === 1 ? "was" : "were"} built when functional specs were numbered, before they had func-ids: nothing more is built on ${codebases.length === 1 ? "it" : "them"} - the whole chain is regenerated from scratch once you agree`;
+
 /** Why nothing runs in a codebase whose code - and conformance tests, where they are wanted - is built from its spec as it is. */
 export const UP_TO_DATE = "built from the ***plain as it is";
 
 /** Why a codebase with work left has no plan: the planner found none. */
 const NO_PLAN = "the planner found no way to cut the work into pulses that hold together";
 
+/**
+ * Where a module's functional specs' test plain files are, by func-id, under `base` - the folder the module's file is
+ * named in: as the parse bound them, else where one is to be, `<test-dir>/<module>/<func-id>.plain`.
+ */
+function testPlainPathOf(tree: MarshalledPlainSource, moduleName: string, plainFile: string, base: string): (funcId: string) => string {
+  const bound = Object.entries((tree[TEST_PLAIN_FILES] as Record<string, TestPlainFileBinding> | undefined) ?? {});
+  const fallback = relative(dirname(plainFile), testDirOf(plainFile));
+  return (funcId) => {
+    const name = bound.find(([, binding]) => binding.module === moduleName && binding.func_id === funcId)?.[0] ?? join(fallback, moduleName, `${funcId}.plain`);
+    return join(base, name);
+  };
+}
+
 /** A diff's lines placed in the .plain files of a chain - the tip's first - named as they are from the project. */
 function whereInFiles(diff: string, chain: ChainEntry[]): DiffWhere {
   try {
-    const files = [...chain].reverse().flatMap((entry) => specFilesOf(entry.plainFile));
+    // The test plain files too: a conformance pulse's diff has their lines.
+    const files = [...chain].reverse().flatMap((entry) => [...specFilesOf(entry.plainFile), ...testPlainFilesOf(entry.plainFile)]);
     // A standard library template by its import path, not by where turri happens to be.
     const nameOf = (path: string) => (path.startsWith(`${STDLIB_ROOT}/stdlib/`) ? relative(STDLIB_ROOT, path) : relative(projectDirOf(chain.at(-1)!.plainFile), path) || basename(path));
     const unique = [...new Set(files)].map((path) => ({ name: nameOf(path), text: readFileSync(path, "utf8") }));
@@ -1911,19 +1764,51 @@ function whereInFiles(diff: string, chain: ChainEntry[]): DiffWhere {
   }
 }
 
-/** The functional specs a scheduled conformance job waits for: "fs 2 is", "fs 2, fs 3 are". */
-function waitsText(frids: string[]): string {
-  return `${frids.map((frid) => `fs ${frid}`).join(", ")} ${frids.length === 1 ? "is" : "are"}`;
+/**
+ * The conformance tests' work, a line a functional spec, each with why its tests are behind: "todo:add-task   scenarios
+ * changed". What a case is follows from the tests record: a functional spec added there is new to the tests, one patched
+ * changed - its text or its scenarios - one regenerated again had its code replaced, one deleted is taken out.
+ */
+function conformanceLines(module: string, cases: JobCases): string[] {
+  const rows: Array<[string, string]> = [
+    ...cases.add.map((touched): [string, string] => [touched.funcId, "scenarios to write tests for"]),
+    ...cases.patch.map((touched): [string, string] => [touched.funcId, "its text or its scenarios changed"]),
+    ...cases.again.map((touched): [string, string] => [touched.funcId, "its code was regenerated again"]),
+    ...cases.delete.map((touched): [string, string] => [touched.funcId, "taken out - its tests go"]),
+  ].map(([funcId, why]) => [`${module}:${funcId}`, why]);
+  if (rows.length === 0) return ["    the test reqs or what they are written against changed"];
+  const width = Math.max(...rows.map(([name]) => name.length));
+  return rows.map(([name, why]) => `    ${name.padEnd(width)}   ${why}`);
 }
 
-/** What a job does, in a few words: its cases. */
+/** Functional specs as a person names them: `module:func-id`, each. */
+export function namesOf(module: string, funcIds: string[]): string {
+  return funcIds.map((funcId) => `${module}:${funcId}`).join(", ");
+}
+
+/**
+ * The func-ids a person names in a module, each as `module:func-id` - a bare func-id, or another module's, is refused:
+ * a func-id is unique in its module only.
+ */
+export function funcIdsNamed(module: string, names: string[]): string[] {
+  return names.map((name) => {
+    const at = name.lastIndexOf(":");
+    if (at === -1) throw new Error(`Name the functional spec as ${module}:${name} - a func-id with its module. Nothing was done.`);
+    const [named, funcId] = [name.slice(0, at), name.slice(at + 1)];
+    if (named !== module) throw new Error(`${name} is not a functional spec of ${module}: name ${named}'s .plain file for it. Nothing was done.`);
+    return funcId;
+  });
+}
+
+/** What a job does, in a few words: its cases, each functional spec by its func-id - with its module, a module below's. */
 function casesText(cases: JobCases): string {
+  const named = (specs: TouchedSpec[]) => specs.map((spec) => (spec.module !== undefined ? `${spec.module}:${spec.funcId}` : spec.funcId)).join(", ");
   const parts = [
     ...(cases.fresh ? ["sets the project up"] : []),
-    ...(cases.add.length > 0 ? [`adds ${cases.add.map((spec) => `fs ${spec.frid}`).join(", ")}`] : []),
-    ...(cases.patch.length > 0 ? [`changes ${cases.patch.map((spec) => `fs ${spec.frid}`).join(", ")}`] : []),
-    ...(cases.again.length > 0 ? [`regenerates ${cases.again.map((spec) => `fs ${spec.frid}`).join(", ")} again`] : []),
-    ...(cases.delete.length > 0 ? [`takes out ${cases.delete.map((spec) => `fs ${spec.frid}`).join(", ")}`] : []),
+    ...(cases.add.length > 0 ? [`adds ${named(cases.add)}`] : []),
+    ...(cases.patch.length > 0 ? [`changes ${named(cases.patch)}`] : []),
+    ...(cases.again.length > 0 ? [`regenerates ${named(cases.again)} again`] : []),
+    ...(cases.delete.length > 0 ? [`takes out ${named(cases.delete)}`] : []),
   ];
   return parts.length > 0 ? parts.join(", ") : "no functional spec - reqs or definitions only";
 }
@@ -2004,6 +1889,16 @@ export function describeModules(statuses: ModuleStatus[], options: { for?: "chat
   const startOver = (status: ModuleStatus): string[] => {
     if (status.startOver === undefined) return [];
     const { requires, codebases } = status.startOver;
+    if (status.startOver.old === true) {
+      return options.for === "command line"
+        ? [`  turri regenerate ${basename(status.plainFile)} --start-over regenerates it from scratch, with its whole chain`]
+        : [
+            `  Ask the user whether to regenerate ${status.module} from scratch, with its whole chain, and say why: ${codebases.join(", ")} ` +
+              `${codebases.length === 1 ? "was" : "were"} built when functional specs were numbered, before they had func-ids, so nothing more ` +
+              "can be built on it - its code and conformance tests are taken out, kept in its history, and every module of the chain " +
+              `is built again from the bottom. Only if they agree, call regenerate with ${basename(status.plainFile)} and from_scratch: "chain".`,
+          ];
+    }
     return options.for === "command line"
       ? [`  turri regenerate ${basename(status.plainFile)} --start-over starts ${codebases.join(", ")} over`]
       : [
@@ -2026,9 +1921,7 @@ export function describeModules(statuses: ModuleStatus[], options: { for?: "chat
       status.planned.forEach((job, index) =>
         lines.push(
           job.afterCode === true
-            ? `  ${index + 1}. conformance tests - planned once the code is built`
-            : job.waitsFor !== undefined
-            ? `  ${index + 1}. conformance tests: ${job.title} - scheduled, starts once ${waitsText(job.waitsFor)} built`
+            ? `  ${index + 1}. conformance tests${job.specs !== undefined && job.specs.length > 0 ? ` of ${job.specs.join(", ")}` : ""} - planned once the code is built`
             : job.planning === true
               ? `  ${index + 1}. ${job.track === "conformance" ? "conformance tests: " : ""}${job.title} - being planned into pulses`
             : `  ${index + 1}. ${job.track === "conformance" ? "conformance tests: " : ""}${job.title} - ${casesText(job.cases)}`,
@@ -2069,7 +1962,7 @@ const defaultConformanceRunner: JobRunner = async (job, onDelta) => {
 
 /** The functional specs a pulse covers, by case, each with the module whose spec it is: a host's to light and mark. */
 export function pulseCases(cases: JobCases, moduleName: string): PulseCases {
-  const of = (specs: TouchedSpec[]) => specs.map((spec) => ({ module: spec.module ?? moduleName, frid: spec.frid }));
+  const of = (specs: TouchedSpec[]) => specs.map((spec) => ({ module: spec.module ?? moduleName, funcId: spec.funcId }));
   return { add: of(cases.add), patch: of(cases.patch), again: of(cases.again), delete: of(cases.delete) };
 }
 

@@ -3,10 +3,12 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
   ACCEPTANCE_TESTS,
+  CONFORMANCE_TESTS,
   DEFINITIONS,
   FUNCTIONAL_REQUIREMENTS,
   NON_FUNCTIONAL_REQUIREMENTS,
   REQUIRED_FUNCTIONAL_SPECS,
+  TEST_PLAIN_FILES,
   TEST_REQUIREMENTS,
   type MarshalledPlainSource,
   type SpecificationItem,
@@ -17,10 +19,13 @@ import { committedText } from "./lineage.ts";
  * What a module is built from, in two records - see docs/regenerating.md.
  *
  * - The code record, `code/.turri.json`: the spec the code is built from, without what is only
- *   for conformance - the test reqs, and the acceptance tests under each functional spec.
+ *   for conformance - the test reqs, the test plain files, and each functional spec's scenarios.
  * - The tests record, `tests/.turri.json`: the functional specs the conformance tests are
- *   written for - a subset of the code record's, each with its number and its acceptance tests - the
+ *   written for - a subset of the code record's, each with its func-id and its scenarios - the
  *   definitions and implementation reqs they were written against, and the test reqs they follow.
+ *
+ * A functional spec is known by its func-id - with its module, for one a module below has - in both: a record
+ * written when functional specs were numbered is old (`isOldRecord`), and its codebase is regenerated from scratch.
  *
  * The tests record is always a substate of the code record: a conformance test exercises
  * functionality, and only functionality in the code can be tested. Each record is committed with
@@ -43,7 +48,7 @@ export function marksRegenerateAgain(item: unknown): boolean {
   return typeof item === "object" && item !== null && (item as Record<string, unknown>)[REGENERATE_AGAIN] === true;
 }
 
-type Item = SpecificationItem & { module?: string; frid?: string };
+type Item = SpecificationItem & { id?: string; module?: string; [CONFORMANCE_TESTS]?: unknown[]; [ACCEPTANCE_TESTS]?: unknown[] };
 
 const itemsOf = (tree: MarshalledPlainSource | null | undefined, heading: string): Item[] => ((tree?.[heading] as Item[] | undefined) ?? []).slice();
 
@@ -52,20 +57,39 @@ function withoutEmpty(tree: MarshalledPlainSource): MarshalledPlainSource {
   return Object.fromEntries(Object.entries(tree).filter(([, value]) => !Array.isArray(value) || value.length > 0));
 }
 
-/** A functional spec as the code sees it: without its acceptance tests. */
-function withoutAcceptanceTests(item: Item): Item {
-  const { [ACCEPTANCE_TESTS]: _tests, ...rest } = item;
+/**
+ * Whether a functional spec has scenarios - conformance or acceptance - and so is tested: one with an empty test plain
+ * file is not.
+ */
+export function hasScenarios(item: unknown): boolean {
+  const scenarios = (key: string) => ((item as Record<string, unknown> | null)?.[key] as unknown[] | undefined) ?? [];
+  return scenarios(CONFORMANCE_TESTS).length + scenarios(ACCEPTANCE_TESTS).length > 0;
+}
+
+/** The func-ids of a tree's own functional specs that have scenarios: those its conformance tests are written for. */
+export function testedFuncIds(tree: MarshalledPlainSource | null | undefined): string[] {
+  return itemsOf(tree, FUNCTIONAL_REQUIREMENTS).filter(hasScenarios).map((item) => item.id ?? "");
+}
+
+/** A functional spec as the code sees it: without its scenarios, which are the conformance tests' alone. */
+function withoutScenarios(item: Item): Item {
+  const { [CONFORMANCE_TESTS]: _conformance, [ACCEPTANCE_TESTS]: _acceptance, ...rest } = item;
   return rest;
 }
 
-/** The spec as the code is built from it: no test reqs, and no acceptance tests under the functional specs. */
+/** The spec as the code is built from it: no test reqs, no test plain files, and no scenarios on the functional specs. */
 export function codeTree(tree: MarshalledPlainSource): MarshalledPlainSource {
-  const { [TEST_REQUIREMENTS]: _testReqs, ...rest } = tree;
+  const { [TEST_REQUIREMENTS]: _testReqs, [TEST_PLAIN_FILES]: _testPlainFiles, ...rest } = tree;
   return withoutEmpty({
     ...rest,
-    [FUNCTIONAL_REQUIREMENTS]: itemsOf(tree, FUNCTIONAL_REQUIREMENTS).map(withoutAcceptanceTests),
-    [REQUIRED_FUNCTIONAL_SPECS]: itemsOf(tree, REQUIRED_FUNCTIONAL_SPECS).map(withoutAcceptanceTests),
+    [FUNCTIONAL_REQUIREMENTS]: itemsOf(tree, FUNCTIONAL_REQUIREMENTS).map(withoutScenarios),
+    [REQUIRED_FUNCTIONAL_SPECS]: itemsOf(tree, REQUIRED_FUNCTIONAL_SPECS).map(withoutScenarios),
   });
+}
+
+/** A functional spec's identity in a tree: its func-id, with its module for one a module below has. */
+export function identityOf(item: { id?: string; module?: string }): string {
+  return `${item.module ?? ""}:${item.id ?? ""}`;
 }
 
 /** A linked resource as the trees compared have it: its link, and the hash of what its file holds. */
@@ -75,7 +99,7 @@ interface DigestedResource {
   digest?: string;
 }
 
-/** Every linked resource in a tree, wherever an item has them - a functional spec, its acceptance tests, a definition, a req. */
+/** Every linked resource in a tree, wherever an item has them - a functional spec, its scenarios, a definition, a req. */
 function mapResources(value: unknown, map: (resource: DigestedResource) => DigestedResource): unknown {
   if (Array.isArray(value)) return value.map((entry) => mapResources(entry, map));
   if (value === null || typeof value !== "object") return value;
@@ -169,7 +193,7 @@ export function chainTree(trees: Array<{ module: string; tree: MarshalledPlainSo
 export function inheritedRecord(source: MarshalledPlainSource, sourceModule: string): MarshalledPlainSource {
   const inherited = [
     ...itemsOf(source, REQUIRED_FUNCTIONAL_SPECS),
-    ...itemsOf(source, FUNCTIONAL_REQUIREMENTS).map((item, index) => ({ ...withoutAcceptanceTests(item), module: sourceModule, frid: String(index + 1) })),
+    ...itemsOf(source, FUNCTIONAL_REQUIREMENTS).map((item) => ({ ...withoutScenarios(item), module: sourceModule })),
   ];
   return withoutEmpty({
     [DEFINITIONS]: taggedWith(itemsOf(source, DEFINITIONS), sourceModule),
@@ -178,13 +202,11 @@ export function inheritedRecord(source: MarshalledPlainSource, sourceModule: str
   });
 }
 
-/** Which functional specs are to have conformance tests, by number. Default: every one. */
-export type Chosen = (frid: string) => boolean;
-
 /**
  * What the conformance tests are to be written for, now: of the functional specs the code is built
- * from, those chosen, each as the spec has it now with its acceptance tests - and the code's
- * definitions and implementation reqs, with the test reqs as the spec has them now.
+ * from, those with scenarios, each as the spec has it now with its scenarios - and the code's
+ * definitions and implementation reqs, with the test reqs as the spec has them now. In the spec's order, a functional
+ * spec matched to the code and the tests by its func-id. One whose scenarios are all taken out loses its tests.
  *
  * Conformance follows the code, never goes ahead of it: a functional spec whose code is not caught up
  * with the spec - its text in the code record is not the spec's, the code record does not have it at
@@ -193,25 +215,26 @@ export type Chosen = (frid: string) => boolean;
  * (`regenerateAgain`) differ from the target once the code lands: written against the code it replaced, they are
  * conformance work again, though the spec's text never changed.
  */
-export function conformanceTarget(code: MarshalledPlainSource | null, tests: MarshalledPlainSource | null, spec: MarshalledPlainSource, chosen: Chosen = () => true): MarshalledPlainSource {
-  const built = itemsOf(code, FUNCTIONAL_REQUIREMENTS);
+export function conformanceTarget(code: MarshalledPlainSource | null, tests: MarshalledPlainSource | null, spec: MarshalledPlainSource): MarshalledPlainSource {
+  const built = new Map(itemsOf(code, FUNCTIONAL_REQUIREMENTS).map((item) => [item.id, item]));
   const now = itemsOf(spec, FUNCTIONAL_REQUIREMENTS);
-  const tested = new Map(itemsOf(tests, FUNCTIONAL_REQUIREMENTS).map((item) => [item.frid, item]));
-  const inCode = new Set(built.map((item) => item.markdown.trim()));
+  const inSpec = new Set(now.map((item) => item.id));
+  const tested = itemsOf(tests, FUNCTIONAL_REQUIREMENTS);
+  const testedById = new Map(tested.map((item) => [item.id, item]));
   const specs: Item[] = [];
-  for (let index = 0; index < Math.max(built.length, now.length); index += 1) {
-    const frid = String(index + 1);
-    const current = now[index];
-    if (current !== undefined && built[index]?.markdown.trim() === current.markdown.trim() && !marksRegenerateAgain(built[index])) {
-      if (chosen(frid)) specs.push({ ...current, frid });
+  for (const current of now) {
+    const have = built.get(current.id);
+    if (have !== undefined && have.markdown.trim() === current.markdown.trim() && !marksRegenerateAgain(have)) {
+      if (hasScenarios(current)) specs.push(current);
       continue;
     }
     // The code is behind the spec here - built from other text, not built, or being regenerated again: its tests stay
-    // as they are until it catches up. Taken out of the spec, they go once the code has dropped it too.
-    const kept = tested.get(frid);
-    if (kept === undefined) continue;
-    if (current !== undefined || inCode.has(kept.markdown.trim())) specs.push(kept);
+    // as they are until it catches up.
+    const kept = testedById.get(current.id);
+    if (kept !== undefined) specs.push(kept);
   }
+  // Taken out of the spec, its tests go once the code has dropped it too.
+  for (const kept of tested) if (!inSpec.has(kept.id) && built.has(kept.id)) specs.push(kept);
   return withoutEmpty({
     [DEFINITIONS]: itemsOf(code, DEFINITIONS),
     [NON_FUNCTIONAL_REQUIREMENTS]: itemsOf(code, NON_FUNCTIONAL_REQUIREMENTS),
@@ -221,82 +244,36 @@ export function conformanceTarget(code: MarshalledPlainSource | null, tests: Mar
 }
 
 /**
- * Of the functional specs given, by number, those the code record does not have as `tree` has them - not built,
- * or built from other text: no conformance test can be written for them yet. `tree` is a spec, its functional
- * specs numbered by place, or what conformance tests are written for, each with its number.
+ * Of the functional specs given, by func-id, those the code record does not have as `tree` has them - not built,
+ * or built from other text: no conformance test can be written for them yet. `tree` is a spec, or what conformance
+ * tests are written for.
  */
-export function notBuilt(code: MarshalledPlainSource | null, tree: MarshalledPlainSource, frids: string[]): string[] {
-  const built = itemsOf(code, FUNCTIONAL_REQUIREMENTS);
-  const wanted = itemsOf(tree, FUNCTIONAL_REQUIREMENTS);
-  const numbered = wanted.some((item) => item.frid !== undefined);
-  return frids.filter((frid) => {
-    const item = numbered ? wanted.find((entry) => entry.frid === frid) : wanted[Number(frid) - 1];
-    const have = built[Number(frid) - 1];
+export function notBuilt(code: MarshalledPlainSource | null, tree: MarshalledPlainSource, funcIds: string[]): string[] {
+  const built = new Map(itemsOf(code, FUNCTIONAL_REQUIREMENTS).map((item) => [item.id, item]));
+  const wanted = new Map(itemsOf(tree, FUNCTIONAL_REQUIREMENTS).map((item) => [item.id, item]));
+  return funcIds.filter((funcId) => {
+    const item = wanted.get(funcId);
+    const have = built.get(funcId);
     return item === undefined || have === undefined || have.markdown.trim() !== item.markdown.trim();
   });
 }
 
-/** A record written before the tree was all it held: v2's layout, with its sections as text. */
-interface StoredV2 {
-  version: number;
-  module: string;
-  [DEFINITIONS]?: string[];
-  [NON_FUNCTIONAL_REQUIREMENTS]?: string[];
-  [TEST_REQUIREMENTS]?: string[];
-  [FUNCTIONAL_REQUIREMENTS]: Array<{ module: string; frid: string; spec: string; "acceptance tests"?: string[]; unitTests?: string }>;
-}
-
-/** The first layout of all: one context snapshot per functionality. */
-interface StoredLegacy {
-  module: string;
-  functionalities: Record<string, { frid: string; unitTests?: string; specifications: Record<string, string[]> }>;
-}
-
-const asItem = (markdown: string, acceptanceTests?: string[]): Item => ({
-  markdown,
-  ...(acceptanceTests !== undefined && acceptanceTests.length > 0 ? { [ACCEPTANCE_TESTS]: acceptanceTests.map((test) => ({ markdown: test })) } : {}),
-});
-
 /**
- * An older record, as the tree it describes. Its own functional specs are taken up to the first
- * that did not build: the tree says what is built, and the one that failed is not.
+ * Whether a record was written when functional specs were numbered, before they had func-ids: a functional spec without
+ * one, or one a module below has named by its number. Nothing is built on such a record - the codebase is regenerated
+ * from scratch, with its chain, once the person agrees.
  */
-function treeFromV2(stored: StoredV2): MarshalledPlainSource {
-  const own = stored[FUNCTIONAL_REQUIREMENTS].filter((entry) => entry.module === stored.module).sort((a, b) => Number(a.frid) - Number(b.frid));
-  const built: Item[] = [];
-  for (const [index, entry] of own.entries()) {
-    if (Number(entry.frid) !== index + 1 || entry.unitTests !== "passed") break;
-    built.push(asItem(entry.spec, entry["acceptance tests"]));
-  }
-  const required = stored[FUNCTIONAL_REQUIREMENTS]
-    .filter((entry) => entry.module !== stored.module)
-    .map((entry) => ({ ...asItem(entry.spec, entry["acceptance tests"]), module: entry.module, frid: entry.frid }));
-  return withoutEmpty({
-    [DEFINITIONS]: (stored[DEFINITIONS] ?? []).map((text) => asItem(text)),
-    [NON_FUNCTIONAL_REQUIREMENTS]: (stored[NON_FUNCTIONAL_REQUIREMENTS] ?? []).map((text) => asItem(text)),
-    [TEST_REQUIREMENTS]: (stored[TEST_REQUIREMENTS] ?? []).map((text) => asItem(text)),
-    [FUNCTIONAL_REQUIREMENTS]: built,
-    [REQUIRED_FUNCTIONAL_SPECS]: required,
-  });
+export function isOldRecord(record: MarshalledPlainSource | null): boolean {
+  if (record === null) return false;
+  if ((record as { [OLD]?: boolean })[OLD] === true) return true;
+  const items = [...itemsOf(record, FUNCTIONAL_REQUIREMENTS), ...itemsOf(record, REQUIRED_FUNCTIONAL_SPECS)];
+  return items.some((item) => typeof item.id !== "string" || "frid" in item);
 }
 
-function treeFromLegacy(stored: StoredLegacy): MarshalledPlainSource {
-  const entries = Object.values(stored.functionalities).sort((a, b) => Number(a.frid) - Number(b.frid));
-  const latest = entries.at(-1)?.specifications;
-  const built: Item[] = [];
-  for (const [index, entry] of entries.entries()) {
-    if (Number(entry.frid) !== index + 1 || entry.unitTests !== "passed") break;
-    built.push(asItem(entry.specifications[FUNCTIONAL_REQUIREMENTS]?.at(-1) ?? "", entry.specifications[ACCEPTANCE_TESTS]));
-  }
-  return withoutEmpty({
-    [DEFINITIONS]: (latest?.[DEFINITIONS] ?? []).map((text) => asItem(text)),
-    [NON_FUNCTIONAL_REQUIREMENTS]: (latest?.[NON_FUNCTIONAL_REQUIREMENTS] ?? []).map((text) => asItem(text)),
-    [TEST_REQUIREMENTS]: (latest?.[TEST_REQUIREMENTS] ?? []).map((text) => asItem(text)),
-    [FUNCTIONAL_REQUIREMENTS]: built,
-  });
-}
+/** What an older layout of a record is read as: old, and nothing else of it. */
+const OLD = "old record";
 
-/** A record's text as the tree it holds, whatever layout wrote it - or null when it is not one. */
+/** A record's text as the tree it holds - an older layout as an old record - or null when it is not one. */
 function readRecordText(text: string | undefined): MarshalledPlainSource | null {
   if (text === undefined) return null;
   let raw: unknown;
@@ -306,8 +283,8 @@ function readRecordText(text: string | undefined): MarshalledPlainSource | null 
     return null;
   }
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
-  if (typeof (raw as { version?: unknown }).version === "number") return treeFromV2(raw as StoredV2);
-  if ("functionalities" in raw) return treeFromLegacy(raw as StoredLegacy);
+  // A layout from before the tree was all a record held: older still than numbered functional specs.
+  if (typeof (raw as { version?: unknown }).version === "number" || "functionalities" in raw) return { [OLD]: true };
   return raw as MarshalledPlainSource;
 }
 

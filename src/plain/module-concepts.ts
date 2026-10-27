@@ -12,6 +12,7 @@ import {
   readPlainSourceMetadata,
   REQUIRES_DIRECTIVE,
   restoreStrippedLines,
+  sectionOf,
   type PlainFileParseResult,
 } from "./parser.ts";
 import { DEFINITIONS } from "./spec.ts";
@@ -43,7 +44,7 @@ export function readModule(moduleName: string, plainFile: string, templateDirs: 
   const add = (result: PlainFileParseResult, nodes: AnyNode[], module: string) => {
     for (const node of nodes) definitions.push({ node, module: result.importedFrom.get(node) ?? module });
   };
-  const definitionsOf = (result: PlainFileParseResult) => result.plainSource[DEFINITIONS]?.children ?? [];
+  const definitionsOf = (result: PlainFileParseResult) => sectionOf(result.plainSource, DEFINITIONS)?.children ?? [];
 
   let requires: string[];
   let parsed = parse(moduleName);

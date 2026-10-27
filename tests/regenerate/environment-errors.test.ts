@@ -164,7 +164,7 @@ describe("the whole conformance suite, when its script cannot find its toolchain
       buildDir: join(project, "plain_modules", "app", "code"),
       conformanceRoot: join(project, "plain_modules"),
       moduleName: "app",
-      frids: ["1"],
+      funcIds: ["one"],
       tree: {} as never,
       required: [],
       scripts: { conformance: join(project, "run_conformance_tests.sh") },

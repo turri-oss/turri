@@ -12,4 +12,5 @@ exported_concepts:
 - The :NestedConcept: concept must be implemented.
 
 ***functional specs***
-- Implement a wrapper for the :NestedConcept: concept.
+# implement-a-wrapper-for-the
+Implement a wrapper for the :NestedConcept: concept.

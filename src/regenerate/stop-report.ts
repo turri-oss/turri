@@ -24,7 +24,7 @@ export const ATTEMPTS: Record<StopPoint, number> = {
 export interface StopFacts {
   moduleName: string;
   /** The functionality it stopped at; none for a spec change. */
-  frid?: string;
+  funcId?: string;
   at: StopPoint;
   /** The unit test runs, the last of which is the failing one. */
   runs?: TestRun[];
@@ -45,7 +45,7 @@ export interface StopFacts {
  * offered here is a change to a `.plain` file, never to code, tests or the machine.
  */
 export function describeStop(facts: StopFacts): string {
-  const what = facts.frid !== undefined ? `${facts.moduleName} functionality ${facts.frid}` : `the spec change in ${facts.moduleName}`;
+  const what = facts.funcId !== undefined ? `functional spec ${facts.moduleName}:${facts.funcId}` : `the spec change in ${facts.moduleName}`;
   // What actually happened, not the most it could have been.
   const tries =
     facts.at === "unit tests" ? (facts.attempts ?? ATTEMPTS[facts.at]) : facts.at === "conformance" ? (facts.conformance?.rounds ?? ATTEMPTS[facts.at]) : ATTEMPTS[facts.at];
@@ -85,12 +85,12 @@ export function describeStop(facts: StopFacts): string {
     ];
   } else if (facts.at === "conformance" && facts.conformance?.specConflict !== undefined) {
     const { functionalities, reason } = facts.conformance.specConflict;
-    const [one, two] = functionalities.map((ref) => `${ref.module} ${ref.frid}`);
+    const [one, two] = functionalities.map((ref) => `${ref.module}:${ref.funcId}`);
     why = `its spec contradicts itself: functionalities ${one} and ${two} cannot both hold. ${reason.trim()}`;
     todo = [
       `Compare functional specs ${one} and ${two} (\`analyze-2-func-specs\`, \`resolve-spec-conflict\`) and change whichever is wrong - ` +
         "or both, so they say the same thing about where they meet.",
-      "If one is meant to change what the other does, say so in the one that changes it, and update its acceptance tests to match.",
+      "If one is meant to change what the other does, say so in the one that changes it, and update its scenarios to match.",
     ];
   } else if (facts.at === "conformance" && facts.conformance?.review !== undefined && facts.conformance.stuck === undefined) {
     const problems = facts.conformance.review;
@@ -98,13 +98,13 @@ export function describeStop(facts: StopFacts): string {
       `its conformance tests pass, but never passed review in ${tries} round${tries === 1 ? "" : "s"}: they do not yet test what the spec says, ` +
       `black box. What the review last found:\n${problems.slice(0, 8).map((problem) => `    - ${problem.kind === "missing" ? "missing" : "bad"} · ${problem.file}${problem.test ? ` · ${problem.test}` : ""}: ${problem.what.trim().replace(/\s+/g, " ")}`).join("\n")}`;
     todo = [
-      "If an acceptance test asks for something the tests cannot do - a service they cannot reach, data they cannot set up - say in the test " +
-        "reqs how they do it, or change the acceptance test to what can be checked.",
+      "If a scenario asks for something the tests cannot do - a service they cannot reach, data they cannot set up - say in the test " +
+        "reqs how they do it, or change the scenario to what can be checked.",
       "If the test reqs leave open how the software is reached or what may be mocked, say so exactly.",
     ];
   } else if (facts.at === "conformance" && facts.conformance?.unlabelled !== undefined) {
     why =
-      "its conformance tests were never written and labelled as the two kinds - conformance tests and each acceptance test - " +
+      "its conformance tests were never written and labelled as the scenarios they carry out - each conformance and acceptance scenario - " +
       `though they were sent back for it again and again. Still missing:\n${facts.conformance.unlabelled.map((line) => `    - ${line}`).join("\n")}`;
     todo = ["If the test reqs leave open where the tests go or how they are built, say so exactly - the folder, the files, the build."];
   } else if (facts.at === "conformance" && facts.conformance?.escalation !== undefined) {
@@ -139,7 +139,7 @@ export function describeStop(facts: StopFacts): string {
     why = `after ${tries} round${tries === 1 ? "" : "s"}, its conformance tests and its code still disagree about what the spec means.`;
     todo = [
       "The functional spec can be read more than one way. Say exactly what should happen - the inputs, the outputs, " +
-        "the edge cases - and add acceptance tests that pin down the expected result.",
+        "the edge cases - and add scenarios to its test plain file that pin down the expected result.",
       "If the conformance tests are meant to be written or run differently - framework, command, setup - change the test reqs.",
     ];
   } else {
@@ -150,7 +150,7 @@ export function describeStop(facts: StopFacts): string {
       "This most often means its spec contradicts an earlier one. Compare them (`analyze-func-specs`, " +
         "`resolve-spec-conflict`) and change whichever is wrong.",
       "If the new behaviour is meant to change what an earlier functionality does, change that earlier spec and its " +
-        "acceptance tests to say so.",
+        "scenarios to say so.",
     ];
   }
 
@@ -171,13 +171,13 @@ export function describeStop(facts: StopFacts): string {
  * spec is all they work on, and the fix is theirs to choose.
  */
 export function describeSpecConflict(conflict: SpecConflict): string {
-  const name = (spec: SpecConflict["specs"][number]) => `functional spec ${spec.frid} of ${spec.module}`;
+  const name = (spec: SpecConflict["specs"][number]) => `functional spec ${spec.module}:${spec.funcId}`;
   const [one, two] = conflict.specs;
   return [
     `The spec contradicts itself: ${name(one!)} and ${name(two!)} cannot both hold.`,
     "",
     ...conflict.specs.flatMap((spec) => [
-      `Functional spec ${spec.frid} of ${spec.module} (${basename(spec.plainFile)}):`,
+      `Functional spec ${spec.module}:${spec.funcId} (${basename(spec.plainFile)}):`,
       ...spec.text.trim().split("\n").map((line) => `  ${line}`),
       "",
     ]),

@@ -3,6 +3,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { writePlain } from "../test-plain.ts";
 import { recordHistory } from "../../src/regenerate/lineage.ts";
 import { exportModule, listDeployed, runningDeployed, startDeployed, stopDeployed } from "../../src/regenerate/release.ts";
 import { createDeployState, createDeployTools } from "../../src/release-tools.ts";
@@ -20,13 +21,13 @@ function built(moduleName: string, files: Record<string, string>): string {
     mkdirSync(join(code, file, ".."), { recursive: true });
     writeFileSync(join(code, file), content);
   }
-  recordHistory(code, `render ${moduleName} fs 1: it greets`);
+  recordHistory(code, `render ${moduleName}:greet`);
   return code;
 }
 
 function spec(name: string, requires?: string): string {
   const file = join(dir, `${name}.plain`);
-  writeFileSync(file, `${requires !== undefined ? `---\nrequires:\n    - ${requires}\n---\n\n` : ""}***implementation reqs***\n\n- Python.\n\n***functional specs***\n\n- ${name} greets.\n`);
+  writePlain(dir, `${name}.plain`, `${requires !== undefined ? `---\nrequires:\n    - ${requires}\n---\n\n` : ""}***implementation reqs***\n\n- Python.\n\n***functional specs***\n\n# greet\n${name} greets.\n`);
   return file;
 }
 
@@ -88,7 +89,7 @@ describe("deploying a module", () => {
     expect(existsSync(join(deployment.dir, RECORD_FILE))).toBe(false);
     expect(existsSync(join(deployment.dir, NOTES_FILE))).toBe(false);
     expect(deployment.unfinished).toBe(true);
-    expect(deployment.subject).toBe("render app fs 1: it greets");
+    expect(deployment.subject).toBe("render app:greet");
     // The work under way is the job's: it is left as it was.
     expect(readFileSync(join(code, "app.py"), "utf8")).toBe("print('hel");
     expect(existsSync(join(code, "wip.py"))).toBe(true);

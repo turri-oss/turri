@@ -1,0 +1,11 @@
+---
+module: task-manager
+func_id: add-task
+---
+
+***conformance tests***
+
+# works
+See [the spec](valid.plain).
+
+***acceptance tests***

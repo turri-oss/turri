@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import { testPlainFile, writePlain } from "../test-plain.ts";
 import { writeTestScripts } from "../test-scripts.ts";
 
 /**
@@ -15,7 +16,7 @@ const asked: Array<{ role: string; prompt: string }> = [];
 let codeDir = "";
 /** What the stubbed judge says, and which functionality the stubbed conformance agent labels its tests for. */
 let judgeSays: (prompt: string) => Record<string, unknown> = () => ({ culprit: "code", reason: "The spec says the app prints hello; the code prints goodbye.", spec_says: "The app prints hello." });
-let testedFrid = "1";
+let testedFuncId = "print-hello";
 /** What the stubbed test reviewer says. */
 let reviewSays: () => Record<string, unknown> = () => ({ pass: true, problems: [] });
 /** What the stand-in arbiter rules on each review it weighs; nothing: it gives no ruling, and the review stands. */
@@ -64,9 +65,8 @@ vi.mock("../../src/pi.ts", async (importOriginal) => {
         await tool("submit_exploration").execute("id", {
           build_and_run: "Nothing to build or install: run `python3 app.py` from the build folder, with Python 3.",
           tests_reach_it: "The script runs the tests from a copy of the build: app.py is in the current directory when they run.",
-          interfaces: [{ module: "app", id: testedFrid, how: "Run `python3 app.py` from the build folder; it writes to stdout and exits." }],
+          interfaces: [{ module: "app", id: testedFuncId, how: "Run `python3 app.py` from the build folder; it writes to stdout and exits." }],
           environment: "Nothing around it: no variables, services or files - every run starts from the same state.",
-          plan: [{ module: "app", id: testedFrid, tests: "Run the app as a subprocess and check what it prints to stdout, and its exit code, as the spec says. Acceptance test 1: run it, assert it prints hello and exits 0." }],
         });
         return "Done.";
       }
@@ -109,7 +109,7 @@ vi.mock("../../src/pi.ts", async (importOriginal) => {
         pingPong += 1;
         await tool("write").execute("id", {
           path: "test_conformance_hello.py",
-          content: `# conformance tests of functionality ${testedFrid}\nimport unittest\n\nclass Hello(unittest.TestCase):\n    def test_side(self):\n        self.fail("depends on artifact ${pingPong % 2 === 0 ? "alpha" : "beta"}")\n`,
+          content: `# conformance tests of app:${testedFuncId}\nimport unittest\n\nclass Hello(unittest.TestCase):\n    def test_side(self):\n        self.fail("depends on artifact ${pingPong % 2 === 0 ? "alpha" : "beta"}")\n`,
         });
         return "Done.";
       }
@@ -119,7 +119,7 @@ vi.mock("../../src/pi.ts", async (importOriginal) => {
           path: "test_acceptance_hello.py",
           content:
             "import subprocess, sys, unittest\n\nclass Acceptance(unittest.TestCase):\n" +
-            "    # acceptance test 1 of functionality 1: Running the app prints hello and exits 0.\n" +
+            "    # acceptance scenario prints-hello of app:print-hello\n" +
             "    def test_prints_hello_and_exits_0(self):\n" +
             "        run = subprocess.run([sys.executable, 'app.py'], capture_output=True, text=True)\n" +
             "        self.assertEqual((run.stdout.strip(), run.returncode), ('hello', 0))\n",
@@ -128,7 +128,8 @@ vi.mock("../../src/pi.ts", async (importOriginal) => {
         await tool("write").execute("id", {
           path: "test_conformance_hello.py",
           content:
-            `# conformance tests of functionality ${testedFrid}\n${touchesTests ? `# fix ${(touches += 1)}\n` : ""}${staticBad && !prompt.includes("Exit 80") ? "# BAD\n" : ""}${hangsFirst && !prompt.includes("a test is what is wrong") ? "# WAIT_FOREVER\n" : ""}import subprocess, sys, unittest\n\nclass Hello(unittest.TestCase):\n` +
+            `# conformance tests of app:${testedFuncId}\n${touchesTests ? `# fix ${(touches += 1)}\n` : ""}${staticBad && !prompt.includes("Exit 80") ? "# BAD\n" : ""}${hangsFirst && !prompt.includes("a test is what is wrong") ? "# WAIT_FOREVER\n" : ""}import subprocess, sys, unittest\n\nclass Hello(unittest.TestCase):\n` +
+            `    # conformance scenario checks of app:${testedFuncId}\n` +
             "    def test_prints_hello(self):\n" +
             "        out = subprocess.run([sys.executable, 'app.py'], capture_output=True, text=True).stdout\n" +
             `        self.assertEqual(out.strip(), '${firstTestWrong && !prompt.includes("a test is what is wrong") ? "Hello!" : "hello"}')\n`,
@@ -143,6 +144,15 @@ vi.mock("../../src/pi.ts", async (importOriginal) => {
 const { renderConformanceTests } = await import("../../src/regenerate/conformance.ts");
 const { withActivity } = await import("../../src/regenerate/activity.ts");
 
+/** app.plain up to its functional specs. */
+const APP = "***implementation reqs***\n\n- Python.\n\n***test reqs***\n\n- :ConformanceTests: use unittest and run the app as a subprocess.\n\n***functional specs***\n\n";
+
+/** A functional spec of app's test plain file, with the acceptance scenarios given. */
+function acceptanceTests(funcId: string, ...scenarios: string[]): void {
+  mkdirSync(join(root, "tests", "app"), { recursive: true });
+  writeFileSync(join(root, "tests", "app", `${funcId}.plain`), testPlainFile("app", funcId, { acceptance: scenarios }));
+}
+
 let root: string;
 beforeEach(() => {
   root = realpathSync(mkdtempSync(join(tmpdir(), "turri-conformance-loop-")));
@@ -153,14 +163,11 @@ beforeEach(() => {
   mkdirSync(codeDir, { recursive: true });
   writeFileSync(join(codeDir, "app.py"), "print('goodbye')\n");
   writeFileSync(join(codeDir, "test_app.py"), "import unittest\n\nclass Unit(unittest.TestCase):\n    def test_runs(self):\n        self.assertTrue(True)\n");
-  writeFileSync(
-    join(root, "app.plain"),
-    "***implementation reqs***\n\n- Python.\n\n***test reqs***\n\n- :ConformanceTests: use unittest and run the app as a subprocess.\n\n" +
-      "***functional specs***\n\n- The app prints hello.\n\n  ***acceptance tests***\n\n  - Running the app prints hello and exits 0.\n",
-  );
+  acceptanceTests("print-hello", "# prints-hello\nRunning the app prints hello and exits 0.");
+  writePlain(root, "app.plain", APP + "# print-hello\nThe app prints hello.\n");
   asked.length = 0;
   judgeSays = () => ({ culprit: "code", reason: "The spec says the app prints hello; the code prints goodbye.", spec_says: "The app prints hello." });
-  testedFrid = "1";
+  testedFuncId = "print-hello";
   pingPong = 0;
   coderMisses = 0;
   writesNothing = false;
@@ -184,7 +191,7 @@ describe("the conformance step", { timeout: 180_000 }, () => {
     const result = await withActivity(sink, () =>
       renderConformanceTests({
         plainFile: join(root, "app.plain"),
-        frid: "1",
+        funcId: "print-hello",
         buildDir: codeDir,
         conformanceDir: join(root, "plain_modules", "app", "tests"),
       }),
@@ -194,7 +201,7 @@ describe("the conformance step", { timeout: 180_000 }, () => {
     expect(result.codeChanged).toBe(true);
     expect(readFileSync(join(codeDir, "app.py"), "utf8")).toBe("print('hello')\n");
 
-    // In order: the explorer, the conformance agent (sent back once for the acceptance test it left
+    // In order: the explorer, the conformance agent (sent back once for the acceptance scenario it left
     // out), the judge, who says the code is wrong, and the coding agent, who fixes it.
     // ...and, once the suite and the unit tests pass, the review gate.
     expect(asked.map((turn) => turn.role)).toEqual(["explorer", "conformance agent", "conformance agent", "judge", "coding agent", "reviewer"]);
@@ -204,16 +211,16 @@ describe("the conformance step", { timeout: 180_000 }, () => {
     expect(review).toContain("<the tests this run wrote - a diff of the tests folder from where the run started>");
     expect(review).toContain("test_acceptance_hello.py");
     expect(review).toContain("never mocks, stubs or replaces any part of the software under test");
-    expect(review).toContain("<acceptance test 1 of functionality 1>\n- Running the app prints hello and exits 0.");
+    expect(review).toContain("<scenario>\nacceptance scenario prints-hello of app:print-hello:\nRunning the app prints hello and exits 0.\n</scenario>");
     const [explorer, writer, , judge, coder] = asked;
     expect(explorer!.prompt).toContain("They will not see your replies");
     // The test author is given how to invoke it, and may read the code - never write it.
-    // The whole exploration: how to run it, how the functionality is reached, what it needs, and a plan.
-    expect(writer!.prompt).toContain("## How each functionality is reached\n\n### app 1\n\nRun `python3 app.py` from the build folder; it writes to stdout and exits.");
-    expect(writer!.prompt).toContain("## Plan for the conformance tests\n\n### app 1\n\nRun the app as a subprocess");
+    // The whole exploration: how to run it, how the functionality is reached, and what it needs - what to test is the scenarios'.
+    expect(writer!.prompt).toContain("## How each functionality is reached\n\n### app print-hello\n\nRun `python3 app.py` from the build folder; it writes to stdout and exits.");
+    expect(writer!.prompt).not.toContain("Plan for the conformance tests");
     expect(writer!.prompt).toContain(`You have read access to the code, in ${codeDir}, with your file tools - read, grep, find, ls - but`);
     expect(writer!.prompt).toContain("not write access: you write tests, never code.");
-    expect(writer!.prompt).toContain("acceptance test 1 of functionality 1: Running the app prints hello and exits 0.");
+    expect(writer!.prompt).toContain("acceptance scenario prints-hello of app:print-hello:\nRunning the app prints hello and exits 0.");
     expect(judge!.prompt).toContain("Decide what is wrong: the code, the tests, the specification itself, the run's environment, or the testing script.");
     expect(judge!.prompt).toContain("<how to read the specification>");
     expect(judge!.prompt).toMatch(/<failing run exit="1"/);
@@ -223,12 +230,12 @@ describe("the conformance step", { timeout: 180_000 }, () => {
     expect(coder!.prompt).toContain("The spec says the app prints hello; the code prints goodbye.");
     expect(coder!.prompt).toContain(`You have read access to the conformance tests, in ${join(root, "plain_modules", "app", "tests")}, with your file tools`);
     expect(coder!.prompt).toContain("but not write access: read them to see what a failing test does and expects; never change them.");
-    expect(stages).toContain("module app, functionality 1: the code is wrong - the coding agent fixes it");
+    expect(stages).toContain("functional spec app:print-hello: the code is wrong - the coding agent fixes it");
 
     // The harness's own runs decide: failing until the code is fixed, then the suite and the unit tests pass.
     expect(result.runs.at(-1)!.exitCode).toBe(0);
     expect(new Set(result.runs.map((run) => run.command))).toEqual(new Set(["test_scripts/run_conformance_tests_python.sh"]));
-    expect(readFileSync(join(root, "plain_modules", "app", "tests", "test_acceptance_hello.py"), "utf8")).toContain("# acceptance test 1 of functionality 1:");
+    expect(readFileSync(join(root, "plain_modules", "app", "tests", "test_acceptance_hello.py"), "utf8")).toContain("# acceptance scenario prints-hello of app:print-hello");
   });
 
   it("stops at the harness's first run when the conformance testing script cannot find its toolchain - no turn back to the conformance agent", async () => {
@@ -236,7 +243,7 @@ describe("the conformance step", { timeout: 180_000 }, () => {
     const { EnvironmentError, describeEnvironmentError } = await import("../../src/regenerate/environment-error.ts");
     const stopped = await renderConformanceTests({
       plainFile: join(root, "app.plain"),
-      frid: "1",
+      funcId: "print-hello",
       buildDir: codeDir,
       conformanceDir: join(root, "plain_modules", "app", "tests"),
     }).then(
@@ -258,7 +265,7 @@ describe("the conformance step", { timeout: 180_000 }, () => {
     const spy = vi.mocked(createExecutor);
     await renderConformanceTests({
       plainFile: join(root, "app.plain"),
-      frid: "1",
+      funcId: "print-hello",
       buildDir: codeDir,
       conformanceDir: join(root, "plain_modules", "app", "tests"),
     });
@@ -285,37 +292,35 @@ describe("the conformance step", { timeout: 180_000 }, () => {
   });
 
   it("raises a spec conflict only after the same two functionalities are named three times, sending the tests back in between", async () => {
-    writeFileSync(
-      join(root, "app.plain"),
-      "***implementation reqs***\n\n- Python.\n\n***test reqs***\n\n- :ConformanceTests: use unittest and run the app as a subprocess.\n\n" +
-        "***functional specs***\n\n- The app prints goodbye.\n\n- The app prints hello.\n",
-    );
-    testedFrid = "2";
-    judgeSays = () => ({ culprit: "spec", functionalities: [{ module: "app", id: "2" }, { module: "app", id: "1" }], reason: "One says it prints goodbye, the other hello." });
+    // A conformance scenario the stub carries out at once: no turn back for a label.
+    writeFileSync(join(root, "tests", "app", "print-hello.plain"), testPlainFile("app", "print-hello", { conformance: ["# checks\nIt prints hello."] }));
+    writePlain(root, "app.plain", APP + "# say-goodbye\nThe app prints goodbye.\n\n# print-hello\nThe app prints hello.\n");
+    testedFuncId = "print-hello";
+    judgeSays = () => ({ culprit: "spec", functionalities: [{ module: "app", id: "print-hello" }, { module: "app", id: "say-goodbye" }], reason: "One says it prints goodbye, the other hello." });
     const conflicts: unknown[] = [];
     const sink = { stage() {}, activity() {}, now() {}, usage() {}, transcript() {}, spec() {}, specConflict: (conflict: unknown) => conflicts.push(conflict) };
 
     const result = await withActivity(sink, () =>
-      renderConformanceTests({ plainFile: join(root, "app.plain"), frid: "2", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") }),
+      renderConformanceTests({ plainFile: join(root, "app.plain"), funcId: "print-hello", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") }),
     );
 
     expect(result.passed).toBe(false);
     expect(result.specConflict).toEqual({
-      functionalities: [{ module: "app", frid: "1" }, { module: "app", frid: "2" }],
+      functionalities: [{ module: "app", funcId: "print-hello" }, { module: "app", funcId: "say-goodbye" }],
       reason: "One says it prints goodbye, the other hello.",
     });
     // Judged three times; the first two recorded and the tests sent back - never the code.
     expect(asked.filter((turn) => turn.role === "judge")).toHaveLength(3);
     expect(asked.filter((turn) => turn.role === "coding agent")).toHaveLength(0);
-    expect(asked.filter((turn) => turn.prompt.includes("Functionalities app 1 & app 2 of the specification may conflict"))).toHaveLength(2);
+    expect(asked.filter((turn) => turn.prompt.includes("Functionalities app print-hello & app say-goodbye of the specification may conflict"))).toHaveLength(2);
     // The person gets both functional specs as they read, and every time it was raised.
     expect(conflicts).toEqual([
       {
         moduleName: "app",
         plainFile: join(root, "app.plain"),
         specs: [
-          { module: "app", frid: "1", plainFile: join(root, "app.plain"), text: "- The app prints goodbye." },
-          { module: "app", frid: "2", plainFile: join(root, "app.plain"), text: "- The app prints hello." },
+          { module: "app", funcId: "print-hello", plainFile: join(root, "app.plain"), text: "The app prints hello." },
+          { module: "app", funcId: "say-goodbye", plainFile: join(root, "app.plain"), text: "The app prints goodbye." },
         ],
         reasons: ["One says it prints goodbye, the other hello.", "One says it prints goodbye, the other hello.", "One says it prints goodbye, the other hello."],
       },
@@ -323,8 +328,8 @@ describe("the conformance step", { timeout: 180_000 }, () => {
     // Each attempt went into the notes, and the next judge read them. (A run that does not pass is
     // undone whole, and its notes with it.)
     const lastJudge = asked.filter((turn) => turn.role === "judge")[2]!.prompt;
-    expect(lastJudge).toMatch(/app 2 conformance attempt 1\] attempt 1: failed with "[^"]*" → judged a spec conflict between functionalities app 1 & app 2: [^→]* → the conformance agent changed /);
-    expect(lastJudge).toMatch(/app 2 conformance attempt 2\] attempt 2: failed with "[^"]*" → judged a spec conflict between functionalities app 1 & app 2/);
+    expect(lastJudge).toMatch(/app print-hello conformance attempt 1\] attempt 1: failed with "[^"]*" → judged a spec conflict between functionalities app print-hello & app say-goodbye: [^→]* → the conformance agent changed /);
+    expect(lastJudge).toMatch(/app print-hello conformance attempt 2\] attempt 2: failed with "[^"]*" → judged a spec conflict between functionalities app print-hello & app say-goodbye/);
   });
 
   it("keeps one code fixer for the run: a second fix goes to the agent that made the first, its task given once", async () => {
@@ -332,7 +337,7 @@ describe("the conformance step", { timeout: 180_000 }, () => {
     const made = (createExecutor as unknown as { mock: { calls: Array<[{ label?: string; task?: string }]> } }).mock.calls;
     const before = made.length;
     coderMisses = 1;
-    const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), frid: "1", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") });
+    const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), funcId: "print-hello", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") });
     expect(result.passed).toBe(true);
     const coders = asked.filter((turn) => turn.role === "coding agent");
     expect(coders.length).toBeGreaterThanOrEqual(2);
@@ -348,7 +353,7 @@ describe("the conformance step", { timeout: 180_000 }, () => {
     const { createExecutor } = await import("../../src/pi.ts");
     const made = (createExecutor as unknown as { mock: { calls: Array<[{ label?: string; task?: string }]> } }).mock.calls;
     const before = made.length;
-    await renderConformanceTests({ plainFile: join(root, "app.plain"), frid: "1", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") });
+    await renderConformanceTests({ plainFile: join(root, "app.plain"), funcId: "print-hello", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") });
     const fixer = made.slice(before).find(([opts]) => opts.label?.endsWith("coding agent"))![0].task!;
     expect(fixer).toContain('<script kind="conformance tests" path="test_scripts/run_conformance_tests_python.sh">');
     expect(fixer).toContain('<script kind="unit tests" path="test_scripts/run_unittests_python.sh">');
@@ -358,7 +363,7 @@ describe("the conformance step", { timeout: 180_000 }, () => {
   it("shows the explorer, the judge and the code fixer the prepare script, before the conformance testing script it runs ahead of", async () => {
     const prepare = "#!/bin/bash\n# prepares the build\nexit 0\n";
     writeFileSync(join(root, "test_scripts", "prepare_environment_python.sh"), prepare);
-    await renderConformanceTests({ plainFile: join(root, "app.plain"), frid: "1", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") });
+    await renderConformanceTests({ plainFile: join(root, "app.plain"), funcId: "print-hello", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") });
     const explorer = asked.find((turn) => turn.role === "explorer")!.prompt;
     expect(explorer).toContain(`<script kind="prepare environment" path="test_scripts/prepare_environment_python.sh" run-as="<script> <copy of the build>, before every run of the conformance testing script">\n${prepare.trimEnd()}\n</script>`);
     expect(explorer.indexOf('kind="prepare environment"')).toBeLessThan(explorer.indexOf('path="test_scripts/run_conformance_tests_python.sh"'));
@@ -374,7 +379,7 @@ describe("the conformance step", { timeout: 180_000 }, () => {
     // The judge always blames the tests, and the stub's fixes never touch what fails - so the failure never changes.
     judgeSays = () => ({ culprit: "tests", reason: "The tests are wrong." });
     touchesTests = true;
-    const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), frid: "1", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") });
+    const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), funcId: "print-hello", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") });
 
     expect(result.passed).toBe(false);
     expect(result.stuck).toBeDefined();
@@ -384,7 +389,7 @@ describe("the conformance step", { timeout: 180_000 }, () => {
     expect(asked.filter((turn) => turn.role === "explorer")[1]!.prompt).toContain("You are asked again.");
     expect(result.rounds).toBe(6);
     const { describeStop } = await import("../../src/regenerate/stop-report.ts");
-    const stop = describeStop({ moduleName: "app", frid: "1", at: "conformance", conformance: result });
+    const stop = describeStop({ moduleName: "app", funcId: "print-hello", at: "conformance", conformance: result });
     // The error itself, quoted - not the run's last lines - and how often, in how many attempts.
     expect(stop).toMatch(/kept failing with "[^"]*Error[^"]*"[^-]* - 3 times, and 3 more after the explorer was asked again what they lacked, in 6 attempts/);
   });
@@ -404,7 +409,7 @@ describe("the conformance step", { timeout: 180_000 }, () => {
       ].join("\n"),
     });
     staticBad = true;
-    const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), frid: "1", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") });
+    const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), funcId: "print-hello", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") });
     expect(result.passed).toBe(true);
     expect(asked.filter((turn) => turn.role === "judge")).toHaveLength(0);
     expect(asked.filter((turn) => turn.role === "coding agent")).toHaveLength(0);
@@ -414,18 +419,18 @@ describe("the conformance step", { timeout: 180_000 }, () => {
 
   it("stops once two fixes in a row change no file - an agent that will not, or cannot, act on the verdict", async () => {
     judgeSays = () => ({ culprit: "tests", reason: "The tests are wrong." });
-    const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), frid: "1", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") });
+    const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), funcId: "print-hello", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") });
     expect(result.passed).toBe(false);
     expect(result.stuck).toMatchObject({ changedNothing: true, times: 2 });
     expect(result.rounds).toBe(2);
     const { describeStop } = await import("../../src/regenerate/stop-report.ts");
-    expect(describeStop({ moduleName: "app", frid: "1", at: "conformance", conformance: result })).toMatch(/the last 2 fixes - in 2 attempts - changed nothing/);
+    expect(describeStop({ moduleName: "app", funcId: "print-hello", at: "conformance", conformance: result })).toMatch(/the last 2 fixes - in 2 attempts - changed nothing/);
   });
 
   it("stops the pulse, rolled back and not retried, once the run's environment is judged what is wrong twice in a row - the tests checked in between - and tells the person what to provide", async () => {
     judgeSays = () => ({ culprit: "environment", reason: "HUBSPOT_ACCESS_TOKEN, read from plain_modules/.turri/.env, is rejected with 401." });
     const { EnvironmentError, describeEnvironmentError } = await import("../../src/regenerate/environment-error.ts");
-    const stopped = await renderConformanceTests({ plainFile: join(root, "app.plain"), frid: "1", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") }).then(
+    const stopped = await renderConformanceTests({ plainFile: join(root, "app.plain"), funcId: "print-hello", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") }).then(
       () => undefined,
       (error: unknown) => error,
     );
@@ -443,7 +448,7 @@ describe("the conformance step", { timeout: 180_000 }, () => {
   it("stops the pulse, rolled back, once the conformance testing script itself is judged what is wrong twice in a row - saying what to change in it", async () => {
     judgeSays = () => ({ culprit: "script", reason: "The script sets TESTS=1 after the run, so it fails whatever the tests do." });
     const { EnvironmentError, describeEnvironmentError } = await import("../../src/regenerate/environment-error.ts");
-    const stopped = await renderConformanceTests({ plainFile: join(root, "app.plain"), frid: "1", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") }).then(
+    const stopped = await renderConformanceTests({ plainFile: join(root, "app.plain"), funcId: "print-hello", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") }).then(
       () => undefined,
       (error: unknown) => error,
     );
@@ -468,7 +473,7 @@ describe("the conformance step", { timeout: 180_000 }, () => {
   it("counts a failure that comes back after another as stuck too - a run swinging between two - and journals cause and effect", async () => {
     judgeSays = () => ({ culprit: "tests", reason: "The test points at the wrong artifact." });
     pingPong = 1;
-    const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), frid: "1", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") });
+    const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), funcId: "print-hello", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") });
     expect(result.passed).toBe(false);
     // goodbye, alpha, beta, alpha, beta...: never three alike in a row, but each keeps coming back.
     expect(result.stuck).toBeDefined();
@@ -489,7 +494,7 @@ describe("the conformance step", { timeout: 180_000 }, () => {
       (reviews += 1) === 1
         ? { pass: false, problems: [{ file: "test_acceptance_hello.py", test: "test_prints_hello_and_exits_0", kind: "bad", what: "It asserts nothing: assertTrue(true) is a placeholder, not the acceptance test." }] }
         : { pass: true, problems: [] };
-    const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), frid: "1", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") });
+    const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), funcId: "print-hello", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") });
     expect(result.passed).toBe(true);
     const reviewTurns = asked.filter((turn) => turn.role === "reviewer");
     expect(reviewTurns).toHaveLength(2);
@@ -506,34 +511,30 @@ describe("the conformance step", { timeout: 180_000 }, () => {
     expect(made.filter(([opts]) => opts.label?.endsWith("test reviewer")).length - reviewersBefore).toBe(1);
   });
 
-  it("for a spec change, labels, shows and reviews the acceptance tests of the functionalities it touches", async () => {
-    const diff = "--- a/app.plain\n+++ b/app.plain\n@@ -1 +1 @@\n-- The app prints hi.\n+- The app prints hello.\n";
-    const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), frid: "1", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests"), diff });
+  it("for a spec change, labels, shows and reviews the scenarios of the functionalities it touches", async () => {
+    const diff = "--- a/app.plain\n+++ b/app.plain\n@@ -1 +1 @@\n-The app prints hi.\n+The app prints hello.\n";
+    const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), funcId: "print-hello", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests"), diff });
     expect(result.passed).toBe(true);
     const writer = asked.find((turn) => turn.role === "conformance agent")!;
-    expect(writer.prompt).toContain("The acceptance tests of the functional specs the change touches:\n<acceptance tests>\n");
-    expect(writer.prompt).toContain("Running the app prints hello and exits 0.");
-    // Its first tests leave the acceptance test out: sent back to label it, as a functionality's own run does.
+    expect(writer.prompt).toContain("The scenarios of the functional specs the change touches, as they are now:\n<acceptance tests>\n");
+    expect(writer.prompt).toContain("acceptance scenario prints-hello of app:print-hello:\nRunning the app prints hello and exits 0.");
+    // Its first tests leave the acceptance scenario out: sent back to label it, as a functionality's own run does.
     expect(asked.some((turn) => turn.role === "conformance agent" && turn.prompt.includes("are not labelled yet"))).toBe(true);
     const review = asked.find((turn) => turn.role === "reviewer")!.prompt;
-    expect(review).toContain("the functionalities of module `app` the change touches (1)");
-    expect(review).toContain("<acceptance test 1 of functionality 1>\n- Running the app prints hello and exits 0.");
+    expect(review).toContain("the functionalities of module `app` the change touches (print-hello)");
+    expect(review).toContain("<scenario>\nacceptance scenario prints-hello of app:print-hello:\nRunning the app prints hello and exits 0.\n</scenario>");
   });
 
-  it("for a spec change, gives the judge and the explorer the acceptance tests of every functionality it touches, labelled - not only the last one's", async () => {
-    writeFileSync(
-      join(root, "app.plain"),
-      "***implementation reqs***\n\n- Python.\n\n***test reqs***\n\n- :ConformanceTests: use unittest and run the app as a subprocess.\n\n" +
-        "***functional specs***\n\n- The app prints hello.\n\n  ***acceptance tests***\n\n  - Running the app prints hello and exits 0.\n\n" +
-        "- The app takes no arguments.\n\n  ***acceptance tests***\n\n  - Running the app with no arguments exits 0.\n",
-    );
+  it("for a spec change, gives the judge and the explorer the scenarios of every functionality it touches, labelled - not only the last one's", async () => {
+    acceptanceTests("take-no-arguments", "# no-arguments\nRunning the app with no arguments exits 0.");
+    writePlain(root, "app.plain", APP + "# print-hello\nThe app prints hello.\n\n# take-no-arguments\nThe app takes no arguments.\n");
     const diff =
-      "--- a/app.plain\n+++ b/app.plain\n@@ -1 +1 @@\n-- The app prints hi.\n+- The app prints hello.\n+- The app takes no arguments.\n";
+      "--- a/app.plain\n+++ b/app.plain\n@@ -1 +1 @@\n-The app prints hi.\n+The app prints hello.\n+The app takes no arguments.\n";
     await renderConformanceTests({ plainFile: join(root, "app.plain"), buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests"), diff });
     // The judge is given the very spec the explorer is (`specContext`); the stubbed explorer plans one functionality, so no judge is reached.
     const explorer = asked.find((turn) => turn.role === "explorer")!.prompt;
     expect(explorer).toContain(
-      "<acceptance tests>\nacceptance test 1 of functionality 1: Running the app prints hello and exits 0.\n\nacceptance test 1 of functionality 2: Running the app with no arguments exits 0.\n</acceptance tests>",
+      "<acceptance tests>\nacceptance scenario prints-hello of app:print-hello:\nRunning the app prints hello and exits 0.\n\nacceptance scenario no-arguments of app:take-no-arguments:\nRunning the app with no arguments exits 0.\n</acceptance tests>",
     );
   });
 
@@ -548,7 +549,7 @@ describe("the conformance step", { timeout: 180_000 }, () => {
 
     // A judge that never quotes the spec: asked again, then the tests go back - the code is never touched.
     judgeSays = () => ({ culprit: "code", reason: "The spec says a bad request returns 400." });
-    const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), frid: "1", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests"), maxRounds: 2 });
+    const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), funcId: "print-hello", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests"), maxRounds: 2 });
     expect(asked.some((turn) => turn.role === "coding agent")).toBe(false);
     expect(asked.some((turn) => turn.role === "judge" && turn.prompt.includes("quotes no words of the specification"))).toBe(true);
     expect(result.codeChanged).toBe(false);
@@ -556,26 +557,26 @@ describe("the conformance step", { timeout: 180_000 }, () => {
 
   it("tells an agent that wrote no tests that there are none, and stops after three asks rather than every round", async () => {
     writesNothing = true;
-    const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), frid: "1", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") });
+    const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), funcId: "print-hello", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") });
     expect(result.passed).toBe(false);
-    expect(result.unlabelled).toEqual(expect.arrayContaining([expect.stringContaining('No test file is labelled "conformance tests of functionality 1"')]));
+    expect(result.unlabelled).toEqual(expect.arrayContaining([expect.stringContaining('No test file is labelled "conformance tests of app:print-hello"')]));
     const writers = asked.filter((turn) => turn.role === "conformance agent");
     expect(writers).toHaveLength(4);
     expect(writers[1]!.prompt).toContain("There are no tests in your tests folder - nothing ran.");
     const { describeStop } = await import("../../src/regenerate/stop-report.ts");
-    expect(describeStop({ moduleName: "app", frid: "1", at: "conformance", conformance: result })).toContain("were never written and labelled");
+    expect(describeStop({ moduleName: "app", funcId: "print-hello", at: "conformance", conformance: result })).toContain("were never written and labelled");
   });
 
   describe("a functional spec regenerated again", () => {
     const testsDir = () => join(root, "plain_modules", "app", "tests");
-    const again = { fresh: false, add: [], patch: [], again: [{ frid: "1", text: "The app prints hello.", module: "app" }], delete: [], mechanical: false };
+    const again = { fresh: false, add: [], patch: [], again: [{ funcId: "print-hello", text: "The app prints hello.", module: "app" }], delete: [], mechanical: false };
     /** Its tests as the code it replaced left them: labelled, and passing on the new code too. */
     const oldTests = () => {
       writeFileSync(join(codeDir, "app.py"), "print('hello')\n");
       mkdirSync(testsDir(), { recursive: true });
       writeFileSync(
         join(testsDir(), "test_conformance_hello.py"),
-        "# conformance tests of functionality 1\n# acceptance test 1 of functionality 1: Running the app prints hello and exits 0.\n" +
+        "# conformance tests of app:print-hello\n# acceptance scenario prints-hello of app:print-hello\n" +
           "import subprocess, sys, unittest\n\nclass Hello(unittest.TestCase):\n    def test_prints_hello(self):\n" +
           "        out = subprocess.run([sys.executable, 'app.py'], capture_output=True, text=True).stdout\n        self.assertEqual(out.strip(), 'hello')\n",
       );
@@ -585,7 +586,7 @@ describe("the conformance step", { timeout: 180_000 }, () => {
       oldTests();
       writesNothing = true;
       const before = readFileSync(join(testsDir(), "test_conformance_hello.py"), "utf8");
-      const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), frid: "1", buildDir: codeDir, conformanceDir: testsDir(), cases: again });
+      const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), funcId: "print-hello", buildDir: codeDir, conformanceDir: testsDir(), cases: again });
       expect(result.passed).toBe(true);
       expect(readFileSync(join(testsDir(), "test_conformance_hello.py"), "utf8")).toBe(before);
     });
@@ -596,7 +597,7 @@ describe("the conformance step", { timeout: 180_000 }, () => {
       writeFileSync(join(codeDir, "app.py"), "print('hi')\n");
       judgeSays = () => ({ culprit: "tests", reason: "The test checks a greeting the spec leaves open." });
       writesNothing = true;
-      const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), frid: "1", buildDir: codeDir, conformanceDir: testsDir(), cases: again });
+      const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), funcId: "print-hello", buildDir: codeDir, conformanceDir: testsDir(), cases: again });
       expect(result.passed).toBe(false);
     });
   });
@@ -605,7 +606,7 @@ describe("the conformance step", { timeout: 180_000 }, () => {
     const missing = { file: "test_acceptance_hello.py", kind: "missing", what: "The acceptance test skips the backup it checks.", blocking: true };
     reviewSays = () => ({ pass: false, problems: [missing] });
     arbiterRules = () => [{ problem: 1, uphold: true, why: "the acceptance test skips what it checks" }];
-    const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), frid: "1", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests"), maxRounds: 15 });
+    const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), funcId: "print-hello", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests"), maxRounds: 15 });
     // An optimiser, not a gate: what the last review sent back is worked on, and once the suite passes the run goes on.
     expect(result.passed).toBe(true);
     expect(asked.filter((turn) => turn.role === "reviewer")).toHaveLength(2);
@@ -622,11 +623,11 @@ describe("the conformance step", { timeout: 180_000 }, () => {
   it("approves the tests at the second failed review when the arbiter finds the reviewer picky - what it let go is kept in the notes", async () => {
     reviewSays = () => ({ pass: false, problems: [{ file: "test_acceptance_hello.py", kind: "bad", what: "It could log more.", blocking: false }] });
     arbiterRules = () => [{ problem: 1, uphold: false, why: "a nitpick: logging is not what the spec states" }];
-    const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), frid: "1", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") });
+    const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), funcId: "print-hello", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") });
     expect(result.passed).toBe(true);
     expect(asked.filter((turn) => turn.role === "reviewer")).toHaveLength(2);
     expect(asked.filter((turn) => turn.role === "arbiter")).toHaveLength(1);
-    expect(asked.find((turn) => turn.role === "arbiter")!.prompt).toContain("You are the arbiter of the conformance tests of functionality 1");
+    expect(asked.find((turn) => turn.role === "arbiter")!.prompt).toContain("You are the arbiter of the conformance tests of functional spec app:print-hello");
     expect(result.reviewWaived).toEqual([{ file: "test_acceptance_hello.py", kind: "bad", what: "It could log more.", blocking: false }]);
     // The tests' notes, beside them - never the code's, which the coding agents read.
     expect(readFileSync(join(root, "plain_modules", "app", "tests", ".turri-notes.md"), "utf8")).toContain("the arbiter let go what the conformance test review raised");
@@ -635,11 +636,11 @@ describe("the conformance step", { timeout: 180_000 }, () => {
 
   it("stops with what the review last found when the tests never pass it", async () => {
     reviewSays = () => ({ pass: false, problems: [{ file: "test_acceptance_hello.py", kind: "missing", what: "The acceptance test's exit code check is missing." }] });
-    const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), frid: "1", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests"), maxRounds: 3 });
+    const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), funcId: "print-hello", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests"), maxRounds: 3 });
     expect(result.passed).toBe(false);
     expect(result.review).toEqual([{ file: "test_acceptance_hello.py", kind: "missing", what: "The acceptance test's exit code check is missing." }]);
     const { describeStop } = await import("../../src/regenerate/stop-report.ts");
-    expect(describeStop({ moduleName: "app", frid: "1", at: "conformance", conformance: result })).toContain("never passed review");
+    expect(describeStop({ moduleName: "app", funcId: "print-hello", at: "conformance", conformance: result })).toContain("never passed review");
   });
 
   describe("a failure the tests' fix does not make go away", () => {
@@ -675,7 +676,7 @@ describe("the conformance step", { timeout: 180_000 }, () => {
       const stages: string[] = [];
       const sink = { stage: (label: string) => stages.push(label), activity() {}, now() {}, usage() {}, transcript() {}, spec() {} };
       const result = await withActivity(sink, () =>
-        renderConformanceTests({ plainFile: join(root, "app.plain"), frid: "1", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") }),
+        renderConformanceTests({ plainFile: join(root, "app.plain"), funcId: "print-hello", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") }),
       );
 
       expect(result.passed).toBe(true);
@@ -693,7 +694,7 @@ describe("the conformance step", { timeout: 180_000 }, () => {
       expect(judges[0]!.prompt).toContain("<how to invoke it> is the explorer's account, written before the run, and it can be wrong");
       expect(judges[1]!.prompt).toContain("<escalation>");
       expect(judges[1]!.prompt).toContain("The tests reach the build the wrong way");
-      expect(stages).toContain("module app, functionality 1: the judge finds the failure the code's - escalated to the coding agent");
+      expect(stages).toContain("functional spec app:print-hello: the judge finds the failure the code's - escalated to the coding agent");
       const coder = asked.find((turn) => turn.role === "coding agent")!.prompt;
       expect(coder).toContain("Error: 'dist/app.py' missing (build not done).");
       expect(coder).toContain("The script runs the build's dist/app.py, and the build has no dist folder");
@@ -705,7 +706,7 @@ describe("the conformance step", { timeout: 180_000 }, () => {
 
     it("stops with the judge's reasoning when the coding agent's fix fails too", async () => {
       escalatedFix = "misses";
-      const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), frid: "1", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") });
+      const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), funcId: "print-hello", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") });
 
       expect(result.passed).toBe(false);
       // Bounded: the tests' fix, the escalation, and the run after the code's fix - not every one of the 20 attempts.
@@ -720,7 +721,7 @@ describe("the conformance step", { timeout: 180_000 }, () => {
       // Undone whole: the code's fix with the tests.
       expect(readFileSync(join(codeDir, "app.py"), "utf8")).toBe("print('hello')\n");
       const { describeStop } = await import("../../src/regenerate/stop-report.ts");
-      const stop = describeStop({ moduleName: "app", frid: "1", at: "conformance", conformance: result });
+      const stop = describeStop({ moduleName: "app", funcId: "print-hello", at: "conformance", conformance: result });
       expect(stop).toContain("a judge looked again and found it the code's; the coding agent fixed the code, and the run still failed the same way");
       expect(stop).toContain("The script runs the build's dist/app.py, and the build has no dist folder");
       expect(stop).toContain("- testing script: it stops unless the build has dist/app.py");
@@ -731,7 +732,7 @@ describe("the conformance step", { timeout: 180_000 }, () => {
         prompt.includes("<escalation>")
           ? { culprit: "tests", reason: "The test asserts what the spec does not say.", evidence: [{ source: join(root, "plain_modules", "app", "tests", "test_conformance_hello.py"), shows: "it asserts Hello!" }] }
           : { culprit: "tests", reason: "The tests are wrong." };
-      const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), frid: "1", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") });
+      const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), funcId: "print-hello", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") });
       expect(result.passed).toBe(false);
       expect(asked.filter((turn) => turn.role === "coding agent")).toHaveLength(0);
       expect(result.escalation).toBeUndefined();
@@ -743,7 +744,7 @@ describe("the conformance step", { timeout: 180_000 }, () => {
         prompt.includes("<escalation>")
           ? { ...codeVerdict(), evidence: [{ source: "the explorer's account", shows: "the build is prepared in .tmp/node_app" }] }
           : { culprit: "tests", reason: "The tests are wrong." };
-      const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), frid: "1", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") });
+      const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), funcId: "print-hello", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") });
       expect(result.passed).toBe(false);
       expect(asked.filter((turn) => turn.role === "coding agent")).toHaveLength(0);
       expect(asked.some((turn) => turn.role === "judge" && turn.prompt.includes("which you did not open"))).toBe(true);
@@ -754,7 +755,7 @@ describe("the conformance step", { timeout: 180_000 }, () => {
     writeFileSync(join(codeDir, "app.py"), "print('hello')\n");
     firstTestWrong = true;
     judgeSays = () => ({ culprit: "tests", reason: "The test expects Hello!; the spec says the app prints hello." });
-    const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), frid: "1", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") });
+    const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), funcId: "print-hello", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") });
     expect(result.passed).toBe(true);
     expect(result.codeChanged).toBe(false);
     expect(result.rounds).toBe(2);
@@ -775,7 +776,7 @@ describe("the conformance step", { timeout: 180_000 }, () => {
         ? { culprit: "environment", reason: "It installed and built, and was still going: the suite needs more than 2s." }
         : { culprit: "tests", reason: "The tests are wrong." };
     const { EnvironmentError, describeEnvironmentError } = await import("../../src/regenerate/environment-error.ts");
-    const stopped = await renderConformanceTests({ plainFile: join(root, "app.plain"), frid: "1", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") }).then(
+    const stopped = await renderConformanceTests({ plainFile: join(root, "app.plain"), funcId: "print-hello", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") }).then(
       () => undefined,
       (error: unknown) => error,
     );
@@ -809,7 +810,7 @@ describe("the conformance step", { timeout: 180_000 }, () => {
     hangsFirst = true;
     judgeSays = (prompt) =>
       prompt.includes("<timed out>") ? { culprit: "tests", reason: "test_prints_hello waits on a marker nothing clears." } : { culprit: "tests", reason: "The tests are wrong." };
-    const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), frid: "1", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") });
+    const result = await renderConformanceTests({ plainFile: join(root, "app.plain"), funcId: "print-hello", buildDir: codeDir, conformanceDir: join(root, "plain_modules", "app", "tests") });
     expect(result.passed).toBe(true);
     expect(asked.filter((turn) => turn.role === "judge")).toHaveLength(1);
     expect(asked.some((turn) => turn.role === "conformance agent" && turn.prompt.includes("The time limit stopped this run"))).toBe(true);

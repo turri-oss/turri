@@ -1,0 +1,13 @@
+---
+import:
+    - exported_concepts_base
+exported_concepts:
+    - :Concept:
+---
+
+***implementation reqs***
+- The :Concept: concept must be implemented.
+
+***functional specs***
+# implement-a-wrapper-for-the
+Implement a wrapper for the :Concept: concept.

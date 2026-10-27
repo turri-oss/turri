@@ -58,12 +58,30 @@ describe("a job's change as its agent is given it", () => {
     expect(diff.indexOf(":User: is a person")).toBeLessThan(diff.indexOf(":Board: is a grid"));
   });
 
-  it("writes a changed item out and in, and its acceptance tests indented under it as a file has them", () => {
+  it("writes a changed functional spec out and in under its func-id heading, as its file has it - its scenarios are not in that file", () => {
     const diff = changeDiff(
-      [{ id: "f", section: "functional specs", kind: "change", before: item("- One."), after: item("- One, loudly.", { acceptance_tests: [{ markdown: "- It is loud." }] }), position: 1 }],
+      [{ id: "f", section: "functional specs", kind: "change", before: item("One.", { id: "one" }), after: item("One, loudly.", { id: "one", acceptance_tests: [{ id: "loud", text: "It is loud." }] }), position: 1 }],
       "app.plain",
     );
-    expect(diff).toContain(" ***functional specs***\n-- One.\n+- One, loudly.\n+\n+    ***acceptance tests***\n+\n+    - It is loud.");
+    expect(diff).toContain(" ***functional specs***\n-# one\n-One.\n+# one\n+One, loudly.");
+    expect(diff).not.toContain("It is loud.");
+  });
+
+  it("lays out a conformance job's changed scenarios as a diff of the functional spec's test plain file, after the module's", () => {
+    const change: SpecChange = {
+      id: "f", section: "functional specs", kind: "change", position: 1,
+      before: item("One.", { id: "one", conformance_tests: [], acceptance_tests: [{ id: "loud", text: "It is loud." }] }),
+      after: item("One.", { id: "one", conformance_tests: [], acceptance_tests: [{ id: "loud", text: "It is very loud." }] }),
+    };
+    const diff = changeDiff([change], "app.plain", { module: "app", pathOf: (funcId) => `tests/app/${funcId}.plain` });
+    const block = diff.slice(diff.indexOf("diff --git a/tests/app/one.plain b/tests/app/one.plain"));
+    expect(block).toContain("--- a/tests/app/one.plain\n+++ b/tests/app/one.plain");
+    expect(block).toContain("-It is loud.");
+    expect(block).toContain("+It is very loud.");
+    expect(block).toContain("-func_id: one\n");
+    expect(diff.indexOf("diff --git a/app.plain")).toBeLessThan(diff.indexOf("diff --git a/tests/app/one.plain"));
+    // Without a module to lay them out for - a code job - no test plain file is shown.
+    expect(changeDiff([change], "app.plain")).not.toContain("tests/app/one.plain");
   });
 
   it("shows a required module's functional spec under the functional specs heading its file has, never the parser's key for it", () => {

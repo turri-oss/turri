@@ -1,11 +1,13 @@
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { renderConformanceTests } from "../../src/regenerate/conformance.ts";
 import { runConformanceScript } from "../../src/regenerate/test-scripts.ts";
+import { testPlainFile, writePlain } from "../test-plain.ts";
 
-const SIMPLE = "tests/data/simple.plain";
+/** tests/data/simple.plain, copied into the project with its test plain file. */
+let SIMPLE: string;
 
 /** Conformance needs test reqs, so the prompt tests use a spec that has them. */
 const WITH_TEST_REQS = `***implementation reqs***
@@ -18,7 +20,8 @@ const WITH_TEST_REQS = `***implementation reqs***
 
 ***functional specs***
 
-- Simple functionality
+# simple-functionality
+Simple functionality
 `;
 
 let project: string;
@@ -31,6 +34,8 @@ beforeEach(() => {
   conformanceDir = join(project, "plain_modules", "app", "tests");
   mkdirSync(buildDir, { recursive: true });
   mkdirSync(conformanceDir, { recursive: true });
+  writePlain(project, "simple.plain", readFileSync("tests/data/simple.plain", "utf8"));
+  SIMPLE = join(project, "simple.plain");
 });
 
 afterEach(() => {
@@ -115,27 +120,35 @@ describe("the harness's run of the conformance testing script", () => {
 describe("renderConformanceTests", () => {
   it("refuses to run before the functionality has been rendered", async () => {
     await expect(
-      renderConformanceTests({ plainFile: SIMPLE, frid: "1", buildDir, dryRun: true }),
+      renderConformanceTests({ plainFile: SIMPLE, funcId: "simple-functionality", buildDir, dryRun: true }),
     ).rejects.toThrow("Nothing to test");
   });
 
   it("points at the command that builds the code when the build is missing", async () => {
     await expect(
-      renderConformanceTests({ plainFile: SIMPLE, frid: "1", buildDir, dryRun: true }),
-    ).rejects.toThrow(`turri regenerate ${SIMPLE}`);
+      renderConformanceTests({ plainFile: SIMPLE, funcId: "simple-functionality", buildDir, dryRun: true }),
+    ).rejects.toThrow(`turri regenerate ${relative(process.cwd(), SIMPLE)}`);
   });
 
   it("rejects an unknown functionality id", async () => {
     writeFileSync(join(buildDir, "app.py"), "print('x')");
     await expect(
-      renderConformanceTests({ plainFile: SIMPLE, frid: "7", buildDir, dryRun: true }),
-    ).rejects.toThrow("Functionality 7 does not exist. Available: 1.");
+      renderConformanceTests({ plainFile: SIMPLE, funcId: "no-such-thing", buildDir, dryRun: true }),
+    ).rejects.toThrow("Functionality no-such-thing does not exist. Available: simple-functionality.");
   });
 
   it("rejects a file that is not a .plain file", async () => {
     await expect(renderConformanceTests({ plainFile: "README.md", dryRun: true })).rejects.toThrow(
       "Expected a .plain file",
     );
+  });
+
+  it("refuses a functional spec with no scenarios - an empty test plain file has nothing to test", async () => {
+    writeFileSync(join(buildDir, "app.py"), "print('x')");
+    writePlain(project, "withreqs.plain", WITH_TEST_REQS);
+    await expect(
+      renderConformanceTests({ plainFile: join(project, "withreqs.plain"), funcId: "simple-functionality", buildDir, conformanceDir, dryRun: true }),
+    ).rejects.toThrow("withreqs:simple-functionality has no scenarios - its test plain file is empty, so there is nothing to test");
   });
 
   describe("the prompt", () => {
@@ -146,11 +159,14 @@ describe("renderConformanceTests", () => {
       writeFileSync(join(buildDir, "app.py"), "SECRET_INTERNAL_HELPER = 1");
       writeFileSync(join(buildDir, "pkg", "helper.py"), "x = 2");
 
-      const specFile = join(buildDir, "..", "withreqs.plain");
-      writeFileSync(specFile, WITH_TEST_REQS);
+      writePlain(project, "withreqs.plain", WITH_TEST_REQS);
+      writeFileSync(
+        join(project, "tests", "withreqs", "simple-functionality.plain"),
+        testPlainFile("withreqs", "simple-functionality", { conformance: ["# runs\nIt runs and exits 0."], acceptance: ["# greets\nIt prints a greeting."] }),
+      );
       const result = await renderConformanceTests({
-        plainFile: specFile,
-        frid: "1",
+        plainFile: join(project, "withreqs.plain"),
+        funcId: "simple-functionality",
         buildDir,
         conformanceDir,
         dryRun: true,
@@ -172,33 +188,51 @@ describe("renderConformanceTests", () => {
     });
 
     it("carries the functionality and the specification sections", () => {
-      expect(prompt).toContain('<functionality module="withreqs" id="1">\n- Simple functionality\n</functionality>');
+      expect(prompt).toContain('<functionality module="withreqs" id="simple-functionality">\nSimple functionality\n</functionality>');
       expect(prompt).toContain("<test reqs>");
       expect(prompt).toContain("- Simple implementation requirement");
-      expect(prompt).toContain("Write conformance tests for functionality 1 of module `withreqs`.");
+      expect(prompt).toContain("Write conformance tests for functional spec `withreqs:simple-functionality`.");
+    });
+
+    it("carries out exactly the scenarios, each under its label - and asks for no test of its own", () => {
+      expect(prompt).toContain("<conformance tests>\nconformance scenario runs of withreqs:simple-functionality:\nIt runs and exits 0.\n</conformance tests>");
+      expect(prompt).toContain("<acceptance tests>\nacceptance scenario greets of withreqs:simple-functionality:\nIt prints a greeting.\n</acceptance tests>");
+      expect(prompt).toContain("Write no test that is not a scenario's");
+      expect(prompt).toContain('"conformance tests of withreqs:simple-functionality"');
     });
   });
 });
 
 describe("the functionalities a spec change touches", () => {
-  it("are those whose functional spec or acceptance tests have a line the diff adds or removes", async () => {
+  it("are those with scenarios whose functional spec or scenarios have a line the diff adds or removes", async () => {
     const { touchedFunctionalities } = await import("../../src/regenerate/conformance.ts");
     const { plainFileParser } = await import("../../src/plain/parser.ts");
     const dir = mkdtempSync(join(tmpdir(), "turri-touched-"));
-    writeFileSync(
-      join(dir, "app.plain"),
+    mkdirSync(join(dir, "tests", "app"), { recursive: true });
+    writeFileSync(join(dir, "tests", "app", "print-hello.plain"), testPlainFile("app", "print-hello", { acceptance: ["# hello\nRunning the app prints hello and exits 0."] }));
+    writeFileSync(join(dir, "tests", "app", "print-version.plain"), testPlainFile("app", "print-version", { acceptance: ["# version\nRunning it with --version prints 1.2 and exits 0."] }));
+    writePlain(
+      dir,
+      "app.plain",
       "***implementation reqs***\n\n- Python.\n\n***functional specs***\n\n" +
-        "- The app prints hello.\n\n  ***acceptance tests***\n\n  - Running the app prints hello and exits 0.\n\n" +
-        "- The app prints its version with --version.\n\n  ***acceptance tests***\n\n  - Running it with --version prints 1.2 and exits 0.\n\n" +
-        "- The app prints help with --help.\n",
+        "# print-hello\nThe app prints hello.\n\n" +
+        "# print-version\nThe app prints its version with --version.\n\n" +
+        "# print-help\nThe app prints help with --help.\n",
     );
-    const [, tree] = plainFileParser("app.plain", [dir]);
-    const frids = ["1", "2", "3"];
-    const specDiff = "--- a/app.plain\n+++ b/app.plain\n@@ -1 +1 @@\n-- The app prints hi.\n+- The app prints hello.\n";
-    expect(touchedFunctionalities(tree, frids, specDiff)).toEqual([{ frid: "1", acceptanceTests: [expect.stringContaining("prints hello and exits 0")] }]);
-    const testDiff = "@@ -1 +1 @@\n-  - Running it with --version prints 1.1 and exits 0.\n+  - Running it with --version prints 1.2 and exits 0.\n";
-    expect(touchedFunctionalities(tree, frids, testDiff).map((item) => item.frid)).toEqual(["2"]);
-    expect(touchedFunctionalities(tree, frids, "@@ -1 +1 @@\n-- Python 3.11.\n+- Python.\n")).toEqual([]);
+    const [, tree] = plainFileParser("app.plain", [dir], { testDir: join(dir, "tests") });
+    const funcIds = ["print-hello", "print-version", "print-help"];
+    const specDiff = "--- a/app.plain\n+++ b/app.plain\n@@ -1 +1 @@\n-The app prints hi.\n+The app prints hello.\n";
+    expect(touchedFunctionalities(tree, funcIds, specDiff)).toEqual([{ funcId: "print-hello", conformance: [], acceptance: [{ id: "hello", text: expect.stringContaining("prints hello and exits 0") }] }]);
+    // One with no scenarios is never touched: it has no tests.
+    expect(touchedFunctionalities(tree, funcIds, "@@ -1 +1 @@\n-The app prints help with -h.\n+The app prints help with --help.\n")).toEqual([]);
+    // A line of a test plain file's scenario, changed: its functional spec is touched.
+    const testDiff = "@@ -1 +1 @@\n-Running it with --version prints 1.1 and exits 0.\n+Running it with --version prints 1.2 and exits 0.\n";
+    expect(touchedFunctionalities(tree, funcIds, testDiff).map((item) => item.funcId)).toEqual(["print-version"]);
+    expect(touchedFunctionalities(tree, funcIds, "@@ -1 +1 @@\n-- Python 3.11.\n+- Python.\n")).toEqual([]);
+    // The job's cases say which, when it has them: what it adds, changes or regenerates again of the module's own.
+    const none = { fresh: false, add: [], patch: [], again: [], delete: [], mechanical: false };
+    const cases = { ...none, patch: [{ funcId: "print-version", text: "" }], add: [{ funcId: "print-hello", text: "", module: "base" }], delete: [{ funcId: "print-hello", text: "" }] };
+    expect(touchedFunctionalities(tree, funcIds, specDiff, "app", cases).map((item) => item.funcId)).toEqual(["print-version"]);
     rmSync(dir, { recursive: true, force: true });
   });
 });
@@ -207,9 +241,9 @@ describe("why conformance tests did not land", () => {
   it("says the tests were never labelled, not that they failed, when labelling is what stopped them", async () => {
     const { notLandedWhy } = await import("../../src/regenerate/conformance.ts");
     expect(notLandedWhy("for the spec change")).toBe("the conformance tests for the spec change do not pass");
-    const why = notLandedWhy("for the spec change", ["conformance tests of functionality 2"]);
+    const why = notLandedWhy("for the spec change", ["conformance tests of todo:add-task"]);
     expect(why).toContain("were not written and labelled after 3 requests");
-    expect(why).toContain("conformance tests of functionality 2");
+    expect(why).toContain("conformance tests of todo:add-task");
     expect(why).not.toContain("do not pass");
   });
 });

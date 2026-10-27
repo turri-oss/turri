@@ -1,4 +1,5 @@
 import { readProjectConfig, CONFIG_FILE } from "./config.ts";
+import { refuseTestPlainFile } from "./test-plain-files.ts";
 import { createJobRegistry } from "./regenerate/jobs.ts";
 import { createWorkLoop, describeDrift } from "./regenerate/loop.ts";
 
@@ -18,6 +19,7 @@ if (named === undefined) {
   process.exit(1);
 }
 try {
+  refuseTestPlainFile(named);
   const loop = createWorkLoop({ registry: createJobRegistry(), cwd: process.cwd(), planner: false, dryRun: true });
   console.log(describeDrift(loop.drift(named)));
 } catch (error) {

@@ -60,7 +60,7 @@ export { conceptsOf, type ModuleConcept } from "./plain/module-concepts.ts";
 export { conceptBeingTyped, findConcepts } from "./plain/concepts.ts";
 // A project's ***plain as a graph: its modules and their links both ways, each item of their sections, the concepts
 // each names and where each is defined.
-export { plainGraph, type PlainConceptNode, type PlainGraph, type PlainItemNode, type PlainLink, type PlainModuleNode, type PlainSection } from "./plain/graph.ts";
+export { plainGraph, type PlainConceptNode, type PlainGraph, type PlainItemNode, type PlainLink, type PlainModuleNode, type PlainScenario, type PlainSection, type PlainTestPlainFileNode } from "./plain/graph.ts";
 // The standard library: every template, what it is, what it imports, and its conformance template or stack.
 export { isStack, STDLIB_KINDS, stdlibTemplates, type StdlibKind, type StdlibTemplate } from "./stdlib.ts";
 

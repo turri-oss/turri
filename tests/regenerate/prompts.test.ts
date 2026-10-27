@@ -3,6 +3,7 @@ import { buildConformancePrompt, buildRegressionFixPrompt, buildSpecDiffPrompt, 
 import { resolveTemplateDirs } from "../../src/regenerate/paths.ts";
 import {
   ACCEPTANCE_TESTS,
+  CONFORMANCE_TESTS,
   DEFINITIONS,
   FUNCTIONAL_REQUIREMENTS,
   NON_FUNCTIONAL_REQUIREMENTS,
@@ -11,21 +12,24 @@ import {
 
 const SIMPLE = "tests/data/simple.plain";
 
-/** The coding agent's prompt for a change that adds functionality 2 of `demo`. */
+/** The coding agent's prompt for a change that adds `demo:mine-two`. */
 function codingPrompt(overrides: Partial<SpecDiffPromptInput> = {}): string {
   return buildSpecDiffPrompt({
     moduleName: "demo",
-    diff: "@@ -1 +1,3 @@\n - Mine one.\n+\n+- Mine two.",
+    diff: "@@ -1,2 +1,5 @@\n # mine-one\n Mine one.\n+\n+# mine-two\n+Mine two.",
     specifications: {
       [DEFINITIONS]: ["- :App: is a console application."],
       [NON_FUNCTIONAL_REQUIREMENTS]: ["- :Implementation: should be in Python."],
       [TEST_REQUIREMENTS]: ["- Tests use unittest."],
-      [FUNCTIONAL_REQUIREMENTS]: ["- Mine one."],
+      [FUNCTIONAL_REQUIREMENTS]: ["Mine one."],
+      [CONFORMANCE_TESTS]: [],
+      [ACCEPTANCE_TESTS]: [],
     },
+    funcIds: ["mine-one"],
     required: [],
     linkedResources: [],
     empty: false,
-    cases: { fresh: false, add: [{ frid: "2", text: "Mine two." }], patch: [], again: [], delete: [], mechanical: false },
+    cases: { fresh: false, add: [{ funcId: "mine-two", text: "Mine two." }], patch: [], again: [], delete: [], mechanical: false },
     ...overrides,
   });
 }
@@ -45,6 +49,31 @@ describe("template directory resolution", () => {
 });
 
 describe("the coding agent's prompt", () => {
+  it("never shows the scenarios of a test plain file, even in a change given as the raw diff of the .plain files", () => {
+    const testPlain = [
+      "diff --git a/tests/demo/mine-two.plain b/tests/demo/mine-two.plain",
+      "new file mode 100644",
+      "--- /dev/null",
+      "+++ b/tests/demo/mine-two.plain",
+      "@@ -0,0 +1,9 @@",
+      "+---",
+      "+module: demo",
+      "+func_id: mine-two",
+      "+---",
+      "+",
+      "+***acceptance tests***",
+      "+",
+      "+# prints-two",
+      "+It prints two.",
+      "",
+    ].join("\n");
+    const prompt = codingPrompt({ diff: `diff --git a/demo.plain b/demo.plain\n--- a/demo.plain\n+++ b/demo.plain\n@@ -1,2 +1,5 @@\n # mine-one\n Mine one.\n+\n+# mine-two\n+Mine two.\n${testPlain}` });
+    expect(prompt).toContain("+# mine-two\n+Mine two.");
+    expect(prompt).toContain("each\nfunctional spec is a `# <func-id>` heading");
+    expect(prompt).not.toContain("It prints two.");
+    expect(prompt).not.toContain("tests/demo/mine-two.plain");
+  });
+
   it("withholds the test reqs, which belong to conformance", () => {
     const prompt = codingPrompt();
     expect(prompt).not.toContain("<test reqs>\n");
@@ -54,20 +83,20 @@ describe("the coding agent's prompt", () => {
   it("lists the required modules' functional specs first, as already implemented, and the module's own after them", () => {
     const prompt = codingPrompt({
       required: [
-        { module: "c", frid: "1", spec: "- From c." },
-        { module: "b", frid: "1", spec: "- From b." },
+        { module: "c", funcId: "from-c", spec: "From c." },
+        { module: "b", funcId: "from-b", spec: "From b." },
       ],
     });
-    const c = prompt.indexOf('<functionality module="c" id="1" status="implemented">\n- From c.');
-    const b = prompt.indexOf('<functionality module="b" id="1" status="implemented">\n- From b.');
-    const mine = prompt.indexOf('<functionality module="demo" id="1" status="implemented">\n- Mine one.');
+    const c = prompt.indexOf('<functionality module="c" id="from-c" status="implemented">\nFrom c.');
+    const b = prompt.indexOf('<functionality module="b" id="from-b" status="implemented">\nFrom b.');
+    const mine = prompt.indexOf('<functionality module="demo" id="mine-one" status="implemented">\nMine one.');
     expect(c).toBeGreaterThan(-1);
     expect(b).toBeGreaterThan(c);
     expect(mine).toBeGreaterThan(b);
   });
 
   it("omits sections that are empty", () => {
-    const prompt = codingPrompt({ specifications: { [DEFINITIONS]: [], [NON_FUNCTIONAL_REQUIREMENTS]: ["- A req."], [TEST_REQUIREMENTS]: [], [FUNCTIONAL_REQUIREMENTS]: [] } });
+    const prompt = codingPrompt({ specifications: { [DEFINITIONS]: [], [NON_FUNCTIONAL_REQUIREMENTS]: ["- A req."], [TEST_REQUIREMENTS]: [], [FUNCTIONAL_REQUIREMENTS]: [], [CONFORMANCE_TESTS]: [], [ACCEPTANCE_TESTS]: [] }, funcIds: [] });
     // The primer names every section's tag; an empty section's own tag is not there.
     expect(prompt).not.toContain("<definitions>\n");
     expect(prompt).not.toContain("<test reqs>\n");
@@ -103,37 +132,39 @@ describe("what the other agents are told is already implemented", () => {
     [DEFINITIONS]: ["- :App: is a console application."],
     [NON_FUNCTIONAL_REQUIREMENTS]: ["- :Implementation: should be in Python."],
     [TEST_REQUIREMENTS]: ["- Tests use unittest."],
-    [FUNCTIONAL_REQUIREMENTS]: ["- Mine one.", "- Mine two."],
-    [ACCEPTANCE_TESTS]: ["- It should exit 0."],
+    [FUNCTIONAL_REQUIREMENTS]: ["Mine one.", "Mine two."],
+    [CONFORMANCE_TESTS]: [],
+    [ACCEPTANCE_TESTS]: [{ id: "exits", text: "It should exit 0." }],
   };
+  const funcIds = ["mine-one", "mine-two"];
   const required = [
-    { module: "c", frid: "1", spec: "- From c." },
-    { module: "b", frid: "1", spec: "- From b." },
+    { module: "c", funcId: "from-c", spec: "From c." },
+    { module: "b", funcId: "from-b", spec: "From b." },
   ];
 
   function inOrder(prompt: string) {
-    const c = prompt.indexOf('<functionality module="c" id="1" status="implemented">');
-    const b = prompt.indexOf('<functionality module="b" id="1" status="implemented">');
-    const mine = prompt.indexOf('<functionality module="demo" id="1" status="implemented">\n- Mine one.');
+    const c = prompt.indexOf('<functionality module="c" id="from-c" status="implemented">');
+    const b = prompt.indexOf('<functionality module="b" id="from-b" status="implemented">');
+    const mine = prompt.indexOf('<functionality module="demo" id="mine-one" status="implemented">\nMine one.');
     return c > -1 && b > c && mine > b;
   }
 
   it("the conformance test writer: context to set up from, with only the target under test", () => {
     const prompt = buildConformancePrompt({
-      moduleName: "demo", frid: "2", specifications, linkedResources: [], manifest: ["app.py"], required,
+      moduleName: "demo", funcId: "mine-two", specifications, funcIds, linkedResources: [], manifest: ["app.py"], required,
     });
     expect(inOrder(prompt)).toBe(true);
-    expect(prompt).toContain('<functionality module="demo" id="2">\n- Mine two.\n</functionality>');
-    expect(prompt).not.toContain('module="demo" id="2" status="implemented"');
-    expect(prompt).toContain("Test functionality 2 of module `demo` only.");
+    expect(prompt).toContain('<functionality module="demo" id="mine-two">\nMine two.\n</functionality>');
+    expect(prompt).not.toContain('module="demo" id="mine-two" status="implemented"');
+    expect(prompt).toContain("Test functional spec `demo:mine-two` only.");
   });
 
   it("the regression repairer: every functionality in the code, required modules included", () => {
     const prompt = buildRegressionFixPrompt({
-      moduleName: "demo", frids: ["1", "2"], specifications, required, failure: "exit 1",
+      moduleName: "demo", funcIds, specifications, required, failure: "exit 1",
     });
     expect(inOrder(prompt)).toBe(true);
-    expect(prompt).toContain('<functionality module="demo" id="2" status="implemented">\n- Mine two.');
+    expect(prompt).toContain('<functionality module="demo" id="mine-two" status="implemented">\nMine two.');
   });
 });
 
@@ -143,14 +174,20 @@ describe("how to read the specification", () => {
     const prompt = codingPrompt();
     expect(prompt.startsWith("<how to read the specification>")).toBe(true);
     expect(prompt).toContain(":Implementation: - the system that implements :plainFunctionality:.");
-    expect(prompt).toContain("They carry the same authority as the");
+    expect(specPrimer({ testReqs: true })).toContain("They carry the same authority as the");
     // What a concept is, the primer says once: the rules after it do not say it again.
     expect(prompt).toContain("Predefined concepts - used in every specification without being defined in it:");
     expect(prompt).not.toContain("defined in <definitions>, or predefined");
     // Every section is named by its tag, one name each: never by its ***heading*** as well.
-    for (const tag of ["<definitions>", "<implementation reqs>", "<test reqs>", "<functional specs>", "<acceptance tests>", "<linked resources>", "<spec change>"]) {
+    for (const tag of ["<definitions>", "<implementation reqs>", "<test reqs>", "<functional specs>", "<linked resources>", "<spec change>"]) {
       expect(specPrimer({ testReqs: false })).toContain(`- ${tag}: `);
     }
+    // Scenarios are the conformance tests': only the agents that write and judge them are told of them.
+    expect(specPrimer({ testReqs: true })).toContain("- <conformance tests> and <acceptance tests>: ");
+    expect(specPrimer({ testReqs: false })).not.toContain("<acceptance tests>");
+    // A functional spec is known by its module and func-id, never by a number.
+    expect(specPrimer({ testReqs: false })).toContain("`<module>:<func-id>`");
+    expect(specPrimer({ testReqs: false })).not.toContain("from 1");
     expect(specPrimer({ testReqs: false })).not.toMatch(/\*\*\*(definitions|implementation reqs|test reqs|functional specs|acceptance tests)\*\*\*/);
     expect(prompt).toContain("mock or stub the system under test to hide a failure");
     // The coding agent is told the test reqs exist, and that they are not its.
@@ -168,7 +205,8 @@ describe("the spec, by the module each part belongs to", () => {
     } as never;
     const prompt = codingPrompt({
       moduleName: "app",
-      specifications: { [DEFINITIONS]: ["- :User: is a person.", "- :Comment: is a text."], [NON_FUNCTIONAL_REQUIREMENTS]: ["- :Implementation: is Python."], [TEST_REQUIREMENTS]: [], [FUNCTIONAL_REQUIREMENTS]: [] },
+      specifications: { [DEFINITIONS]: ["- :User: is a person.", "- :Comment: is a text."], [NON_FUNCTIONAL_REQUIREMENTS]: ["- :Implementation: is Python."], [TEST_REQUIREMENTS]: [], [FUNCTIONAL_REQUIREMENTS]: [], [CONFORMANCE_TESTS]: [], [ACCEPTANCE_TESTS]: [] },
+      funcIds: [],
       modules: sectionModules(tree, "app"),
     });
     expect(prompt).toContain('<definitions>\n<module name="base">\n- :User: is a person.\n</module>\n\n<module name="app" role="current">\n- :Comment: is a text.\n</module>\n</definitions>');
@@ -184,21 +222,22 @@ describe("the spec, by the module each part belongs to", () => {
   });
 });
 
-describe("functionalities, by the module they belong to", () => {
+describe("functional specs, by the module they belong to", () => {
   it("are grouped under their module, in the order the modules are built on each other, the current one marked", async () => {
     const prompt = codingPrompt({
       moduleName: "top",
-      specifications: { [DEFINITIONS]: [], [NON_FUNCTIONAL_REQUIREMENTS]: [], [TEST_REQUIREMENTS]: [], [FUNCTIONAL_REQUIREMENTS]: ["- Top one."] },
+      specifications: { [DEFINITIONS]: [], [NON_FUNCTIONAL_REQUIREMENTS]: [], [TEST_REQUIREMENTS]: [], [FUNCTIONAL_REQUIREMENTS]: ["Top one."], [CONFORMANCE_TESTS]: [], [ACCEPTANCE_TESTS]: [] },
+      funcIds: ["start"],
       required: [
-        { module: "base", frid: "1", spec: "- Base one." },
-        { module: "base", frid: "3", spec: "- Base three." },
+        { module: "base", funcId: "start", spec: "Base one." },
+        { module: "base", funcId: "stop", spec: "Base three." },
       ],
     });
-    // The first listed is base's 1, then base's 3, then top's 1 - each with its module, never a bare number.
+    // base's start, then base's stop, then top's start - each with its module: a func-id is unique in its module only.
     expect(prompt).toContain(
-      '<already implemented>\n<module name="base">\n<functionality module="base" id="1" status="implemented">\n- Base one.\n</functionality>\n\n' +
-        '<functionality module="base" id="3" status="implemented">\n- Base three.\n</functionality>\n</module>\n\n' +
-        '<module name="top" role="current">\n<functionality module="top" id="1" status="implemented">\n- Top one.\n</functionality>\n</module>\n</already implemented>',
+      '<already implemented>\n<module name="base">\n<functionality module="base" id="start" status="implemented">\nBase one.\n</functionality>\n\n' +
+        '<functionality module="base" id="stop" status="implemented">\nBase three.\n</functionality>\n</module>\n\n' +
+        '<module name="top" role="current">\n<functionality module="top" id="start" status="implemented">\nTop one.\n</functionality>\n</module>\n</already implemented>',
     );
 
     // Regenerating base in top's codebase: top is built on base, so it comes after, and base is the current one.
@@ -206,8 +245,8 @@ describe("functionalities, by the module they belong to", () => {
     expect(
       functionalitiesByModule(
         [
-          { module: "base", frid: "1", spec: "- Base one." },
-          { module: "top", frid: "1", spec: "- Top one." },
+          { module: "base", funcId: "start", spec: "Base one." },
+          { module: "top", funcId: "start", spec: "Top one." },
         ],
         "base",
       ),
@@ -242,7 +281,7 @@ describe("the build's identity, and the code's build files", () => {
 
   it("never loses why something failed: every coding agent keeps the cause, the judge blames code that hides it, and the fixer makes it show first", async () => {
     const { codeFixerTask, judgePrompt } = await import("../../src/regenerate/conformance-agents.ts");
-    const specifications = { definitions: [], "implementation reqs": [], "test reqs": ["- pytest."], "functional specs": ["- Take an order."] };
+    const specifications = { definitions: [], "implementation reqs": [], "test reqs": ["- pytest."], "functional specs": ["Take an order."], conformance_tests: [], acceptance_tests: [] };
     const run = { command: "c", exitCode: 1, output: '{"error": "failed"}', timeoutMs: 1 };
     const render = codingPrompt();
     expect(render).toContain("Never lose why something failed");
@@ -258,7 +297,7 @@ describe("the build's identity, and the code's build files", () => {
     const { buildConformancePrompt } = await import("../../src/regenerate/prompt.ts");
     const { codeFixerTask } = await import("../../src/regenerate/conformance-agents.ts");
     const { buildManifests } = await import("../../src/regenerate/conformance.ts");
-    const specifications = { definitions: [], "implementation reqs": [], "test reqs": ["- pytest."], "functional specs": ["- Take an order."] };
+    const specifications = { definitions: [], "implementation reqs": [], "test reqs": ["- pytest."], "functional specs": ["Take an order."], conformance_tests: [], acceptance_tests: [] };
     const render = codingPrompt();
     expect(render).toContain("Keep the build's identity as it is: its name, coordinates, version, package and main class.");
     const fix = codeFixerTask({ buildDir: "/b", spec: { moduleName: "app", text: "- Take an order." } });
@@ -274,7 +313,7 @@ describe("the build's identity, and the code's build files", () => {
     rmSync(dir, { recursive: true, force: true });
     // Only the build files - never the code.
     expect(manifests.map((manifest) => manifest.path)).toEqual(["pyproject.toml"]);
-    const conformance = buildConformancePrompt({ moduleName: "app", frid: "1", specifications, linkedResources: [], manifest: [], invocation: "java -jar app.jar", manifests });
+    const conformance = buildConformancePrompt({ moduleName: "app", funcId: "take-order", specifications: specifications as never, funcIds: ["take-order"], linkedResources: [], manifest: [], invocation: "java -jar app.jar", manifests });
     expect(conformance).toContain('<code build file path="pyproject.toml">\n[project]\nname = "orders-app"\nversion = "1.0.0"\n</code build file>');
     expect(conformance).toContain("never guess them, and never take them from a folder or module name");
     // A failure of the software itself is not the tests' to work around; and three runs a turn.

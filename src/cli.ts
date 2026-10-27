@@ -73,7 +73,7 @@ function chat(args: string[]): never {
 }
 
 const COMMANDS: Record<string, { module: string; blurb: string; args?: string[] }> = {
-  regenerate: { module: "./regenerate-cli.ts", blurb: "regenerate a module and its chain from the spec as it is (with frids: regenerate those again)" },
+  regenerate: { module: "./regenerate-cli.ts", blurb: "regenerate a module and its chain from the spec as it is (with module:func-ids: regenerate those again)" },
   glimpse: { module: "./regenerate-cli.ts", blurb: "plan the work and print the first job's prompt, starting nothing", args: ["--dry-run"] },
   drift: { module: "./drift-cli.ts", blurb: "what is left to regenerate: how far the code has drifted from its spec" },
   conform: { module: "./conform-cli.ts", blurb: "write and run a module's conformance tests" },

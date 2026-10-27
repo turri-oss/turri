@@ -1,6 +1,7 @@
 import { modulesScratchDir } from "./paths.ts";
 import {
   ACCEPTANCE_TESTS,
+  CONFORMANCE_TESTS,
   DEFINITIONS,
   FUNCTIONAL_REQUIREMENTS,
   NON_FUNCTIONAL_REQUIREMENTS,
@@ -10,12 +11,12 @@ import {
   type Specifications,
 } from "../plain/spec.ts";
 import { codeCopyOf, isCodeResource, type LoadedResource } from "./resources.ts";
-import { acceptanceLabel, acceptanceText, conformanceLabel } from "./test-kinds.ts";
+import { conformanceLabel, scenarioLabel, scenariosOf, scenarioText, type TestedSpec } from "./test-kinds.ts";
 import { codeCasesBlock, conformanceCasesBlock } from "./cases.ts";
 import { marksRegenerateAgain } from "./records.ts";
 import type { JobCases } from "./drift.ts";
 import type { RequiredSpec } from "./state.ts";
-import { resourcesChanged, type SpecChange } from "./spec-steps.ts";
+import { resourcesChanged, scenarioLines, type SpecChange } from "./spec-steps.ts";
 
 /**
  * Everything already in the code: the required modules' functional specs, bottom of the
@@ -25,21 +26,21 @@ import { resourcesChanged, type SpecChange } from "./spec-steps.ts";
  * that does not know what exists re-implements it; a test writer that does not know it
  * cannot set up what a functionality depends on; a fixer that does not know it breaks it.
  */
-function alreadyImplemented(moduleName: string, own: string[], required: RequiredSpec[]): string | null {
+function alreadyImplemented(moduleName: string, own: string[], funcIds: string[], required: RequiredSpec[]): string | null {
   if (own.length === 0 && required.length === 0) return null;
-  const entries = [...required, ...own.map((spec, index) => ({ module: moduleName, frid: String(index + 1), spec }))];
+  const entries = [...required, ...own.map((spec, index) => ({ module: moduleName, funcId: funcIds[index] ?? "", spec }))];
   return `<already implemented>\n${functionalitiesByModule(entries, moduleName, "implemented")}\n</already implemented>`;
 }
 
 /**
  * Functional specs grouped by the module they belong to - in the order the modules are built on
- * one another, the current module marked - and each tagged with its module and its id there. A codebase holds the
- * functionalities of every module it is built on, and each module numbers its own from 1, so
- * "functionality 1" alone is ambiguous: the first listed may be base's 1 and the next top's 3.
+ * one another, the current module marked - and each tagged with its module and its func-id there. A codebase holds the
+ * functionalities of every module it is built on, and a func-id is unique only in its module, so a func-id alone can
+ * be ambiguous: `base` and `app` may each have an `export`.
  * (the reference implementation's implemented functional requirements prompt section, as tags.)
  */
 export function functionalitiesByModule(
-  entries: Array<{ module: string; frid: string; spec: string }>,
+  entries: Array<{ module: string; funcId: string; spec: string }>,
   currentModule: string,
   status?: string,
 ): string {
@@ -52,16 +53,16 @@ export function functionalitiesByModule(
         .filter((entry) => entry.module === module)
         .map(
           (entry) =>
-            `<functionality module="${entry.module}" id="${entry.frid}"${status !== undefined ? ` status="${status}"` : ""}>\n${entry.spec}\n</functionality>`,
+            `<functionality module="${entry.module}" id="${entry.funcId}"${status !== undefined ? ` status="${status}"` : ""}>\n${entry.spec}\n</functionality>`,
         );
       return `<module name="${module}"${module === currentModule ? ' role="current"' : ""}>\n${items.join("\n\n")}\n</module>`;
     })
     .join("\n\n");
 }
 
-/** "functionality 3 of module `app`": a functionality, named so that no other module's can be meant. */
-export function functionalityOf(frid: string, moduleName: string): string {
-  return `functionality ${frid} of module \`${moduleName}\``;
+/** "functional spec `app:add-task`": a functional spec, named so that no other module's can be meant. */
+export function functionalityOf(funcId: string, moduleName: string): string {
+  return `functional spec \`${moduleName}:${funcId}\``;
 }
 
 /**
@@ -87,24 +88,29 @@ export function specPrimer(options: { testReqs: boolean }): string {
       ? "- <test reqs>: how the conformance tests are written and run."
       : "- <test reqs>: how the conformance tests are written and run. They are not given to you: the conformance tests\n" +
         "  are written apart from the code, from the specification.",
-    "- <functional specs>: what the system does, one functionality at a time, numbered in order, each built on the ones",
-    '  before it. Each functional spec is a <functionality module="..." id="...">; those in <already implemented> are',
-    "  in the code.",
+    "- <functional specs>: what the system does, one functionality at a time, in order, each built on the ones before",
+    '  it. Each functional spec is a <functionality module="..." id="...">, its id the func-id it has in its module; those',
+    "  in <already implemented> are in the code.",
     "- Modules: a ***plain specification is split into modules, each a .plain file of its own. Modules are how the",
     "  specification is written, in ***plain's own syntax - not how the code is laid out. A module can require others:",
     "  it is built on their code, in one codebase with them, so the codebase holds their definitions, implementation",
     "  reqs and functionalities as well as its own. A module can also import others: those hold only definitions and",
     "  reqs - shared ones, never functional specs or code of their own - and what a module imports is its own. Every",
     "  section reaches you grouped under the module each item belongs to - <module name=\"...\">, the modules in the",
-    "  order they are built on one another, the current one marked role=\"current\". Each module numbers its",
-    "  functional specs from 1, so a functionality is always given with its module and its id there: functionality 1",
-    "  of `base` and functionality 1 of `app` are two different functionalities.",
+    "  order they are built on one another, the current one marked role=\"current\". A func-id is unique only in its",
+    "  module, so a functional spec is always given with its module and its func-id there, `<module>:<func-id>`:",
+    "  `base:export` and `app:export` are two different functionalities.",
     "- You work only in the codebase of the current module: it is all you can reach, and it already holds the code of",
     "  every module it requires. Organise and write the code as the <implementation reqs> say - its layout, its",
     "  structure, its conventions - never by the ***plain modules: they say where the specification puts an item,",
     "  not where its code goes.",
-    "- <acceptance tests>: under a functional spec, specific checks that functionality's implementation must pass.",
-    "  They carry the same authority as the functional spec itself.",
+    ...(options.testReqs
+      ? [
+          "- <conformance tests> and <acceptance tests>: under a functional spec, its scenarios, each under its",
+          "  `# <scenario-id>`: what its conformance tests check, and the checks its implementation must pass end to end.",
+          "  They carry the same authority as the functional spec itself.",
+        ]
+      : []),
     "- <linked resources>: files the specification refers to as `[resource]name`. They are part of the specification.",
     "  A linked resource is not in your workspace. When the code needs what one holds while it runs - a schema it",
     "  validates against, a version it reports - it keeps exactly one copy, at the path its code-copy names in the",
@@ -191,7 +197,7 @@ export const ERROR_CAUSE_RULES = [
 
 /** A section's tag - its name in every prompt: `<implementation reqs>`, `<acceptance tests>`. */
 export function sectionTag(key: string): string {
-  return key === ACCEPTANCE_TESTS ? "acceptance tests" : key;
+  return key === ACCEPTANCE_TESTS ? "acceptance tests" : key === CONFORMANCE_TESTS ? "conformance tests" : key;
 }
 
 export function section(key: string, items: string[]): string | null {
@@ -270,6 +276,8 @@ export interface SpecDiffPromptInput {
   changes?: SpecChange[];
   /** The module's sections and its functional specs, as they stand after the change. */
   specifications: Specifications;
+  /** The func-ids of its functional specs, in order. */
+  funcIds: string[];
   /** Functional specs of the modules this one requires, as they stand after the change. */
   required: RequiredSpec[];
   linkedResources: LoadedResource[];
@@ -291,6 +299,8 @@ export interface SpecDiffPromptInput {
 export function reviewedSpec(input: {
   moduleName: string;
   specifications: Specifications;
+  /** The func-ids of its functional specs, in order. */
+  funcIds: string[];
   /** Functional specs of the modules this one requires: already in the code. */
   required?: RequiredSpec[];
   /** The change, section by section. */
@@ -306,7 +316,7 @@ export function reviewedSpec(input: {
     "",
     moduleSection(DEFINITIONS, specifications[DEFINITIONS] ?? [], input.moduleName, input.modules),
     moduleSection(NON_FUNCTIONAL_REQUIREMENTS, specifications[NON_FUNCTIONAL_REQUIREMENTS] ?? [], input.moduleName, input.modules),
-    alreadyImplemented(input.moduleName, functionalities, required),
+    alreadyImplemented(input.moduleName, functionalities, input.funcIds, required),
     "<new in this work>",
     specChangeBlock(input.change ?? "(the change is not known)"),
     "</new in this work>",
@@ -322,13 +332,32 @@ export function reviewedSpec(input: {
 const RAW_CHANGE_NOTE =
   "The change could not be told section by section, so it is the diff of the .plain files, as the person made it. There,\n" +
   "each section is headed by its name in stars: ***definitions*** is <definitions>, ***implementation reqs*** is\n" +
-  "<implementation reqs>, ***test reqs*** is <test reqs>, ***functional specs*** is <functional specs>, and\n" +
-  "***acceptance tests*** under a functional spec is its <acceptance tests>.";
+  "<implementation reqs>, ***test reqs*** is <test reqs>, and ***functional specs*** is <functional specs>, where each\n" +
+  "functional spec is a `# <func-id>` heading and its text under it.";
+
+/** The same, for a conformance agent: a functional spec's scenarios are in a test plain file of their own. */
+const RAW_CHANGE_NOTE_SCENARIOS =
+  `${RAW_CHANGE_NOTE}\nA test plain file - tests/<module>/<func-id>.plain, its module: and func_id: at its top - holds one functional\n` +
+  "spec's scenarios: ***conformance tests*** is its <conformance tests> and ***acceptance tests*** its <acceptance tests>,\n" +
+  "each scenario a `# <scenario-id>` heading and its text.";
+
+/**
+ * A raw diff of the .plain files without the hunks of test plain files: a coding agent never sees scenarios, which are
+ * the conformance tests'. A test plain file is told by its own frontmatter - `func_id:` - since its folder is the
+ * project's to name.
+ */
+export function withoutTestPlainFiles(diff: string): string {
+  return diff
+    .split(/^(?=diff --git )/m)
+    .filter((file) => !/^[ +-]func_id:/m.test(file))
+    .join("");
+}
 
 /** A change in its tag: told section by section, or - when it could not be - the raw diff, with which tag each heading is. */
-export function specChangeBlock(change: string): string {
+export function specChangeBlock(change: string, scenarios = false): string {
   const raw = /^diff --git |^@@ |^[+-]{3} /m.test(change);
-  return `<spec change>\n${raw ? `${RAW_CHANGE_NOTE}\n\n` : ""}${change.trim()}\n</spec change>`;
+  const shown = raw && !scenarios ? withoutTestPlainFiles(change) : change;
+  return `<spec change>\n${raw ? `${scenarios ? RAW_CHANGE_NOTE_SCENARIOS : RAW_CHANGE_NOTE}\n\n` : ""}${shown.trim()}\n</spec change>`;
 }
 
 /** The sections as the change is told, in the order a spec has them. Test reqs are the conformance tests', not the code's. */
@@ -339,7 +368,7 @@ const CHANGE_SECTIONS: Array<{ key: string; title: string }> = [
   { key: "required functional specs", title: "functional specs of the modules this one requires" },
 ];
 
-/** A changed item's text: its markdown, and its acceptance tests under it. */
+/** A changed item's text: its markdown - a functional spec's body, named above it - and its scenarios under it, where the tree has them. */
 function itemText(serialized: string | undefined): string {
   if (serialized === undefined) return "";
   let item: unknown;
@@ -349,12 +378,9 @@ function itemText(serialized: string | undefined): string {
     return serialized;
   }
   if (typeof item === "string") return item;
-  const { markdown, [ACCEPTANCE_TESTS]: tests } = (item ?? {}) as { markdown?: string; [key: string]: unknown };
-  const lines = [markdown ?? JSON.stringify(item)];
-  // Each test is an item of the tree, its text in its markdown - as spec-steps.ts `itemText` reads it.
-  const testText = (test: unknown) => (typeof test === "string" ? test : ((test as { markdown?: string } | null)?.markdown ?? JSON.stringify(test)));
-  if (Array.isArray(tests) && tests.length > 0) lines.push("  <acceptance tests>", ...tests.map((test) => `  ${testText(test).replace(/\n/g, "\n  ")}`), "  </acceptance tests>");
-  return lines.join("\n");
+  const { markdown, [CONFORMANCE_TESTS]: conformance, [ACCEPTANCE_TESTS]: acceptance } = (item ?? {}) as { markdown?: string; [key: string]: unknown };
+  type Scenario = { id?: string; text?: string };
+  return [markdown ?? JSON.stringify(item), ...scenarioLines("conformance tests", conformance as Scenario[] | undefined), ...scenarioLines("acceptance tests", acceptance as Scenario[] | undefined)].join("\n");
 }
 
 const indent = (text: string, by: string) => text.split("\n").map((line) => `${by}${line}`).join("\n");
@@ -371,7 +397,7 @@ const parsed = (serialized: string | undefined): unknown => {
 /**
  * A spec change as an agent reads it: section by section, what was added, what changed - before and now - and what
  * was removed. A definition taken out and put back reworded, or moved, is one change to it, not two. Every item is
- * named so no other module's can be meant: a functional spec by its module and number, and a definition or req of a
+ * named so no other module's can be meant: a functional spec by its module and func-id, and a definition or req of a
  * module below by its module; `moduleName` is the module whose codebase it is - whose own items carry no module.
  */
 export function describeSpecChange(changes: SpecChange[], moduleName?: string): string {
@@ -382,12 +408,12 @@ export function describeSpecChange(changes: SpecChange[], moduleName?: string): 
   for (const { key, title } of sections) {
     const here = changes.filter((change) => change.section === key);
     if (here.length === 0) continue;
-    /** Which item it is: a functional spec by its module and number, a definition by its concept, and one of a module below with that module. */
+    /** Which item it is: a functional spec by its module and func-id, a definition by its concept, and one of a module below with that module. */
     const labelOf = (change: SpecChange, line: string | undefined): string => {
-      const item = parsed(line) as { module?: string; frid?: string } | undefined;
+      const item = parsed(line) as { module?: string; id?: string } | undefined;
       const below = item?.module !== undefined && item.module !== moduleName ? ` of module \`${item.module}\`` : "";
-      if (key === FUNCTIONAL_REQUIREMENTS) return moduleName !== undefined ? functionalityOf(String(change.position), moduleName) : `functionality ${change.position}`;
-      if (key === REQUIRED_FUNCTIONAL_SPECS) return item?.module !== undefined && item.frid !== undefined ? functionalityOf(item.frid, item.module) : `functionality ${change.position}${below}`;
+      if (key === FUNCTIONAL_REQUIREMENTS) return moduleName !== undefined ? functionalityOf(item?.id ?? "", moduleName) : `functional spec \`${item?.id ?? ""}\``;
+      if (key === REQUIRED_FUNCTIONAL_SPECS) return item?.module !== undefined && item.id !== undefined ? functionalityOf(item.id, item.module) : `functional spec \`${item?.id ?? ""}\`${below}`;
       if (key === DEFINITIONS) return `${conceptOf(itemText(line)) ?? `item ${change.position}`}${below}`;
       return `item ${change.position}${below}`;
     };
@@ -482,7 +508,7 @@ export function buildSpecDiffPrompt(input: SpecDiffPromptInput): string {
     ...input.required,
     ...specifications[FUNCTIONAL_REQUIREMENTS].map((spec, index) => ({
       module: input.moduleName,
-      frid: String(index + 1),
+      funcId: input.funcIds[index] ?? "",
       spec,
     })),
   ];
@@ -505,7 +531,7 @@ export function buildSpecDiffPrompt(input: SpecDiffPromptInput): string {
     linkedResourcesSection(input.linkedResources),
     input.changes !== undefined && input.changes.length > 0
       ? specChangeBlock(describeSpecChange(input.changes, input.moduleName))
-      : `<spec change>\n${RAW_CHANGE_NOTE}\n\n${input.diff.trim()}\n</spec change>`,
+      : `<spec change>\n${RAW_CHANGE_NOTE}\n\n${withoutTestPlainFiles(input.diff).trim()}\n</spec change>`,
     "",
     ...(input.cases !== undefined
       ? codeCasesBlock(input.cases)
@@ -524,9 +550,11 @@ export interface ConformancePromptInput {
   /** What the job does to each functional spec (work.ts): the agent is told case by case. Not given: in general. */
   cases?: JobCases;
   moduleName: string;
-  /** The functionality under test; for a spec change, the last there is - none before the first is written. */
-  frid?: string;
+  /** The functional spec under test, by its func-id; for a spec change, the last there is - none before the first is written. */
+  funcId?: string;
   specifications: Specifications;
+  /** The func-ids of its functional specs, in order. */
+  funcIds: string[];
   linkedResources: LoadedResource[];
   /** File names in the build directory. */
   manifest: string[];
@@ -542,8 +570,8 @@ export interface ConformancePromptInput {
   readCode?: string;
   /** The code's build files, read by the harness: the exact name, coordinates and version a test project points at. */
   manifests?: Array<{ path: string; content: string }>;
-  /** For a spec change: the functionalities it touches, with their acceptance tests - each implemented and labelled. */
-  touched?: Array<{ frid: string; acceptanceTests: string[] }>;
+  /** For a spec change: the functional specs it touches, with their scenarios - each carried out and labelled. */
+  touched?: TestedSpec[];
   /** Tests already in the conformance directory, from an earlier version of the spec. */
   existingTests?: string[];
   /** Functional specs of the modules this one requires, transitively. */
@@ -570,7 +598,7 @@ export function buildConformancePrompt(input: ConformancePromptInput): string {
   const functionalities = specifications[FUNCTIONAL_REQUIREMENTS];
   const forChange = input.diff !== undefined;
   const target = functionalities[functionalities.length - 1];
-  if (target === undefined && !forChange) throw new Error(`Functionality ${input.frid} has no specification text.`);
+  if (target === undefined && !forChange) throw new Error(`Functional spec ${input.funcId} has no specification text.`);
 
   const parts: Array<string | null> = [
     specPrimer({ testReqs: true }),
@@ -595,12 +623,11 @@ export function buildConformancePrompt(input: ConformancePromptInput): string {
                 "tests folder and nothing else - so do not look for it: no searching parent folders, absolute paths or /tmp.",
               ]),
           "An agent that explored the code wrote down what you need of it, in <how to invoke it>: how it is",
-          "built and run, how each functionality is reached from outside, what it needs around it, and a plan for",
-          "these tests. Write the conformance tests from this prompt - the specification, that account and its",
-          "plan - and what is in your tests folder: the tests already there show how the suite is built and run.",
-          "Every assertion comes from the specification, never from what the account says the code does. Where the",
-          "code and the specification disagree, the test follows the specification and fails. The plan is a",
-          "starting point: where it and the specification differ, the specification is right.",
+          "built and run, how each functionality is reached from outside, and what it needs around it. Write the",
+          "conformance tests from this prompt - the specification, its scenarios and that account - and what is in your",
+          "tests folder: the tests already there show how the suite is built and run. Every assertion comes from the",
+          "scenarios and the specification, never from what the account says the code does. Where the code and the",
+          "specification disagree, the test follows the specification and fails.",
           "The conformance testing script at the top of this prompt is how your tests are built and run: read what it",
           "builds or installs before your tests run, and so what they can depend on or start to reach the software.",
           "Write the tests' own build - its dependencies, how it starts the software - to fit that script.",
@@ -633,7 +660,7 @@ export function buildConformancePrompt(input: ConformancePromptInput): string {
     // user registered before one logs in - so its tests can set that up through the same
     // public entry points. Only the functionality below is under test. For a diff, every
     // functionality is the spec as it now stands.
-    alreadyImplemented(input.moduleName, input.diff !== undefined ? functionalities : functionalities.slice(0, -1), input.required ?? []),
+    alreadyImplemented(input.moduleName, input.diff !== undefined ? functionalities : functionalities.slice(0, -1), input.funcIds, input.required ?? []),
   ];
 
   const resources = linkedResourcesSection(input.linkedResources);
@@ -641,11 +668,11 @@ export function buildConformancePrompt(input: ConformancePromptInput): string {
 
   parts.push(
     input.diff !== undefined
-      ? specChangeBlock(input.diff)
-      : `<functionality module="${input.moduleName}" id="${input.frid}">\n${target}\n</functionality>`,
+      ? specChangeBlock(input.diff, true)
+      : `<functionality module="${input.moduleName}" id="${input.funcId}">\n${target}\n</functionality>`,
     input.diff !== undefined
-      ? touchedAcceptanceTests(input.touched ?? [])
-      : numberedAcceptanceTests(input.frid!, specifications[ACCEPTANCE_TESTS] ?? []),
+      ? touchedScenarios(input.moduleName, input.touched ?? [])
+      : scenariosBlock(input.moduleName, [{ funcId: input.funcId!, conformance: specifications[CONFORMANCE_TESTS] ?? [], acceptance: specifications[ACCEPTANCE_TESTS] ?? [] }]),
     `<files in the build>\n${input.manifest.join("\n")}\n</files in the build>`,
     input.existingTests && input.existingTests.length > 0
       ? [
@@ -654,8 +681,8 @@ export function buildConformancePrompt(input: ConformancePromptInput): string {
           "This directory holds the conformance tests of every functionality built so far - this module's",
           "and those of the modules it requires, copied up with their code. Tests for other functionalities",
           "must keep passing: leave them as they are. If tests for this functionality are among them, from an",
-          "earlier version of the specification, update them to it: keep the coverage, change only what the",
-          "specification changed.",
+          "earlier version of the specification, bring them in line with its scenarios as they are now: a test for",
+          "each scenario, and none for a scenario taken out.",
         ].join("\n")
       : null,
     "",
@@ -667,18 +694,17 @@ export function buildConformancePrompt(input: ConformancePromptInput): string {
           ...(input.cases !== undefined
             ? conformanceCasesBlock(input.cases)
             : [
-                "- Add tests for behaviour the change adds, change the tests of behaviour it changes, and remove the",
-                "  tests of behaviour it removes. Leave the tests of everything the change does not touch as they are.",
-                "- The change is tested whatever it touches: a definition, an implementation req, the test reqs, as",
-                "  well as a functional spec. Where it changes what built software must do or how the tests reach it,",
-                "  the tests check that - with or without a functional spec that uses it yet.",
+                "- Write tests for the scenarios the change adds, change the tests of the scenarios it changes, and remove",
+                "  the tests of the scenarios it removes. Leave the tests of everything the change does not touch as they are.",
+                "- Where the change is to a definition, an implementation req or the test reqs, adapt the tests there are",
+                "  to it: write no test that is not a scenario's.",
               ]),
-          "- A test is removed only because the spec no longer asks for what it checks. Say which, and why.",
+          "- A test is removed only because its scenario is gone, or no longer asks for what it checks. Say which, and why.",
         ]
       : [
-          `Write conformance tests for ${functionalityOf(input.frid!, input.moduleName)}.`,
+          `Write conformance tests for ${functionalityOf(input.funcId!, input.moduleName)}.`,
           "",
-          `- Test ${functionalityOf(input.frid!, input.moduleName)} only. What is listed as already implemented is there to be`,
+          `- Test ${functionalityOf(input.funcId!, input.moduleName)} only. What is listed as already implemented is there to be`,
           "  used - to set up the state a test needs - not tested again.",
         ]),
     "- Write them in your working directory - the module's tests folder - and nowhere else: never in the",
@@ -689,8 +715,8 @@ export function buildConformancePrompt(input: ConformancePromptInput): string {
     "- Organise the tests however suits them - files, folders, shared helpers. Make it clear which",
     forChange
       ? "  functionality a test covers, so its tests can be found and updated later."
-      : `  functionality a test covers, so the tests of ${functionalityOf(input.frid!, input.moduleName)} can be found and updated later.`,
-    ...(forChange ? changeTestKinds() : testKinds(input.frid!, (specifications[ACCEPTANCE_TESTS] ?? []).length)),
+      : `  functionality a test covers, so the tests of ${functionalityOf(input.funcId!, input.moduleName)} can be found and updated later.`,
+    ...scenarioRules(input.moduleName, forChange ? undefined : input.funcId!),
     "- Test observable behaviour only: output, exit codes, files produced, values returned by the",
     "  public entry point. Never assert on internal names, private helpers or implementation detail.",
     "- <test reqs> say how conformance tests must be written and run. Follow them.",
@@ -737,75 +763,55 @@ export function buildConformancePrompt(input: ConformancePromptInput): string {
 
 
 /**
- * For a spec change: the acceptance tests of the functionalities it touches, numbered as their tests
- * are labelled - each implemented as a test of its own, as a functionality's own run has them.
+ * Functional specs' scenarios as the conformance agent carries them out: each under its label, the conformance
+ * scenarios and then the acceptance ones, in the tag of each kind.
  */
-function touchedAcceptanceTests(touched: Array<{ frid: string; acceptanceTests: string[] }>): string | null {
-  const withTests = touched.filter((item) => item.acceptanceTests.length > 0);
-  if (withTests.length === 0) return null;
-  const rendered = withTests.flatMap((item) => item.acceptanceTests.map((test, index) => `${acceptanceLabel(item.frid, index + 1)}: ${acceptanceText(test)}`));
+export function scenariosBlock(module: string, specs: TestedSpec[]): string | null {
+  const kind = (name: "conformance" | "acceptance") =>
+    specs.flatMap((spec) => scenariosOf(spec).filter((scenario) => scenario.kind === name).map((scenario) => scenarioText(module, spec.funcId, scenario)));
+  const conformance = kind("conformance");
+  const acceptance = kind("acceptance");
+  const blocks = [
+    ...(conformance.length > 0 ? [`<conformance tests>\n${conformance.join("\n\n")}\n</conformance tests>`] : []),
+    ...(acceptance.length > 0 ? [`<acceptance tests>\n${acceptance.join("\n\n")}\n</acceptance tests>`] : []),
+  ];
+  return blocks.length > 0 ? blocks.join("\n\n") : null;
+}
+
+/** For a spec change: the scenarios of the functional specs it touches - each carried out, and labelled as it is here. */
+function touchedScenarios(module: string, touched: TestedSpec[]): string | null {
+  const block = scenariosBlock(module, touched);
+  if (block === null) return null;
   return [
-    "The acceptance tests of the functional specs the change touches:",
-    `<acceptance tests>\n${rendered.join("\n\n")}\n</acceptance tests>`,
-    "Each of these is implemented as a test of its own, doing every step it lists and asserting every expectation it",
-    "states, and labelled as it is numbered here - bring the ones already there in line with the change.",
+    "The scenarios of the functional specs the change touches, as they are now:",
+    block,
+    "Each of these is carried out by at least one test of its own, doing every step it lists and asserting every",
+    "expectation it states, and labelled as it is here - bring the tests already there in line with the change.",
   ].join("\n");
 }
 
-/** The functionality's acceptance tests, numbered as their tests are labelled. */
-function numberedAcceptanceTests(frid: string, items: string[]): string | null {
-  if (items.length === 0) return null;
-  const rendered = items.map((item, i) => `${acceptanceLabel(frid, i + 1)}: ${acceptanceText(item)}`);
-  return `<acceptance tests>\n${rendered.join("\n\n")}\n</acceptance tests>`;
-}
-
-/** The two kinds of test, for a spec change: each labelled with what it covers. */
-function changeTestKinds(): string[] {
-  return [
-    "- Conformance tests come from the specs themselves: what they say the software does, its edge cases, its",
-    "  errors - written as if no acceptance tests had been given. They do not copy the acceptance tests.",
-    `- Label them: files whose names say conformance, each with a comment at its top naming the functionality it`,
-    `  covers - "${conformanceLabel("<id>")}" - or, for one that covers no functional spec yet, "${CHANGE_LABEL}".`,
-    "- Acceptance tests - the ones in <acceptance tests> - are implemented separately from the conformance tests,",
-    "  each as its own test, doing what it says, in files whose names say acceptance.",
-    `- Label each acceptance test with a comment right above it: "${acceptanceLabel("<id>", 1)}:" and the text`,
-    "  of the acceptance test, numbered as the spec lists them.",
-  ];
-}
-
-/** What a conformance test covering no functional spec yet - a definition, a req - is labelled. */
-export const CHANGE_LABEL = "conformance tests of the spec";
-
 /**
- * The two kinds of test, kept apart and labelled (see test-kinds.ts). `acceptance` is how many
- * acceptance tests the functionality has; for a spec change, it is left to the change.
+ * What the tests are, and how they are labelled (see test-kinds.ts): exactly the scenarios, at least one test each,
+ * and nothing invented beside them. `funcId`: the functional spec under test; for a spec change, those it touches.
  */
-function testKinds(frid: string, acceptance: number | undefined): string[] {
-  const conformance = [
-    "- Conformance tests come from the functional spec itself: what it says the functionality does, its edge",
-    "  cases, its errors - written as if no acceptance tests had been given. They do not copy the acceptance",
-    "  tests, and do not stop where the acceptance tests stop.",
-    `- Label them: files whose names say conformance, each with a comment "${conformanceLabel(frid)}" at its top`,
-    "  (for a spec change, the functionality each covers).",
-  ];
-  if (acceptance === 0) return conformance;
+function scenarioRules(module: string, funcId: string | undefined): string[] {
+  const id = funcId ?? "<func-id>";
   return [
-    ...conformance,
-    acceptance === undefined
-      ? "- Acceptance tests - the ones in <acceptance tests> - are implemented separately from the"
-      : `- Separately from them, implement each of the ${acceptance} acceptance test${acceptance === 1 ? "" : "s"} above as its own test, doing what it`,
-    acceptance === undefined
-      ? "  conformance tests, each as its own test, doing what it says, in files whose names say acceptance."
-      : "  says, in files whose names say acceptance. Never fold one into a conformance test, even where they overlap.",
-    `- Label each acceptance test with a comment right above it: "${acceptanceLabel(frid, 1)}:" and the text`,
-    "  of the acceptance test, numbered as above.",
+    "- The tests carry out the scenarios - those in <conformance tests> and <acceptance tests> - exactly: at least one",
+    "  test for each, doing what it says and asserting what it expects. Write no test that is not a scenario's: no",
+    "  edge case, error or behaviour of your own beyond them, however much the functional spec says - the scenarios",
+    "  are what is tested.",
+    `- Label each file with a comment at its top naming the functional spec it tests: "${conformanceLabel(module, id)}" -`,
+    "  a file that tests several has one such line for each.",
+    `- Label each test with a comment right above it naming the scenario it carries out: "${scenarioLabel("conformance", "<scenario-id>", module, id)}"`,
+    `  or "${scenarioLabel("acceptance", "<scenario-id>", module, id)}".`,
   ];
 }
 
 export interface RegressionFixPromptInput {
   moduleName: string;
-  /** Functionalities built so far, in order. */
-  frids: string[];
+  /** The func-ids of the functional specs built so far, in order. */
+  funcIds: string[];
   specifications: Specifications;
   failure: string;
   /** Functional specs of the modules this one requires, transitively. */
@@ -827,14 +833,14 @@ export function buildRegressionFixPrompt(input: RegressionFixPromptInput): strin
     specPrimer({ testReqs: false }),
     `The conformance suite for \`${input.moduleName}\` is failing.`,
     "",
-    `It covers functionalities ${input.frids.join(", ")} of module \`${input.moduleName}\` together. A functionality that passed`,
+    `It covers functional specs ${input.funcIds.join(", ")} of module \`${input.moduleName}\` together. A functional spec that passed`,
     "on its own can still be broken by a later one, which is what this run is for.",
     "",
     moduleSection(DEFINITIONS, specifications[DEFINITIONS], input.moduleName, input.modules),
     moduleSection(NON_FUNCTIONAL_REQUIREMENTS, specifications[NON_FUNCTIONAL_REQUIREMENTS], input.moduleName, input.modules),
     // All of it is in the code, the required modules' functionalities included, and any of it
     // may be what the latest change broke.
-    alreadyImplemented(input.moduleName, specifications[FUNCTIONAL_REQUIREMENTS], input.required ?? []),
+    alreadyImplemented(input.moduleName, specifications[FUNCTIONAL_REQUIREMENTS], input.funcIds, input.required ?? []),
     `<conformance failure>\n${input.failure}\n</conformance failure>`,
     "",
     "Change the implementation so every functionality listed as already implemented works at the same time.",

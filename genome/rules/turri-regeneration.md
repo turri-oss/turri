@@ -10,7 +10,9 @@ The other rules say what a spec means. This one says what turri does with a chan
 
 - turri regenerates the code from spec diffs: what changed between the spec the code was built from and the spec now
 - A functional spec added, changed or taken out is that change alone, wherever it sits - first, in the middle or last of its module
-- The specs around it are not regenerated because their position or numbering moved, and nothing after it is built again. A spec inserted in the middle is one addition
+- A functional spec is known by its module and its func-id, `<module>:<func-id>`: the specs around it are not regenerated because their position moved, and nothing after it is built again. A spec inserted in the middle is one addition; one moved to another place with its text as it was is no change at all
+- A func-id renamed is a functional spec taken out and another added: its code is removed and built anew. Keep a func-id once it is built, and change the text under it
+- Code built before functional specs had func-ids is never built on: its whole chain is regenerated from scratch, never done without the person agreeing
 - "Specs render top to bottom, each knowing only the ones before it" is about what a spec may assume (`func-specs.md`), not about what a change costs
 
 ## A change is regenerated in the chain's tip
@@ -25,16 +27,16 @@ The other rules say what a spec means. This one says what turri does with a chan
 - A functional spec added is built, with its unit tests; one changed is patched in place; one taken out has its code, and the tests only it had, removed
 - A definition changed patches every functional spec that uses its concept, directly or through other definitions. So does a change to a linked resource: the spec or definition linking it is changed though its text is not. A widely used definition is the costly edit - not a spec's position
 - Implementation reqs alone, or definitions no functional spec uses, are a mechanical change: the code adapts, and no test is written or changes what it asserts
-- Test reqs and acceptance tests reach the conformance tests only, never the code
+- Test reqs and scenarios - a functional spec's conformance and acceptance scenarios, in its test plain file - reach the conformance tests only, never the code. A scenario changed alone regenerates no code
 - A functional spec regenerated again by name has its code taken out and built anew - never left as it was, even where it already does what the spec says; a pulse that changes nothing does not land. Its conformance tests, when it has them, are run on its new code once it lands: those that pass are kept as they are; one that fails is judged against the spec - what it checks that the spec leaves open, a path, a field, a message the old code chose, goes by the new code
-- `conformance-tests: false` writes no new conformance tests, but keeps those there are up to date: a functional spec that has conformance tests and is changed, regenerated again or taken out gets a conformance pulse for it alone once its code lands. One with none gets none
+- What is conformance tested is the scenarios: each conformance and acceptance scenario of a functional spec gets at least one test, and nothing else is tested - a functional spec with an empty test plain file has no conformance tests. Its tests are written or changed once its code lands, whenever a scenario is added, changed or taken out, its text changes, it is regenerated again or taken out; one whose scenarios are all taken out loses its tests. To have something checked end to end, write it as a scenario
 - Definitions moved to a common module and reqs reordered are recorded, not rendered
 - A functional spec written on its happy path and hardened later - its validation, edge cases and errors added to it - is patched in place each time: growing a spec a step at a time costs no more than writing it whole up front
 - A module's first pulse, when it builds one functional spec - the project set up and the smallest thing that runs - lands on its unit tests with no review
 
 ## What a coding agent sees
 
-- A coding agent sees its prompt and its module's code - nothing else. It cannot read `.plain` files, this conversation, AGENTS.md or the person
+- A coding agent sees its prompt and its module's code - nothing else. It cannot read `.plain` files, this conversation, AGENTS.md or the person. It never sees a functional spec's scenarios: those are the conformance tests'
 - What the code needs to know has to be in the spec. A fact said only in the conversation, AGENTS.md or notes never reaches the code, and is lost at the next regeneration
 - Steering reaches the agents that plan the work - how it is cut and in what order - not what the code does. What the code does is changed in the spec
 

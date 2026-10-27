@@ -2,6 +2,7 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { newFileDiff, testPlainFile, writePlain } from "../test-plain.ts";
 import { writeTestScripts } from "../test-scripts.ts";
 
 /**
@@ -59,8 +60,8 @@ afterEach(() => {
 
 describe("a coding agent that has written nothing", () => {
   it("is asked for a best-guess draft before its tests run - and what it drafts goes on to be tested and reviewed", async () => {
-    writeFileSync(join(dir, "app.plain"), plain(["- One."]));
-    const diff = ["diff --git a/app.plain b/app.plain", "--- a/app.plain", "+++ b/app.plain", "@@ -6 +6,3 @@", " - One.", "+", "+- Two.", ""].join("\n");
+    writePlain(dir, "app.plain", plain(["# one\nOne."]));
+    const diff = ["diff --git a/app.plain b/app.plain", "--- a/app.plain", "+++ b/app.plain", "@@ -8 +8,4 @@", " One.", "+", "+# two", "+Two.", ""].join("\n") + newFileDiff("tests/app/two.plain", testPlainFile("app", "two"));
     const result = await renderSpecDiff({ plainFile: "app.plain", diff, cwd: dir });
     expect(drafts()).toHaveLength(1);
     expect(drafts()[0]).toContain("stop planning and write it now: your best guess");
@@ -69,8 +70,8 @@ describe("a coding agent that has written nothing", () => {
 
   it("making a spec change is asked once - for a draft, or why the change needs no code", async () => {
     silent = true;
-    writeFileSync(join(dir, "app.plain"), plain(["- One."]));
-    const diff = ["diff --git a/app.plain b/app.plain", "--- a/app.plain", "+++ b/app.plain", "@@ -6 +6,3 @@", " - One.", "+", "+- Two.", ""].join("\n");
+    writePlain(dir, "app.plain", plain(["# one\nOne."]));
+    const diff = ["diff --git a/app.plain b/app.plain", "--- a/app.plain", "+++ b/app.plain", "@@ -8 +8,4 @@", " One.", "+", "+# two", "+Two.", ""].join("\n") + newFileDiff("tests/app/two.plain", testPlainFile("app", "two"));
     await renderSpecDiff({ plainFile: "app.plain", diff, cwd: dir });
     expect(drafts()).toHaveLength(DRAFT_ASKS);
     expect(drafts()[0]).toContain("If you are sure it needs no code at all");
@@ -78,13 +79,13 @@ describe("a coding agent that has written nothing", () => {
 });
 
 describe("a coding agent regenerating a functional spec again that has written nothing", () => {
-  const diff = ["diff --git a/app.plain b/app.plain", "--- a/app.plain", "+++ b/app.plain", "@@ -6 +6,3 @@", " - One.", "+", "+- Two.", ""].join("\n");
-  const cases = { fresh: false, add: [], patch: [], again: [{ frid: "1", text: "One." }], delete: [], mechanical: false };
+  const diff = ["diff --git a/app.plain b/app.plain", "--- a/app.plain", "+++ b/app.plain", "@@ -8 +8,4 @@", " One.", "+", "+# two", "+Two.", ""].join("\n") + newFileDiff("tests/app/two.plain", testPlainFile("app", "two"));
+  const cases = { fresh: false, add: [], patch: [], again: [{ funcId: "one", text: "One." }], delete: [], mechanical: false };
   const agains = () => drafts().filter((prompt) => prompt.includes("to be regenerated again"));
 
   it("is sent back to build it anew, never offered that it needs no code - and what it builds goes on to be tested", async () => {
     writesOn = "to be regenerated again";
-    writeFileSync(join(dir, "app.plain"), plain(["- One."]));
+    writePlain(dir, "app.plain", plain(["# one\nOne."]));
     const result = await renderSpecDiff({ plainFile: "app.plain", diff, cwd: dir, cases });
     expect(agains()).toHaveLength(1);
     expect(agains()[0]).toContain("take its\nimplementation and its unit tests out and build them anew");
@@ -94,7 +95,7 @@ describe("a coding agent regenerating a functional spec again that has written n
 
   it("does not land when it still writes nothing", async () => {
     silent = true;
-    writeFileSync(join(dir, "app.plain"), plain(["- One."]));
+    writePlain(dir, "app.plain", plain(["# one\nOne."]));
     const result = await renderSpecDiff({ plainFile: "app.plain", diff, cwd: dir, cases });
     expect(agains()).toHaveLength(AGAIN_ASKS);
     expect(result.passed).toBe(false);

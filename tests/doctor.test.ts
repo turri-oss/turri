@@ -23,7 +23,7 @@ describe("doctor for a host", () => {
     project = mkdtempSync(join(tmpdir(), "turri-doctor-host-"));
     asked.models = [];
     writeFileSync(join(project, "config.turri.yaml"), "harness-model: anthropic/claude-test\ncoding-model: anthropic/claude-test\n");
-    writeFileSync(join(project, "game.plain"), "***implementation reqs***\n\n- :Implementation: is written in Zig.\n\n***functional specs***\n\n- Draw.\n");
+    writeFileSync(join(project, "game.plain"), "***implementation reqs***\n\n- :Implementation: is written in Zig.\n\n***functional specs***\n\n# draw\nDraw.\n");
   });
   afterEach(() => {
     rmSync(project, { recursive: true, force: true });

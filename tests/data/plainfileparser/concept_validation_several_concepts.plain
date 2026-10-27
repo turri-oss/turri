@@ -8,6 +8,9 @@
 
 ***functional specs***
 
-- Display :concept1:.
-- Display :concept2:.
-- Display :concept3:.
+# display-concept1
+Display :concept1:.
+# display-concept2
+Display :concept2:.
+# display-concept3
+Display :concept3:.

@@ -1,0 +1,9 @@
+***definitions***
+- :Concept: is a concept.
+
+***implementation reqs***
+- The :Concept: concept must be implemented.
+
+***functional specs***
+# implement-a-wrapper-for-the
+Implement a wrapper for the :Concept: concept.

@@ -1,14 +1,15 @@
 import { readFileSync } from "node:fs";
 
 /**
- * ***plain highlighted as plyn highlights it - the ***plain editor extension
- * (https://github.com/plainlang/plyn, MIT). Its TextMate grammar is copied in beside this file,
- * `plain.tmLanguage.json`; `npm run grammar:sync` refreshes it.
+ * ***plain highlighted by turri's own TextMate grammar, `plain.tmLanguage.json` beside this file. It started
+ * from the grammar of plyn, the ***plain editor extension (https://github.com/plainlang/plyn, MIT), at f9c02b8, and
+ * no longer follows it: it has the test plain files' `***conformance tests***`, their `module:` and `func_id:`, and
+ * the `# <id>` heading of a functional spec or a scenario.
  *
- * What is read of a TextMate grammar is what plyn's uses: rules that match on a line, with or
+ * What is read of a TextMate grammar is what that one uses: rules that match on a line, with or
  * without captures; rules that begin on one line and end on another (the front matter), with rules
  * of their own inside; and includes of the repository. Its expressions are
- * read as JavaScript's - plyn's need nothing of Oniguruma that JavaScript lacks. A grammar that
+ * read as JavaScript's - they need nothing of Oniguruma that JavaScript lacks. A grammar that
  * cannot be read highlights nothing: the text is shown as it is.
  */
 
@@ -54,7 +55,7 @@ function readGrammar(raw: RawGrammar): Rule[] {
   const read = (rules: RawRule[], into: Rule[], seen: Set<string>) => {
     for (const rule of rules) {
       if (rule.include !== undefined) {
-        // Only the repository's: plyn's grammar includes nothing else, and a rule that includes itself is followed once.
+        // Only the repository's: the grammar includes nothing else, and a rule that includes itself is followed once.
         if (!rule.include.startsWith("#")) continue;
         const key = rule.include.slice(1);
         if (seen.has(key)) continue;
@@ -96,7 +97,7 @@ function readGrammar(raw: RawGrammar): Rule[] {
 
 let grammar: Rule[] | null | undefined;
 
-/** plyn's grammar, read once - or null when it cannot be. */
+/** The grammar, read once - or null when it cannot be. */
 function plainGrammar(): Rule[] | null {
   if (grammar !== undefined) return grammar;
   try {
@@ -198,21 +199,23 @@ export function highlightLines(lines: string[]): Token[][] {
 
 /**
  * What a piece of ***plain is, for its colour: a section's header, a concept, a link, text in quotes or
- * backticks, a front matter key, a module a front matter names, a comment, a list's bullet.
+ * backticks, a front matter key, a module a front matter names, a comment, a list's bullet, the `# <id>` heading of a
+ * functional spec or a scenario.
  */
-export type PlainRole = "section" | "concept" | "link" | "literal" | "keyword" | "module" | "comment" | "bullet";
+export type PlainRole = "section" | "concept" | "link" | "literal" | "keyword" | "module" | "comment" | "bullet" | "id";
 
 /** A scope's role, by what it is - the most specific first. None: the text around it. */
 const ROLES: Array<[string, PlainRole]> = [
   ["comment", "comment"],
   ["keyword", "keyword"],
   ["entity.name.function", "section"],
+  ["entity.name.tag.id", "id"],
   ["entity.name.type", "module"],
   ["entity.name.module", "module"],
   ["entity.punctuation", "bullet"],
   ["punctuation", "bullet"],
   ["variable", "concept"],
-  // A link is plyn's `string.quoted.other.plain`; its quotes are `string.quoted.double`, `...other.backtick` and the like.
+  // A link is the grammar's `string.quoted.other.plain`; its quotes are `string.quoted.double`, `...other.backtick` and the like.
   ["string.quoted.other.plain", "link"],
   ["string", "literal"],
 ];

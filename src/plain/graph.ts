@@ -4,7 +4,7 @@ import { resolveTemplateDirs } from "../regenerate/paths.ts";
 import { locateModule } from "../regenerate/requires.ts";
 import { resourceFile } from "../regenerate/resources.ts";
 import { DEFAULT_CONCEPT_DEFINITIONS, DEFAULT_CONCEPTS, definitionText, extractConceptsFromDefinition, findConcepts } from "./concepts.ts";
-import { lineNumber, renderToMarkdown, type AnyNode } from "./markdown.ts";
+import { lineNumber, renderToMarkdown, renderTokens, type AnyNode } from "./markdown.ts";
 import { attempt, namesIn, readModule } from "./module-concepts.ts";
 import {
   IMPORT_DIRECTIVE,
@@ -15,10 +15,16 @@ import {
   plainFileParser,
   readPlainSourceMetadata,
   REQUIRES_DIRECTIVE,
+  functionalitiesOf,
+  sectionOf,
   withParseCache,
 } from "./parser.ts";
 import { DEFINITIONS, FUNCTIONAL_REQUIREMENTS, NON_FUNCTIONAL_REQUIREMENTS, TEST_REQUIREMENTS } from "./spec.ts";
 import { isStdlibModule } from "./stdlib.ts";
+import { discoverTestPlainFiles, readTestPlainFileText } from "./project.ts";
+import { parseTestPlainFileSource, type Scenario } from "./test-plain-file.ts";
+import { testDirOf } from "../config.ts";
+import { strayTestPlainFiles } from "../test-plain-files.ts";
 
 /**
  * A project's ***plain as a graph, to go from one place in it to another: its modules, each item of their sections,
@@ -29,6 +35,31 @@ export interface PlainGraph {
   modules: PlainModuleNode[];
   items: PlainItemNode[];
   concepts: PlainConceptNode[];
+  /** The test plain files in the project's test folder, each linked to the functional spec it binds to. */
+  testPlainFiles: PlainTestPlainFileNode[];
+}
+
+/** A scenario of a test plain file: its scenario-id, its text, and the line its `# <scenario-id>` heading is on. */
+export interface PlainScenario {
+  id: string;
+  text: string;
+  line: number;
+}
+
+/**
+ * A test plain file: the functional spec it binds to - its `module:` and `func_id:`, and that functional spec's item -
+ * and its scenarios. A file that does not parse, is outside its module's folder or binds to no functional spec has
+ * `error`, and `item` null.
+ */
+export interface PlainTestPlainFileNode {
+  file: string;
+  module: string | null;
+  funcId: string | null;
+  /** The functional spec's item id, or null. */
+  item: string | null;
+  conformance: PlainScenario[];
+  acceptance: PlainScenario[];
+  error?: string;
 }
 
 /** A module one .plain file names, and the file it is - null when it is not found. */
@@ -55,7 +86,7 @@ export interface PlainModuleNode {
 
 export type PlainSection = typeof DEFINITIONS | typeof NON_FUNCTIONAL_REQUIREMENTS | typeof TEST_REQUIREMENTS | typeof FUNCTIONAL_REQUIREMENTS;
 
-/** An item of a section, with what is nested under it - a functional spec with its acceptance tests. */
+/** An item of a section: a list item, or a functional spec - its heading's line, its body's text. */
 export interface PlainItemNode {
   /** `<file>:<line>`. */
   id: string;
@@ -65,14 +96,17 @@ export interface PlainItemNode {
   /** The line it starts on, from 1. */
   line: number;
   text: string;
-  /** A functional spec's functionality id: `1`, `2`, ... */
-  frid?: string;
+  /** A functional spec's func-id, its `# <func-id>` heading. */
+  funcId?: string;
+  /** A functional spec's test plain file, and its scenarios - none when it has no file, or an empty one. */
+  testPlainFile?: string | null;
+  scenarios?: { conformance: PlainScenario[]; acceptance: PlainScenario[] };
   /** The concepts a definition defines. */
   defines: string[];
   /** The concepts it names, each with the definition it is - an item's id - or null for ***plain's own and one defined nowhere it can see. */
   uses: Array<{ concept: string; definition: string | null }>;
   /**
-   * The linked resources it names, a functional spec's acceptance tests' too - `[text](target)` as the parser reads
+   * The linked resources it names - `[text](target)` as the parser reads
    * them - with the file each is read from when regenerating, null when it is not there, and the line the link is on.
    */
   resources: Array<{ text: string; target: string; file: string | null; line: number }>;
@@ -155,28 +189,68 @@ export function plainGraph(projectDir: string): PlainGraph {
       }
 
       for (const section of SECTIONS) {
-        const own = (read.parsed?.plainSource[section]?.children ?? []).filter((item) => !read.parsed!.importedFrom.has(item));
-        own.forEach((item, index) => {
-          const text = renderToMarkdown(item).trim();
+        // An item of a list section is its list item; a functional spec is its `# <func-id>` heading and its body.
+        const own: Array<{ nodes: AnyNode[]; line: number; parsedLine: number; text: string; funcId?: string }> = [];
+        if (read.parsed !== undefined && section === FUNCTIONAL_REQUIREMENTS) {
+          for (const functionality of functionalitiesOf(read.parsed.plainSource)) {
+            const at = lineOf({ type: "heading", position: { start: { line: functionality.lineNumber, column: 1 }, end: { line: functionality.lineNumber, column: 1 } } }, node.file, lines, { needle: `# ${functionality.id}` });
+            own.push({ nodes: functionality.body, line: at, parsedLine: functionality.lineNumber, text: renderTokens(functionality.body), funcId: functionality.id });
+          }
+        } else {
+          for (const item of ((read.parsed && sectionOf(read.parsed.plainSource, section)?.children) ?? []).filter((item) => !read.parsed!.importedFrom.has(item))) {
+            own.push({ nodes: [item], line: lineOf(item, node.file, lines), parsedLine: lineNumber(item), text: renderToMarkdown(item).trim() });
+          }
+        }
+        for (const { nodes, line, parsedLine, text, funcId } of own) {
           const defines = section === DEFINITIONS ? extractConceptsFromDefinition(text)[0] : [];
           const named = [...new Set(findConcepts(text).map((found) => found.concept))].filter((concept) => !defines.includes(concept));
-          const id = idOf(item, node.file);
-          const line = lineOf(item, node.file, lines);
+          const id = `${node.file}:${line}`;
           // A link is on the line the parser has it on, moved as Liquid moved its item.
-          const resources = linksIn(item).map(({ text, target, node: link }) => ({
+          const resources = nodes.flatMap((item) => linksIn(item)).map(({ text, target, node: link }) => ({
             text,
             target,
             file: resourceFile(target, dirs),
-            line: lineOf(link, node.file, lines, { at: lineNumber(link) + line - lineNumber(item), needle: `](${target})`, from: line }),
+            line: lineOf(link, node.file, lines, { at: lineNumber(link) + line - parsedLine, needle: `](${target})`, from: line }),
           }));
           const uses = named.map((concept) => ({ concept, definition: DEFAULT_CONCEPTS.has(concept) ? null : (visible.get(concept) ?? null) }));
           for (const use of uses) concepts.get(`${use.concept}\0${use.definition ?? ""}`)?.usedBy.push(id);
-          items.push({ id, file: node.file, module: node.module, section, line, text, ...(section === FUNCTIONAL_REQUIREMENTS ? { frid: String(index + 1) } : {}), defines, uses, resources });
+          items.push({ id, file: node.file, module: node.module, section, line, text, ...(funcId !== undefined ? { funcId } : {}), defines, uses, resources });
           node.items.push(id);
-        });
+        }
       }
     }
-    return { modules: [...modules.values()], items, concepts: [...concepts.values()] };
+    const testPlainFiles = testPlainFileNodes(root, dirs, items, lines);
+    return { modules: [...modules.values()], items, concepts: [...concepts.values()], testPlainFiles };
+  });
+}
+
+/**
+ * The test plain files under the project's test folder, each parsed for its binding and its scenarios, and linked to the
+ * functional spec it binds to - that item given its file and its scenarios. A stray one, one that does not parse, or one
+ * that binds to no functional spec has its error.
+ */
+function testPlainFileNodes(root: string, dirs: string[], items: PlainItemNode[], lines: Map<string, string[]>): PlainTestPlainFileNode[] {
+  const testDir = testDirOf(join(root, `project${PLAIN_SOURCE_FILE_EXTENSION}`));
+  const strays = new Map((attempt(() => strayTestPlainFiles(root)) ?? []).map((stray) => [resolve(root, stray.file), stray.problem]));
+  for (const item of items) if (item.funcId !== undefined) Object.assign(item, { testPlainFile: null, scenarios: { conformance: [], acceptance: [] } });
+  return (attempt(() => discoverTestPlainFiles([testDir], root)) ?? []).map(([path, name]): PlainTestPlainFileNode => {
+    const node: PlainTestPlainFileNode = { file: path, module: null, funcId: null, item: null, conformance: [], acceptance: [] };
+    let parsed: ReturnType<typeof parseTestPlainFileSource>;
+    try {
+      parsed = parseTestPlainFileSource(readTestPlainFileText(path, name), name, dirs, {});
+    } catch (error) {
+      return { ...node, error: messageOf(error) };
+    }
+    const scenarios = (list: Scenario[]) =>
+      list.map((scenario) => ({ id: scenario.id, text: scenario.text, line: lineOf({ type: "heading", position: { start: { line: scenario.lineNumber, column: 1 }, end: { line: scenario.lineNumber, column: 1 } } } as AnyNode, path, lines, { needle: `# ${scenario.id}` }) }));
+    Object.assign(node, { module: parsed.module, funcId: parsed.funcId, conformance: scenarios(parsed.conformanceTests), acceptance: scenarios(parsed.acceptanceTests) });
+    const stray = strays.get(path);
+    if (stray !== undefined) return { ...node, error: stray };
+    const bound = items.find((item) => item.module === parsed.module && item.funcId === parsed.funcId && item.section === FUNCTIONAL_REQUIREMENTS);
+    if (bound === undefined) return { ...node, error: `${name} binds to ${parsed.module}:${parsed.funcId}, and there is no such functional spec` };
+    bound.testPlainFile = path;
+    bound.scenarios = { conformance: node.conformance, acceptance: node.acceptance };
+    return { ...node, item: bound.id };
   });
 }
 

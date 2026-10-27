@@ -1,9 +1,10 @@
 import { existsSync } from "node:fs";
+import { refuseTestPlainFile } from "./test-plain-files.ts";
 import { basename, relative, resolve } from "node:path";
 import { defineTool, type ExtensionContext, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { CONFIG_FILE, readProjectConfig, stackConfigFile, stackForModule, stackNamed, stacksOf, withStack } from "./config.ts";
-import { checkPlainFile } from "./plain/check.ts";
+import { checkPlainFile, formatCheckResults } from "./plain/check.ts";
 import { describeDrift, describeModules, type ModuleStatus, type WorkLoop } from "./regenerate/loop.ts";
 import type { RenderWork } from "./regenerate/engine.ts";
 import { pulseName, type JobRegistry } from "./regenerate/jobs.ts";
@@ -190,7 +191,9 @@ function plainFileOf(cwd: string, given: { plain_file?: string; working_dir?: st
   const located = fromWorkingDir(cwd, given);
   const named = located.plain_file ?? readProjectConfig(located.base).module;
   if (named === undefined) throw new Error(`Name the .plain file to ${what}, or set module: in ${CONFIG_FILE}.`);
-  return resolve(located.base, named);
+  const plainFile = resolve(located.base, named);
+  refuseTestPlainFile(plainFile);
+  return plainFile;
 }
 
 /** Whether a /regenerate's words ask for the module from scratch: its code deleted, and all of it regenerated again. */
@@ -216,14 +219,14 @@ export function regenerateTool(options: LoopToolsOptions & { loop: (ctx: Extensi
       "requires chain first. Call it after any change to the spec, by any means: the file tools, a skill, the user in an " +
       "editor. It takes no diff: what is left to regenerate - from what each module's code was regenerated from to its spec now - is " +
       "worked out and planned into pulses, and a pulse running that regenerates something the spec no longer wants is stopped and " +
-      "rolled back. Nothing to do where the code is regenerated from the spec as it is. With functionalities named, those are " +
+      "rolled back. Nothing to do where the code is regenerated from the spec as it is. With funcIds named - each as module:func-id - those are " +
       "regenerated though their spec did not change - their code taken out and built anew, better made, never left as it was - " +
       "planned into pulses as any change is, the ones next to each other together; their conformance tests stay as they are.",
     promptSnippet: "regenerate a module's code from its spec as it is now - after any change to the spec",
     promptGuidelines: [
       "Call regenerate after editing a .plain file with the file tools - or when the user says they changed one - instead of working out a diff: turri compares what is regenerated with the spec now.",
       "regenerate returns at once with what runs and what is planned. Report it, keep talking, and use pulses when the user asks; the pulses report when they finish.",
-      "When the user wants a functionality to come out differently, change its spec - the spec is what persists - then regenerate. When they want ones already built regenerated as their spec stands - better made, on another model, after many patches - name them in functionalities, all in one call.",
+      "When the user wants a functionality to come out differently, change its spec - the spec is what persists - then regenerate. When they want ones already built regenerated as their spec stands - better made, on another model, after many patches - name them in funcIds, each as module:func-id, all in one call.",
       "A change to a file the spec links - an API surface, a mapping document - is a change to the spec: regenerate sees it by itself, and regenerates every functional spec that uses what links it.",
       "Never stop pulses and start them again yourself to follow a spec change: regenerate does it.",
       "Set from_scratch only when the user asks for the module to be regenerated from scratch - started over, its code deleted - in this conversation, or agrees to it when a module's status says it has to start over: never to fix a pulse that did not land.",
@@ -234,9 +237,9 @@ export function regenerateTool(options: LoopToolsOptions & { loop: (ctx: Extensi
       plain_file: Type.Optional(Type.String({ description: "Path to the .plain file. Omitted: the module the project's config.turri.yaml names" })),
       working_dir: WORKING_DIR_PARAM,
       guidance: GUIDANCE_PARAM,
-      functionalities: Type.Optional(
+      funcIds: Type.Optional(
         Type.Array(Type.String(), {
-          description: "Functional specs already built, by id, to regenerate though their spec did not change. Omitted: what the spec now differs from the code in",
+          description: "Functional specs already built, each as module:func-id (todo:add-task), to regenerate though their spec did not change. Omitted: what the spec now differs from the code in",
         }),
       ),
       from_scratch: Type.Optional(
@@ -254,9 +257,10 @@ export function regenerateTool(options: LoopToolsOptions & { loop: (ctx: Extensi
       const plainFile = plainFileOf(options.cwd, given, "regenerate");
       return withCallStack(plainFile, given.stack, async () => {
         const check = checkPlainFile(plainFile);
-        if (!check.ok) throw new Error(`${relative(options.cwd, plainFile) || plainFile} does not parse, so nothing can be regenerated from it yet: ${check.error}`);
-        const again = given.functionalities ?? [];
-        if (again.length > 0 && given.from_scratch !== undefined) throw new Error("Name functionalities or set from_scratch, not both: from scratch regenerates every one of them.");
+        // The parser's message as it gives it, every functional spec without a test plain file, and turri's next step for the old syntax.
+        if (!check.ok) throw new Error(`${relative(options.cwd, plainFile) || plainFile} does not parse, so nothing can be regenerated from it yet:\n${formatCheckResults([check])}`);
+        const again = given.funcIds ?? [];
+        if (again.length > 0 && given.from_scratch !== undefined) throw new Error("Name funcIds or set from_scratch, not both: from scratch regenerates every one of them.");
         // Named functionalities are work on functionalities, as engine chooses a model for it; the rest, spec changes.
         const work: RenderWork = again.length > 0 ? "functionalities" : "spec_changes";
         const model = options.model !== undefined ? options.model(ctx, plainFile, given.model, work) : given.model;

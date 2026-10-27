@@ -4,6 +4,7 @@ import {
   NON_FUNCTIONAL_REQUIREMENTS,
   TEST_REQUIREMENTS,
   type MarshalledPlainSource,
+  type ScenarioText,
 } from "../plain/spec.ts";
 
 /**
@@ -21,9 +22,10 @@ export interface SharedSections {
 /** A functional spec of a module this one requires: documented, not built here. */
 export interface RequiredSpec {
   module: string;
-  frid: string;
+  funcId: string;
   spec: string;
-  acceptanceTests?: string[];
+  conformanceTests?: ScenarioText[];
+  acceptanceTests?: ScenarioText[];
 }
 
 /** A module's shared sections as they stand, with or without a functional spec to read them through. */

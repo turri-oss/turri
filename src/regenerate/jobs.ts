@@ -20,10 +20,10 @@ import { pulseEnded, pulseWrote } from "./pulse-files.ts";
 
 export type JobStatus = "queued" | "running" | "succeeded" | "failed" | "stopped";
 
-/** A functional spec a pulse covers: the module whose spec it is - the pulse's own, or one below it - and its number there. */
+/** A functional spec a pulse covers: the module whose spec it is - the pulse's own, or one below it - and its func-id there. */
 export interface PulseSpec {
   module: string;
-  frid: string;
+  funcId: string;
 }
 
 /**
@@ -337,7 +337,7 @@ export function createJobRegistry(options?: {
         ...(input.module !== undefined ? { module: input.module } : {}),
         specConflict(conflict: SpecConflict) {
           job.specConflict = conflict;
-          this.transcript({ kind: "stage", text: `the spec contradicts itself: functionalities ${conflict.specs.map((spec) => `${spec.module} ${spec.frid}`).join(" and ")} cannot both hold` });
+          this.transcript({ kind: "stage", text: `the spec contradicts itself: functional specs ${conflict.specs.map((spec) => `${spec.module}:${spec.funcId}`).join(" and ")} cannot both hold` });
           changed();
         },
         stage(label: string) {

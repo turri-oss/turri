@@ -14,16 +14,16 @@ beforeEach(() => {
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 describe("what the chat's agent is told about the project's config.yaml", () => {
-  it("says conformance is off when the file turns it off, and what else it sets", () => {
+  it("says what the file sets, and that conformance tests are written for the functional specs with scenarios", () => {
     mkdirSync(join(root, "test_scripts"));
     writeFileSync(join(root, "test_scripts", "run_unittests.sh"), "#!/bin/bash\n");
     writeFileSync(
       join(root, "config.yaml"),
-      "unittests-script: test_scripts/run_unittests.sh\ncoding-model: amazon-bedrock/eu.anthropic.claude-sonnet-5\nharness-model: google/gemini-3.1-pro\nconformance-tests: false\nmodule: orders.plain\n",
+      "unittests-script: test_scripts/run_unittests.sh\ncoding-model: amazon-bedrock/eu.anthropic.claude-sonnet-5\nharness-model: google/gemini-3.1-pro\nmodule: orders.plain\n",
     );
     const block = projectConfigBlock(root);
-    expect(block).toContain("conformance tests are OFF: no new ones are written");
-    expect(block).toContain("The ones there are are kept up to date");
+    expect(block).toContain("conformance tests: written for every functional spec with scenarios");
+    expect(block).not.toContain("conformance-tests:");
     expect(block).toContain("module: orders.plain - the module to build when the user does not name one");
     expect(block).toContain("coding-model: amazon-bedrock/eu.anthropic.claude-sonnet-5");
     expect(block).toContain("unit testing script: test_scripts/run_unittests.sh");
@@ -59,7 +59,7 @@ describe("what the chat's agent is told about the project's config.yaml", () => 
 
 describe("what the chat's agent is told about this machine", () => {
   it("says which wall is up, the toolchains each module's implementation reqs need and which this machine lacks, and what its testing scripts lack", async () => {
-    writeFileSync(join(root, "game.plain"), "***implementation reqs***\n\n- :Implementation: is written in Odin.\n\n***functional specs***\n\n- Draw a square.\n");
+    writeFileSync(join(root, "game.plain"), "***implementation reqs***\n\n- :Implementation: is written in Odin.\n\n***functional specs***\n\n# draw-a-square\nDraw a square.\n");
     mkdirSync(join(root, "test_scripts"), { recursive: true });
     writeFileSync(join(root, "test_scripts", "run_unittests_odin.sh"), "#!/bin/bash\nexport ODIN_ROOT=$(/usr/libexec/no_such_odin_home)\nodin test .\n");
     const block = machineBlock(root);

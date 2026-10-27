@@ -5,4 +5,5 @@
 - Second implementation requirement.
 
 ***functional specs***
-- Display "hello, world"
+# display-hello-world
+Display "hello, world"

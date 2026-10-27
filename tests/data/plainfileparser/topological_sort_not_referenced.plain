@@ -16,7 +16,11 @@
 - The :Concept3: concept must be implemented.
 
 ***functional specs***
-- Implement the :Concept1: concept.
-- Implement the :Concept2: concept.
-- Implement the :Concept3: concept.
-- Implement the :NonReferencedConcept: concept.
+# implement-the-concept1-concept
+Implement the :Concept1: concept.
+# implement-the-concept2-concept
+Implement the :Concept2: concept.
+# implement-the-concept3-concept
+Implement the :Concept3: concept.
+# implement-the-nonreferencedconcept-concept
+Implement the :NonReferencedConcept: concept.

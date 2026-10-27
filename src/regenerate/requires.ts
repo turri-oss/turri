@@ -27,7 +27,7 @@ export interface ChainEntry {
   buildDir: string;
   /** The module whose code is copied in before this one is built. */
   requires: string | null;
-  frids: string[];
+  funcIds: string[];
 }
 
 /** A required module's file: the first template folder that has it. */
@@ -77,7 +77,7 @@ export function resolveRequiresChain(
       plainFile: resolve(file),
       buildDir: buildDirUnder(root, moduleName),
       requires: previous,
-      frids: [...getFrids(tree)],
+      funcIds: [...getFrids(tree)],
     });
     return moduleName;
   };

@@ -1,5 +1,7 @@
 import { readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { ParseError, TokenizationError } from "liquidjs";
+import { PlainSyntaxError } from "./errors.ts";
 import { createEnvironment } from "./liquid.ts";
 
 /** Ports of the Python reference implementation's file helpers this parser needs. */
@@ -20,6 +22,18 @@ export function findIn(dirs: string[], fileName: string): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Port of loaders.relative_resource_path: the path of `target` in `resourceDir`, relative to `baseDir`, with `/` as
+ * separator. The folder part is computed lexically and the target is appended as written (`..` kept), so joining
+ * the result onto `baseDir` names the same file as joining `target` onto `resourceDir`.
+ */
+export function relativeResourcePath(baseDir: string, resourceDir: string, target: string): string {
+  const relativeDir = relative(resolve(baseDir), resolve(resourceDir));
+  if (relativeDir === "") return target;
+  if (isAbsolute(relativeDir)) return join(resourceDir, target).split(sep).join("/");
+  return `${relativeDir.split(sep).join("/")}/${target}`;
 }
 
 const MAX_BASE64_BLOB_LENGTH = 8192;
@@ -43,6 +57,7 @@ export function findLargeBase64Blob(text: string): string | null {
 export function getLoadedTemplates(
   templateDirs: string[],
   plainSource: string,
+  templateName?: string,
 ): [string, Record<string, string>] {
   const loadedTemplates: Record<string, string> = {};
 
@@ -60,6 +75,9 @@ export function getLoadedTemplates(
   try {
     rendered = engine.parseAndRenderSync(plainSource, {});
   } catch (error) {
+    if (error instanceof TokenizationError || error instanceof ParseError) {
+      throw new PlainSyntaxError(liquidErrorMessage(error, templateName));
+    }
     const message = error instanceof Error ? error.message : String(error);
     if (/undefined variable/i.test(message)) {
       throw new Error(`Undefined liquid variable: ${message}`);
@@ -68,4 +86,23 @@ export function getLoadedTemplates(
   }
 
   return [rendered, loadedTemplates];
+}
+
+/**
+ * Port of loaders.liquid_error_message: a Liquid syntax error as a ***plain one, naming the template, and the line
+ * and the column (counted from 0) of the token it is at. The message after it is liquidjs's, without the position
+ * liquidjs appends - it phrases its errors differently from liquid2, and places some of them elsewhere.
+ */
+export function liquidErrorMessage(error: Error & { token?: { begin?: number; input?: string } }, templateName?: string): string {
+  const message = error.message.replace(/, line:\d+, col:\d+$/, "");
+  const token = error.token;
+  let where: string;
+  if (token?.input === undefined || token.begin === undefined || token.begin < 0) {
+    where = templateName ? ` in ${templateName}` : "";
+  } else {
+    const line = (token.input.slice(0, token.begin).match(/\n/g) ?? []).length + 1;
+    const column = token.begin - (token.input.lastIndexOf("\n", token.begin - 1) + 1);
+    where = templateName ? ` at ${templateName}:${line}:${column}` : ` at ${line}:${column}`;
+  }
+  return `Plain syntax error: Invalid Liquid${where}: ${message}`;
 }

@@ -3,6 +3,7 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { withParseCache } from "../plain/parser.ts";
 import {
   ACCEPTANCE_TESTS,
+  CONFORMANCE_TESTS,
   DEFINITIONS,
   FUNCTIONAL_REQUIREMENTS,
   NON_FUNCTIONAL_REQUIREMENTS,
@@ -10,13 +11,14 @@ import {
   TEST_REQUIREMENTS,
   type MarshalledPlainSource,
 } from "../plain/spec.ts";
-import { configForSpec, conformanceSwitchedOn, readProjectConfig } from "../config.ts";
+import { configForSpec, readProjectConfig, testDirOf } from "../config.ts";
+import { testPlainFilesOf } from "../test-plain-files.ts";
 import { STDLIB_ROOT } from "../plain/stdlib.ts";
 import { conformanceDirFor } from "./conformance.ts";
 import { chainSpec, type MapCodebase, type MapPlan, type MapPulse } from "./loop.ts";
 import { modulesRoot, projectDirOf } from "./paths.ts";
 import { HISTORY_DIR } from "./lineage.ts";
-import { codeTree, marksRegenerateAgain, readRecord, RECORD_FILE } from "./records.ts";
+import { codeTree, hasScenarios, marksRegenerateAgain, readRecord, RECORD_FILE } from "./records.ts";
 import { specFilesOf } from "./regenerate.ts";
 import { builtTips, resolveRequiresChain, type ChainEntry } from "./requires.ts";
 import { changesBetween, layoutOf, serializeTree, type SpecChange } from "./spec-steps.ts";
@@ -30,8 +32,9 @@ import { changesBetween, layoutOf, serializeTree, type SpecChange } from "./spec
  * loop's plan is laid over it (`markSpecMap`): the pulse regenerating each item, the pulse planned to, or why there is
  * none.
  *
- * An item is what turri plans and diffs by: a definition, a req, a functional spec with its sub-bullets and acceptance
- * tests. Items are matched to pulses by their lines in the trees each pulse goes between, as the loop has them.
+ * An item is what turri plans and diffs by: a definition, a req, a functional spec with its body and its scenarios. Items
+ * are matched to pulses by their lines in the trees each pulse goes between, as the loop has them - a functional spec,
+ * on the conformance track, by its func-id.
  */
 
 /** Where an item stands against the code record. A test req is the conformance track's: it is never built. */
@@ -48,13 +51,28 @@ export interface MapItem {
   text: string;
   /** The code record's text, for a changed item. */
   was?: string;
-  /** Its acceptance tests, as the spec has them now. */
-  acceptance: string[];
+  /** A functional spec's func-id: what it is matched and kept by. */
+  funcId?: string;
+  /** A functional spec's scenarios, as its test plain file has them now: none, an empty one - it is not tested. */
+  scenarios: MapScenarios;
   /** Its line in the code's tree now, and in the code record's: what a pulse's trees are matched by. */
   line?: string;
   wasLine?: string;
   /** A functional spec's conformance tests: written for it as it reads now, for an earlier text, or for one taken out. */
   tests?: "now" | "older" | "removed";
+}
+
+/** A functional spec's scenarios, each its scenario-id and its text. */
+export interface MapScenarios {
+  conformance: Array<{ id: string; text: string }>;
+  acceptance: Array<{ id: string; text: string }>;
+}
+
+const NO_SCENARIOS: MapScenarios = { conformance: [], acceptance: [] };
+
+/** Whether a functional spec has scenarios - and so conformance tests to write. */
+export function hasScenarioViews(scenarios: MapScenarios): boolean {
+  return scenarios.conformance.length + scenarios.acceptance.length > 0;
 }
 
 export interface MapPage {
@@ -66,7 +84,7 @@ export interface MapPage {
   imports: string[];
   /** The module it requires - whose code it is built on - when it requires one. */
   requires?: string;
-  /** Its conformance tests are on, as its config has it: `conformance-tests:` is not false. */
+  /** Whether any of its functional specs has scenarios, and so conformance tests to write: its test reqs are used. */
   conformance?: boolean;
   items: MapItem[];
   /** Its spec does not parse, or could not be read. */
@@ -86,6 +104,8 @@ export interface MarkedItem extends MapItem {
   testing?: boolean;
   /** The conformance pulse planned to write its tests, not running yet: what its provisional number is read from. */
   testsPulse?: MapPulse;
+  /** A test req of a module none of whose functional specs has scenarios: nothing uses it. */
+  unused?: boolean;
 }
 
 export interface MarkedPage extends MapPage {
@@ -100,7 +120,7 @@ export interface MarkedPage extends MapPage {
   stuck: boolean;
 }
 
-type Item = { markdown: string; module?: string; frid?: string; [ACCEPTANCE_TESTS]?: Array<{ markdown?: string }> };
+type Item = { markdown: string; id?: string; module?: string; [CONFORMANCE_TESTS]?: Array<{ id?: string; text?: string }>; [ACCEPTANCE_TESTS]?: Array<{ id?: string; text?: string }> };
 
 const itemsOf = (tree: MarshalledPlainSource | null | undefined, heading: string): Item[] => ((tree?.[heading] as Item[] | undefined) ?? []).slice();
 
@@ -129,6 +149,21 @@ function changesOf(before: string, after: string): SpecChange[] {
   return changes;
 }
 
+/** A functional spec's scenarios, as the map shows them. */
+function scenarioViews(item: Item): MapScenarios {
+  const views = (list: Array<{ id?: string; text?: string }> | undefined) => (list ?? []).map((scenario) => ({ id: scenario.id ?? "", text: scenario.text ?? "" }));
+  return { conformance: views(item[CONFORMANCE_TESTS]), acceptance: views(item[ACCEPTANCE_TESTS]) };
+}
+
+/** A functional spec's func-id, from its line in a serialized tree. */
+const idOf = (line: string | undefined): string | undefined => {
+  try {
+    return (JSON.parse(line ?? "") as Item).id;
+  } catch {
+    return undefined;
+  }
+};
+
 const markdownOf = (line: string | undefined): string => {
   try {
     return (JSON.parse(line ?? "") as Item).markdown ?? "";
@@ -150,12 +185,8 @@ export function pageItems(input: { module: string; own: boolean; spec: Marshalle
   const after = serializeTree(codeTree(now));
   const changes = changesOf(before, after);
 
-  // Each item's acceptance tests, by its line in the code's tree.
-  const acceptance = new Map<string, string[]>();
-  for (const item of itemsOf(now, FUNCTIONAL_REQUIREMENTS)) {
-    const line = serializeTree(codeTree({ [FUNCTIONAL_REQUIREMENTS]: [item] })).split("\n").find((entry) => entry.startsWith("{"));
-    if (line !== undefined) acceptance.set(line, (item[ACCEPTANCE_TESTS] ?? []).map((test) => test.markdown ?? ""));
-  }
+  // Each functional spec's scenarios now, by its func-id.
+  const scenariosNow = new Map(itemsOf(now, FUNCTIONAL_REQUIREMENTS).map((item) => [item.id ?? "", scenarioViews(item)]));
 
   // The record's lines, with what is added in front of each and what becomes of each: the spec's order, the ghosts in theirs.
   const lines = before.split("\n").slice(0, -1);
@@ -168,13 +199,15 @@ export function pageItems(input: { module: string; own: boolean; spec: Marshalle
   const items: MapItem[] = [];
   const push = (section: string, state: ItemState, line: string | undefined, wasLine: string | undefined) => {
     const text = markdownOf(line ?? wasLine);
+    const funcId = section === FUNCTIONAL_REQUIREMENTS ? idOf(line ?? wasLine) : undefined;
     items.push({
       key: "",
       section,
       state,
       text,
       ...(state === "changed" ? { was: markdownOf(wasLine) } : {}),
-      acceptance: line !== undefined ? (acceptance.get(line) ?? []) : [],
+      ...(funcId !== undefined ? { funcId } : {}),
+      scenarios: funcId !== undefined && line !== undefined ? (scenariosNow.get(funcId) ?? NO_SCENARIOS) : NO_SCENARIOS,
       ...(line !== undefined ? { line } : {}),
       ...(wasLine !== undefined ? { wasLine } : {}),
     });
@@ -197,30 +230,32 @@ export function pageItems(input: { module: string; own: boolean; spec: Marshalle
   const testReqs = new Set(itemsOf(input.tested ?? null, TEST_REQUIREMENTS).map((item) => item.markdown.trim()));
   if (input.own) {
     for (const item of itemsOf(input.spec, TEST_REQUIREMENTS)) {
-      items.push({ key: "", section: TEST_REQUIREMENTS, state: "test", text: item.markdown, acceptance: [], ...(testReqs.has(item.markdown.trim()) ? { tests: "now" as const } : {}) });
+      items.push({ key: "", section: TEST_REQUIREMENTS, state: "test", text: item.markdown, scenarios: NO_SCENARIOS, ...(testReqs.has(item.markdown.trim()) ? { tests: "now" as const } : {}) });
     }
   }
 
-  // Conformance tests: of the functional specs, those the tests record has as they read now, as they read before, or taken out.
-  // Tests marked to regenerate again were written against code since replaced: written for an earlier build, not now.
-  const testedItems = itemsOf(input.tested ?? null, FUNCTIONAL_REQUIREMENTS);
-  const tested = new Set(testedItems.filter((item) => !marksRegenerateAgain(item)).map((item) => item.markdown.trim()));
-  const replaced = new Set(testedItems.filter((item) => marksRegenerateAgain(item)).map((item) => item.markdown.trim()));
+  // Conformance tests: of the functional specs, by func-id, those the tests record has as they read now - their text and
+  // their scenarios - as they read before, or taken out. Tests marked to regenerate again were written against code since
+  // replaced: written for an earlier build, not now.
+  const testedItems = new Map(itemsOf(input.tested ?? null, FUNCTIONAL_REQUIREMENTS).map((item) => [item.id ?? "", item]));
+  const asNow = new Map(itemsOf(now, FUNCTIONAL_REQUIREMENTS).map((item) => [item.id ?? "", item]));
+  const reads = (item: Item) => JSON.stringify({ markdown: item.markdown.trim(), scenarios: scenarioViews(item) });
   for (const item of items) {
-    if (item.section !== FUNCTIONAL_REQUIREMENTS || testedItems.length === 0) continue;
-    if (item.state === "removed") {
-      if (tested.has(item.text.trim()) || replaced.has(item.text.trim())) item.tests = "removed";
-    } else if (tested.has(item.text.trim())) item.tests = "now";
-    else if (replaced.has(item.text.trim()) || (item.was !== undefined && (tested.has(item.was.trim()) || replaced.has(item.was.trim())))) item.tests = "older";
+    if (item.section !== FUNCTIONAL_REQUIREMENTS || item.funcId === undefined) continue;
+    const tested = testedItems.get(item.funcId);
+    if (tested === undefined) continue;
+    const current = asNow.get(item.funcId);
+    if (item.state === "removed") item.tests = "removed";
+    else item.tests = !marksRegenerateAgain(tested) && current !== undefined && reads(tested) === reads(current) ? "now" : "older";
   }
   return keyed(items);
 }
 
-/** Each item's key: its section, whether it is a ghost, its text - and which of the same it is. */
+/** Each item's key: its section, whether it is a ghost, its text - a functional spec's func-id - and which of the same it is. */
 function keyed(items: MapItem[]): MapItem[] {
   const seen = new Map<string, number>();
   for (const item of items) {
-    const base = `${item.section}\n${item.state === "removed" ? "-" : "+"}${item.text.trim()}`;
+    const base = `${item.section}\n${item.state === "removed" ? "-" : "+"}${item.funcId !== undefined ? `# ${item.funcId}` : item.text.trim()}`;
     const count = seen.get(base) ?? 0;
     seen.set(base, count + 1);
     item.key = count === 0 ? base : `${base}\n${count}`;
@@ -284,7 +319,9 @@ const started = (entry: ChainEntry) => {
 /** The files a module's page is read from: its spec files, its records, and its history - a commit moves the record read. */
 function depsOf(entry: ChainEntry, codebase: ChainEntry, testsDir: string): string[] {
   const history = (dir: string) => [join(dirname(dir), HISTORY_DIR, "logs", "HEAD"), join(dir, RECORD_FILE)];
-  return [entry.plainFile, ...history(codebase.buildDir), ...history(testsDir), dirname(dirname(codebase.buildDir))];
+  // Its test plain files, and their folder: one added or taken out changes what the map reads.
+  const testPlain = [join(testDirOf(entry.plainFile), entry.moduleName), ...testPlainFilesOf(entry.plainFile)];
+  return [entry.plainFile, ...testPlain, ...history(codebase.buildDir), ...history(testsDir), dirname(dirname(codebase.buildDir))];
 }
 
 /** The chain a file's map reads: where its code lives - its furthest-built tip - or its own requires chain. */
@@ -340,7 +377,6 @@ export function readSpecMapWithDeps(files: string[]): { pages: MapPage[]; deps: 
           imports: [],
           items: [],
           ...(entry.requires !== null ? { requires: entry.requires } : {}),
-          conformance: conformanceOn(entry.plainFile),
         };
         const spec = specOf(home);
         if (spec instanceof Error) {
@@ -354,7 +390,8 @@ export function readSpecMapWithDeps(files: string[]): { pages: MapPage[]; deps: 
         for (const path of [...paths, ...depsOf(entry, codebase, conformanceDirFor(entry.moduleName, modulesRoot(projectDir)))]) deps.add(path);
         const texts = paths.map((path, index) => ({ ...(index > 0 ? { label: importLabel(path, projectDir) } : {}), text: readText(path) }));
         const items = pageItems({ module: entry.moduleName, own: home === at, spec, record, tested });
-        pages.push({ ...page, imports: texts.slice(1).map((text) => text.label!), items: layOut(items, texts) });
+        const own = home === at ? ((spec[FUNCTIONAL_REQUIREMENTS] as unknown[] | undefined) ?? []) : ((spec[REQUIRED_FUNCTIONAL_SPECS] as Array<{ module?: string }> | undefined) ?? []).filter((item) => item.module === entry.moduleName);
+        pages.push({ ...page, conformance: own.some(hasScenarios), imports: texts.slice(1).map((text) => text.label!), items: layOut(items, texts) });
       });
     }
     return pages;
@@ -376,15 +413,6 @@ function fingerprint(paths: string[]): string {
     .join("\n");
 }
 
-/** Whether a module's config has its conformance tests on: `conformance-tests:` is all (true) or chosen - off when not set. */
-function conformanceOn(plainFile: string): boolean {
-  try {
-    return conformanceSwitchedOn(configForSpec(plainFile).conformanceTests);
-  } catch {
-    return false;
-  }
-}
-
 function readText(path: string): string {
   try {
     return readFileSync(path, "utf8");
@@ -401,7 +429,7 @@ function linesOf(pulse: MapPulse) {
   let seen = linesSeen.get(pulse);
   if (seen === undefined) {
     const set = (text: string) => new Set(text.split("\n").filter((line) => line.startsWith("{")));
-    // A conformance pulse's trees are the tests record's: its functional specs' lines - each with its number and acceptance tests.
+    // A conformance pulse's trees are the tests record's: its functional specs' lines - each with its func-id and scenarios.
     const specLines = (text: string, of = FUNCTIONAL_REQUIREMENTS) => {
       const out: string[] = [];
       let section = "";
@@ -417,12 +445,12 @@ function linesOf(pulse: MapPulse) {
       return new Set(specLines(pulse.after, TEST_REQUIREMENTS).filter((line) => !before.has(line)).map((line) => markdownOf(line).trim()));
     };
     const testing = () => {
-      // What it writes tests for: each functional spec whose line is new - its text, its acceptance tests or its number
-      // changed - by its text; none, and it is the definitions, reqs or test reqs that changed: it tests every one again.
+      // What it writes tests for: each functional spec whose line is new - its text or its scenarios changed - by its
+      // func-id; none, and it is the definitions, reqs or test reqs that changed: it tests every one again.
       const before = new Set(specLines(pulse.before));
       const after = specLines(pulse.after);
       const changed = after.filter((line) => !before.has(line));
-      return new Set((changed.length > 0 ? changed : after).map((line) => markdownOf(line).trim()));
+      return new Set((changed.length > 0 ? changed : after).map((line) => idOf(line) ?? ""));
     };
     seen = pulse.track === "code" ? { before: set(pulse.before), after: set(pulse.after), testing: new Set(), testReqs: new Set() } : { before: new Set(), after: new Set(), testing: testing(), testReqs: testReqs() };
     linesSeen.set(pulse, seen);
@@ -430,13 +458,14 @@ function linesOf(pulse: MapPulse) {
   return seen;
 }
 
-/** A functional spec's first line, as a conformance pulse scheduled ahead of its code names it. */
-const headline = (text: string) => (text.trim().split("\n")[0] ?? "").replace(/^-\s*/, "").trim();
-
-/** Whether a conformance pulse writes tests for a functional spec: by its trees, or - scheduled, with none - by the specs it names. */
-function writesTestsFor(pulse: MapPulse, item: MapItem): boolean {
-  if (pulse.specs !== undefined) return pulse.specs.some((text) => headline(text) === headline(item.text));
-  return linesOf(pulse).testing.has(item.text.trim());
+/**
+ * Whether a conformance pulse writes tests for a functional spec, by its func-id: by its trees, or - following the code
+ * still to build, with none - by the functional specs it names, `module:func-id`.
+ */
+function writesTestsFor(pulse: MapPulse, item: MapItem, module: string): boolean {
+  if (item.funcId === undefined) return false;
+  if (pulse.specs !== undefined) return pulse.specs.includes(`${module}:${item.funcId}`);
+  return linesOf(pulse).testing.has(item.funcId);
 }
 
 /** Whether a pulse regenerates an item: brings its line now, or takes out its line in the record. */
@@ -464,7 +493,9 @@ function needsText(stuck: NonNullable<MapCodebase["stuck"]>): string {
  * A test req's mark, from the conformance track: followed by the conformance tests as it reads now, being written
  * for in the running conformance pulse, planned in one, or not yet - none, where no conformance test is written at all.
  */
-function testReqMark(item: MapItem, codebase: MapCodebase | undefined, page: MapPage): { mark: Mark; pulse?: MapPulse } {
+function testReqMark(item: MapItem, codebase: MapCodebase | undefined, page: MapPage): { mark: Mark; pulse?: MapPulse; unused?: boolean } {
+  // No functional spec of the module has scenarios: nothing uses its test reqs.
+  if (page.conformance === false) return { mark: "none", unused: true };
   if (item.tests === "now") return { mark: "built" };
   const text = item.text.trim();
   const pulse = codebase?.pulses.find((candidate) => candidate.track === "conformance" && linesOf(candidate).testReqs.has(text));
@@ -490,17 +521,16 @@ export function markSpecMap(pages: MapPage[], plan: MapPlan): MarkedPage[] {
     const stuckPulse = codebase?.stuck?.pulse;
     const failed: MapPulse | undefined = stuckPulse !== undefined ? { number: stuckPulse.number, title: "", track: "code", running: false, rowId: "", before: stuckPulse.before, after: stuckPulse.after } : undefined;
     const conformance = codebase?.pulses.find((pulse) => pulse.running && pulse.track === "conformance");
-    // Test reqs only where conformance tests are on: the loop's word for it - the config, or asked for this session - else the config's.
-    const conformanceIsOn = codebase?.conformance ?? page.conformance !== false;
-    const items = page.items.filter((item) => item.state !== "test" || conformanceIsOn).map((item): MarkedItem => {
+    // Test reqs are always shown: where no functional spec has scenarios, as not used.
+    const items = page.items.map((item): MarkedItem => {
       const testing = conformance !== undefined && item.section === FUNCTIONAL_REQUIREMENTS && item.state !== "removed" && (() => {
-        return linesOf(conformance).testing.has(item.text.trim());
+        return item.funcId !== undefined && linesOf(conformance).testing.has(item.funcId);
       })();
       // Not being tested now: the conformance pulse planned to - its tests written for it as it reads now, or not.
       const testsPulse =
         testing || item.section !== FUNCTIONAL_REQUIREMENTS || item.state === "removed"
           ? undefined
-          : codebase?.pulses.find((pulse) => !pulse.running && pulse.track === "conformance" && writesTestsFor(pulse, item));
+          : codebase?.pulses.find((pulse) => !pulse.running && pulse.track === "conformance" && writesTestsFor(pulse, item, page.module));
       const extra = testing ? { testing: true } : testsPulse !== undefined ? { testsPulse } : {};
       if (item.state === "test") return { ...item, ...testReqMark(item, codebase, page), ...extra };
       if (item.state === "built") return { ...item, mark: "built", ...extra };
