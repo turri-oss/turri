@@ -22,7 +22,7 @@ fi
 current_dir=$(pwd)
 
 # Resolve the conformance tests folder to an absolute path ($2 may be relative
-# on older renderers; newer renderers pass it as an absolute path).
+# on older harnesses; turri passes it as an absolute path).
 case "$2" in
   /*) CONFORMANCE_TESTS_SOURCE="$2" ;;
   *)  CONFORMANCE_TESTS_SOURCE="$current_dir/$2" ;;

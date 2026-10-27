@@ -14,7 +14,7 @@ When writing or editing an `***implementation reqs***` section in a `.plain` fil
 ## `:UnitTests:` lives here (hard rule)
 - **Everything** about `:UnitTests:` goes in `***implementation reqs***` — paths, approach, packages, framework, conventions, fixtures, mocking policy, file layout, naming, lint / static-analysis gates
 - `:UnitTests:` are part of the generated codebase (they sit inside `plain_modules/<module>/code/` alongside the implementation), so requirements that shape them are implementation reqs by definition
-- The unit-test generator reads **only** `***implementation reqs***` — anything about `:UnitTests:` placed elsewhere (e.g. `***test reqs***`) is silently ignored
+- The coding agent reads how to write the unit tests **only** from `***implementation reqs***` — anything about `:UnitTests:` placed elsewhere (e.g. `***test reqs***`) is silently ignored
 - Phrase each `:UnitTests:` requirement in terms of `:UnitTests:` so the partition stays visible at a glance
 
 ## What belongs here
@@ -37,8 +37,8 @@ When writing or editing an `***implementation reqs***` section in a `.plain` fil
 ## Unit tests vs conformance tests (common mistake)
 - Unit-test guidance (`:UnitTests:` framework, structure, mocking) goes **here**, not in `***test reqs***`
 - `***test reqs***` is exclusively for `:ConformanceTests:` — framework, execution command, mocking policy, environment setup
-- Putting unit-test guidance in `***test reqs***` is one of the most common authoring mistakes; the rendered code will silently miss those requirements because the unit-test generator only reads `***implementation reqs***`
-- Do not link the unit testing script here (or anywhere in the specs; a link to it is ignored). turri finds it in the project root - `unittests-script:` in `config.turri.yaml`, else the one `run_unittests*.sh` in the root, else the one in `test_scripts/` - and shows it to the coding agent itself. Describe the framework and run command here in words
+- Putting unit-test guidance in `***test reqs***` is one of the most common authoring mistakes; the regenerated code will silently miss those requirements because the coding agent reads unit-test guidance only from `***implementation reqs***`
+- Do not link the unit testing script here (or anywhere in the ***plain; a link to it is ignored). turri finds it in the project root - `unittests-script:` in `config.turri.yaml`, else the one `run_unittests*.sh` in the root, else the one in `test_scripts/` - and shows it to the coding agent itself. Describe the framework and run command here in words
 
 ## Encapsulation warning
 - `requires` modules only pass on functional specs and `exported_concepts` — never implementation reqs

@@ -12,12 +12,12 @@ When writing or editing a `***definitions***` section in a `.plain` file, always
 - Valid characters: letters, digits, `+`, `-`, `.`, `_`
 
 ## Uniqueness
-- Concept names must be globally unique across the spec and all its imports
+- Concept names must be globally unique across the module and all its imports
 - Check for collisions with concepts coming from `import` and `requires` modules before adding
 
 ## Predefined concepts (do not redefine)
 - ***plain ships several predefined concepts that are available in every module without being defined
-- Never add a `***definitions***` entry for any of them — the renderer treats redefinitions as conflicts
+- Never add a `***definitions***` entry for any of them — turri treats redefinitions as conflicts
 
 | Predefined concept | Meaning |
 |--------------------|---------|
@@ -27,7 +27,7 @@ When writing or editing a `***definitions***` section in a `.plain` file, always
 | `:plainTestReqs:` | Content of the `***test reqs***` section |
 | `:Implementation:` | The system implementing `:plainFunctionality:` |
 | `:plainImplementationCode:` | The generated implementation code |
-| `:UnitTests:` | Auto-generated unit tests for individual functionalities |
+| `:UnitTests:` | The unit tests the coding agent writes with each functional spec's code |
 | `:ConformanceTests:` | The black-box tests written from the functional specs' conformance scenarios, run by the conformance testing script |
 | `:AcceptanceTest:` / `:AcceptanceTests:` | The black-box tests written from the functional specs' acceptance scenarios, run by the conformance testing script |
 

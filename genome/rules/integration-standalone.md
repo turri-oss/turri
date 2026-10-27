@@ -1,8 +1,8 @@
 ---
-description: Rules for authoring ***plain specs for REST API integrations deployed standalone
+description: Rules for authoring ***plain for REST API integrations deployed standalone
 ---
 
-# Rules for **standalone** integration specs
+# Rules for **standalone** integrations in ***plain
 
 When an integration `.plain` module is **standalone** — meaning the generated code in `plain_modules/` is the deployable artifact itself (a service, daemon, CLI, scheduled job, container, or library published to a registry) — these rules apply on top of the shared rules in [`integrations.md`](integrations.md). If anything below contradicts a guess made from memory, the rules here win.
 
@@ -23,7 +23,7 @@ Standalone integrations may freely import any third-party library that isn't con
 
 ## The contract schema is the public artifact
 
-In an embedded integration, the schema feeds the renderer's code generation; the host codebase consumes the *generated class*. In a standalone integration, the schema is **shipped** to external consumers and the generated implementation is internal to `plain_modules/`.
+In an embedded integration, the schema feeds the coding agent's code generation; the host codebase consumes the *generated class*. In a standalone integration, the schema is **shipped** to external consumers and the generated implementation is internal to `plain_modules/`.
 
 - **Pick the publication surface and write it into the spec.** Examples (one functional spec per surface):
   - HTTP service: "served at `/openapi.json` (and a Swagger UI at `/docs`)"
@@ -33,16 +33,16 @@ In an embedded integration, the schema feeds the renderer's code generation; the
   - Queue worker: "published as a JSON Schema in the team's schema registry under `<topic>.v<version>.json`"
   - Scheduled job: "published as JSON Schema in `resources/contract/job-config.schema.json` and linked from the runbook"
 - **Schema versioning is part of the contract.** Pin the version in the schema's `$id` / OpenAPI `info.version` and follow semver. Backwards-incompatible changes ship under a new file path, never as mutations to the published version
-- **The renderer ships the schema verbatim** — the spec must not restate fields from the schema, and the generated implementation must consume the same file as the published artifact (so the two cannot drift)
+- **The coding agent ships the schema verbatim** — the ***plain must not restate fields from the schema, and the generated implementation must consume the same file as the published artifact (so the two cannot drift)
 
 ## All lifecycle stages must be explicit
 
 A standalone integration has no host lifecycle to delegate to. Every stage that an embedded integration could skip is mandatory here, each one captured as its own functional spec:
 
-- **Initialization** — one-time setup at startup. Read configuration, validate credentials proactively (eager) or defer to first call (lazy) — pick one and write the spec accordingly. Open connection pools, register webhook handlers, initialize observability
+- **Initialization** — one-time setup at startup. Read configuration, validate credentials proactively (eager) or defer to first call (lazy) — pick one and write the ***plain accordingly. Open connection pools, register webhook handlers, initialize observability
 - **Credential refresh** — proactive (background timer / pre-expiry refresh) vs. reactive (refresh-on-401). Use a refresh lock to prevent thundering herd. Specify the lock primitive (in-process mutex, distributed lock in Redis, …) when the integration runs as more than one replica
 - **Graceful shutdown** — drain in-flight requests with a deadline; what happens to retries still queued (abandoned, persisted, returned to caller as a specific error); what signals trigger shutdown (`SIGTERM`, container-stop hook, …)
-- **Health checks** — define what "healthy" means for **this** integration: last successful provider call within a window, valid credentials, provider's own `/health` returning 2xx, dependent storage reachable. Spec the response shape (status code, body) for the health endpoint when one is exposed
+- **Health checks** — define what "healthy" means for **this** integration: last successful provider call within a window, valid credentials, provider's own `/health` returning 2xx, dependent storage reachable. State the response shape (status code, body) for the health endpoint when one is exposed
 - **Background loops** — cron jobs, polling workers, queue consumers: each gets its own functional spec covering trigger, interval, leader-election (if applicable), failure handling, and observability
 
 ## Entry-point types — pick deliberately, enumerate fully
@@ -71,7 +71,7 @@ A standalone integration usually mutates state outside the provider call itself.
 
 ## Concurrency and backpressure
 
-Standalone integrations face concurrent load that an embedded library doesn't. The spec must pin:
+Standalone integrations face concurrent load that an embedded library doesn't. The ***plain must pin:
 
 - **Sync vs. async** in the host-language sense (`async def`, `Promise`, goroutines, threads)
 - **Expected peak throughput** (RPS) the consumer will issue
@@ -128,8 +128,8 @@ Before declaring a standalone integration done, in addition to the shared checkl
 ## Anti-patterns specific to standalone integrations
 
 - **Skipping any lifecycle stage** because it "feels small". Standalone integrations have no host to fall back on; an implicit shutdown is an undefined shutdown
-- **Inlining fields from `resources/contract/<entry-point>.schema.json` into a functional spec.** The schema is the source of truth and is **published** — duplicating fields in spec text guarantees drift
+- **Inlining fields from `resources/contract/<entry-point>.schema.json` into a functional spec.** The schema is the source of truth and is **published** — duplicating fields in ***plain guarantees drift
 - **Mutating a published schema's `$id` / version path** instead of shipping a new file. Consumers may already be pinning the old version
 - **Treating configuration as "whatever env vars seem useful at runtime".** Every key lives in `resources/config.schema.json` with type, default, and validation; the loader fails fast on missing required values
-- **Picking a tech stack incrementally while writing functional specs.** Decide it once, when the stack is chosen, and transcribe into `***implementation reqs***`; don't accrete a stack across several specs
+- **Picking a tech stack incrementally while writing functional specs.** Decide it once, when the stack is chosen, and transcribe into `***implementation reqs***`; don't accrete a stack across several functional specs
 - **Hitting the live provider in rate-limit (429) or destructive-error (500) tests.** Use a local mock; live calls are for the happy path and for sandbox-safe error paths

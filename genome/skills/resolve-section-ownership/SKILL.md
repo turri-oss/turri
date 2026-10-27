@@ -1,26 +1,26 @@
 ---
 name: resolve-section-ownership
 description: >-
-  Route every fact in a .plain bullet, section, or file to the section that owns it — splitting a bullet that carries several kinds of fact, and moving a misplaced one to where the renderer will read it. Use when a bullet answers more than one of what it is / what it does / how it is built / how it is tested, when a requirement looks like it is in the wrong section, or when auditing a file for section ownership. Not for a spec that is merely too large (use break-down-func-spec) or for two specs that contradict each other (use resolve-spec-conflict).
+  Route every fact in a .plain bullet, section, or file to the section that owns it — splitting a bullet that carries several kinds of fact, and moving a misplaced one to where turri will read it. Use when a bullet answers more than one of what it is / what it does / how it is built / how it is tested, when a requirement looks like it is in the wrong section, or when auditing a file for section ownership. Not for a functional spec that is merely too large (use break-down-func-spec) or for two that contradict each other (use resolve-spec-conflict).
 allowed-tools: [read, write, edit, ls, grep, find]
 ---
 
 # Resolve Section Ownership
 
-This is the ownership counterpart to `break-down-func-spec`. That skill splits one functional spec into several because it is **too large**; this one moves facts between sections because they are in the **wrong place**. The two are unrelated: a correctly placed spec can be too large, and a one-line bullet can be misplaced.
+This is the ownership counterpart to `break-down-func-spec`. That skill splits one functional spec into several because it is **too large**; this one moves facts between sections because they are in the **wrong place**. The two are unrelated: a correctly placed functional spec can be too large, and a one-line bullet can be misplaced.
 
 ## When to Use
 
 - A bullet answers more than one of *what is it*, *what does it do*, *how is it built*, *how is it tested*.
 - A requirement states a mechanism (retry, cache, token refresh, connection handling) but sits in `***functional specs***`.
-- A `:UnitTests:` fact sits in `***test reqs***`, or a `:ConformanceTests:` fact sits in `***implementation reqs***` — the generators read only their own section, so the fact is silently ignored today.
+- A `:UnitTests:` fact sits in `***test reqs***`, or a `:ConformanceTests:` fact sits in `***implementation reqs***` — the coding agent and the conformance agent each read only their own section, so the fact is silently ignored today.
 - A functional spec describes an external system rather than the software being built.
 - A whole file is being audited for placement.
 
 ## When Not to Use
 
-- The spec is correctly placed but too large → `break-down-func-spec`.
-- Two specs contradict each other → `analyze-func-specs`, then `resolve-spec-conflict`.
+- The functional spec is correctly placed but too large → `break-down-func-spec`.
+- Two functional specs contradict each other → `analyze-func-specs`, then `resolve-spec-conflict`.
 - The wording is merely verbose → trim per `concise-specs.md`; no fact changes section.
 
 ## Input
@@ -38,16 +38,16 @@ The bullet, section, or `.plain` file to resolve.
 7. **Write each fact into its owning section** by that section's rule — `definitions.md`, `impl-reqs.md`, `test-reqs.md`, and for a test scenario its functional spec's test plain file, by *Writing scenarios* in `test-plain-files.md`. A fact moving *into* `***functional specs***` goes through `func-specs.md` (*Adding a functional spec*): its complexity and conflict checks run before it is written in.
 8. **Remove each fact from where it no longer belongs.** If a bullet is left stating nothing observable, delete the bullet; do not leave a stub. Deleting the last bullet of a section deletes the section.
 9. **Verify nothing was lost and nothing was duplicated.** Walk every fact from the original text and confirm it appears in exactly one section. A fact that now reads as obvious in its new home is still a cut decision — make it deliberately, per `concise-specs.md`.
-10. **Run `validate`** on the module. Moving facts changes the renderable surface; do not finish while it reports errors.
+10. **Run `validate`** on the module. Moving facts changes what is regenerated; do not finish while it reports errors.
 11. **Read the file again** to confirm canonical section order (`***definitions***` → `***implementation reqs***` → `***test reqs***` → `***functional specs***`), correct syntax, and that every referenced concept is still defined before use.
 
 ## Error Handling
 
-- **The complexity check finds the moved fact too complex** → the fact was a whole spec in disguise; run `break-down-func-spec` on it, then place the resulting specs.
+- **The complexity check finds the moved fact too complex** → the fact was a whole functional spec in disguise; run `break-down-func-spec` on it, then place the resulting functional specs.
 - **The conflict check reports a conflict** → resolve it with `resolve-spec-conflict` **before** removing the fact from its old section, so no version of it is lost in between.
 - **A fact appears to belong to two sections** → it is two facts; split it per step 5. If it still resists, it is a mechanism whose consequence has not been written down — write the consequence, and the split follows.
 - **The owning section does not exist in the file** → create it in canonical order. An import module carries no `***functional specs***` at all (see `import-modules.md`), so an observable fact found there belongs on the root module that imports it.
-- **The move empties a functional spec** → delete the spec rather than leaving a placeholder, and delete its test plain file with it, moving any scenario that still fits to the functional spec it now tests (*Keeping test plain files in step* in `test-plain-files.md`).
+- **The move empties a functional spec** → delete the functional spec rather than leaving a placeholder, and delete its test plain file with it, moving any scenario that still fits to the functional spec it now tests (*Keeping test plain files in step* in `test-plain-files.md`).
 
 ## Worked examples
 

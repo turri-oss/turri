@@ -29,7 +29,7 @@ Every functional spec in `***functional specs***` and every scenario in a test p
 - Never renumber or reorder ids: the order of the headings in the module is the order of its functional specs, and the id carries no order
 
 ## Naming a functional spec
-- Name a functional spec by its func-id - `<module>:<func-id>` outside its module (`todo:add-task`) - in questions to the person, in what you show them and in turri's tools; never by its position ("the third spec")
+- Name a functional spec by its func-id - `<module>:<func-id>` outside its module (`todo:add-task`) - in questions to the person, in what you show them and in turri's tools; never by its position ("the third functional spec")
 - Pick the func-id before writing the functional spec, check that it is unique in the module, then write the heading and the body (see `func-specs.md`)
 - Everything about one functional spec is found through its func-id: its heading, the test plain files whose frontmatter names it, and the conformance tests labelled with it
 - A conformance or acceptance test carries the scenario-id of the scenario it implements: when one fails, its label leads back to the scenario

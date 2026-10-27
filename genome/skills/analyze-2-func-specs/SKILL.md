@@ -1,7 +1,7 @@
 ---
 name: analyze-2-func-specs
 description: >-
-  Analyze two functional specs from a ***plain spec file to determine if they
+  Analyze two functional specs from a .plain file to determine if they
   conflict. Use when the user wants to check whether two specific functional
   requirements are compatible, or when debugging a suspected conflict between
   two specs.
@@ -17,17 +17,17 @@ Two functional specs from a `.plain` file (or across `requires` modules). The us
 ## Workflow
 
 1. **Read both functional specs** and the `***definitions***` section so all referenced `:Concepts:` are understood.
-2. **Determine chronological order** — which spec comes first? The earlier spec was rendered first and the later spec was rendered with the earlier one in context.
+2. **Determine chronological order** — which functional spec comes first? The earlier one was regenerated first and the later one was regenerated with the earlier one in context.
 3. **Run the conflict analysis** using the checklist below.
 4. **Output the verdict and nothing else** — either `COMPATIBLE` or `CONFLICTING`. No reasoning, no category labels, no resolution suggestions.
 
 ## Conflict Analysis Checklist
 
-Work through each question. If any answer is "yes", the specs likely conflict.
+Work through each question. If any answer is "yes", the functional specs likely conflict.
 
 ### 1. Direct Contradiction
 
-Do the two specs make mutually exclusive assertions about the same behavior?
+Do the two functional specs make mutually exclusive assertions about the same behavior?
 
 ```
 # sort-by-name
@@ -43,7 +43,7 @@ satisfy both unless scoped to different contexts.
 
 ### 2. State or Data Conflict
 
-Does one spec set a state or value that the other spec assumes is different?
+Does one functional spec set a state or value that the other assumes is different?
 
 ```
 # empty-task-list
@@ -57,7 +57,7 @@ Verdict: CONFLICTING — both define the initial state of :TaskList: differently
 
 ### 3. Behavioral Override
 
-Does the later spec silently replace behavior established by the earlier spec without acknowledging it?
+Does the later functional spec silently replace behavior established by the earlier one without acknowledging it?
 
 ```
 # api-key-auth
@@ -67,12 +67,12 @@ Does the later spec silently replace behavior established by the earlier spec wi
 :User: credentials are validated using OAuth 2.0.
 
 Verdict: CONFLICTING — both define the authentication mechanism but pick
-different approaches. The later spec overrides the earlier one.
+different approaches. The later one overrides the earlier one.
 ```
 
 ### 4. Scope Ambiguity
 
-Are the two specs ambiguous enough that a renderer could interpret them as conflicting, even if the user intends them to be complementary?
+Are the two functional specs ambiguous enough that a coding agent could interpret them as conflicting, even if the user intends them to be complementary?
 
 ```
 # list-resources
@@ -87,7 +87,7 @@ Could be resolved by scoping each to different conditions (e.g., filtered vs unf
 
 ### 5. Shared Concept, Different Constraints
 
-Do both specs impose constraints on the same `:Concept:` that cannot coexist?
+Do both functional specs impose constraints on the same `:Concept:` that cannot coexist?
 
 ```
 # default-batch-size

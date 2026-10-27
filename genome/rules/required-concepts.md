@@ -17,7 +17,7 @@ When adding or editing `required_concepts` in a `.plain` file's frontmatter, alw
 
 ## Importing module must satisfy the contract
 - Every concept listed in `required_concepts` must be defined somewhere visible to the importing module — in its own `***definitions***` section or in another module it imports
-- If the importing module does not define a required concept, the spec is invalid
+- If the importing module does not define a required concept, the module is invalid
 - Check `required_concepts` of all imported modules before finalizing a module
 
 ## Do not define required concepts locally

@@ -25,7 +25,7 @@ When creating or editing a `.plain` file that uses `requires`, or one that is re
 
 ## Tech stack must match (hard rule)
 
-- Because the required module's generated code is copied as the starting point and the renderer continues building on top of it with a single toolchain, two modules can only be linked with `requires` when they target the **same language, framework, and runtime**
+- Because the required module's generated code is copied as the starting point and the coding agent continues building on top of it with a single toolchain, two modules can only be linked with `requires` when they target the **same language, framework, and runtime**
 - A runtime / network dependency between systems is **not** a reason to use `requires`
 - Example of the mistake: a React frontend that talks to a Python/FastAPI backend over HTTP must **not** `requires: [backend]` — the stacks differ
 - Model that pair as two independent root modules (each with its own test scripts) and express the contract through a shared API schema in `resources/` or shared concepts in an `import`ed module — never through `requires`
@@ -34,12 +34,12 @@ When creating or editing a `.plain` file that uses `requires`, or one that is re
 
 - The current module does not need to functionally extend the required module — it may address a completely different concern
 - Even so, the two are never independent artifacts: the current module's output physically contains the required module's code, because both are stages of one accumulating codebase
-- Use `requires` to place a module at the right point in that lineage, whether or not it builds on the required module's functionality
+- Use `requires` to place a module at the right point in that lineage, whether or not it builds on the required module's functional specs
 
 ## Conflict prevention
 
-- The current module's functional specs must not conflict with the specs of **any module in its ancestor chain** — all of them are previous functional specs
-- The renderer sees the whole chain's specs as prior requirements/context when rendering the current module
+- The current module's functional specs must not conflict with the functional specs of **any module in its ancestor chain** — all of them are previous functional specs
+- The coding agent sees the whole chain's functional specs as prior requirements/context when regenerating the current module
 - Review the ancestor chain's functional specs before adding new ones
 
 ## Exports are the only visible definitions
@@ -52,7 +52,7 @@ When creating or editing a `.plain` file that uses `requires`, or one that is re
 
 ## File locations
 
-- Modules that use `requires` live at the **repository root** — they are functional modules with specs
+- Modules that use `requires` live at the **repository root** — they are functional modules with functional specs
 - `requires` paths point to other root-level modules (e.g., `auth`, `messaging`)
 - Never `require` an import module — import modules are for `import` only
 

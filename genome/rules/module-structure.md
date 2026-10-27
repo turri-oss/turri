@@ -33,13 +33,13 @@ When creating a new `.plain` file or reviewing the structure of a whole file, al
 
 ## Module kinds
 - A **root module** lives at the repository root and carries behavior: it contains `***functional specs***`
-- To be renderable, a root module needs at least one functional spec plus the implementation reqs to build it — its own or from an `import`ed module (implementation reqs are not inherited through `requires`). A frontmatter-only file is a valid scaffold, but it cannot be rendered until a functional spec is added
+- To be regenerated, a root module needs at least one functional spec plus the implementation reqs to build it — its own or from an `import`ed module (implementation reqs are not inherited through `requires`). A frontmatter-only file is a valid scaffold, but it cannot be regenerated until a functional spec is added
 - A **requires module** is a root module that is used by another root module via `requires` directive (see `requires-modules.md`)
 - An **import module** provides shared content that other modules pull in via `import`: it contains only `***definitions***`, `***implementation reqs***`, and/or `***test reqs***` — never `***functional specs***`, never `requires` (see `import-modules.md`)
 - A **test plain file** is not a module: it holds the scenarios of one functional spec of a root module, its frontmatter `module:` and `func_id:` bind it to that functional spec, it lives in `tests/<module>/`, and it has none of a module's sections (see `test-plain-files.md`)
 
 ## Section ownership (where a fact lives)
-- The renderer reads each kind of fact **only from its owning section** — a fact placed in the wrong section is silently ignored, not flagged
+- turri reads each kind of fact **only from its owning section** — a fact placed in the wrong section is silently ignored, not flagged
 - Before writing any requirement, place it by content:
 - To move facts that are already misplaced, or to split a bullet carrying several kinds of fact, use the `resolve-section-ownership` skill
 
@@ -52,17 +52,17 @@ When creating a new `.plain` file or reviewing the structure of a whole file, al
 | Test scenarios of one functional spec, conformance and acceptance | its test plain file, `tests/<module>/<func-id>.plain` | `test-plain-files.md` |
 
 ## Comments
-- Lines beginning with `>` are ignored when rendering
+- Lines beginning with `>` are ignored when regenerating
 
 ```plain
 > This is a comment in ***plain.
 ```
 
-- Comments explain the specification to human authors — never use a comment to carry a requirement the renderer must implement
+- Comments explain the ***plain to human authors — never use a comment to carry a requirement the coding agent must implement
 
 ## Liquid templates
 - `.plain` files are processed with [Liquid](https://shopify.github.io/liquid/) before parsing — the full Liquid syntax (variables, filters, conditionals, loops) is available in any section
-- Expansion is **textual** and happens before the specification is interpreted — unlike `import`, which includes another module semantically (see `import-modules.md`)
+- Expansion is **textual** and happens before the ***plain is interpreted — unlike `import`, which includes another module semantically (see `import-modules.md`)
 
 ```plain
 {% assign max_tags = 3 %}

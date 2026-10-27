@@ -34,11 +34,11 @@ The set of modules to consolidate from, plus optionally the name for the new (or
    - Whether it is currently in an `exported_concepts` list
    - Which other concepts it references in its definition (dependency graph)
 3. **Identify consolidation candidates.** A concept should be consolidated if:
-   - It is defined in one module but referenced by specs in another module (currently shared via `exported_concepts`)
+   - It is defined in one module but referenced by functional specs in another module (currently shared via `exported_concepts`)
    - It is duplicated across multiple modules
    - It is a foundational domain concept that logically belongs in a shared vocabulary
 4. **Identify concepts that should stay local.** A concept should remain in its module if:
-   - It is only used within that single module's specs and definitions
+   - It is only used within that single module's functional specs and definitions
    - It is an internal implementation detail not meaningful outside that module
 
 ## Phase 2 — Plan the Consolidation
@@ -113,7 +113,7 @@ For each module that had concepts moved out:
 
 If concepts were removed from a module's `exported_concepts` and downstream modules relied on them:
 1. Add the new import to the downstream module's `import` list so it gets the concepts directly.
-2. Verify the downstream module's specs can still resolve all concept references.
+2. Verify the downstream module's ***plain can still resolve all concept references.
 
 ## Phase 4 — Verify
 

@@ -1,8 +1,8 @@
 ---
-description: Worked BAD to GOOD examples of concise .plain specs, one pair per conciseness failure mode
+description: Worked BAD to GOOD examples of concise ***plain, one pair per conciseness failure mode
 ---
 
-# Worked examples of concise `.plain` specs
+# Worked examples of concise ***plain
 
 `concise-specs.md` is the rule; this file is the example bank behind it. Every entry names one failure mode, shows the padded version, and shows the rewrite that carries the same information.
 
@@ -10,7 +10,7 @@ Read the pairs, not the prose: in each one, the GOOD block says everything the B
 
 The BAD blocks intentionally demonstrate the mistakes they name, including invalid syntax. Copy only from GOOD blocks.
 
-Integration specs fail in their own ways — over-precision, inlined contract data, and edge cases the provider's documentation invites. Those examples are in `concise-specs-integration-examples.md`.
+Integration ***plain fails in its own ways — over-precision, inlined contract data, and edge cases the provider's documentation invites. Those examples are in `concise-specs-integration-examples.md`.
 
 ## Padding around one fact
 
@@ -220,7 +220,7 @@ GOOD:
 - :ConformanceTests: mock every external HTTP call.
 ```
 
-Every hedge hands the renderer a decision the spec was supposed to make. A spec states one behavior.
+Every hedge hands the coding agent a decision the ***plain was supposed to make. A functional spec states one behavior.
 
 ## Ornate vocabulary
 
@@ -311,7 +311,7 @@ The system stores the submitted file in :DocumentStore:.
 The uploaded asset is retrievable by its identifier.
 ```
 
-Three names — `:Document:`, "file", "asset" — read as three things. A reader cannot tell whether "asset" is a fourth concept, and the renderer cannot either.
+Three names — `:Document:`, "file", "asset" — read as three things. A reader cannot tell whether "asset" is a fourth concept, and the coding agent cannot either.
 
 GOOD:
 
@@ -355,7 +355,7 @@ GOOD:
 - An empty :BillingPeriod: produces a :CsvFile: with only the header row.
 ```
 
-A spec describes the software, not itself. What the spec does *not* change is everything it does not mention, and what later specs will add belongs to those specs.
+***plain describes the software, not itself. What a functional spec does *not* change is everything it does not mention, and what later functional specs will add belongs to them.
 
 ## Prose and tables inside a section
 
@@ -388,7 +388,7 @@ A section holds `- ` list items. Matrices, schemas, and payloads are external ar
 
 ## Split one crowded bullet across its owning sections
 
-One bullet that mixes behavior, technology, and test policy is hard to review and partly ignored: the renderer reads each concept only from its owning section, so the unit-test and conformance-test facts below never reach the generators that need them.
+One bullet that mixes behavior, technology, and test policy is hard to review and partly ignored: turri reads each concept only from its owning section, so the unit-test and conformance-test facts below never reach the agents that need them.
 
 BAD — everything in one place:
 

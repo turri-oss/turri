@@ -1,22 +1,22 @@
 ---
-description: Worked BAD to GOOD examples of concise integration specs, where over-precision and obvious edge cases dominate
+description: Worked BAD to GOOD examples of concise integration ***plain, where over-precision and obvious edge cases dominate
 ---
 
-# Worked examples of concise integration specs
+# Worked examples of concise integration ***plain
 
-`concise-specs.md` is the rule and `concise-specs-examples.md` is the general example bank. This file covers integration specs only, because they fail differently.
+`concise-specs.md` is the rule and `concise-specs-examples.md` is the general example bank. This file covers integration ***plain only, because it fails differently.
 
-An integration is technically demanding, the provider's contract is large, and the author has the provider's documentation open while writing. The result is a spec that is *too precise*: status codes, field lists, retry arithmetic, and every edge case the API can produce, written out as prose bullets. It reads as rigorous and is unreviewable.
+An integration is technically demanding, the provider's contract is large, and the author has the provider's documentation open while writing. The result is ***plain that is *too precise*: status codes, field lists, retry arithmetic, and every edge case the API can produce, written out as prose bullets. It reads as rigorous and is unreviewable.
 
 Conciseness here is almost never about covering less. `integrations.md` makes edge-case coverage a hard floor — auth, environments, versioning, pagination, rate limits, the error model, retries, idempotency, webhooks, data mapping, compliance, observability. Every one of those must be covered. The lever is **where** the coverage lives:
 
-- **Shapes and enumerations go to `resources/`** — schemas, error maps, retry policy, rate-limit headers. A spec bullet links to the file; it never restates its contents.
-- **The spec keeps behavior** — what the integration does with the shape, and what a caller observes.
+- **Shapes and enumerations go to `resources/`** — schemas, error maps, retry policy, rate-limit headers. A ***plain bullet links to the file; it never restates its contents.
+- **The ***plain keeps behavior** — what the integration does with the shape, and what a caller observes.
 - **Mechanism goes to `***implementation reqs***`** — retry logic, exception hierarchies, token caching, connection handling. Integration precision is mostly HOW, and `impl-reqs.md` owns HOW. `***functional specs***` keeps only what a caller can observe.
 
-That last lever is easy to miss, so several examples below move a bullet between sections rather than shortening it. A fact in the wrong section is worse than a verbose one: the renderer reads each concept only from its owning section, so a misplaced fact is silently ignored.
+That last lever is easy to miss, so several examples below move a bullet between sections rather than shortening it. A fact in the wrong section is worse than a verbose one: turri reads each concept only from its owning section, so a misplaced fact is silently ignored.
 
-Applied consistently, a spec gets shorter as coverage goes *up*, because each new corner case adds a line to a resource file rather than a paragraph to the spec.
+Applied consistently, ***plain gets shorter as coverage goes *up*, because each new corner case adds a line to a resource file rather than a paragraph to the ***plain.
 
 The BAD blocks intentionally demonstrate the mistakes they name, including invalid syntax. Copy only from GOOD blocks.
 
@@ -53,7 +53,7 @@ GOOD:
 - :ProviderClient: classifies every failure of :ProviderApi: through [resources/error-map.yaml](resources/error-map.yaml) and retries the transient ones under [resources/retry-policy.yaml](resources/retry-policy.yaml).
 ```
 
-The status-code lists move into `error-map.yaml`, which the renderer already reads to generate the exception hierarchy and the transient predicate. Coverage is unchanged and the classification now has one source of truth instead of two that can disagree — see *Transient vs. permanent exception classification* in `integrations.md`.
+The status-code lists move into `error-map.yaml`, which the coding agent already reads to generate the exception hierarchy and the transient predicate. Coverage is unchanged and the classification now has one source of truth instead of two that can disagree — see *Transient vs. permanent exception classification* in `integrations.md`.
 
 Note the section too. Classifying and retrying is mechanism, so it is an implementation req; what belongs in `***functional specs***` is only the part a caller observes — which exception each error category surfaces as.
 
@@ -79,7 +79,7 @@ GOOD:
 - :Customer: is a :ProviderApi: record, defined by [resources/provider.openapi.yaml](resources/provider.openapi.yaml) under `components.schemas.Customer`.
 ```
 
-Field lists rot the moment the provider adds a field, and the renderer generates types from the schema, not from the sentence. Keep in the definition only what the schema cannot say — a stability or uniqueness guarantee, a unit, a lifecycle rule.
+Field lists rot the moment the provider adds a field, and the coding agent generates types from the schema, not from the sentence. Keep in the definition only what the schema cannot say — a stability or uniqueness guarantee, a unit, a lifecycle rule.
 
 ## Specifying the provider instead of the integration
 
@@ -136,15 +136,15 @@ GOOD:
 
 Every BAD bullet is true, and none of them is deleted — they are moved. The success shape, the `404`, and the `Authorization` requirement are what an OpenAPI file exists to state; the rate-limit model has its own conventional files. Provider behavior with no machine-readable home goes in `resources/<provider>-notes.md`. `integrations.md` carries the full artifact table.
 
-What stays in the sections is only what gets built. A bullet stating provider behavior renders into nothing — the renderer cannot build the provider, and no conformance test can assert a sentence that makes no claim about the integration. State instead what the integration does when the provider behaves that way.
+What stays in the sections is only what gets built. A bullet stating provider behavior regenerates into nothing — the coding agent cannot build the provider, and no conformance test can assert a sentence that makes no claim about the integration. State instead what the integration does when the provider behaves that way.
 
-Note where the links hang: both artifacts attach to the :ProviderApi: concept, and everything else references the token. `linked-resources.md` requires each resource to be linked from exactly one place, so a second spec needing the contract cannot introduce a second, divergent reference to it.
+Note where the links hang: both artifacts attach to the :ProviderApi: concept, and everything else references the token. `linked-resources.md` requires each resource to be linked from exactly one place, so a second functional spec needing the contract cannot introduce a second, divergent reference to it.
 
-## One operation fragmented into several specs
+## One operation fragmented into several functional specs
 
 Integration work invites this: the author walks through the request lifecycle — credential check, discovery call, request shape, paging — and each step becomes its own spec.
 
-BAD — four specs, one operation:
+BAD — four functional specs, one operation:
 
 ```plain
 ***definitions***
@@ -174,7 +174,7 @@ A call to `fetch` requests pages until :ProviderApi: returns a response carrying
 - The :Record: items of every page are carried forward together.
 ```
 
-GOOD — one spec, with the result stated first:
+GOOD — one functional spec, with the result stated first:
 
 ```plain
 ***definitions***
@@ -194,7 +194,7 @@ GOOD — one spec, with the result stated first:
 - A failed catalogue read fails `fetch()` before any :Record: is requested.
 ```
 
-Merging is not in tension with the complexity limit. Split a spec when it implies more than 200 changed lines of code (`break-down-func-spec`); merge when several specs implement one operation that fits inside that budget. Fragment count is not a measure of size.
+Merging is not in tension with the complexity limit. Split a functional spec when it implies more than 200 changed lines of code (`break-down-func-spec`); merge when several implement one operation that fits inside that budget. Fragment count is not a measure of size.
 
 ## The auth flow narrated step by step
 
@@ -238,7 +238,7 @@ GOOD:
 
 The grant type, endpoint, body encoding, and response fields are in the security scheme. What survives is the policy the scheme does not describe: the env-var names, the refresh margin, the retry-once-on-401 rule, and the concurrency behavior.
 
-Almost all of it is implementation reqs — acquisition, caching, and refresh are machinery a caller never sees. Not all of it, though, and the rewrite has to name a component to say the rest. :ProviderAuth: performs the grant and has no observable surface; :AuthTokenManager: is what consumes it and hands tokens to :ProviderClient:, so it is the concept a functional spec can take as its subject. Without that consumer the section is left with a subject-less bullet, which `func-specs.md` rules out — and that one spec is the only line here a live conformance test can assert.
+Almost all of it is implementation reqs — acquisition, caching, and refresh are machinery a caller never sees. Not all of it, though, and the rewrite has to name a component to say the rest. :ProviderAuth: performs the grant and has no observable surface; :AuthTokenManager: is what consumes it and hands tokens to :ProviderClient:, so it is the concept a functional spec can take as its subject. Without that consumer the section is left with a subject-less bullet, which `func-specs.md` rules out — and that one functional spec is the only line here a live conformance test can assert.
 
 ## Per-endpoint test reqs
 

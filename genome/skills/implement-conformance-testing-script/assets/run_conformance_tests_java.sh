@@ -21,7 +21,7 @@ printf "Current directory: $current_dir\n"
 
 # Resolve the conformance tests folder to an absolute path so it can be used
 # after changing into the working folder ($2 may be relative to the invocation
-# directory on older renderers; newer renderers pass it as an absolute path).
+# directory on older harnesses; turri passes it as an absolute path).
 case "$2" in
   /*) CONFORMANCE_TESTS_SOURCE="$2" ;;
   *)  CONFORMANCE_TESTS_SOURCE="$current_dir/$2" ;;

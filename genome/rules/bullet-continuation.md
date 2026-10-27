@@ -15,12 +15,12 @@ These rules apply to `***definitions***`, `***implementation reqs***`, and `***t
 
 ## One statement per line
 
-This is the preferred `.plain` authoring convention, not something the renderer enforces. A line break in these sections means one of exactly two things: a new `- ` statement, or a nested `- ` clarification of the statement above it. There is no third, typographic reason to break a line.
+This is the preferred `.plain` authoring convention, not something turri enforces. A line break in these sections means one of exactly two things: a new `- ` statement, or a nested `- ` clarification of the statement above it. There is no third, typographic reason to break a line.
 
 - Write each statement on a single line, however long
 - Never break a line just for width: a bare continuation (an indented line without `- `) adds a line break that carries no structure — to every future reader and editing agent it is indistinguishable from a deliberate sub-point
 - The test: if content deserves its own line, it deserves its own `- ` bullet; if it doesn't, keep it on the parent's line
-- What the renderer does enforce is the top level of `***definitions***`, `***implementation reqs***` and `***test reqs***`: every statement there must be a `- ` list item - a flush-left prose line is a syntax error. A bare continuation, by contrast, is accepted and folded into its parent item verbatim
+- What turri does enforce is the top level of `***definitions***`, `***implementation reqs***` and `***test reqs***`: every statement there must be a `- ` list item - a flush-left prose line is a syntax error. A bare continuation, by contrast, is accepted and folded into its parent item verbatim
 
 BAD — line broken for width (bare continuation):
 

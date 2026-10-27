@@ -2,9 +2,9 @@
 name: refactor-module
 description: >-
   Split a large ***plain module into smaller modules grouped by logical domain.
-  The resulting modules are connected via a requires chain so that functionality
+  The resulting modules are connected via a requires chain so that their behaviour
   is 100% preserved. Use when a module has become too large and its functional
-  specs span multiple distinct concerns that would be clearer as separate modules.
+  functional specs span multiple distinct concerns that would be clearer as separate modules.
 allowed-tools: [read, write, edit, bash, ls, grep, find]
 ---
 
@@ -19,9 +19,9 @@ allowed-tools: [read, write, edit, bash, ls, grep, find]
 
 ## Guiding Principle
 
-The refactoring is purely structural. The **combined behavior** of the resulting modules must be **identical** to the original module. No functional spec is added, removed, or weakened. The split is semantic — grouping related specs together — not behavioral.
+The refactoring is purely structural. The **combined behavior** of the resulting modules must be **identical** to the original module. No functional spec is added, removed, or weakened. The split is semantic — grouping related functional specs together — not behavioral.
 
-The spec is structural; the code is not. Once modules are split and specs move between them, the code already built no longer matches the module layout: specs move into modules the code was never built on, and no change to that code brings them in. **After a refactor, the whole requires chain is regenerated from scratch** — the existing code and conformance tests are taken out (their lineage keeps them) and every module is built again from the base of the chain upward. Say so up front: it is part of what the user agrees to (Phase 2e), and it is the last step of the skill (Phase 5).
+The ***plain is structural; the code is not. Once modules are split and functional specs move between them, the code already built no longer matches the module layout: functional specs move into modules the code was never built on, and no change to that code brings them in. **After a refactor, the whole requires chain is regenerated from scratch** — the existing code and conformance tests are taken out (their lineage keeps them) and every module is built again from the base of the chain upward. Say so up front: it is part of what the user agrees to (Phase 2e), and it is the last step of the skill (Phase 5).
 
 ## Input
 
@@ -30,7 +30,7 @@ The `.plain` file to refactor, plus guidance from the user on the desired groupi
 ## Phase 1 — Analyze the Current Module
 
 1. **Read the entire `.plain` file** — frontmatter, definitions, implementation reqs, test reqs, and all functional specs. Also read any `import` and `requires` chains to understand the full context.
-2. **Inventory the functional specs.** List each functional spec by its func-id and note which `:Concepts:` it references. Build a dependency map: which specs depend on earlier specs (by referencing behavior or state they introduced)?
+2. **Inventory the functional specs.** List each functional spec by its func-id and note which `:Concepts:` it references. Build a dependency map: which functional specs depend on earlier functional specs (by referencing behavior or state they introduced)?
 3. **Inventory the definitions.** For each concept, note which functional specs reference it. Identify concepts that are used across multiple logical groups vs. concepts used only within one group.
 4. **Identify logical groups.** Look for natural seams — clusters of functional specs that share concepts, represent a cohesive domain, or describe a single feature area. Common groupings:
    - Data model setup and CRUD operations
@@ -38,7 +38,7 @@ The `.plain` file to refactor, plus guidance from the user on the desired groupi
    - UI screens and navigation
    - Integrations and external interfaces
    - Statistics, reporting, and analytics
-5. **Verify group independence.** Each group's specs should form a contiguous or near-contiguous block in chronological order. If a group's specs are scattered and interleaved with other groups, the split boundary may need adjustment.
+5. **Verify group independence.** Each group's functional specs should form a contiguous or near-contiguous block in chronological order. If a group's functional specs are scattered and interleaved with other groups, the split boundary may need adjustment.
 
 ## Phase 2 — Plan the Split
 
@@ -46,7 +46,7 @@ Present the proposed split to the user and get explicit confirmation before maki
 
 ### 2a. Define the module chain
 
-The modules form a `requires` chain that preserves the original chronological ordering of functional specs. The first module in the chain contains the earliest specs; each subsequent module `requires` the previous one and adds the next logical group.
+The modules form a `requires` chain that preserves the original chronological ordering of functional specs. The first module in the chain contains the earliest functional specs; each subsequent module `requires` the previous one and adds the next logical group.
 
 ```
 original-module
@@ -61,9 +61,9 @@ If the original module already had `requires` or `import` dependencies, the firs
 ### 2b. Assign functional specs to modules
 
 Place each functional spec in exactly one module. The placement must respect chronological ordering:
-- Within each module, the specs appear in the same relative order as in the original.
-- Across the chain, the ordering is preserved: all specs in module A come before all specs in module B, which come before all specs in module C.
-- A spec **cannot** move to an earlier module than a spec it depends on.
+- Within each module, the functional specs appear in the same relative order as in the original.
+- Across the chain, the ordering is preserved: all functional specs in module A come before all functional specs in module B, which come before all functional specs in module C.
+- A functional spec **cannot** move to an earlier module than a functional spec it depends on.
 
 ### 2c. Assign definitions to modules
 
@@ -71,7 +71,7 @@ For each concept, determine where it belongs:
 
 | Concept usage | Placement |
 |---------------|-----------|
-| Used only within one module's specs | Define in that module |
+| Used only within one module's functional specs | Define in that module |
 | Used across multiple modules in the chain | Define in the first module that uses it, and add to that module's `exported_concepts` |
 | Already defined in an import template | Leave in the import — no change needed |
 
@@ -91,7 +91,7 @@ Summarize for the user:
 - The `requires` chain order
 - Any new import module being created
 - Which concepts are exported from each module
-- Confirmation that all original specs are accounted for (none lost)
+- Confirmation that all original functional specs are accounted for (none lost)
 - That the whole chain will be **regenerated from scratch** once the split is done: the code and conformance tests built so far are taken out (kept in the lineage) and everything is built again from the base module up — this takes as long and costs as much as building the original module did
 
 Get explicit user confirmation before proceeding — of the split and of regenerating from scratch.
@@ -108,7 +108,7 @@ If shared definitions or reqs are being moved to a new import template, create i
 
 Create the first module in the chain:
 1. Set the YAML frontmatter — inherit the original module's `import` references. Add `exported_concepts` for any concepts that downstream modules need.
-2. Add the `***definitions***` section with concepts used by this module's specs and concepts that need to be exported.
+2. Add the `***definitions***` section with concepts used by this module's functional specs and concepts that need to be exported.
 3. Add `***implementation reqs***` and `***test reqs***` specific to this module (if not fully covered by the import template).
 4. Add the `***functional specs***` assigned to this module, preserving their original order and exact wording.
 5. Move the test plain files of the moved functional specs into this module's folder, `tests/<module>/`, with `module:` set to the new module's name; func-ids and scenario text stay as they are.
@@ -126,7 +126,7 @@ For each subsequent module in the chain:
 ### 3d. Handle the original module file
 
 After all new modules are created:
-- If the original module is being fully replaced (all specs moved out), delete it or rename it to avoid confusion.
+- If the original module is being fully replaced (all functional specs moved out), delete it or rename it to avoid confusion.
 - If the original module was required by other modules, update those modules to `require` the last module in the new chain instead — its accumulated code and previous functional specs cover the whole chain. Exported concepts are **not** transitive, though: if a downstream module references a concept now exported by an earlier module in the new chain, it must list that earlier module in its `requires` as well.
 
 ## Phase 4 — Verify
@@ -136,18 +136,18 @@ After all new modules are created:
 This is the most critical verification. Walk through every functional spec from the original module and confirm it appears in exactly one of the new modules. Nothing may be lost, weakened, modified, or left implicit.
 
 Checklist:
-- [ ] Total spec count across all new modules equals the original spec count
-- [ ] Each spec's text is identical to the original (no rewording) and keeps its func-id
+- [ ] The functional specs across all new modules are as many as the original's
+- [ ] Each functional spec's text is identical to the original (no rewording) and keeps its func-id
 - [ ] Each functional spec's test plain file moved with it, with `module:` updated and scenarios intact
 
 ### 4b. Chronological ordering check
 
-Verify that the chronological order of all functional specs — when read across the requires chain from base to leaf — matches the original ordering exactly. A spec must not appear before a spec it depends on.
+Verify that the chronological order of all functional specs — when read across the requires chain from base to leaf — matches the original ordering exactly. A functional spec must not appear before a functional spec it depends on.
 
 ### 4c. Concept availability check
 
 For each module, verify:
-- [ ] Every `:Concept:` referenced in its specs is either defined locally, available via `import`, or available via `exported_concepts` from a module listed in `requires`
+- [ ] Every `:Concept:` referenced in its functional specs is either defined locally, available via `import`, or available via `exported_concepts` from a module listed in `requires`
 - [ ] `exported_concepts` includes every concept that downstream modules need
 - [ ] No concept name collisions between modules
 
@@ -158,7 +158,7 @@ For each new module:
 - [ ] YAML frontmatter is correctly formatted
 - [ ] `requires` and `import` paths are correct
 - [ ] Module file is at the repository root (not in `template/`)
-- [ ] Specs are language-agnostic
+- [ ] Functional specs are language-agnostic
 - [ ] All external interfaces remain explicit
 
 ### 4e. Read all new modules
@@ -169,7 +169,7 @@ Validate each new module with `turri validate <module>.plain` (or the `validate`
 
 ## Phase 5 — Regenerate the Chain from Scratch
 
-The split moves specs between modules, so the code built from the original module cannot be patched into the new layout: the chain is regenerated from scratch. Do not try to keep or reuse the existing code, and do not regenerate only what looks changed — modules have moved, and a codebase built without a module it now requires has to be started over anyway.
+The split moves functional specs between modules, so the code built from the original module cannot be patched into the new layout: the chain is regenerated from scratch. Do not try to keep or reuse the existing code, and do not regenerate only what looks changed — modules have moved, and a codebase built without a module it now requires has to be started over anyway.
 
 1. **Remind the user** what regenerating from scratch does — the code and conformance tests built so far are taken out, committed so the lineage keeps them, and the whole chain is built again from the base up — and that they already agreed to it in Phase 2e. Proceed only on that agreement.
 2. **Regenerate the tip of the chain from scratch, with its whole chain** — the last module, the one everything else is required by. From scratch for the tip alone is not enough: the modules below keep their code, and the tip starts from a copy of it, laid out for the old modules. With the whole chain, every module's code is taken out, the base's included, and the chain is built again from the bottom:
@@ -181,16 +181,16 @@ The split moves specs between modules, so the code built from the original modul
 ## Common Pitfalls
 
 ### Splitting too aggressively
-Creating many tiny modules with 1–2 specs each adds overhead without clarity. Aim for modules with 3–10 functional specs each, grouped around a cohesive theme.
+Creating many tiny modules with 1–2 functional specs each adds overhead without clarity. Aim for modules with 3–10 functional specs each, grouped around a cohesive theme.
 
 ### Breaking chronological order
-Specs that set up foundational behavior (entry point, database init, core CRUD) must stay in the base module even if they touch concepts from multiple domains. Only split when specs are cleanly separable.
+Functional specs that set up foundational behavior (entry point, database init, core CRUD) must stay in the base module even if they touch concepts from multiple domains. Only split when functional specs are cleanly separable.
 
 ### Forgetting exported_concepts
-If a concept defined in module A is referenced by a spec in module B (which requires A), the concept must be in A's `exported_concepts`. Missing exports cause rendering failures.
+If a concept defined in module A is referenced by a functional spec in module B (which requires A), the concept must be in A's `exported_concepts`. Missing exports cause regeneration failures.
 
-### Modifying spec text during the split
-This is a refactoring, not a rewrite. Spec text must be copied verbatim. If a spec needs rewording to work in its new module context, that is a sign the split boundary is wrong — adjust the grouping instead.
+### Modifying the ***plain during the split
+This is a refactoring, not a rewrite. Functional specs must be copied verbatim. If one needs rewording to work in its new module context, that is a sign the split boundary is wrong — adjust the grouping instead.
 
 ### Losing test plain files
 A test plain file binds to its functional spec by `module:` and `func_id:`, and lives in its module's folder. When a functional spec moves to a new module, its test plain file moves to `tests/<new module>/` with `module:` changed; otherwise `turri validate` reports a file bound to no functional spec, and a functional spec with no test plain file.
@@ -202,7 +202,7 @@ After a split the existing code was built for a module layout that no longer exi
 
 - [ ] User confirmed the split plan before execution, including regenerating the whole chain from scratch
 - [ ] All original functional specs are present in exactly one new module — none lost
-- [ ] Spec text is identical to the original — no rewording
+- [ ] Every functional spec's text is identical to the original — no rewording
 - [ ] Test plain files moved with their functional specs and bound to the new module
 - [ ] Chronological order preserved across the requires chain
 - [ ] Every referenced `:Concept:` is available in each module (local, import, or exported)

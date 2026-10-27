@@ -4,7 +4,7 @@ description: Rules for authoring the two test scripts that an embedded ***plain 
 
 # Rules for embedded-integration test scripts
 
-When an embedded integration ships its two `test_scripts/` (unit, conformance), these rules apply on top of the contracts in the corresponding `implement-*-testing-script` skills. `project-model.md` covers the rendering and testing workflow.
+When an embedded integration ships its two `test_scripts/` (unit, conformance), these rules apply on top of the contracts in the corresponding `implement-*-testing-script` skills. `project-model.md` covers the regenerating and testing workflow.
 
 ## Staging model (read this first)
 
@@ -24,7 +24,7 @@ This deliberately writes into the host's `src/main/...` and `src/test/...` (or t
 
 This rule covers the **mechanics each script must obey** regardless of language: argument handling, exit codes, idempotency, path resolution, output parsing, and the "what NOT to put here" guard rails. The language-specific install / test commands come from the skills; the contract below is invariant.
 
-## What the `.plain` spec must declare
+## What the `.plain` file must declare
 
 The two scripts are generated from facts in the integration's spec. For an embedded integration, those facts cannot be inferred — they have to be **declared explicitly** in the right section, partitioned by which predefined concept they describe:
 
@@ -77,7 +77,7 @@ These reqs feed `run_conformance_tests_<lang>`. At minimum, declare:
 2. **`:ConformanceTests:` framework and execution command** — `mvn test --no-transfer-progress`, `pytest`, `npm test`, `go test ./...`, etc., with any flags / profiles the project requires
 3. **Fully qualified `:ConformanceTests:` package** (or path / pattern) used to scope discovery, if the runner needs one
 4. **`:ConformanceTests:` network and secrets policy** — by default the suite runs against the **live provider** (see [`integrations.md`](integrations.md) → *`:ConformanceTests:` always run against the live integration*). Declare the env-var names the script reads (e.g. `<PROVIDER>_API_KEY`), whether the script loads a `.env` file before running, and any specific endpoints that are mocked because they can't be exercised live safely (429, forced 5xx)
-5. **`:ConformanceTests:` pass criteria** — the strict criteria from [*Pass criteria (strict)*](#pass-criteria-strict): at least one test ran AND zero failures / errors / skipped. Reaffirm this in the spec so the renderer knows the runner must parse the test tool's stdout
+5. **`:ConformanceTests:` pass criteria** — the strict criteria from [*Pass criteria (strict)*](#pass-criteria-strict): at least one test ran AND zero failures / errors / skipped. Reaffirm this in the ***plain so the script's author knows the runner must parse the test tool's stdout
 6. **`:ConformanceTests:` build / install needs** — anything the conformance project needs before `mvn test` (or equivalent) will work: the host build / install command the script runs first, dependencies, fixtures, schema files, generated stubs
 
 Author the conformance facts as one or more entries, phrased in terms of `:ConformanceTests:`:
@@ -115,10 +115,10 @@ output=$(mvn test --no-transfer-progress 2>&1)
 
 - **The paths must agree across reqs.** The `:UnitTests:` source path, the `:UnitTests:` package, and the integration source path describe the same module from three angles. Same for the `:ConformanceTests:` location and its package. A mismatch (e.g. test path `src/test/java/com/example/foo` but test package `com.example.bar`) silently produces a green build with stale or zero tests
 - **Paths are host-relative**, not absolute. `MAIN_PROJECT_FOLDER` comes from `HOST_CODEBASE_ROOT` (declared in the configuration concept); the paths above join onto it
-- **The renderer's output folder `$1` mirrors the same layout.** `$1/<integration source path>/*` exists because the renderer emits the generated code into the same package directories it'll be copied into — the `cp -R` is a straight overlay, not a path translation
-- **Each fact lives in one place.** If two `***implementation reqs***` entries declare slightly different `:UnitTests:` paths (or two `***test reqs***` entries declare slightly different `:ConformanceTests:` packages), the renderer can't tell which to use. Author each group as a tight cluster (one bullet with sub-bullets) so a future reviewer sees them together
-- **Never duplicate a fact across sections.** `:UnitTests:` facts belong **only** in `***implementation reqs***`; `:ConformanceTests:` facts belong **only** in `***test reqs***`. The two groups never overlap — the script generators read each from its own section
-- **For non-Java languages**, the facts have language-specific equivalents — Python: `src/foo/`, `tests/foo/`, `tests.foo`; Node: `src/foo/`, `test/foo/`, `test/foo/**/*.test.ts`. The `implement-*-testing-script` skills know the mapping per language, but the spec still has to declare the host-relative paths and packages so the skill knows what to put in the script bodies
+- **The coding agent's output folder `$1` mirrors the same layout.** `$1/<integration source path>/*` exists because the coding agent emits the generated code into the same package directories it'll be copied into — the `cp -R` is a straight overlay, not a path translation
+- **Each fact lives in one place.** If two `***implementation reqs***` entries declare slightly different `:UnitTests:` paths (or two `***test reqs***` entries declare slightly different `:ConformanceTests:` packages), the coding agent can't tell which to use. Author each group as a tight cluster (one bullet with sub-bullets) so a future reviewer sees them together
+- **Never duplicate a fact across sections.** `:UnitTests:` facts belong **only** in `***implementation reqs***`; `:ConformanceTests:` facts belong **only** in `***test reqs***`. The two groups never overlap — the agents read each from its own section
+- **For non-Java languages**, the facts have language-specific equivalents — Python: `src/foo/`, `tests/foo/`, `tests.foo`; Node: `src/foo/`, `test/foo/`, `test/foo/**/*.test.ts`. The `implement-*-testing-script` skills know the mapping per language, but the ***plain still has to declare the host-relative paths and packages so the skill knows what to put in the script bodies
 
 ## Common contract (both scripts)
 
@@ -131,17 +131,17 @@ Both scripts are invoked by turri with positional arguments, on the person's mac
    - `69` — unrecoverable environment failure (missing toolchain, cannot enter working folder, install failed)
    - Any other non-zero code — propagated verbatim from the underlying build / test tool
 
-   turri passes `$1` (and `$2` for the conformance runner) as **absolute paths** (older renderer versions passed relative ones). Never build a derived path by concatenating a raw argument (`.tmp/$1`, `<lang>_$1`, `$current_dir/$2`) — with an absolute argument that produces a doubled path (`/project//abs/path/...`). Use the argument as-is where a path is needed, take its `basename` when naming a scratch folder, and resolve `$2` to absolute (if it isn't already) before any `cd`
+   turri passes `$1` (and `$2` for the conformance runner) as **absolute paths** (older harnesses passed relative ones). Never build a derived path by concatenating a raw argument (`.tmp/$1`, `<lang>_$1`, `$current_dir/$2`) — with an absolute argument that produces a doubled path (`/project//abs/path/...`). Use the argument as-is where a path is needed, take its `basename` when naming a scratch folder, and resolve `$2` to absolute (if it isn't already) before any `cd`
 3. **Echo the toolchain home at the top** — the first thing a developer checks when CI breaks. For Java: `JAVA_HOME`. For Python: the active interpreter (`python --version` / `which python`). For Node: `node --version`. For Go: `go env GOROOT`. Pick the variable whose value most often explains "why does it work locally but not on the CI runner?"
 4. **Respect `VERBOSE=1`.** Gate chatty diagnostic prints behind `if [ "${VERBOSE:-}" = "1" ]` (and the PowerShell equivalent). Errors and key step markers print unconditionally
-5. **Resolve paths relative to the script, not `$PWD`.** Use `"$(cd "$(dirname "$0")/<relative-path-to-anchor>" && pwd)"`. Hard-coded `../../` chains break the moment the renderer's `cwd` changes
+5. **Resolve paths relative to the script, not `$PWD`.** Use `"$(cd "$(dirname "$0")/<relative-path-to-anchor>" && pwd)"`. Hard-coded `../../` chains break the moment turri's `cwd` changes
 6. **Create destination directories before copying.** `mkdir -p` before any `cp -R` / `rsync` / `robocopy` — most copy commands do not create intermediate directories and fail silently in some shells
 7. **Scope destructive operations narrowly.** Any `rm -rf` (or `Remove-Item -Recurse -Force`) targets only the module's own package path inside the working folder — never the host's `src/`, `target/`, `node_modules/`, `build/`, or `dist/` at the project root. The conformance script cleans the host's build-output directory (e.g. `./target`) only as part of its own build / install step, and removes its system-temp scratch folder on exit
 8. **Print where you are before you `cd`.** `echo "Moving to: $DIR"` saves an hour of debugging when paths are wrong. PowerShell: `Write-Host "Moving to: $DIR"`
 
 ## 1. `run_unittests_<lang>` — copy into the host, then run unit tests there
 
-Receives one positional argument: the renderer's build output folder (`plain_modules/<module>/code/`, absolute).
+Receives one positional argument: the build output folder (`plain_modules/<module>/code/`, absolute).
 
 Purpose: stage the generated code **into the host codebase at the module's package path** and run the module's unit tests + language-appropriate quality gates against the host project from inside the host root.
 
@@ -162,17 +162,17 @@ Required steps:
 Hard rules:
 
 - **Self-contained.** The script stages `$1` itself on every run; it never relies on another script having run first
-- **Never run the full test suite** when scoping is possible. A per-module script that runs the entire host's tests wastes minutes on every render iteration
+- **Never run the full test suite** when scoping is possible. A per-module script that runs the entire host's tests wastes minutes on every regeneration
 
 ## 2. `run_conformance_tests_<lang>` — copy into the host, build it, then run the external suite
 
-Receives two positional arguments: the renderer's build output folder (`$1`, `plain_modules/<module>/code/`) and the conformance-tests folder (`$2`, `plain_modules/<module>/tests/` — the module's whole conformance suite), both absolute.
+Receives two positional arguments: the build output folder (`$1`, `plain_modules/<module>/code/`) and the conformance-tests folder (`$2`, `plain_modules/<module>/tests/` — the module's whole conformance suite), both absolute.
 
-Purpose: stage the generated code into the host, build / install the host, and run the whole conformance suite in `$2` against that build. The conformance suite is a separate project that consumes the integration as a dependency from a local cache (`~/.m2`, `node_modules`, the language equivalent), so the script installs the host itself first — otherwise the suite links against whatever was last built, which may not be the renderer's most recent output. turri runs it once per check, and its exit code decides whether the conformance tests pass.
+Purpose: stage the generated code into the host, build / install the host, and run the whole conformance suite in `$2` against that build. The conformance suite is a separate project that consumes the integration as a dependency from a local cache (`~/.m2`, `node_modules`, the language equivalent), so the script installs the host itself first — otherwise the suite links against whatever was last built, which may not be the most recent regenerated code. turri runs it once per check, and its exit code decides whether the conformance tests pass.
 
 Required steps:
 
-1. Validate `$1` and `$2`. Resolve `$2` to an absolute path if it isn't one already (newer renderers pass it absolute; older ones passed it relative to the invocation directory)
+1. Validate `$1` and `$2`. Resolve `$2` to an absolute path if it isn't one already (turri passes it absolute; older harnesses passed it relative to the invocation directory)
 2. Resolve the host codebase root from the configured env var, `rm -rf` the module's main + test package directories under the host's source tree, `mkdir -p` the destination directories, and copy `$1/src/...` into the host's source tree at the module's package path — **the same staging as `run_unittests`**
 3. `cd` into the host codebase root, verify with an explicit exit-code check
 4. Clean the host's build-output directory before compiling — stale class / object files from a previous build cause confusing link-time mismatches when the contract has changed. Maven: `rm -rf ./target`. Cargo: `cargo clean -p <pkg>`. Go: `go clean -cache` (usually unnecessary, but mention if applicable). For npm projects with incremental builds disabled, wipe the relevant `dist/` / `build/` folder
@@ -195,7 +195,7 @@ Required steps:
    - Bash: `output=$(mvn test --no-transfer-progress 2>&1)` (or the language equivalent)
    - PowerShell: `$output = & <cmd> 2>&1 | Out-String`
 10. **Parse the captured output strictly** (see *Pass criteria* below) — don't trust the test tool's exit code alone
-11. On the failure path: print the captured output unconditionally so the renderer (and the user) can see what failed
+11. On the failure path: print the captured output unconditionally so turri (and the user) can see what failed
 12. On the success path: print the output only if `VERBOSE=1`
 
 ### Secrets and `.env` handling
@@ -238,15 +238,15 @@ These are the **only** valid pass criteria. Anything outside this list is a fail
 
 Failure cases — each must be detected explicitly:
 
-- `Tests run: 0` (or the language equivalent) → **failure**. The renderer must never be told "green" when nothing ran. Exit `1` per the shared testing-script rules (the "no tests discovered" exit code)
+- `Tests run: 0` (or the language equivalent) → **failure**. turri must never be told "green" when nothing ran. Exit `1` per the shared testing-script rules (the "no tests discovered" exit code)
 - Any non-zero `Failures:`, `Errors:`, or `Skipped:` count → **failure**. Dump the captured output and propagate the test tool's exit code
 - The test tool exited non-zero but the summary line shows `Tests run: 0` → still a `1` (no-tests-discovered), not the tool's own exit code
 
-**Why parse stdout instead of trusting the test tool's exit code.** Every major test runner returns `0` when zero test classes match a filter. Maven Surefire, pytest with no collected tests, `go test ./pkg/that/has/no/_test.go/files`, Jest with an empty pattern — all green-by-default. The renderer's contract is "tests must run AND must pass" — the exit code alone cannot express that.
+**Why parse stdout instead of trusting the test tool's exit code.** Every major test runner returns `0` when zero test classes match a filter. Maven Surefire, pytest with no collected tests, `go test ./pkg/that/has/no/_test.go/files`, Jest with an empty pattern — all green-by-default. turri's contract is "tests must run AND must pass" — the exit code alone cannot express that.
 
 ## Cross-cutting rules
 
-- **No secrets in scripts.** Read credentials from env vars the renderer (or the user's shell) already sets. If a required env var is missing, fail fast with a clear `Error: $FOO is required for ...` and exit `69`. Never hardcode an API key, never read from a checked-in file
+- **No secrets in scripts.** Read credentials from env vars turri (or the user's shell) already sets. If a required env var is missing, fail fast with a clear `Error: $FOO is required for ...` and exit `69`. Never hardcode an API key, never read from a checked-in file
 - **Mirror the package / module path exactly.** A typo in the package segment (e.g. one wrong directory in `com/example/foo/...` or `host_pkg/foo/bar/...`) makes `rm -rf` silently do nothing and the subsequent copy put files in the wrong place. Both produce a **green** build with stale code. Derive the package path from the `host-codebase` concept; never retype it inline
 - **Don't add cleverness to the script that belongs in the build.** If you're tempted to `grep` the test output for more than the pass/fail summary, change the test or the test-runner config instead. The script is a thin contract — keep it that way
 - **Don't use shortcut profiles that skip quality gates.** Maven's `-Pfast`, Gradle's `-x check`, npm's `--ignore-scripts`, pytest's `--no-cov`, `-DskipTests` anywhere except the conformance script's two build / install steps (the host install and the conformance project's compile, where the tests run right after) — all defeat the purpose of these scripts. The build's full quality gate (tests + lint + coverage thresholds) must run for unit and conformance
@@ -267,7 +267,7 @@ Use them as a template when adding a new embedded integration in Java / Maven �
 1. Copy the two scripts from a working embedded-integration module into the project's `test_scripts/`
 2. Search-and-replace the package segment everywhere it appears — including the test-filter argument (the most commonly missed spot)
 3. `chmod +x` both (and verify ACLs on Windows for the `.ps1` siblings)
-4. Do not link them from the specs: turri finds them in the project root - `config.turri.yaml` (`unittests-script:`, `conformance-tests-script:`), else the one of each kind in the root, else in `test_scripts/` - and shows them to the agents itself. If `test_scripts/` ends up with two scripts of one kind, name the one to use in `config.turri.yaml`.
-5. Smoke-test by running each script manually with the renderer's output folder as `$1` (and the conformance-tests folder as `$2` for the conformance runner). Confirm exit codes match what the renderer expects
+4. Do not link them from the ***plain: turri finds them in the project root - `config.turri.yaml` (`unittests-script:`, `conformance-tests-script:`), else the one of each kind in the root, else in `test_scripts/` - and shows them to the agents itself. If `test_scripts/` ends up with two scripts of one kind, name the one to use in `config.turri.yaml`.
+5. Smoke-test by running each script manually with the build output folder as `$1` (and the conformance-tests folder as `$2` for the conformance runner). Confirm exit codes match what turri expects
 
 For non-Java languages, the skills [`implement-unit-testing-script`](../skills/implement-unit-testing-script/SKILL.md), and [`implement-conformance-testing-script`](../skills/implement-conformance-testing-script/SKILL.md) adapt the contract above to Python, Node.js, Go, Rust, Flutter, and others. Always route script creation through these skills so the cross-cutting rules above are applied uniformly.

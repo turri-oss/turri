@@ -1,35 +1,35 @@
 ---
-description: Rules for linking external resources from .plain specs
+description: Rules for linking external resources from .plain files
 ---
 
 # Rules for linked resources in `.plain` files
 
-Specifications can reference external files using markdown link syntax. The renderer reads the linked file's bytes verbatim and feeds them to the model alongside the spec. That mechanism only works for a specific shape of target — violating any of the rules below is one of the most common and disruptive mistakes in `.plain` authoring.
+***plain can reference external files using markdown link syntax. turri reads the linked file's bytes verbatim and feeds them to the coding agent alongside the ***plain. That mechanism only works for a specific shape of target — violating any of the rules below is one of the most common and disruptive mistakes in `.plain` authoring.
 
 ## Hard constraint: a linked resource is always a single file on disk - text, or a PNG or JPEG image
 
 A linked resource **must not** be any of the following:
 
-1. **A folder / directory.** `[integrations](src/integrations/)`, `[host project](../host_project/)` are invalid — the renderer cannot ingest a directory. Pick the single most representative file inside (a `README.md`, an exemplar source file, a manifest) and link **that**.
+1. **A folder / directory.** `[integrations](src/integrations/)`, `[host project](../host_project/)` are invalid — turri cannot ingest a directory. Pick the single most representative file inside (a `README.md`, an exemplar source file, a manifest) and link **that**.
 2. **A URL / external location.** `[Stripe docs](https://stripe.com/docs/api)`, any `http://` / `https://` / `ftp://` / `git://` / `s3://` / `gs://` target. Linked resources are local-file only. If a URL's content is essential, fetch it once, save the response to a text file under `resources/`, and link the saved file.
-3. **A binary file other than a PNG or JPEG image.** GIF, WEBP, SVG, PDF, DOCX, XLSX, ZIP, MP3, MP4, compiled binaries (`.exe`, `.so`, `.class`, `.wasm`), and anything else that isn't human-readable text in its raw form. Binary content cannot be meaningfully consumed by the renderer — transcribe it into a text-based form first (a PDF spec becomes a Markdown extract or the underlying JSON Schema / OpenAPI, an architecture diagram becomes a Mermaid block).
-   - **PNG and JPEG images (`.png`, `.jpg`, `.jpeg`) are the exception**: a UI mockup, a screenshot of the look to match, a diagram. The coding agents are shown the image itself, so the coding model must be one that reads images - the render stops, saying so, when it is not. Each image is at most 5 MB.
-   - An image says what something looks like, not what it does: the behaviour still belongs in the spec's text. Link a mockup from a concept (`:CheckoutPage:` looks as [checkout mockup](resources/checkout.png) shows) and keep the rules - what each button does, which fields are required - in the functional specs.
+3. **A binary file other than a PNG or JPEG image.** GIF, WEBP, SVG, PDF, DOCX, XLSX, ZIP, MP3, MP4, compiled binaries (`.exe`, `.so`, `.class`, `.wasm`), and anything else that isn't human-readable text in its raw form. Binary content cannot be meaningfully consumed by the coding agent — transcribe it into a text-based form first (a PDF spec becomes a Markdown extract or the underlying JSON Schema / OpenAPI, an architecture diagram becomes a Mermaid block).
+   - **PNG and JPEG images (`.png`, `.jpg`, `.jpeg`) are the exception**: a UI mockup, a screenshot of the look to match, a diagram. The coding agents are shown the image itself, so the coding model must be one that reads images - the regeneration stops, saying so, when it is not. Each image is at most 5 MB.
+   - An image says what something looks like, not what it does: the behaviour still belongs in the ***plain's text. Link a mockup from a concept (`:CheckoutPage:` looks as [checkout mockup](resources/checkout.png) shows) and keep the rules - what each button does, which fields are required - in the functional specs.
    - Where the model may not read images, or a detail must be exact (a colour code, a spacing, a label), say it in text as well; the image is the reference, not the only source.
-4. **Another `.plain` file.** `[Auth Module](auth.plain)` is invalid. To reference another module, use the `require` or `import` frontmatter directives. Do not link it as a markdown resource; the renderer will flag this as a syntax error.
+4. **Another `.plain` file.** `[Auth Module](auth.plain)` is invalid. To reference another module, use the `require` or `import` frontmatter directives. Do not link it as a markdown resource; turri will flag this as a syntax error.
 
 ## Never use a URL or folder path as a *reference* in prose
-- The hard constraint above is enforced only on markdown links. A bare URL or folder path in prose (concept body, functional-spec text, implementation reqs, test reqs) passes validation and is fed to the renderer verbatim as part of the spec text
-- That is exactly why it is dangerous as a *reference*: the renderer cannot fetch the URL or open the folder, so the model sees only the address, not the content behind it. To a human reader the line looks grounded in a source; to the renderer it is a *ghost dependency*, and the spec silently drifts from whatever the URL actually says
+- The hard constraint above is enforced only on markdown links. A bare URL or folder path in prose (concept body, functional-spec text, implementation reqs, test reqs) passes validation and is fed to the coding agent verbatim as part of the ***plain's text
+- That is exactly why it is dangerous as a *reference*: the coding agent cannot fetch the URL or open the folder, so it sees only the address, not the content behind it. To a human reader the line looks grounded in a source; to the coding agent it is a *ghost dependency*, and the ***plain silently drifts from whatever the URL actually says
 - A URL or path in prose is fine when the *text itself* is the complete fact:
   - **Runtime values** the produced software uses — the base URL an integration calls, a database connection path, a CLI argument default, an output directory layout
   - **Provenance notes** for a snapshotted resource — recording the canonical URL a file saved under `resources/` was fetched from
-- Litmus test: "Would the renderer benefit from reading the bytes at this URL / folder?" If yes, save it to a file and link the file. If no (the address itself is the fact), it can stay as plain text
+- Litmus test: "Would the coding agent benefit from reading the bytes at this URL / folder?" If yes, save it to a file and link the file. If no (the address itself is the fact), it can stay as plain text
 
 ## Structured protocol artifacts must be linked, never transcribed
 - JSON Schema, OpenAPI / Swagger, GraphQL SDL, Protobuf `.proto`, Avro / Thrift schemas, XML XSDs, AsyncAPI specs, JSON-RPC method definitions, wire-protocol descriptions, payload examples — anything with a formal machine-readable shape — belongs in a file under `resources/` (or another directory within the project)
-- The spec line should describe the *role* of the artifact ("the request body conforms to ...", "the public API surface is defined in ...") rather than its contents
-- Reasons: one source of truth (no drift between prose and schema); the renderer and the generated code can both consume the file directly; schema changes show up cleanly as diffs
+- The ***plain line should describe the *role* of the artifact ("the request body conforms to ...", "the public API surface is defined in ...") rather than its contents
+- Reasons: one source of truth (no drift between prose and schema); the coding agent and the generated code can both consume the file directly; schema changes show up cleanly as diffs
 
 ```plain
 ***definitions***
