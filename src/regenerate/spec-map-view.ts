@@ -5,7 +5,7 @@ import { ACCEPTANCE_TEST_HEADING, CONFORMANCE_TEST_HEADING, DEFINITIONS, FUNCTIO
 import type { DiffPaint } from "./diff-view.ts";
 import { spinner } from "./job-panel.ts";
 import type { Job } from "./jobs.ts";
-import { countOf, hasScenarioViews, type Mark, type MarkedItem, type MarkedPage } from "./spec-map.ts";
+import { countOf, type Mark, type MarkedItem, type MarkedPage } from "./spec-map.ts";
 import type { TranscriptStyle } from "./transcript-view.ts";
 
 /**
@@ -121,8 +121,6 @@ const strike = (text: string) => `\x1b[9m${text}\x1b[29m`;
 
 /** How far a group, and what is in it, is indented under its module. */
 const INDENT = "  ";
-/** What the row of a functional spec with an empty test plain file says. */
-const NOT_CONFORM = "  not conform";
 /** What the first test req of a module none of whose functional specs has scenarios says. */
 const NOT_USED = "  not used: no scenarios";
 
@@ -528,11 +526,9 @@ export function specMapLines(
         : item.state === "changed" && wasFirst !== first
           ? wordDiff(wasFirst, first, style)
           : highlighted(first, style);
-    // A functional spec's row is as its file writes it: its `# <func-id>` heading, its body's first line under it. One
-    // with no scenarios has no conformance tests, and says so beside the heading: not conform.
-    const untested = item.funcId !== undefined && item.state !== "removed" && !hasScenarioViews(item.scenarios) ? NOT_CONFORM : "";
+    // A functional spec's row is as its file writes it: its `# <func-id>` heading, its body's first line under it.
     const unused = item.unused === true && item === firstUnused ? NOT_USED : "";
-    const said = `${untested}${unused}`;
+    const said = unused;
     // A func-id renamed, nothing else: the one it is built under beside it - renamed, not regenerated.
     const renamed = item.renamedFrom !== undefined ? ` (was ${item.renamedFrom})` : "";
     const heading = item.funcId !== undefined ? `# ${item.funcId}` : undefined;

@@ -268,7 +268,7 @@ describe("the plan laid over the map", () => {
     const lines = specMapLines([marked!], createSpecMapState(), 160, style).lines;
     // A functional spec's row is its `# <func-id>` heading, its body under it, as its file writes it.
     const row = lines.findIndex((line) => line.includes("# log-in"));
-    expect(lines[row]!.trimEnd().endsWith("# log-in  not conform")).toBe(true);
+    expect(lines[row]!.trimEnd().endsWith("# log-in")).toBe(true);
     expect(lines[row]).toMatch(/^ {3}! {4}│ /);
     expect(lines[row + 1]).toBe(`${" ".repeat(8)}│ - Log in.`);
     // Under the first item that needs the person: what for, and how to go about it.
@@ -596,8 +596,8 @@ describe("the side panel's two views", () => {
     expect(lines.find((line) => line.includes("# register"))).toMatch(/^[ ›] {2}◆ {4}│ # register/);
     expect(lines.find((line) => line.includes("# log-in"))).toMatch(/^[ ›] {2}◇ {4}│ # log-in/);
     expect(lines.find((line) => line.includes("# search"))).toMatch(/^[ ›] {2}○ {4}│ # search/);
-    // A functional spec with no scenarios is not conform, and its row says so.
-    expect(lines.find((line) => line.includes("# log-in"))).toContain("not conform");
+    // A functional spec with no scenarios says nothing of it on its row: its mark says where it stands.
+    expect(lines.find((line) => line.includes("# log-in"))!.trimEnd()).toMatch(/# log-in$/);
     // The legend: up the ladder, every rung whatever the page has - to take out only where something is.
     expect(legendLines(marked!, style)).toEqual(["○ planned", "⠋ working", "◇ regenerated", "⠋ validating", "◆ conform", "! needs you"]);
     const panel = createSidePanel({ jobs: () => [], map: () => [marked!], rows: () => 20, style, back() {}, close() {}, key: "ctrl+h" });
