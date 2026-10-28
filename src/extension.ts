@@ -2960,7 +2960,7 @@ function registerBranding(pi: ExtensionAPI, skills: SkillCatalogue) {
     const lines = [
       `${brandPink(theme)("turri")}  ${theme.fg("muted", `v${data.version}`)}` +
         (data.commit !== undefined ? theme.fg("dim", `  from a clone, ${data.commit}${data.changed ? " with changes" : ""}`) : ""),
-      theme.fg("text", "the first coding agent with the power of regenerative software"),
+      `${theme.fg("text", "the first coding agent with the power of ")}${brandPink(theme)("regenerative software")}`,
       // Where the settings are changed, without leaving the chat.
       theme.fg("muted", "configure with /turri-config"),
       // Only what is wrong: skills that did not load, and agents' commands less fenced than they should be.

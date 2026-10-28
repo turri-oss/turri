@@ -266,11 +266,13 @@ describe("the plan laid over the map", () => {
     expect(marked!).toMatchObject({ status: "pulse 3 didn't land", stuck: true });
     // Nothing is written to the right of an item: where it stands is in its mark, and in its lines once opened.
     const lines = specMapLines([marked!], createSpecMapState(), 160, style).lines;
-    const row = lines.findIndex((line) => line.includes("- Log in."));
-    expect(lines[row]!.trimEnd().endsWith("log-in  - Log in.  not tested")).toBe(true);
+    // A functional spec's row is its `# <func-id>` heading, its body under it, as its file writes it.
+    const row = lines.findIndex((line) => line.includes("# log-in"));
+    expect(lines[row]!.trimEnd().endsWith("# log-in  not conform")).toBe(true);
     expect(lines[row]).toMatch(/^ {3}! {4}│ /);
+    expect(lines[row + 1]).toBe(`${" ".repeat(8)}│ - Log in.`);
     // Under the first item that needs the person: what for, and how to go about it.
-    expect(lines[row + 1]).toBe(`${" ".repeat(8)}│ needs you - pulse 3 didn't land · d to talk it through in the chat`);
+    expect(lines[row + 2]).toBe(`${" ".repeat(8)}│ needs you - pulse 3 didn't land · d to talk it through in the chat`);
     expect(lines.filter((line) => line.includes("needs you -"))).toHaveLength(1);
     expect(specMapHeader(marked!, 200, style).endsWith("! needs you")).toBe(true);
     expect(lines.join("\n")).not.toContain("←");
@@ -330,8 +332,8 @@ describe("the plan laid over the map", () => {
     expect(marked!.items.map((entry) => [entry.text.split("\n")[0], entry.testsPulse?.number])).toEqual([["- Register.", 4], ["- Log in.", 12], ["- Log out.", undefined]]);
     const lines = specMapLines([marked!], createSpecMapState(), 100, style).lines;
     // A number moves whenever the plan is made again: the row shows where the spec stands, its pulse once opened.
-    expect(lines.find((line) => line.includes("- Register."))).toMatch(/^[ ›] {2}◇ {4}│ register {2}- Register\./);
-    expect(lines.find((line) => line.includes("- Log in."))).toMatch(/^ {3}◇ {4}│ log-in {2}- Log in\./);
+    expect(lines.find((line) => line.includes("# register"))).toMatch(/^[ ›] {2}◇ {4}│ # register/);
+    expect(lines.find((line) => line.includes("# log-in"))).toMatch(/^ {3}◇ {4}│ # log-in/);
   });
 
   it("marks a test req from the conformance track: followed by the tests, being written for, or not yet - none where nothing is tested", () => {
@@ -385,7 +387,7 @@ describe("the regeneration drawn", () => {
     expect(text).toContain("  - The response is [-200.-]{+201.+}");
     expect(text).not.toContain("Emails are lowercased");
     expect(text).toContain("[-- Search for users by name.-]");
-    expect(lines.find((line) => line.includes("Search for users"))).toMatch(/^ +− /);
+    expect(lines.find((line) => line.includes("# search-for"))).toMatch(/^ +− /);
   });
 
   it("wraps an item too long for the width, its lines after the first hanging past the bullet, never cutting it short", () => {
@@ -443,14 +445,19 @@ describe("the regeneration drawn", () => {
     for (const entry of marked!.items) state.open.add(`${marked!.plainFile}\n${entry.key}`);
     const painted: TranscriptStyle = { ...style, diff: { ...PLAIN_PAINT, syntax: (role, text) => (role === "section" ? `<section>${text}</section>` : text) } };
     const lines = specMapLines([marked!], state, 120, painted).lines;
-    expect(lines.find((line) => line.includes("Patch the records."))).toContain("│ patch  Patch the records.");
-    expect(lines.join("\n")).not.toContain("not tested");
+    const row = lines.findIndex((line) => line.includes("# patch"));
+    expect(lines[row]).toMatch(/│ # patch$/);
+    expect(lines[row + 1]).toBe("        │ Patch the records.");
+    expect(lines.join("\n")).not.toContain("not conform");
     const conformance = lines.findIndex((line) => line.includes("conformance tests"));
     expect(lines[conformance - 1]!.trimEnd()).toMatch(/│$/);
-    expect(lines.slice(conformance, conformance + 3)).toEqual(["        │ <section>***conformance tests***</section>", "        │ # patches", "        │ A record is patched."]);
+    // Each kind's heading and its scenarios indented under the functional spec, a blank line after each scenario.
+    expect(lines.slice(conformance, conformance + 4)).toEqual(["        │   <section>***conformance tests***</section>", "        │   # patches", "        │   A record is patched.", "        │"]);
     const heading = lines.findIndex((line) => line.includes("acceptance tests"));
-    expect(lines[heading]).toContain("│ <section>***acceptance tests***</section>");
-    expect(lines.slice(heading + 1, heading + 5)).toEqual(["        │ # lookup", "        │ A lookup becomes an `@odata.bind` entry.", "        │ # empty-record", "        │ An empty record patches nothing."]);
+    expect(lines[heading]).toBe("        │   <section>***acceptance tests***</section>");
+    expect(lines[heading - 1]).toBe("        │");
+    expect(lines[heading - 2]).not.toBe("        │");
+    expect(lines.slice(heading + 1, heading + 7)).toEqual(["        │   # lookup", "        │   A lookup becomes an `@odata.bind` entry.", "        │", "        │   # empty-record", "        │   An empty record patches nothing.", "        │"]);
   });
 
   it("shows the files a module imports under its own text, each closed until opened - the module it requires is a tab of its own", () => {
@@ -565,7 +572,7 @@ describe("the side panel's two views", () => {
     expect(pulses.find((line) => line.startsWith("›"))).toContain("app regenerate");
     panel.handleInput("p");
     const map = panel.render(100);
-    expect(map.find((line) => line.startsWith("›"))).toContain("- Log in.");
+    expect(map.find((line) => line.startsWith("›"))).toContain("# log-in");
   });
 
   it("draws one mark a row on the ladder - planned, working, regenerated, validating, conform - the same whatever the config says of conformance tests, named in the legend in the corner", () => {
@@ -586,11 +593,11 @@ describe("the side panel's two views", () => {
     const [marked] = markSpecMap([first], noPlan);
     const lines = specMapLines([marked!], createSpecMapState(), 100, style).lines;
     // A mark alone, under the status column's heading.
-    expect(lines.find((line) => line.includes("- Register."))).toMatch(/^[ ›] {2}◆ {4}│ register {2}- Register\./);
-    expect(lines.find((line) => line.includes("- Log in."))).toMatch(/^[ ›] {2}◇ {4}│ log-in {2}- Log in\./);
-    expect(lines.find((line) => line.includes("- Search."))).toMatch(/^[ ›] {2}○ {4}│ search {2}- Search\./);
-    // A functional spec with no scenarios is not tested, and its row says so.
-    expect(lines.find((line) => line.includes("- Log in."))).toContain("not tested");
+    expect(lines.find((line) => line.includes("# register"))).toMatch(/^[ ›] {2}◆ {4}│ # register/);
+    expect(lines.find((line) => line.includes("# log-in"))).toMatch(/^[ ›] {2}◇ {4}│ # log-in/);
+    expect(lines.find((line) => line.includes("# search"))).toMatch(/^[ ›] {2}○ {4}│ # search/);
+    // A functional spec with no scenarios is not conform, and its row says so.
+    expect(lines.find((line) => line.includes("# log-in"))).toContain("not conform");
     // The legend: up the ladder, every rung whatever the page has - to take out only where something is.
     expect(legendLines(marked!, style)).toEqual(["○ planned", "⠋ working", "◇ regenerated", "⠋ validating", "◆ conform", "! needs you"]);
     const panel = createSidePanel({ jobs: () => [], map: () => [marked!], rows: () => 20, style, back() {}, close() {}, key: "ctrl+h" });

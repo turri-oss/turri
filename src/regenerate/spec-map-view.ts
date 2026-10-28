@@ -122,7 +122,7 @@ const strike = (text: string) => `\x1b[9m${text}\x1b[29m`;
 /** How far a group, and what is in it, is indented under its module. */
 const INDENT = "  ";
 /** What the row of a functional spec with an empty test plain file says. */
-const NOT_TESTED = "  not tested";
+const NOT_CONFORM = "  not conform";
 /** What the first test req of a module none of whose functional specs has scenarios says. */
 const NOT_USED = "  not used: no scenarios";
 
@@ -378,13 +378,19 @@ function detailLines(item: MarkedItem, width: number, style: TranscriptStyle): s
     const drawn = item.state === "removed" ? style.removed(strike(line.now ?? "")) : item.state === "changed" ? diffLine(line, style) : highlighted(line.now ?? "", style);
     lines.push(...wrapped(drawn, width));
   }
-  // As the test plain file has them: at the start of a line, each kind under its section heading.
+  // Each kind under its section heading, as the test plain file has it - the heading and its scenarios indented under the
+  // functional spec, a blank line after each scenario, so one reads apart from the next.
+  const blank = CONTINUED.trimEnd();
   for (const [heading, scenarios] of [[CONFORMANCE_TEST_HEADING, item.scenarios.conformance], [ACCEPTANCE_TEST_HEADING, item.scenarios.acceptance]] as const) {
     if (scenarios.length === 0) continue;
     const title = `***${heading}***`;
-    lines.push(CONTINUED.trimEnd());
-    lines.push(`${CONTINUED}${style.diff !== undefined ? style.diff.syntax("section", title) : style.muted(title)}`);
-    for (const scenario of scenarios) lines.push(...wrapped([`# ${scenario.id}`, ...scenario.text.split("\n")].map((line) => highlighted(line, style)).join("\n"), width));
+    if (lines.at(-1) !== blank) lines.push(blank);
+    lines.push(`${CONTINUED}${INDENT}${style.diff !== undefined ? style.diff.syntax("section", title) : style.muted(title)}`);
+    for (const scenario of scenarios) {
+      const text = [`# ${scenario.id}`, ...scenario.text.split("\n")].map((line) => highlighted(line, style)).join("\n");
+      lines.push(...wrapped(text, width - INDENT.length).map((line) => (line === CONTINUED ? blank : `${CONTINUED}${INDENT}${line.slice(CONTINUED.length)}`)));
+      lines.push(blank);
+    }
   }
   return lines;
 }
@@ -522,19 +528,23 @@ export function specMapLines(
         : item.state === "changed" && wasFirst !== first
           ? wordDiff(wasFirst, first, style)
           : highlighted(first, style);
-    // A functional spec's row is its func-id and its body's first line; one with no scenarios is not tested, and says so.
-    const untested = item.funcId !== undefined && item.state !== "removed" && !hasScenarioViews(item.scenarios) ? NOT_TESTED : "";
+    // A functional spec's row is as its file writes it: its `# <func-id>` heading, its body's first line under it. One
+    // with no scenarios has no conformance tests, and says so beside the heading: not conform.
+    const untested = item.funcId !== undefined && item.state !== "removed" && !hasScenarioViews(item.scenarios) ? NOT_CONFORM : "";
     const unused = item.unused === true && item === firstUnused ? NOT_USED : "";
     const said = `${untested}${unused}`;
     // A func-id renamed, nothing else: the one it is built under beside it - renamed, not regenerated.
     const renamed = item.renamedFrom !== undefined ? ` (was ${item.renamedFrom})` : "";
-    const plain = `${item.funcId !== undefined ? `${item.funcId}${renamed}  ` : ""}${first}${said}`;
-    const drawn = `${item.funcId !== undefined ? `${style.accent(item.funcId)}${renamed !== "" ? style.muted(renamed) : ""}  ` : ""}${body}${said !== "" ? style.muted(said) : ""}`;
+    const heading = item.funcId !== undefined ? `# ${item.funcId}` : undefined;
+    const headingDrawn = heading === undefined ? "" : item.state === "removed" ? style.removed(strike(heading)) : highlighted(heading, style);
+    const plain = heading !== undefined ? `${heading}${renamed}${said}` : `${first}${said}`;
+    const drawn = `${heading !== undefined ? `${headingDrawn}${renamed !== "" ? style.muted(renamed) : ""}` : body}${said !== "" ? style.muted(said) : ""}`;
     // Wrapped, never cut short: what follows a `…` is what a person came to read. The lines after the first hang
     // under the item's text, past its bullet.
     const [head = "", ...rest] = hanging(drawn, plain, room);
     add(`${gutter}${head}`, mark);
     for (const line of rest) add(`${CONTINUED}${line}`, mark);
+    if (heading !== undefined) for (const line of hanging(body, first, room)) add(`${CONTINUED}${line}`, mark);
     // The first item that needs the person says what for, and how to go about it - opened or closed.
     if (page.stuck && !toldWhy && rungOf(item) === "needsYou") {
       toldWhy = true;
