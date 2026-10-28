@@ -84,7 +84,7 @@ export interface Turri {
 /** turri's session in a host, in the process's working folder - the project's. */
 export async function createTurri(options: TurriOptions = {}): Promise<Turri> {
   const { dialogs, uiContext, extensions = [], agentDir = getAgentDir(), sessionDir, restore, ...host } = options;
-  const core = createTurriCore(host, { persist: true, ...(dialogs !== undefined ? { dialogs } : {}) });
+  const core = createTurriCore(host, { persist: true, advisor: true, ...(dialogs !== undefined ? { dialogs } : {}) });
   const cwd = core.cwd;
   core.setDriver({
     async create(chat, sessionFile) {

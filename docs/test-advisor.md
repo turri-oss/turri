@@ -2,6 +2,24 @@
 
 Which functional specs need explicit testing scenarios is not obvious, and not every one should be tested - only the functionality that matters. The test advisor decides for you: when a functional spec is new or its text changed and it has no scenarios, turri checks in the background whether it needs testing, and when it does, writes what testing it takes itself - the \*\*\*test reqs\*\*\*, the conformance testing script and its scenarios - so the module's conformance pulse runs once its code is built. You are never asked anything.
 
+## When it runs
+
+**Only in the chat and a host.** Never in a headless command - `turri regenerate`, `conform`, `change-plain` and the rest change no \*\*\*plain in any way - and never in [pi](https://pi.dev)'s print, json and rpc modes (`turri -p`), which end when the answer is printed. That is decided where the session starts: the terminal's chat and a host's session have one, nothing else does.
+
+**What it looks at:** a functional spec, in any module, that is new or whose text changed since its code was built - measured against the code record, what the code was built from: text that differs from the record, or a functional spec not built yet. Then against the advisor's file: a text already looked at, under its hash, is not looked at again. So a fresh project's first functional specs are looked at, and a project already built that has no advisor file gets no backlog: only what changes from now on is.
+
+**What it leaves alone:**
+- a functional spec with scenarios of yours - [today's review](regenerating.md#conformance-tests) of its scenarios covers it when its text changes
+- the standard library's templates, which have no functional specs
+
+**When:** as soon as the work loop sees a \*\*\*plain change - a `change_plain`, a `regenerate`, a pulse ending - beside the code pulse it plans. The functional spec is marked `pending` in the advisor's file there and then, so quitting loses nothing: the next start in the chat or a host picks up every `pending` entry.
+
+**Two at a time at most,** outside `parallel-jobs` and the lanes: it never takes a pulse's slot, no pulse waits for it, and it never steers or stops one.
+
+**A text that changes while it runs throws the work away,** whoever changed it - you, the chat's `change_plain`, a skill: what it had judged or written for the old text is dropped (`advisor.dropped`), and the new text starts again.
+
+A failure - a model error, a call that never answered - is dropped quietly: the entry says `failed` and why, `advisor.failed` goes into the ledger, and the same text is not tried again. Nothing is shown.
+
 ## How it decides
 
 Every step is a plain model call on the advisor's model, answered through one tool and checked by turri - none of them is a skill, and none can touch the project. Each is given the functional spec, its module whole, and the project's own words on what matters: its `AGENTS.md`, and what you said in the conversation about how the work is to be planned. There is no keyword filter and no confidence score.

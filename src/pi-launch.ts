@@ -73,7 +73,7 @@ if (interactive) {
     restore = saved;
   }
   driveTerminal(
-    processSession(() => createTurriCore({}, { persist: true })),
+    processSession(() => createTurriCore({}, { persist: true, advisor: true })),
     // With none of the person's chats saved - only the sentinel's - pi starts a fresh one, and every saved chat is opened beside it.
     restore !== undefined ? { restore, skipFirst: restore.chats.some((chat) => chat.role === undefined) } : {},
   );

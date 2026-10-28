@@ -36,6 +36,7 @@ import { checkPlainFile, checkPlainTargets, formatCheckResults } from "./plain/c
 import { changedFiles, projectFiles } from "./plain-files.ts";
 import { whyFailed } from "./regenerate/diagnose-job.ts";
 import { createWorkLoop, describeModules, isUpToDate, previewJobs, type WorkLoop } from "./regenerate/loop.ts";
+import { createTestAdvisor, type TestAdvisor } from "./regenerate/advisor-runs.ts";
 import { brandNeon, brandPink, plainPaint } from "./regenerate/plain-palette.ts";
 import { halfBlocks, JELLYFISH_FRAME_MS, JELLYFISH_REST, JELLYFISH_SEQUENCE, JELLYFISH_TEXT_FRAMES } from "./jellyfish.ts";
 import { createJobPanel, didNotPass, keyPressed, PANEL_KEY, spinner } from "./regenerate/job-panel.ts";
@@ -327,7 +328,18 @@ const hosts = new WeakMap<JobRegistry, TurriHost>();
  * (chats.ts). The terminal makes one as it starts (pi-launch.ts), a host with `createTurri` (host.ts); `persist`
  * records the open chats for `turri --continue`.
  */
-export function createTurriCore(host: TurriHost = {}, options: { persist?: boolean; dialogs?: (chat: string) => AskUserIO | undefined } = {}): TurriCore {
+export function createTurriCore(
+  host: TurriHost = {},
+  options: {
+    persist?: boolean;
+    dialogs?: (chat: string) => AskUserIO | undefined;
+    /**
+     * Whether the session has a test advisor (docs/test-advisor.md): the terminal's chat and a host - never pi's print,
+     * json and rpc modes, which end when the answer is printed, nor a headless command, which builds its own loop.
+     */
+    advisor?: boolean;
+  } = {},
+): TurriCore {
   dropNoise();
   const cwd = process.cwd();
   let core: TurriCore | undefined;
@@ -391,6 +403,15 @@ export function createTurriCore(host: TurriHost = {}, options: { persist?: boole
   setSurface(jobs, host.surface);
   // What release has shipped, module by module: release does nothing for a module whose last commit it already shipped.
   deployStates.set(jobs, createDeployState());
+  // The test advisor watches what the work loop looks at, and picks up what it left pending when turri last quit.
+  if (options.advisor === true) {
+    const advisor = createTestAdvisor({
+      // The conversation's own words on how the work is to be planned - AGENTS.md the advisor reads itself.
+      context: (plainFile) => [...steeringStore.get(EVERY_MODULE), ...steeringStore.get(moduleNameOf(plainFile))],
+    });
+    advisors.set(jobs, advisor);
+    setTimeout(() => advisor.resume(cwd), 0).unref?.();
+  }
 
   // What this session does, as facts, in the project's .turri/ledger - a pulse's own in its project. Said once, in the
   // chat shown, when it cannot be written.
@@ -1764,6 +1785,14 @@ const steeringStore = createSteeringStore();
 /** What release has shipped in a conversation, by its jobs: shared by the chat's release and a pulse's own. */
 const deployStates = new WeakMap<JobRegistry, DeployState>();
 
+/** A session's test advisor, by its jobs - only a chat's or a host's has one. */
+const advisors = new WeakMap<JobRegistry, TestAdvisor>();
+
+/** The session's test advisor, when it has one: the chat's and a host's - never pi's print, json and rpc modes'. */
+export function sessionAdvisor(session: TurriCore): TestAdvisor | undefined {
+  return advisors.get(session.jobs);
+}
+
 function workLoopFor(jobs: JobRegistry, cwd: string, ctx: ExtensionContext): WorkLoop {
   let shared = workLoops.get(jobs);
   if (shared === undefined) {
@@ -1776,6 +1805,8 @@ function workLoopFor(jobs: JobRegistry, cwd: string, ctx: ExtensionContext): Wor
       plannerModel: () => chatModelOf(from.ctx),
       // How the work is to be planned: the conversation's steering, and AGENTS.md's - read afresh each plan.
       steering: (plainFile) => steeringFor(plainFile, cwd, steeringStore),
+      // What the loop looks at, the test advisor sees - in a session that has one.
+      onSpec: (seen) => advisors.get(jobs)?.seen(seen),
       // Under release-after-pulse, a pulse releases what it landed itself, before the next starts - on the model that
       // regenerated it: a release follows steps, and a small model thinking little does that well.
       release: ({ plainFile, moduleName, title, onDelta }) => {

@@ -319,6 +319,14 @@ export function withActivity<T>(sink: ActivitySink, run: () => Promise<T>): Prom
   return store.run(sink, run);
 }
 
+/**
+ * Run work for no job, whatever job the code that starts it runs for - and clear of any stop signal: the test
+ * advisor's, started as the loop looks at a codebase, perhaps as a pulse ends. A pulse's panel, log and stop never reach it.
+ */
+export function outsideJobs<T>(run: () => T): T {
+  return store.exit(() => stops.exit(run));
+}
+
 export function reportStage(label: string): void {
   store.getStore()?.stage(label);
 }

@@ -244,6 +244,13 @@ export function describeDrift(reports: DriftReport[]): string {
     .join("\n") + verdict;
 }
 
+/** A codebase as the loop has just looked at it: its chain, its spec now, and what its code is built from (`codeTree` form). */
+export interface SeenSpec {
+  chain: ChainEntry[];
+  tree: MarshalledPlainSource;
+  built: MarshalledPlainSource;
+}
+
 export interface WorkLoop {
   /**
    * Bring a spec's module up to the spec as the .plain files have it now - in the codebases where its
@@ -537,6 +544,12 @@ export function createWorkLoop(options: {
   release?: (input: { plainFile: string; moduleName: string; title: string; onDelta: (delta: string) => void }) => Promise<string>;
   /** Plan, and keep the job each codebase would start (`firsts`) - but start none. */
   dryRun?: boolean;
+  /**
+   * Told each time the loop looks at a codebase whose spec parses: its chain, the spec as the .plain files have it now,
+   * and what its code is built from - what the test advisor watches (advisor-runs.ts). Nothing it does is the loop's
+   * concern: one that throws is ignored.
+   */
+  onSpec?: (seen: SeenSpec) => void;
 }): WorkLoop {
   const modules = new Map<string, ModuleState>();
   const order: string[] = [];
@@ -1102,6 +1115,13 @@ export function createWorkLoop(options: {
     }
     const specKey = keyOf(spec);
     state.seen = spec;
+    if (options.onSpec !== undefined) {
+      try {
+        options.onSpec({ chain: state.chain, tree: spec.tree, built: builtOf(state) });
+      } catch {
+        /* what watches the spec never stops the loop */
+      }
+    }
 
     if (state.running !== undefined) {
       if (state.running.stopping === true) return;
