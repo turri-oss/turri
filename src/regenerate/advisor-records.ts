@@ -164,6 +164,16 @@ export function scenariosOf(item: unknown): AdvisorScenario[] {
  * The scenarios of a functional spec that are the person's: every one, but those turri wrote - by its entry - whose
  * kind, scenario-id and text hash still match. One the person changed is theirs from then on.
  */
+/**
+ * The entry with the scenarios kept in step taken for turri's: a functional spec whose text changed since the entry, its
+ * scenarios - turri's before - changed in the same change, as the chat keeps any scenarios in step with a changed text. A
+ * scenario changed while the text stayed as it was is the person's. Anything else: the entry as it is.
+ */
+export function keptInStep(entry: AdvisorEntry | undefined, item: unknown, hash: string): AdvisorEntry | undefined {
+  if (entry === undefined || entry.hash === hash || (entry.scenarios ?? []).length === 0) return entry;
+  return { ...entry, scenarios: scenariosOf(item) };
+}
+
 export function personsScenarios(entry: AdvisorEntry | undefined, item: unknown): AdvisorScenario[] {
   const turris = new Set((entry?.scenarios ?? []).map((scenario) => `${scenario.kind} ${scenario.id} ${scenario.hash}`));
   return scenariosOf(item).filter((scenario) => !turris.has(`${scenario.kind} ${scenario.id} ${scenario.hash}`));

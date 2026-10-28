@@ -8,6 +8,7 @@ import { outsideJobs, withStopSignal } from "./activity.ts";
 import {
   advisorEntry,
   isCurrent,
+  keptInStep,
   pendingEntries,
   personsScenarios,
   putAdvisorEntry,
@@ -113,6 +114,8 @@ export interface TestAdvisor {
   idle(): Promise<void>;
   /** Stop everything, leaving what was running pending. */
   stop(): void;
+  /** The functional specs it is judging or writing for now, or about to - `module:func-id`, a project's alone when named. */
+  taking(project?: string): string[];
 }
 
 interface Work {
@@ -350,9 +353,16 @@ export function createTestAdvisor(options: TestAdvisorOptions = {}): TestAdvisor
         const key = keyOf(project, module, item.id);
         // Work on a text that is no more is thrown away, wherever the change came from.
         drop(key, hash);
+        // A scenario of turri's changed while the text stayed as it was: the person's edit, built or not - from now on they
+        // are theirs, and a later change to the text cannot pass for keeping them in step.
+        const before = advisorEntry(project, module, item.id);
+        if (isCurrent(before, hash) && (before.scenarios ?? []).length > 0 && personsScenarios(before, item).length > 0) {
+          putAdvisorEntry(project, module, relative(project, resolve(entry.plainFile)), { ...before, scenarios: [] });
+        }
         // Built as it is now: neither new nor changed.
         if (built.get(`${module}:${item.id}`) === text) continue;
-        const known = advisorEntry(project, module, item.id);
+        // turri's scenarios kept in step with a changed text are still turri's.
+        const known = keptInStep(advisorEntry(project, module, item.id), item, hash);
         // The person's scenarios: today's review covers it.
         if (personsScenarios(known, item).length > 0) continue;
         // Judged already, for this text - or being judged now.
@@ -377,6 +387,10 @@ export function createTestAdvisor(options: TestAdvisorOptions = {}): TestAdvisor
     idle() {
       if (queue.length === 0 && running.size === 0) return Promise.resolve();
       return new Promise((resolveIdle) => idleWaiters.push(resolveIdle));
+    },
+    taking(project) {
+      const mine = (work: Work) => project === undefined || resolve(work.project) === resolve(project);
+      return [...new Set([...running.values(), ...queue].filter(mine).map((work) => `${work.module}:${work.funcId}`))];
     },
     stop() {
       stopped = true;

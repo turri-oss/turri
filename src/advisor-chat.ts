@@ -1,5 +1,8 @@
+import { resolve } from "node:path";
 import type { AdvisorQuestion } from "./regenerate/advisor-records.ts";
-import type { AdvisorLanding } from "./regenerate/advisor-runs.ts";
+import type { AdvisorLanding, TestAdvisor } from "./regenerate/advisor-runs.ts";
+import type { WorkLoop } from "./regenerate/loop.ts";
+import { projectDirOf } from "./regenerate/paths.ts";
 
 /**
  * What the chat the person looks at says when the test advisor's scenarios land, and what its agent is told
@@ -53,6 +56,30 @@ export const TEST_ADVISOR_BLOCK = [
   "  ***plain change they see, as the rules say - whatever test-advisor says. Do not run write-test-scenarios for it: that skill is the advisor's.",
   "- The advisor's scenarios land: the person is shown a line saying so, and you are told why. Do nothing about them - never re-do, extend or",
   "  review them unless the person asks.",
-  "Scenarios the advisor wrote are the person's once they edit them.",
+  "A change's result names the functional specs the advisor is checking: say turri is checking them, and never offer to write their scenarios",
+  "or call them untested. Keep the advisor's scenarios in step with a text you change, in the same change, as any scenarios: they stay its.",
+  "Scenarios the advisor wrote are the person's once they edit one on its own, the text unchanged.",
   "</test advisor>",
 ].join("\n");
+
+/** Each work loop's session's test advisor - the chat's and a host's loops have one. */
+const advisorsOfLoops = new WeakMap<WorkLoop, () => TestAdvisor | undefined>();
+
+/** The test advisor of the session a work loop is in. */
+export function bindAdvisor(loop: WorkLoop, advisor: () => TestAdvisor | undefined): void {
+  advisorsOfLoops.set(loop, advisor);
+}
+
+/**
+ * What a change's tool result tells the chat's agent of the test advisor: the functional specs it has taken up, so the
+ * agent says that rather than offering to write their scenarios itself - nothing when it has taken up none.
+ */
+export function advisingNote(loop: WorkLoop, plainFile: string): string {
+  const taking = advisorsOfLoops.get(loop)?.()?.taking(projectDirOf(resolve(plainFile))) ?? [];
+  if (taking.length === 0) return "";
+  return [
+    `My test advisor is checking ${taking.join(", ")} in the background, to see whether ${taking.length === 1 ? "it needs" : "they need"} explicit testing scenarios,`,
+    "and writes them itself when one does. Tell the person that turri is checking it, in a line - and do not offer to write scenarios for",
+    "them yourself, or say they are untested: that is the advisor's to decide. Only when the person asks for scenarios, write them.",
+  ].join("\n");
+}

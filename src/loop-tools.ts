@@ -3,6 +3,7 @@ import { refuseTestPlainFile } from "./test-plain-files.ts";
 import { basename, relative, resolve } from "node:path";
 import { defineTool, type ExtensionContext, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { advisingNote } from "./advisor-chat.ts";
 import { CONFIG_FILE, readProjectConfig, stackConfigFile, stackForModule, stackNamed, stacksOf, withStack } from "./config.ts";
 import { checkPlainFile, formatCheckResults } from "./plain/check.ts";
 import { describeDrift, describeModules, type ModuleStatus, type WorkLoop } from "./regenerate/loop.ts";
@@ -272,7 +273,10 @@ export function regenerateTool(options: LoopToolsOptions & { loop: (ctx: Extensi
             : again.length > 0
               ? await loop.regenerateAgain(plainFile, again, request)
               : await loop.bringUp(plainFile, request);
-        return loopReply(loop, statuses, options.wait !== undefined ? options.wait(ctx, given.wait) : given.wait === true);
+        const reply = await loopReply(loop, statuses, options.wait !== undefined ? options.wait(ctx, given.wait) : given.wait === true);
+        // The functional specs the test advisor took up, for the agent to say so rather than offer their scenarios.
+        const advising = advisingNote(loop, plainFile);
+        return advising === "" ? reply : { ...reply, content: [...reply.content, { type: "text" as const, text: advising }] };
       });
     },
   });

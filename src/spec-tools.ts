@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { advisingNote } from "./advisor-chat.ts";
 import { checkTouchedPlain, formatCheckResults } from "./plain/check.ts";
 import { applySpecDiff, plainFilesOf, revertSpecDiff } from "./regenerate/regenerate.ts";
 import { refuseTestPlainFile } from "./test-plain-files.ts";
@@ -136,8 +137,10 @@ export function createSpecDiffTools(options: {
             ? "Carry on: write the next change you decided yourself, or ask the next question - every answer is written as a change before the question after it."
             : "Write the next change now, without stopping to ask: this skill goes on until everything it is to write is written.",
       ];
+      // The functional specs the test advisor took up, for the agent to say so rather than offer their scenarios.
+      const advising = advisingNote(loop, building);
       return {
-        content: [{ type: "text" as const, text: lines.join(" ") + reviewNote(liveReview) }],
+        content: [{ type: "text" as const, text: lines.join(" ") + reviewNote(liveReview) + (advising !== "" ? `\n\n${advising}` : "") }],
         details: { jobIds: statuses.flatMap((status) => (status.running !== undefined ? [status.running.jobId] : [])), files: touched },
       };
     },

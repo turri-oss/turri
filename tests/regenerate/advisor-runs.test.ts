@@ -139,7 +139,7 @@ describe("which functional specs the test advisor takes", () => {
     expect(asked.map((subject) => subject.funcId)).toEqual(["say-bye"]);
   });
 
-  it("takes again a functional spec whose scenarios are all turri's, and leaves it once the person edited one", async () => {
+  it("takes again a functional spec whose scenarios are turri's or kept in step with its text, and leaves it once the person edited one on its own", async () => {
     const scenario = "Running it prints hello.";
     const writeScenario = (text: string) => {
       mkdirSync(join(dir, "tests", "app"), { recursive: true });
@@ -164,13 +164,40 @@ describe("which functional specs the test advisor takes", () => {
     expect(previous).toEqual([{ kind: "conformance", id: "greets", hash: textHash(scenario) }]);
     expect(events.map((event) => event.kind)).toEqual(["advisor.classified", "advisor.wrote"]);
 
-    // The person edits turri's scenario: it is theirs now, and a change to the text is left to today's review.
-    writeScenario("Running it prints hello, and exits 0.");
+    // Its scenario kept in step in the same change as its text, as the chat keeps it: still turri's, taken again.
+    previous.length = 0;
+    writeScenario("Running it prints hello three times.");
     writeFileSync(join(dir, "app.plain"), module([["say-hello", "Say hello, three times."]]));
     advisor.seen(lookAt("app.plain"));
     await advisor.idle();
-    expect(events).toHaveLength(2);
-    expect(advisorEntry(dir, "app", "say-hello")?.hash).toBe(textHash("Say hello, twice."));
+    expect(previous).toEqual([{ kind: "conformance", id: "greets", hash: textHash("Running it prints hello three times.") }]);
+    expect(events.map((event) => event.kind)).toEqual(["advisor.classified", "advisor.wrote", "advisor.classified", "advisor.wrote"]);
+
+    // The person edits turri's scenario on its own, the text as it was: it is theirs now, and a later change to the
+    // text is left to today's review - it cannot pass for keeping the scenario in step.
+    writeScenario("Running it prints hello three times, and exits 0.");
+    advisor.seen(lookAt("app.plain"));
+    await advisor.idle();
+    writeScenario("Running it prints hello four times, and exits 0.");
+    writeFileSync(join(dir, "app.plain"), module([["say-hello", "Say hello, four times."]]));
+    advisor.seen(lookAt("app.plain"));
+    await advisor.idle();
+    expect(events).toHaveLength(4);
+    expect(advisorEntry(dir, "app", "say-hello")?.hash).toBe(textHash("Say hello, three times."));
+  });
+
+  it("says which functional specs it is taking, while it takes them", async () => {
+    writeFileSync(join(dir, "app.plain"), module([["say-hello", "Say hello."], ["say-bye", "Say goodbye."]]));
+    const { releases, advise } = held();
+    const advisor = createTestAdvisor({ advise });
+    advisor.seen(lookAt("app.plain"));
+    expect(advisor.taking(dir).sort()).toEqual(["app:say-bye", "app:say-hello"]);
+    expect(advisor.taking(join(dir, "elsewhere"))).toEqual([]);
+    while (releases.length > 0) releases.shift()!();
+    await settle();
+    while (releases.length > 0) releases.shift()!();
+    await advisor.idle();
+    expect(advisor.taking(dir)).toEqual([]);
   });
 
   it("says nothing for a no: no writer, no landing", async () => {

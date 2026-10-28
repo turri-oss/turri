@@ -152,3 +152,22 @@ describe("the test advisor in a host", () => {
     expect(await systemPrompt(sessions[0]!)).not.toContain("<test advisor>");
   });
 });
+
+describe("what a change's result says of the test advisor", () => {
+  it("names the functional specs the advisor is taking, and nothing when it takes none or the loop has no advisor", async () => {
+    const { advisingNote, bindAdvisor } = await import("../src/advisor-chat.ts");
+    const dir = mkdtempSync(join(tmpdir(), "turri-advising-"));
+    writeFileSync(join(dir, "config.turri.yaml"), "sentinel: false\n");
+    const loop = {} as never;
+    let taking: string[] = ["core:clear-tasks", "notes:count-words"];
+    const asked: Array<string | undefined> = [];
+    bindAdvisor(loop, () => ({ taking: (project?: string) => (asked.push(project), taking) }) as never);
+    const note = advisingNote(loop, join(dir, "core.plain"));
+    expect(note).toContain("My test advisor is checking core:clear-tasks, notes:count-words in the background");
+    expect(note).toContain("do not offer to write scenarios for");
+    expect(asked).toEqual([dir]);
+    taking = [];
+    expect(advisingNote(loop, join(dir, "core.plain"))).toBe("");
+    expect(advisingNote({} as never, join(dir, "core.plain"))).toBe("");
+  });
+});

@@ -40,7 +40,7 @@ import { createWorkLoop, describeModules, isUpToDate, previewJobs, type WorkLoop
 import { createTestAdvisor, type TestAdvisor } from "./regenerate/advisor-runs.ts";
 import { createAdvisorWriter } from "./regenerate/advisor-writer.ts";
 import { advisorDir } from "./regenerate/advisor-records.ts";
-import { advisorLine, advisorNote, TEST_ADVISOR_BLOCK } from "./advisor-chat.ts";
+import { advisorLine, advisorNote, bindAdvisor, TEST_ADVISOR_BLOCK } from "./advisor-chat.ts";
 import { brandNeon, brandPink, plainPaint } from "./regenerate/plain-palette.ts";
 import { halfBlocks, JELLYFISH_FRAME_MS, JELLYFISH_REST, JELLYFISH_SEQUENCE, JELLYFISH_TEXT_FRAMES } from "./jellyfish.ts";
 import { createJobPanel, didNotPass, keyPressed, PANEL_KEY, spinner } from "./regenerate/job-panel.ts";
@@ -1871,6 +1871,7 @@ function workLoopFor(jobs: JobRegistry, cwd: string, ctx: ExtensionContext): Wor
         });
       },
     });
+    bindAdvisor(loop, () => advisors.get(jobs));
     shared = { loop, from };
     workLoops.set(jobs, shared);
   }
