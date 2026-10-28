@@ -34,7 +34,7 @@ A host hears the `advisor.*` events through `onLedgerEvent`, and the line the wa
 
 ## How it decides
 
-Every step is a plain model call on the advisor's model, answered through one tool and checked by turri - none of them is a skill, and none can touch the project. Each is given the functional spec, its module whole, and the project's own words on what matters: its `AGENTS.md`, and what you said in the conversation about how the work is to be planned. There is no keyword filter and no confidence score.
+Every step is a plain model call on the advisor's model, answered through one tool and checked by turri - none of them is a skill, and none can touch the project. Each is given the functional spec, its module whole - and for a module below, the tip its scenarios are tested in, whose own functional specs show in the same commands - and the project's own words on what matters: its `AGENTS.md`, and what you said in the conversation about how the work is to be planned. There is no keyword filter and no confidence score.
 
 **Classifying** is one call with four questions, each yes backed by evidence:
 
@@ -49,10 +49,10 @@ A yes whose evidence is empty or malformed - two readings that are the same - co
 
 **On a yes, the inputs** the scenarios are to cover are picked by readers that disagree on purpose:
 
-1. **Probes:** one call writes 5 to 10 concrete boundary inputs - limits, empty and missing values, the cases the wording leaves open - and the divergence's input joins them.
-2. **Readers:** each predicts every probe's output. There are three - a literal reader, an edge-case hunter, and a reader from another domain - the same call on the same model, differing only by their system prompt. Two run first; when they already disagree on a probe, the third is spared.
+1. **Probes:** one call writes 5 to 10 concrete boundary inputs - limits, empty and missing values, the cases the wording leaves open - and the divergence's input joins them. Only inputs the functional spec bears on: never a command, flag or alias it does not name.
+2. **Readers:** each predicts every probe's output. There are three - a literal reader, an edge-case hunter, and a reader from another domain - the same call on the same model, differing only by their system prompt. Two run first; when they already disagree on a probe, the third is spared. A reader answers `unspecified` for an input the functional spec says nothing about.
 3. **Comparing,** in code: the outputs are compared with whitespace and case left aside, and any disagreement makes the input a candidate - the union of the readers, never a majority.
-4. **Verifying:** one last call keeps, of each candidate, the readings a reasonable person could hold. A candidate left with one is an agreed input; one left with none is dropped.
+4. **Verifying:** one last call keeps, of each candidate, the readings a reasonable person could hold. A candidate left with one is an agreed input; one left with none is dropped. An input whose `unspecified` holds - every reader's, or one the verifier keeps - is left out: a scenario on it would pin a guess, testing more than the functional spec says.
 
 The **report** is what the advisor's file keeps: the questions that were a yes with their evidence, and each input, either agreed - with the readers' output - or split, with its readings.
 

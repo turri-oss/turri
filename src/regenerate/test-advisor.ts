@@ -28,6 +28,8 @@ export interface AdvisorSubject {
   moduleText: string;
   /** The project's own words on what matters: its AGENTS.md, the steering given in the conversation. */
   context: string[];
+  /** A module below's: the tip its scenarios are tested in - built on it, its own functional specs beside it. */
+  testedIn?: { module: string; text: string };
 }
 
 export interface AdvisorCallOptions {
@@ -50,6 +52,9 @@ const RETRIES = 2;
 /** The fewest and most probes a functional spec is given. */
 export const MIN_PROBES = 5;
 export const MAX_PROBES = 10;
+
+/** What a reader answers for an input the functional spec does not settle: a scenario on it would pin a guess. */
+export const UNSPECIFIED = "unspecified";
 
 /** The readers: the same task, decorrelated by their system prompts alone. */
 export const READERS: ReadonlyArray<{ name: string; system: string }> = [
@@ -122,6 +127,16 @@ function subjectBlock(subject: AdvisorSubject): string[] {
     `<module name="${subject.module}">`,
     subject.moduleText.trim(),
     "</module>",
+    ...(subject.testedIn !== undefined
+      ? [
+          "",
+          `Its scenarios are tested against the code of ${subject.testedIn.module}, which is built on ${subject.module}: what a command`,
+          `or a listing shows there includes ${subject.testedIn.module}'s own functional specs.`,
+          `<module name="${subject.testedIn.module}">`,
+          subject.testedIn.text.trim(),
+          "</module>",
+        ]
+      : []),
     ...(subject.context.length > 0 ? ["", "<the project's own words on what matters>", ...subject.context.map((text) => text.trim()), "</the project's own words on what matters>"] : []),
   ];
 }
@@ -226,6 +241,8 @@ function probesPrompt(subject: AdvisorSubject, classification: Classification): 
     `Write ${MIN_PROBES} to ${MAX_PROBES} probes: concrete inputs at the boundaries of what the functional spec says - limits,`,
     "empty and missing values, duplicates, order, the cases its wording leaves open - each one an input a black-box test",
     "can give through the interface the functional spec names. Concrete values, never descriptions (\"a long name\").",
+    "Only inputs whose output the functional spec bears on: never a command, flag, alias or option it does not name - a",
+    "test of what it does not say would pin a guess.",
     "Do not say what the output should be. Call submit_probes once.",
   ].join("\n");
 }
@@ -274,7 +291,8 @@ function readerPrompt(subject: AdvisorSubject, inputs: string[]): string {
     "</inputs>",
     "",
     "For every input, by its number, give the output you expect - concrete, as a test would check it, in a line. Where",
-    "the functional spec leaves it open, give the output your reading of it leads to. Call submit_predictions once.",
+    "the functional spec leaves it open, give the output your reading of it leads to. Where it says nothing that bears on",
+    `the input at all - a command or an option it does not name - answer exactly ${UNSPECIFIED}. Call submit_predictions once.`,
   ].join("\n");
 }
 
@@ -336,7 +354,8 @@ function verifyPrompt(subject: AdvisorSubject, candidates: Array<{ input: string
     "</disagreements>",
     "",
     "For every disagreement, by its number, list the numbers of the readings a reasonable person could hold. Leave out a",
-    "reading only a misreading or a mistake leads to. Call submit_verification once.",
+    `reading only a misreading or a mistake leads to. A reading of ${UNSPECIFIED} holds when the functional spec says nothing`,
+    "that settles the input. Call submit_verification once.",
   ].join("\n");
 }
 
@@ -399,11 +418,13 @@ export async function pickInputs(subject: AdvisorSubject, classification: Classi
   const out: AdvisorInput[] = [];
   inputs.forEach((input, index) => {
     const at = candidates.findIndex((candidate) => candidate.index === index);
+    // An input the functional spec does not settle is left out: a scenario on it would pin a guess.
     if (at === -1) {
-      out.push({ input, agreed: readings[0]![index]! });
+      if (normalised(readings[0]![index]!) !== UNSPECIFIED) out.push({ input, agreed: readings[0]![index]! });
       return;
     }
     const held = kept[at] ?? [];
+    if (held.some((reading) => normalised(reading) === UNSPECIFIED)) return;
     if (held.length > 1) out.push({ input, readings: held });
     else if (held.length === 1) out.push({ input, agreed: held[0]! });
   });

@@ -137,6 +137,29 @@ describe("picking the inputs", () => {
     ]);
   });
 
+  it("leaves out an input the functional spec does not settle, whether every reader or the verifier says so", async () => {
+    answers = {
+      probes: { probes: probes.map((input) => ({ input })) },
+      "literal reader": predict(["unspecified", "Unspecified", "0", "0", "900000"]),
+      "edge-case hunter": predict(["unspecified", "90.009", "0", "0", "900000"]),
+      verifier: { inputs: [{ input: 1, reasonable: [1, 2] }] },
+    };
+    const inputs = await pickInputs(subject, yes, options);
+    expect(inputs.map((input) => input.input)).toEqual(["0", "-5", "1000000"]);
+  });
+
+  it("tells a module below's readers the tip its scenarios are tested in", async () => {
+    let task = "";
+    const { createExecutor } = await import("../../src/pi.ts");
+    vi.mocked(createExecutor).mockImplementationOnce(async (opts) => {
+      task = (opts as { task: string }).task;
+      return { tools: [], label: "x", dispose() {} } as never;
+    });
+    await classify({ ...subject, testedIn: { module: "checkout", text: "---\nrequires:\n  - shop\n---\n\n***functional specs***\n\n# pay\nPay for the :Basket:." } }, options).catch(() => undefined);
+    expect(task).toContain('<module name="checkout">');
+    expect(task).toContain("tested against the code of checkout, which is built on shop");
+  });
+
   it("covers the divergence's input as a probe too", async () => {
     answers = {
       probes: { probes: probes.map((input) => ({ input })) },

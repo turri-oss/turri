@@ -254,6 +254,7 @@ export function createTestAdvisor(options: TestAdvisorOptions = {}): TestAdvisor
         funcId: work.funcId,
         text: work.text,
         moduleText: readFileSync(work.plainFile, "utf8"),
+        ...(resolve(work.tip) !== resolve(work.plainFile) && existsSync(work.tip) ? { testedIn: { module: basename(work.tip).replace(/\.plain$/, ""), text: readFileSync(work.tip, "utf8") } } : {}),
         context: [...agentsText(work.project), ...(options.context?.(work.plainFile) ?? [])],
       };
       report = await advise(subject, { cwd: work.project, ...(model !== undefined ? { model } : {}) });
