@@ -5,8 +5,10 @@ const USAGE = `usage: turri validate <file.plain | directory> [options]
 
 Validates ***plain statically: parses each module with its test plain files, resolves its imports
 and required modules, and reports every error without rendering anything - and every functional spec
-without a test plain file, and every test plain file outside its module's folder. A test plain file
-or test folder is refused: name its module.
+without a test plain file, and every test plain file outside its module's folder. A module whose
+functional specs have scenarios but which has no test reqs, or no conformance testing script for its
+stack, is a warning: its conformance tests are not written until it has them. A test plain file or
+test folder is refused: name its module.
 
   --template-dir <dir>   extra template directory (repeatable)
   --json                 machine-readable output
@@ -43,14 +45,16 @@ if (json) {
   const output = formatCheckResults(results)
     .split("\n")
     .map((line) =>
-      line.startsWith("PASS") ? c.success(line) : line.startsWith("FAIL") ? c.error(line) : c.dim(line),
+      line.startsWith("PASS") ? c.success(line) : line.startsWith("FAIL") ? c.error(line) : line.startsWith("WARN") ? c.warning(line) : c.dim(line),
     )
     .join("\n");
   console.log(output);
 
   const failed = results.filter((r) => !r.ok).length;
+  const warned = results.reduce((count, r) => count + (r.warnings?.length ?? 0), 0);
+  const warnings = warned > 0 ? c.warning(` - ${warned} warning${warned === 1 ? "" : "s"}`) : "";
   console.log(
-    `\n${failed === 0 ? c.success(c.bold("all specs valid")) : c.error(c.bold(`${failed} of ${results.length} failed`))}`,
+    `\n${failed === 0 ? c.success(c.bold("all specs valid")) + warnings : c.error(c.bold(`${failed} of ${results.length} failed`))}`,
   );
 }
 

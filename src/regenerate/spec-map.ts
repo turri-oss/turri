@@ -23,6 +23,8 @@ import { pureRenames } from "./renames.ts";
 import { specFilesOf } from "./regenerate.ts";
 import { builtTips, resolveRequiresChain, type ChainEntry } from "./requires.ts";
 import { changesBetween, layoutOf, serializeTree, type SpecChange } from "./spec-steps.ts";
+import { SCRIPTS_DIR } from "./test-scripts.ts";
+import { testingGap } from "./testing-steps.ts";
 
 /**
  * The regeneration: the spec itself, with the build drawn onto it - see docs/using.md.
@@ -89,6 +91,8 @@ export interface MapPage {
   requires?: string;
   /** Whether any of its functional specs has scenarios, and so conformance tests to write: its test reqs are used. */
   conformance?: boolean;
+  /** Its functional specs have scenarios, and a step of adding tests is skipped - the test reqs, or the conformance testing script: what is missing, in a few words. */
+  testingMissing?: string;
   items: MapItem[];
   /** Its spec does not parse, or could not be read. */
   error?: string;
@@ -401,7 +405,11 @@ export function readSpecMapWithDeps(files: string[]): { pages: MapPage[]; deps: 
           item.funcId !== undefined && renamedFrom.has(item.funcId) && item.state !== "removed" ? { ...item, renamedFrom: renamedFrom.get(item.funcId)! } : item,
         );
         const own = home === at ? ((spec[FUNCTIONAL_REQUIREMENTS] as unknown[] | undefined) ?? []) : ((spec[REQUIRED_FUNCTIONAL_SPECS] as Array<{ module?: string }> | undefined) ?? []).filter((item) => item.module === entry.moduleName);
-        pages.push({ ...page, conformance: own.some(hasScenarios), imports: texts.slice(1).map((text) => text.label!), items: layOut(items, texts) });
+        // Its scenarios untested for a step of adding tests skipped in the codebase that writes their tests: said on its row.
+        // Read again once a script is added to the project, or taken out.
+        if (own.some(hasScenarios)) for (const path of [projectDir, join(projectDir, SCRIPTS_DIR)]) deps.add(path);
+        const gap = own.some(hasScenarios) ? testingGap({ moduleName: codebase.moduleName, plainFile: codebase.plainFile, tree: spec, buildDir: codebase.buildDir }) : undefined;
+        pages.push({ ...page, conformance: own.some(hasScenarios), ...(gap !== undefined ? { testingMissing: gap.short } : {}), imports: texts.slice(1).map((text) => text.label!), items: layOut(items, texts) });
       });
     }
     return pages;
@@ -577,7 +585,9 @@ export function markSpecMap(pages: MapPage[], plan: MapPlan): MarkedPage[] {
                   : differing === 0
                     ? "all built"
                     : (codebase.why ?? "waiting");
-    return { ...page, items, tracked: codebase !== undefined, ...(codebase !== undefined ? { codebase } : {}), status, stuck: codebase?.stuck !== undefined && running === undefined };
+    // A step of adding tests skipped: said after whatever else is happening, on the module's row.
+    const said = page.testingMissing !== undefined ? `${status} · ${page.testingMissing}` : status;
+    return { ...page, items, tracked: codebase !== undefined, ...(codebase !== undefined ? { codebase } : {}), status: said, stuck: codebase?.stuck !== undefined && running === undefined };
   });
 }
 

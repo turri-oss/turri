@@ -65,7 +65,7 @@ turri validate .                   # every .plain module in a directory
 turri validate <file.plain> --json
 ```
 
-It uses this repo's own parser, so it needs no external tool, no API key and no credits: it parses each module with its test plain files, resolves its imports and required modules, and reports every syntax, concept and structure error with the line it is on. A module that passes lists each functional spec with its test plain file and its scenarios:
+It uses this repo's own parser, so it needs no external tool, no API key and no credits: it parses each module with its test plain files, resolves its imports and required modules, and reports every syntax, concept and structure error with the line it is on. A module that passes lists each functional spec with its test plain file and its scenarios - and, where they have scenarios but the module has no test reqs, or no conformance testing script for its stack, a `WARN` line naming the next step ([the steps of adding tests](regenerating.md#the-steps-of-adding-tests)): a warning, never a failure:
 
 ```
 PASS  todo.plain  3 functional specs, requires base

@@ -46,6 +46,7 @@ import { changesBetween, parseTree, serializeTree, type SpecChange, type SpecSte
 import { listFiles } from "./testing.ts";
 import { makeRenames, pureRenames, renameText } from "./renames.ts";
 import { casesOf, codeWork, stillWanted, whyNotWanted, type JobCases, type ScenarioCases, type TouchedSpec } from "./drift.ts";
+import { testingGap } from "./testing-steps.ts";
 
 /**
  * The work loop - see docs/regenerating.md.
@@ -598,11 +599,21 @@ export function createWorkLoop(options: {
    * functional spec's text changed, regenerated again or taken out - the tests of each are behind, and are written.
    */
   const conformanceWanted = (state: ModuleState, spec: SpecSnapshot): boolean =>
-    ((spec.tree[TEST_REQUIREMENTS] as unknown[] | undefined) ?? []).length > 0 && readRecord(tipEntry(state).buildDir) !== null;
+    ((spec.tree[TEST_REQUIREMENTS] as unknown[] | undefined) ?? []).length > 0 && readRecord(tipEntry(state).buildDir) !== null && gapOf(state, spec) === undefined;
 
   /**
-   * The functional specs conform is asked for, as the spec has them now - refused when one is not in the spec, has no
-   * scenarios to test, or the module has no test reqs to write tests by.
+   * The step of adding tests a codebase skipped - its functional specs have scenarios, and it has no test reqs or no
+   * conformance testing script for its stack: no conformance pulse of it starts, in the loop or from conform, and it
+   * waits on that step until the spec or the scripts change.
+   */
+  const gapOf = (state: ModuleState, spec: SpecSnapshot) => {
+    const tip = tipEntry(state);
+    return testingGap({ moduleName: tip.moduleName, plainFile: tip.plainFile, tree: spec.tree, buildDir: tip.buildDir });
+  };
+
+  /**
+   * The functional specs conform is asked for, as the spec has them now - refused when one is not in the spec, or has no
+   * scenarios to test.
    */
   const askedSpecs = (moduleName: string, spec: MarshalledPlainSource, funcIds: string[]): void => {
     const items = (spec[FUNCTIONAL_REQUIREMENTS] as Array<{ id: string }> | undefined) ?? [];
@@ -614,9 +625,6 @@ export function createWorkLoop(options: {
         `${namesOf(moduleName, untested)} ${untested.length === 1 ? "has" : "have"} no scenarios - ${untested.length === 1 ? "its" : "their"} test plain file${untested.length === 1 ? " is" : "s are"} empty, so there is nothing to test: ` +
           "write the conformance or acceptance scenarios first, with change_plain, and their tests are written once the code is built. Nothing was started.",
       );
-    }
-    if (((spec[TEST_REQUIREMENTS] as unknown[] | undefined) ?? []).length === 0) {
-      throw new Error(`${moduleName} has no ***test reqs***: conformance tests are written by them, so none can be. Nothing was started.`);
     }
   };
 
@@ -1216,7 +1224,9 @@ export function createWorkLoop(options: {
     }
     if (!codeLeft) {
       state.plan = undefined;
-      state.why = state.conformanceHalted?.why ?? UP_TO_DATE;
+      // Its scenarios untested for a step of adding tests it skipped: no conformance pulse starts - it waits on that step.
+      const gap = state.conformanceHalted === undefined && readRecord(tip.buildDir) !== null ? gapOf(state, spec) : undefined;
+      state.why = state.conformanceHalted?.why ?? (gap !== undefined ? `waiting for its ${gap.step}: ${gap.text}` : UP_TO_DATE);
       return;
     }
     const fromKey = serializeTree(from);
@@ -1279,7 +1289,11 @@ export function createWorkLoop(options: {
     // are not written for them as they read now: planned once the code is built, shown now.
     const codeToBuild = lastCode !== -1 || planningTrack === "code";
     const seen = state.seen?.tree;
-    const testReqs = ((seen?.[TEST_REQUIREMENTS] as unknown[] | undefined) ?? []).length > 0;
+    // Not with a step of adding tests skipped: they are not planned until it is taken.
+    const testReqs =
+      ((seen?.[TEST_REQUIREMENTS] as unknown[] | undefined) ?? []).length > 0 &&
+      codeToBuild &&
+      testingGap({ moduleName: tipEntry(state).moduleName, plainFile: tipEntry(state).plainFile, tree: seen!, buildDir: tipEntry(state).buildDir }) === undefined;
     // Those of the modules below too: the tip's suite holds the chain's.
     const tested = testedOf(state);
     const sections = [REQUIRED_FUNCTIONAL_SPECS, FUNCTIONAL_REQUIREMENTS];
@@ -1451,6 +1465,11 @@ export function createWorkLoop(options: {
               if (state.running !== undefined) report.running = { jobId: state.running.jobId, title: state.running.planned.title };
               const halted = state.held?.why ?? state.halted?.why ?? state.conformanceHalted?.why;
               if (halted !== undefined) report.why = halted;
+              else {
+                // Its scenarios untested for a step of adding tests it skipped: said, as the loop says it.
+                const gap = gapOf(state, spec);
+                if (gap !== undefined) report.why = `waiting for its ${gap.step}: ${gap.text}`;
+              }
               if (state.startOver !== undefined) report.startOver = state.startOver;
               const old = oldCodebases(codebase);
               if (old.length > 0) report.startOver = { requires: [], codebases: old.map((entry) => entry.moduleName), old: true };
@@ -1480,6 +1499,9 @@ export function createWorkLoop(options: {
         );
       }
       if (named !== undefined && named.length > 0) askedSpecs(self.moduleName, ownSpec, named);
+      // A step of adding tests skipped - its test reqs, or the conformance testing script for its stack: refused, naming it.
+      const gap = testingGap({ moduleName: self.moduleName, plainFile: self.plainFile, tree: ownSpec, buildDir: self.buildDir });
+      if (gap !== undefined) throw new Error(`${gap.text} Nothing was started.`);
       const tested = new Set(((readRecord(conformanceDirFor(self.moduleName, modulesRoot(projectDirOf(self.plainFile))))?.[FUNCTIONAL_REQUIREMENTS] as Array<{ id?: string }> | undefined) ?? []).map((item) => item.id));
       const toWrite = (named !== undefined && named.length > 0 ? named : withScenarios).some((funcId) => !tested.has(funcId));
       let wentBack = false;

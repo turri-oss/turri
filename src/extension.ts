@@ -1269,7 +1269,8 @@ function conformTool(options: {
       "recorded apart from the code. The work loop starts these pulses by itself for every functional spec with scenarios whose " +
       "tests are behind, once the module's code is built; conform starts them now, or for the functional specs named. A " +
       "functional spec with no scenarios - an empty test plain file - is refused: there is nothing to test until scenarios " +
-      "are written. So is one the spec does not have, or a module without test reqs.",
+      "are written. So is one the spec does not have, and a module with scenarios that skipped a step of adding tests - " +
+      "no test reqs, or no conformance testing script for its stack: the refusal names the next step.",
     promptSnippet: "conform: write and run the conformance tests of functional specs with scenarios",
     promptGuidelines: [
       "What is tested is the scenarios: a functional spec's conformance and acceptance scenarios, in its test plain file, tests/<module>/<func-id>.plain. When the user asks for conformance tests, decide in a sentence or two which scenarios to write, and write them with change_plain - a test plain file's ***conformance tests*** and ***acceptance tests***, each scenario a # <scenario-id> heading and its text. Every scenario written is tested once the code is built: the loop starts the conformance pulse by itself. Never edit config.turri.yaml for it, and never regenerate a functionality to get them.",

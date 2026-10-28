@@ -3,6 +3,7 @@ import { basename, extname, join, relative, resolve, sep } from "node:path";
 import { testDirOf } from "../config.ts";
 import { projectDirOf, resolveTemplateDirs } from "../regenerate/paths.ts";
 import { importingModules, isImportModule } from "../regenerate/requires.ts";
+import { testingGap } from "../regenerate/testing-steps.ts";
 import { moduleOfTestPlainFile, strayTestPlainFiles, testPlaceOf, testPlainFileRefusal } from "../test-plain-files.ts";
 import { plainFileParser, PLAIN_SOURCE_FILE_EXTENSION, PREVIOUS_SYNTAX_HINT } from "./parser.ts";
 import {
@@ -23,7 +24,8 @@ import {
  * It parses each module with its test plain files, resolves its imports and required modules, and reports every error
  * the parser can see without generating anything. The parser's errors come one at a time, the first it meets, as the
  * reference gives them. turri's own checks list everything they find at once: every functional spec without a test
- * plain file, and every test plain file that is not where it belongs.
+ * plain file, and every test plain file that is not where it belongs. A module whose functional specs have scenarios
+ * but which has no test reqs, or no conformance testing script for its stack, passes with a warning.
  */
 
 export interface CheckedFunctionalSpec {
@@ -49,6 +51,8 @@ export interface CheckResult {
   nextStep?: string;
   /** turri's own findings, all of them: what is wrong, and what to do about each. */
   problems?: string[];
+  /** What does not fail it but leaves something undone: a step of adding tests skipped, and the next step. */
+  warnings?: string[];
 }
 
 /** Whether a parser error is one the previous ***plain syntax makes. */
@@ -118,11 +122,14 @@ export function checkPlainFile(file: string, templateDirs: string[] = []): Check
         problems: missing,
       };
     }
+    // Scenarios with a step of adding tests skipped - the test reqs, or the conformance testing script: a warning, never a failure.
+    const gap = testingGap({ moduleName, plainFile: path, tree });
     const bindings = Object.entries((tree[TEST_PLAIN_FILES] as Record<string, TestPlainFileBinding> | undefined) ?? {});
     return {
       file,
       ok: true,
       moduleName,
+      ...(gap !== undefined ? { warnings: [gap.text] } : {}),
       functionalSpecs: getFunctionalSpecs(tree).map((item) => ({
         funcId: item.id,
         testPlainFiles: bindings
@@ -234,7 +241,8 @@ function scenarioCounts(spec: CheckedFunctionalSpec): string {
 
 /**
  * One line per file, plus the parser's message under any that failed and turri's next step, or every problem turri
- * found; a module that passed, its functional specs under it, each with its test plain file and its scenarios.
+ * found; a module that passed, its functional specs under it, each with its test plain file and its scenarios - and
+ * a WARN line for each warning, a step of adding tests it skipped.
  */
 export function formatCheckResults(results: CheckResult[]): string {
   const lines: string[] = [];
@@ -250,6 +258,7 @@ export function formatCheckResults(results: CheckResult[]): string {
           : `PASS  ${name}  ${specs.length} functional spec${specs.length === 1 ? "" : "s"}${requires}`,
       );
       lines.push(...columns(specs.map((spec) => [spec.funcId, spec.testPlainFiles.join(", "), scenarioCounts(spec)])));
+      for (const warning of result.warnings ?? []) lines.push(`WARN  ${name}  ${warning}`);
     } else {
       lines.push(`FAIL  ${name}  ${result.errorType ?? "Error"}`);
       for (const line of [...(result.error ?? "").split("\n").filter((line, index) => index > 0 || line !== ""), ...(result.problems ?? [])]) lines.push(`        ${line}`);

@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { writePlain } from "../test-plain.ts";
+import { testPlainFile, writePlain } from "../test-plain.ts";
 import { DEFINITIONS, FUNCTIONAL_REQUIREMENTS, NON_FUNCTIONAL_REQUIREMENTS, TEST_REQUIREMENTS, type MarshalledPlainSource } from "../../src/plain/spec.ts";
 import { createJobRegistry } from "../../src/regenerate/jobs.ts";
 import { createWorkLoop, type JobRunner, type MapCodebase, type MapPlan, type MapPulse } from "../../src/regenerate/loop.ts";
@@ -153,6 +153,28 @@ describe("the regeneration from the files", () => {
       ["waiting", "Say goodbye."],
     ]);
     expect(only!.status).toBe("not asked to build - regenerate plans it");
+  });
+
+  it("says on a module's row which step of adding tests it skipped - the test reqs, then the script - and nothing where it has no scenarios", () => {
+    const plain = (testReqs: boolean) =>
+      `***implementation reqs***\n\n- Use Python.\n\n${testReqs ? "***test reqs***\n\n- Use pytest.\n\n" : ""}***functional specs***\n\n# say-hello\nSay hello.\n`;
+    const row = () => markSpecMap(readSpecMap([join(dir, "app.plain")]), noPlan)[0]!;
+    writePlain(dir, "app.plain", plain(false));
+    expect(readSpecMap([join(dir, "app.plain")])[0]!.testingMissing).toBeUndefined();
+    expect(row().status).toBe("not asked to build - regenerate plans it");
+    // A scenario: its tests wait for the test reqs.
+    mkdirSync(join(dir, "tests", "app"), { recursive: true });
+    writeFileSync(join(dir, "tests", "app", "say-hello.plain"), testPlainFile("app", "say-hello", { conformance: ["# greets\nIt says hello."] }));
+    expect(row().testingMissing).toBe("scenarios not tested: no test reqs");
+    expect(row().status).toBe("not asked to build - regenerate plans it · scenarios not tested: no test reqs");
+    expect(specMapHeader(row(), 200, style)).toContain("scenarios not tested: no test reqs");
+    // The test reqs: they wait for the conformance testing script.
+    writePlain(dir, "app.plain", plain(true));
+    expect(row().status).toBe("not asked to build - regenerate plans it · scenarios not tested: no conformance testing script");
+    mkdirSync(join(dir, "test_scripts"), { recursive: true });
+    writeFileSync(join(dir, "test_scripts", "run_conformance_tests_python.sh"), "#!/bin/sh\nexit 0\n");
+    expect(row().testingMissing).toBeUndefined();
+    expect(row().status).toBe("not asked to build - regenerate plans it");
   });
 
   it("has a page for each module of the requires chain, a module below read from the codebase built on it", () => {

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createJobRegistry } from "../../src/regenerate/jobs.ts";
 import type { JobCases } from "../../src/regenerate/drift.ts";
 import { moduleLanes } from "../../src/regenerate/lanes.ts";
-import { createWorkLoop, describeDrift, describeModules, skipsReview, type JobRunner } from "../../src/regenerate/loop.ts";
+import { createWorkLoop, describeDrift, describeModules, skipsReview, UP_TO_DATE, type JobRunner } from "../../src/regenerate/loop.ts";
 import { codeTree, readRecord, writeCodeRecord, writeTestsRecord } from "../../src/regenerate/records.ts";
 import { recordHistory } from "../../src/regenerate/lineage.ts";
 import { copyRequiredCode } from "../../src/regenerate/requires.ts";
@@ -20,6 +20,9 @@ beforeEach(() => {
   cwd = process.cwd();
   process.chdir(dir);
   writeFileSync(join(dir, "config.yaml"), "");
+  // A conformance testing script, never run here - the runners are stubs - but without one no conformance pulse starts.
+  mkdirSync(join(dir, "test_scripts"));
+  writeFileSync(join(dir, "test_scripts", "run_conformance_tests_python.sh"), "#!/bin/sh\nexit 0\n");
 });
 afterEach(() => {
   process.chdir(cwd);
@@ -680,6 +683,93 @@ describe("the work loop", () => {
       expect(code.ran).toHaveLength(2);
       expect(tests.ran).toEqual([]);
       expect(existsSync(join(testsDir(), ".turri.json"))).toBe(false);
+    });
+
+    describe("with a step of adding tests skipped", () => {
+      /** app with no test reqs. */
+      const noTestReqs = (specs: Spec[]) => app(specs).replace("***test reqs***\n\n- :ConformanceTests: use pytest.\n\n", "");
+      const NO_TEST_REQS =
+        "app has scenarios but no ***test reqs***, so its conformance tests cannot be written - the test reqs are the first step of adding tests. " +
+        "Next step: write the module's own ***test reqs***, with change_plain.";
+      const NO_SCRIPT =
+        "app has scenarios and ***test reqs*** but no conformance testing script, so nothing can run its conformance tests - the script is the second step of adding tests. " +
+        "Next step: write the conformance testing script with the implement-conformance-testing-script skill.";
+      const noScript = () => rmSync(join(dir, "test_scripts", "run_conformance_tests_python.sh"));
+
+      it("are refused for a module with scenarios but no test reqs - its code built, the step named, waiting on it until the ***plain has them", async () => {
+        writePlain(dir, "app.plain", noTestReqs(["Say hello."]));
+        scenariosIn("say-hello");
+        const code = runner();
+        const tests = conformanceRunner();
+        const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run: code.run, runConformance: tests.runConformance });
+        const [planned] = await loop.bringUp("app.plain");
+        // Not listed as planned once the code is built: it is not, until the step is taken.
+        expect(planned!.planned.some((job) => job.track === "conformance")).toBe(false);
+        await loop.drain();
+        expect(code.ran).toHaveLength(1);
+        expect(tests.ran).toEqual([]);
+        expect(loop.status()[0]!.why).toBe(`waiting for its test reqs: ${NO_TEST_REQS}`);
+        expect(describeDrift(loop.drift("app.plain"))).toContain(`  waiting for its test reqs: ${NO_TEST_REQS}`);
+        // Asked again, nothing changed: refused again, nothing started - it neither loops nor retries.
+        await loop.bringUp("app.plain");
+        await loop.drain();
+        expect(tests.ran).toEqual([]);
+        // The ***plain has them now: the conformance pulse starts.
+        writePlain(dir, "app.plain", app(["Say hello."]));
+        await loop.bringUp("app.plain", { specChange: true });
+        await loop.drain();
+        expect(tests.ran.map((job) => job.add)).toEqual([["say-hello"]]);
+        expect(loop.status()[0]!.why).toBe(UP_TO_DATE);
+      });
+
+      it("are refused for a module with scenarios but no conformance testing script for its stack - waiting on it until there is one", async () => {
+        noScript();
+        writePlain(dir, "app.plain", app(["Say hello."]));
+        scenariosIn("say-hello");
+        const code = runner();
+        const tests = conformanceRunner();
+        const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run: code.run, runConformance: tests.runConformance });
+        await loop.bringUp("app.plain");
+        await loop.drain();
+        expect(code.ran).toHaveLength(1);
+        expect(tests.ran).toEqual([]);
+        expect(loop.status()[0]!.why).toBe(`waiting for its conformance testing script: ${NO_SCRIPT}`);
+        // Its code is not halted: nothing failed.
+        writeFileSync(join(dir, "test_scripts", "run_conformance_tests_python.sh"), "#!/bin/sh\nexit 0\n");
+        await loop.bringUp("app.plain");
+        await loop.drain();
+        expect(tests.ran.map((job) => job.add)).toEqual([["say-hello"]]);
+      });
+
+      it("are refused by conform, naming the step - the test reqs first, then the script - and nothing is started", async () => {
+        noScript();
+        writePlain(dir, "app.plain", noTestReqs(["Say hello."]));
+        scenariosIn("say-hello");
+        const code = runner();
+        const tests = conformanceRunner();
+        const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run: code.run, runConformance: tests.runConformance });
+        await expect(loop.conformance("app.plain")).rejects.toThrow(
+          `${NO_TEST_REQS.replace(/\.$/, "")}; then write the conformance testing script with the implement-conformance-testing-script skill. Nothing was started.`,
+        );
+        writePlain(dir, "app.plain", app(["Say hello."]));
+        await expect(loop.conformance("app.plain", { funcIds: ["app:say-hello"] })).rejects.toThrow(`${NO_SCRIPT} Nothing was started.`);
+        expect(code.ran).toEqual([]);
+        expect(tests.ran).toEqual([]);
+      });
+
+      it("are neither refused nor waited on in a module with no scenarios, test reqs and script or not", async () => {
+        noScript();
+        writePlain(dir, "app.plain", noTestReqs(["Say hello."]));
+        const code = runner();
+        const tests = conformanceRunner();
+        const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run: code.run, runConformance: tests.runConformance });
+        await loop.bringUp("app.plain");
+        await loop.drain();
+        expect(code.ran).toHaveLength(1);
+        expect(tests.ran).toEqual([]);
+        expect(loop.status()[0]!.why).toBe(UP_TO_DATE);
+        expect(describeDrift(loop.drift("app.plain"))).toContain("Fully regenerated");
+      });
     });
 
     it("rewrite a functional spec's tests once its changed code lands, and write none for what only changed its test reqs in the code", async () => {

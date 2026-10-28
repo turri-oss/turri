@@ -137,6 +137,7 @@ describe("a module of a project of stacks", () => {
   it("writes the conformance tests of its functional specs with scenarios with its stack too, once its code is built", async () => {
     writePlain(dir, "backend.plain", app(["Serve the orders."], "is Python."));
     writeFileSync(join(dir, "tests", "backend", "serve-the-orders.plain"), testPlainFile("backend", "serve-the-orders", { acceptance: ["# lists\nThe orders are listed."] }));
+    writeFileSync(join(dir, "test_scripts", "run_conformance_tests_python.sh"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
     const { run } = runner();
     const conformed: Array<string | undefined> = [];
     const runConformance: JobRunner = async (job) => {

@@ -7,8 +7,9 @@ Writes and runs the black-box conformance tests of a module's functional specs -
 as module:func-id, or every one with scenarios - on the code as it is built, as the chat's conform does:
 exactly their conformance and acceptance scenarios, following the spec's test reqs, with the whole suite
 the module inherits, a failure fixed in the test or the code, whichever is wrong. A functional spec with
-no scenarios is refused: write them first. Every functional spec tested goes in one pulse, as far as the
-size guardrail lets.
+no scenarios is refused: write them first. So is a module with no test reqs, or no conformance testing
+script for its stack: the refusal names the next step. Every functional spec tested goes in one pulse,
+as far as the size guardrail lets.
 
   --one-by-one             a pulse a functional spec instead
   --harness-model <p/id>   config.turri.yaml's harness-model for this run: the planner, a diagnosis
