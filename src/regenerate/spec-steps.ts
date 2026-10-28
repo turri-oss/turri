@@ -656,6 +656,40 @@ export function diffSpecText(before: string, after: string, file = "spec.plain",
   return gitDiff(`${plainText(before, layout)}\n`, `${plainText(after, layout)}\n`, 3, [file, file]);
 }
 
+/**
+ * The functional specs of the modules below that a change between two serialized trees touches, each module's as a diff
+ * of its own file's `***functional specs***`: the tip is built with them, but its own file does not hold them.
+ */
+export function diffRequiredSpecs(before: string, after: string, file = "spec.plain"): string {
+  const byModule = (serialized: string): Map<string, string[]> => {
+    const found = new Map<string, string[]>();
+    let section: string | undefined;
+    for (const line of serialized.split("\n")) {
+      if (line === "") continue;
+      const header = headerOf(line);
+      if (header !== undefined) {
+        section = header.key;
+        continue;
+      }
+      if (section !== REQUIRED_FUNCTIONAL_SPECS) continue;
+      const module = (JSON.parse(line) as { module?: string }).module ?? "";
+      found.set(module, [...(found.get(module) ?? []), fileItemText(line)]);
+    }
+    return found;
+  };
+  const was = byModule(before);
+  const now = byModule(after);
+  const folder = dirname(file);
+  return [...new Set([...was.keys(), ...now.keys()])]
+    .map((module) => {
+      const text = (items: string[] | undefined) => (items === undefined ? "" : `***${FUNCTIONAL_REQUIREMENTS}***\n\n${items.join("\n\n")}\n`);
+      const [from, to] = [text(was.get(module)), text(now.get(module))];
+      const path = folder === "." ? `${module}.plain` : `${folder}/${module}.plain`;
+      return from === to ? "" : gitDiff(from, to, 3, [path, path]);
+    })
+    .join("");
+}
+
 /** The linked resources of a changed item whose content is different now - each hashed on its own: by their path, with both hashes. */
 export function resourcesChanged(before: string | undefined, after: string | undefined): Array<{ target: string; was?: string; now?: string }> {
   const resources = (line: string | undefined): Array<{ target: string; digest?: string }> => {
@@ -734,7 +768,7 @@ export function makeStep(title: string, reason: string, changes: SpecChange[], b
     tree: parseTree(after),
     diff: diffTrees(before, after),
     // What a linked resource holds changed shows in the step's diff, after the spec's own.
-    textDiff: `${diffSpecText(before, after, file, layout)}${testPlain !== undefined ? diffTestPlainFiles(before, after, testPlain.module, testPlain.pathOf) : ""}${resourceDiff(changes, file)}`,
+    textDiff: `${diffSpecText(before, after, file, layout)}${diffRequiredSpecs(before, after, file)}${testPlain !== undefined ? diffTestPlainFiles(before, after, testPlain.module, testPlain.pathOf) : ""}${resourceDiff(changes, file)}`,
     sections: [...new Set(changes.map((change) => change.section))],
   };
 }

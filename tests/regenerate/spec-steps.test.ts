@@ -434,3 +434,22 @@ describe("a conformance step's ***plain diff", () => {
     expect(step.textDiff).not.toContain("func_id");
   });
 });
+
+describe("a step's ***plain diff of the modules below", () => {
+  it("shows a changed functional spec of a module below as a diff of that module's file", () => {
+    const chain = (clear: string): MarshalledPlainSource => ({
+      "functional specs": [{ id: "complete-task", markdown: "`todo done <number>` marks it done." }],
+      "required functional specs": [
+        { id: "add-task", module: "core", markdown: "`todo add <name>` adds a task." },
+        { id: "clear-tasks", module: "core", markdown: clear },
+      ],
+    });
+    const before = serializeTree(chain("`todo clear` prints `Cleared <n> tasks`."));
+    const after = serializeTree(chain("`todo clear` prints `Cleared 1 task` for one task."));
+    const step = makeStep("regenerate", "", changesBetween(before, after), before, after, "todo.plain");
+    expect(step.textDiff).toContain("+++ b/core.plain");
+    expect(step.textDiff).toContain("-`todo clear` prints `Cleared <n> tasks`.");
+    expect(step.textDiff).toContain("+`todo clear` prints `Cleared 1 task` for one task.");
+    expect(step.textDiff).not.toContain("todo.plain");
+  });
+});
