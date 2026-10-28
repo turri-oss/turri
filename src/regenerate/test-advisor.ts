@@ -241,8 +241,8 @@ function probesPrompt(subject: AdvisorSubject, classification: Classification): 
     `Write ${MIN_PROBES} to ${MAX_PROBES} probes: concrete inputs at the boundaries of what the functional spec says - limits,`,
     "empty and missing values, duplicates, order, the cases its wording leaves open - each one an input a black-box test",
     "can give through the interface the functional spec names. Concrete values, never descriptions (\"a long name\").",
-    "Only inputs whose output the functional spec bears on: never a command, flag, alias or option it does not name - a",
-    "test of what it does not say would pin a guess.",
+    "Only inputs whose output the functional spec bears on: never a command, flag, alias or option it does not name, and",
+    "never one that exercises another functional spec of the module instead - a test of what it does not say would pin a guess.",
     "Do not say what the output should be. Call submit_probes once.",
   ].join("\n");
 }

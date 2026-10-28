@@ -45,6 +45,7 @@ For each split input, pick the reading most consistent with the functional spec'
 Follow `test-plain-files.md` to the letter:
 - The file: frontmatter `module:` and `func_id:`, then `***conformance tests***`, then `***acceptance tests***`, each heading at the start of a line
 - **One scenario per input of the report** - every input covered, by a scenario of its own or, where two inputs are the same expected use, by one that names both. No scenario for an input the report does not give
+- **Leave out an input that is not this functional spec's** - one that exercises another functional spec of the module, or that this one says nothing about: a scenario on it would test what this functional spec does not say. Say which, and why
 - An agreed input: its scenario expects the readers' output, as it is
 - A split input: its scenario expects the reading you took
 - Expected use goes under `***conformance tests***`, the use that is not expected - invalid input, missing data, a limit passed - under `***acceptance tests***`
@@ -60,5 +61,6 @@ When you are done, call `write_artifact` with the record the review is checked a
 1. The test plain file's path
 2. The report, word for word as you were given it: the questions with their evidence, and every input, agreed with its output or split with its readings
 3. For every split input, the reading you took and why
-4. For every scenario, its scenario-id and the input it covers
-5. What `validate` said, last
+4. Every input you left out, and why it is not this functional spec's
+5. For every scenario, its scenario-id and the input it covers
+6. What `validate` said, last
