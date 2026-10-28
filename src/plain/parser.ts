@@ -881,8 +881,9 @@ export interface ParseOptions {
   testDir?: string;
   /**
    * With `testDir`: every functional spec of the chain must have a test plain file, which may hold no scenario
-   * (`MissingTestPlainFileError` for the first one that has none). On unless set to false - turri always asks for
-   * them, where the reference does only when the project names a conformance testing script.
+   * (`MissingTestPlainFileError` for the first one that has none) - as the reference asks when the project names a
+   * conformance testing script. turri never asks: a functional spec with no test plain file is not tested, as one
+   * whose file is empty, and no file is the way to say so.
    */
   requireTestPlainFiles?: boolean;
 }
@@ -892,7 +893,7 @@ export function plainFileParser(
   templateDirs: string[],
   options: ParseOptions = {},
 ): [string, MarshalledPlainSource, string[]] {
-  const tests = options.testDir === undefined ? "" : `${resolve(options.testDir)}${options.requireTestPlainFiles === false ? "" : "!"}`;
+  const tests = options.testDir === undefined ? "" : `${resolve(options.testDir)}${options.requireTestPlainFiles === true ? "!" : ""}`;
   const key = `${options.allowNoFunctionalities ? "any" : "renderable"}\0${process.cwd()}\0${templateDirs.join("\0")}\0${plainSourceFileName}\0${tests}`;
   if (activeCache === undefined) {
     // Between calls: the parse from before, while nothing it could have read has changed since.
@@ -1092,7 +1093,7 @@ function parseWithTestPlainFiles(
 
   const testDirs = chain.map(([name]) => join(options.testDir!, name));
   const bound = bindTestPlainFiles(chain, testDirs, templateDirs, templateDirs[0] ?? ".");
-  if (options.requireTestPlainFiles !== false) checkTestPlainFiles(chain, bound);
+  if (options.requireTestPlainFiles === true) checkTestPlainFiles(chain, bound);
 
   // What the module inherits carries the scenarios bound in the module it is written in.
   const boundItems = new Map<string, FunctionalSpecItem>();

@@ -4,8 +4,8 @@ import { c } from "./module-report.ts";
 const USAGE = `usage: turri validate <file.plain | directory> [options]
 
 Validates ***plain statically: parses each module with its test plain files, resolves its imports
-and required modules, and reports every error without rendering anything - and every functional spec
-without a test plain file, and every test plain file outside its module's folder. A module whose
+and required modules, and reports every error without regenerating anything - and every test plain file outside its module's
+folder. A functional spec with no test plain file is not tested, as one whose file is empty. A module whose
 functional specs have scenarios but which has no test reqs, or no conformance testing script for its
 stack, is a warning: its conformance tests are not written until it has them. A test plain file or
 test folder is refused: name its module.

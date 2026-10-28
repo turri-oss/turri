@@ -9,7 +9,7 @@ A test plain file holds the test scenarios of one functional spec. Conformance s
 ## Where it lives
 - Every test plain file of a module lives in `tests/<module>/`, with `tests/` beside the module (`test-dir:` in `config.turri.yaml` can name another folder). This is a rule, not a convention: a file's folder matches its `module:`, and a `.plain` file in `tests/` outside a module's folder is an error `turri validate` reports
 - Name the file after its functional spec, `tests/<module>/<func-id>.plain`; the name is convention, the frontmatter is what binds it
-- Every functional spec has a test plain file; a functional spec with none is an error
+- A functional spec with no scenarios has no test plain file: it is not tested. Write one only to give a functional spec scenarios, and never an empty one - an empty file says no more than none, and is one more file to keep in step
 - More than one test plain file may bind to one functional spec: their scenarios are merged, and the scenario-ids must be unique across them. Write one file per functional spec, and keep a person's extra files as they are
 - A test plain file is never a module: never import or require one, and never name one where a module is asked for
 
@@ -56,10 +56,10 @@ func_id: add-task
 
 ## Keeping test plain files in step
 Only scenarios that exist are kept in step: a change to a functional spec never calls for new ones. In the same ***plain diff as the change:
-- A new functional spec gets its test plain file, empty
+- A new functional spec gets no test plain file, unless the person asks for its tests
 - A functional spec whose body changes has its scenarios, if it has any, reviewed: one that no longer follows from it is changed or taken out, and your reply says so
 - A functional spec split into several: each part gets its own test plain file, and each scenario moves to the part it tests
-- A functional spec taken out: its test plain file is deleted
+- A functional spec taken out: its test plain file, if it has one, is deleted
 - A functional spec moved to another module: its test plain file moves to that module's folder, with `module:` changed
 - A func-id renamed: `func_id:` is renamed in every test plain file bound to it, and the file with it
 

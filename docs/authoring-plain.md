@@ -163,7 +163,7 @@ Every skill in `genome/skills/` can be run from a conversation; most are also us
 | to… | skills |
 | --- | --- |
 | start a project | ask, in the conversation: turri writes it itself, with no skill |
-| add to \*\*\*plain | ask in the conversation: it writes a concept, a functional spec with its empty test plain file, a req or a linked resource itself, by the rules in its prompt, as a \*\*\*plain diff - and, once you ask for tests, the scenarios (see [tests](#tests-when-they-are-asked-for)) |
+| add to \*\*\*plain | ask in the conversation: it writes a concept, a functional spec - with no test plain file, until you ask for its tests - a req or a linked resource itself, by the rules in its prompt, as a \*\*\*plain diff - and, once you ask for tests, the scenarios (see [tests](#tests-when-they-are-asked-for)) |
 | check what is written | `analyze-2-func-specs`, `analyze-func-specs`, `resolve-section-ownership` |
 | fix what is written | `break-down-func-spec`, `resolve-spec-conflict`, `debug-specs` |
 | restructure modules | `refactor-module`, `consolidate-concepts` |

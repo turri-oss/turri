@@ -55,7 +55,7 @@ Running `todo add Buy milk` and then `todo list` prints `1 Buy milk`.
 
 Both sections are always there; either may be empty. turri hands the reference one test folder per module of the chain - `<test-dir>/<module>` for each, `test-dir` from [the config](config.md) - so a test plain file may bind to any module of the chain (`plainFileParser`'s `testDir`). Its scenarios ride on the functional spec it binds to, in the item's `conformance_tests` and `acceptance_tests` - `{id, text, linked_resources}` each - and the tree's `test plain files` names each file, relative to the module's folder, with the functional spec it binds to.
 
-**Completeness.** turri always asks the reference's completeness check (`require_test_plain_files`): every functional spec of the chain must have a test plain file, which may hold no scenario. The reference asks it only when the project names a conformance testing script. A module parsed without its test folder - the parser's own tests, a fixture - binds nothing and checks nothing.
+**Completeness.** turri never asks the reference's completeness check (`require_test_plain_files`), which wants a test plain file for every functional spec of the chain whenever the project names a conformance testing script. In turri a functional spec with no test plain file is not tested, as one whose file is empty - and no file is the way to say so. `parseProject` keeps the reference's switch. A module parsed without its test folder - the parser's own tests, a fixture - binds nothing and checks nothing.
 
 ## Checking \*\*\*plain
 

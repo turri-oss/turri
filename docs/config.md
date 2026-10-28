@@ -169,7 +169,7 @@ A job keeps the model it was queued with: choosing another holds for what is que
 
 ## Conformance tests
 
-No key turns them on or off: what is tested is the functional specs with scenarios - the conformance and acceptance scenarios of each one's test plain file, `<test-dir>/<module>/<func-id>.plain` - in every module with `***test reqs***`. A functional spec with an empty test plain file is not tested, and a module with no functional spec with scenarios gets no conformance pulse at all - but keeps the codebase's existing tests passing. `test-dir` says where the test plain files are. To have a functional spec tested, write its scenarios: the chat writes them with `change_plain` when you ask for conformance tests (see [conformance tests](regenerating.md#conformance-tests)).
+No key turns them on or off: what is tested is the functional specs with scenarios - the conformance and acceptance scenarios of each one's test plain file, `<test-dir>/<module>/<func-id>.plain` - in every module with `***test reqs***`. A functional spec with no test plain file, or an empty one, is not tested, and a module with no functional spec with scenarios gets no conformance pulse at all - but keeps the codebase's existing tests passing. `test-dir` says where the test plain files are. To have a functional spec tested, write its scenarios: the chat writes them with `change_plain` when you ask for conformance tests (see [conformance tests](regenerating.md#conformance-tests)).
 
 ## The testing scripts
 

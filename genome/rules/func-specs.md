@@ -99,7 +99,7 @@ Every new functional spec - one or a batch - is checked before it is written int
 2. Judge its size against the complexity limit; when it is too big, split it with `break-down-func-spec` and check each part from step 1
 3. Check it for conflicts with **one** `analyze-func-specs` call over the new functional spec and every existing one in the file and its `requires` chain - never pair by pair. Resolve each conflicting pair it reports with `resolve-spec-conflict`, then run it again over what changed until it is compatible
 4. Pick its func-id per `semantic-ids.md`, unique in the module - and in the batch
-5. Only then write it in, where it belongs (see Placement), as its `# <func-id>` heading and body, with its test plain file, empty, in the same ***plain diff (see `test-plain-files.md`)
+5. Only then write it in, where it belongs (see Placement), as its `# <func-id>` heading and body - with no test plain file, unless the person asks for its tests (see `test-plain-files.md`)
 
 A batch is checked one functional spec at a time, in order: each one's conflict check includes those of the batch already written in. Never write the whole batch in first and check it afterwards - a bad functional spec already in the file skews every later check. A few functional specs are no reason to skip a check.
 
@@ -143,7 +143,7 @@ Put a new functional spec where it fits the module as it reads, not at the end b
 ## Test scenarios live in test plain files
 - A module never holds a `***conformance tests***` or `***acceptance tests***` section, nested or top-level
 - A functional spec's conformance and acceptance scenarios go into its test plain file, `tests/<module>/<func-id>.plain`, and are written only when the person asks for tests (see *Writing scenarios* in `test-plain-files.md`)
-- A functional spec and its test plain file change together, in the same ***plain diff: a new one gets its test plain file, empty; a changed one has its scenarios, if any, reviewed; a split, moved, renamed or deleted one takes its test plain file with it (see *Keeping test plain files in step* in `test-plain-files.md`)
+- A functional spec and its test plain file change together, in the same ***plain diff: a new one gets none, unless its tests are asked for; a changed one has its scenarios, if any, reviewed; a split, moved, renamed or deleted one takes its test plain file, if it has one, with it (see *Keeping test plain files in step* in `test-plain-files.md`)
 
 ## Format
 

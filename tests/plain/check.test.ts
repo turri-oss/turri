@@ -69,27 +69,22 @@ describe("checkPlainFile", () => {
     );
   });
 
-  it("lists every functional spec without a test plain file at once", () => {
+  it("passes a functional spec with no test plain file - not tested, as one whose file is empty - its own or a required module's", () => {
     write("todo.plain", TODO);
-    write("tests/todo/add-task.plain", testPlainFile("todo", "add-task"));
+    write("tests/todo/add-task.plain", testPlainFile("todo", "add-task", "# add-one\nIt adds one.\n"));
     const result = checkPlainFile(join(dir, "todo.plain"));
 
-    expect(result.ok).toBe(false);
-    expect(formatCheckResults([result])).toBe(
-      [
-        "FAIL  todo.plain  2 functional specs without a test plain file",
-        "        list-tasks - add tests/todo/list-tasks.plain",
-        "        delete-task - add tests/todo/delete-task.plain",
-      ].join("\n"),
-    );
-  });
+    expect(result.ok).toBe(true);
+    expect(formatCheckResults([result]).split("\n").slice(0, 4)).toEqual([
+      "PASS  todo.plain  3 functional specs",
+      "        add-task     tests/todo/add-task.plain  1 conformance",
+      "        list-tasks   no test plain file         no scenarios - not tested",
+      "        delete-task  no test plain file         no scenarios - not tested",
+    ]);
 
-  it("names a required module's functional spec without a test plain file by its module", () => {
     write("base.plain", "***implementation reqs***\n\n- A requirement.\n\n***functional specs***\n\n# start\nIt starts.\n");
     write("app.plain", "---\nrequires:\n  - base\n---\n\n***implementation reqs***\n\n- A requirement.\n\n***functional specs***\n\n# run\nIt runs.\n");
-    write("tests/app/run.plain", testPlainFile("app", "run"));
-
-    expect(checkPlainFile(join(dir, "app.plain")).problems).toEqual(["base:start - add tests/base/start.plain"]);
+    expect(checkPlainFile(join(dir, "app.plain")).ok).toBe(true);
   });
 
   it("sees a linked resource written after a check that did not find it - in a folder of its own - and one taken away", () => {
@@ -274,10 +269,12 @@ describe("checking what a change touched", () => {
     expect(formatCheckResults(checkTouchedPlain([join(dir, "tests", "stray.plain")]))).toContain("tests/stray.plain - move it to tests/todo/ (its module: todo)");
   });
 
-  it("checks the module of a test plain file the change deleted", () => {
+  it("checks the module of a test plain file the change deleted - which passes, that functional spec not tested now", () => {
     todo();
     unlinkSync(join(dir, "tests", "todo", "delete-task.plain"));
-    expect(checkTouchedPlain([join(dir, "tests", "todo", "delete-task.plain")])[0]!.problems).toEqual(["delete-task - add tests/todo/delete-task.plain"]);
+    const [result] = checkTouchedPlain([join(dir, "tests", "todo", "delete-task.plain")]);
+    expect(result).toMatchObject({ ok: true, moduleName: "todo" });
+    expect(result!.functionalSpecs!.find((spec) => spec.funcId === "delete-task")!.testPlainFiles).toEqual([]);
   });
 });
 

@@ -2669,10 +2669,10 @@ function checkPlainTool(cwd: string) {
     name: "validate",
     label: "Validate spec",
     description:
-      "Validate one or more .plain modules without rendering: parses each with its test plain files, resolves its " +
+      "Validate one or more .plain modules without regenerating: parses each with its test plain files, resolves its " +
       "imports and required modules, and reports every syntax, concept and structure error with the line it is on, " +
-      "every functional spec without a test plain file, and every test plain file outside its module's folder. A " +
-      "module that passes lists each functional spec with its test plain file and its scenarios. Pass a directory to " +
+      "and every test plain file outside its module's folder. A module that passes lists each functional spec with its " +
+      "test plain file and its scenarios - one with no test plain file is not tested. Pass a directory to " +
       "check every .plain module in it; a test plain file or test folder is refused - name its module. Fast, free, and offline.",
     promptSnippet: "validate a .plain spec, regenerating nothing",
     promptGuidelines: [

@@ -10,9 +10,7 @@ import {
   ACCEPTANCE_TESTS,
   CONFORMANCE_TESTS,
   getFunctionalSpecs,
-  REQUIRED_FUNCTIONAL_SPECS,
   TEST_PLAIN_FILES,
-  type InheritedSpecificationItem,
   type MarshalledPlainSource,
   type TestPlainFileBinding,
 } from "./spec.ts";
@@ -71,22 +69,6 @@ export function previousSyntaxStep(file: string): string {
 /** A path from the project's folder, as a person reads it. */
 function shown(path: string, projectDir: string): string {
   return relative(projectDir, resolve(path)).split(sep).join("/");
-}
-
-/**
- * The functional specs of a module's chain that no test plain file binds to, in order - its required modules' first -
- * each as `module:func-id` (the func-id alone for the module's own) and the test plain file it needs.
- */
-export function missingTestPlainFiles(moduleName: string, tree: MarshalledPlainSource, testDir: string, projectDir: string): string[] {
-  const bindings = Object.values((tree[TEST_PLAIN_FILES] as Record<string, TestPlainFileBinding> | undefined) ?? {});
-  const bound = new Set(bindings.map((binding) => `${binding.module}\0${binding.func_id}`));
-  const chain = [
-    ...((tree[REQUIRED_FUNCTIONAL_SPECS] as InheritedSpecificationItem[] | undefined) ?? []).map((item) => ({ module: item.module, funcId: item.id })),
-    ...getFunctionalSpecs(tree).map((item) => ({ module: moduleName, funcId: item.id })),
-  ];
-  return chain
-    .filter(({ module, funcId }) => !bound.has(`${module}\0${funcId}`))
-    .map(({ module, funcId }) => `${module === moduleName ? funcId : `${module}:${funcId}`} - add ${shown(join(testDir, module, `${funcId}${PLAIN_SOURCE_FILE_EXTENSION}`), projectDir)}`);
 }
 
 /**
@@ -171,16 +153,6 @@ export function checkPlainFile(file: string, templateDirs: string[] = []): Check
       testDir,
       requireTestPlainFiles: false,
     });
-    const missing = missingTestPlainFiles(moduleName, tree, testDir, projectDir);
-    if (missing.length > 0) {
-      return {
-        file,
-        ok: false,
-        moduleName,
-        errorType: `${missing.length} functional spec${missing.length === 1 ? "" : "s"} without a test plain file`,
-        problems: missing,
-      };
-    }
     // Scenarios with a step of adding tests skipped - the test reqs, or the conformance testing script: a warning, never a failure.
     const gaps = testingGapsOf(moduleName, path, tree, projectDir, templateDirs);
     const bindings = Object.entries((tree[TEST_PLAIN_FILES] as Record<string, TestPlainFileBinding> | undefined) ?? {});
@@ -316,7 +288,8 @@ export function formatCheckResults(results: CheckResult[]): string {
           ? `PASS  ${name}  no functional specs yet${requires}`
           : `PASS  ${name}  ${specs.length} functional spec${specs.length === 1 ? "" : "s"}${requires}`,
       );
-      lines.push(...columns(specs.map((spec) => [spec.funcId, spec.testPlainFiles.join(", "), scenarioCounts(spec)])));
+      // No test plain file is a functional spec not tested, as an empty one is - and the way to say so.
+      lines.push(...columns(specs.map((spec) => [spec.funcId, spec.testPlainFiles.length > 0 ? spec.testPlainFiles.join(", ") : "no test plain file", scenarioCounts(spec)])));
       for (const warning of result.warnings ?? []) lines.push(`WARN  ${name}  ${warning}`);
     } else {
       lines.push(`FAIL  ${name}  ${result.errorType ?? "Error"}`);

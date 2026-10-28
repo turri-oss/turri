@@ -306,7 +306,7 @@ A change that regenerates nothing - definitions moved to a common module, reqs r
 
 ## Conformance tests
 
-The unit tests are written by the agent that wrote the code. Conformance tests are the other half: black box, end to end - and what they test is the scenarios. Each functional spec has a test plain file, `<test-dir>/<module>/<func-id>.plain` ([authoring](authoring-plain.md#what-plain-is-made-of)), with its conformance scenarios under `***conformance tests***` and its acceptance scenarios under `***acceptance tests***`, each a `# <scenario-id>` heading and its text. A functional spec with scenarios is tested; one with an empty test plain file is not. There is no setting for it: to have a functional spec tested, write its scenarios - in the chat, its agent writes them with `change_plain` when you ask for conformance tests.
+The unit tests are written by the agent that wrote the code. Conformance tests are the other half: black box, end to end - and what they test is the scenarios. A functional spec's scenarios are in its test plain file, `<test-dir>/<module>/<func-id>.plain` ([authoring](authoring-plain.md#what-plain-is-made-of)), with its conformance scenarios under `***conformance tests***` and its acceptance scenarios under `***acceptance tests***`, each a `# <scenario-id>` heading and its text. A functional spec with scenarios is tested; one with no test plain file, or an empty one, is not. There is no setting for it: to have a functional spec tested, write its scenarios - in the chat, its agent writes them with `change_plain` when you ask for conformance tests.
 
 ```bash
 turri conform <file.plain>                  # every functional spec with scenarios
