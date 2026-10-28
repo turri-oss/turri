@@ -42,6 +42,10 @@ function outsideBuiltCode(tool: AnyTool, dir: string): AnyTool {
       if (relative(dir, path).split(sep).includes("plain_modules")) {
         throw new Error(`Not written: ${shortPath(path)} is built code. A release never changes it - a fix belongs in the spec.`);
       }
+      // The ***plain - a module, a test plain file - is the person's: a release that finds it wrong says so, never rewrites it.
+      if (path.endsWith(".plain")) {
+        throw new Error(`Not written: ${shortPath(path)} is ***plain. A release never changes it - say what is wrong with it instead.`);
+      }
       return tool.execute(toolCallId, params, signal, onUpdate, ctx);
     },
   };
