@@ -86,3 +86,7 @@ _Avoid_: test runner
 **Conformance testing script**:
 The project's script that runs the conformance and acceptance tests against the code; only it decides whether they pass.
 _Avoid_: test runner
+
+**Test advisor**:
+turri's background check of whether a new or changed functional spec needs explicit testing scenarios, and the one that writes them - with the test reqs and conformance testing script they need - when it does.
+_Avoid_: test classifier, scenario writer

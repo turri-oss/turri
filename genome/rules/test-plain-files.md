@@ -10,6 +10,7 @@ A test plain file holds the test scenarios of one functional spec. Conformance s
 - Every test plain file of a module lives in `tests/<module>/`, with `tests/` beside the module (`test-dir:` in `config.turri.yaml` can name another folder). This is a rule, not a convention: a file's folder matches its `module:`, and a `.plain` file in `tests/` outside a module's folder is an error `turri validate` reports
 - Name the file after its functional spec, `tests/<module>/<func-id>.plain`; the name is convention, the frontmatter is what binds it
 - A functional spec with no scenarios has no test plain file: it is not tested. Write one only to give a functional spec scenarios, and never an empty one - an empty file says no more than none, and is one more file to keep in step
+- turri's test advisor may add a test plain file for a new or changed functional spec it judges needs testing, with the test reqs and conformance testing script it needs (see `turri-regeneration.md`). Keep its scenarios in step as any others; a missing file stays preferred to an empty one
 - More than one test plain file may bind to one functional spec: their scenarios are merged, and the scenario-ids must be unique across them. Write one file per functional spec, and keep a person's extra files as they are
 - A test plain file is never a module: never import or require one, and never name one where a module is asked for
 
@@ -64,7 +65,7 @@ Only scenarios that exist are kept in step: a change to a functional spec never 
 - A func-id renamed: `func_id:` is renamed in every test plain file bound to it, and the file with it
 
 ## Writing scenarios
-Nothing about testing exists until the person asks for it: a module imports no conformance template, and its test plain files are empty. The first time the person asks for tests in a module, do three things, in this order, each a visible change:
+Nothing about testing exists until the person asks for it, or turri's test advisor writes it: a module imports no conformance template, and its functional specs have no test plain files. The first time the person asks for tests in a module, do three things, in this order, each a visible change:
 1. **Test reqs:** import the stack's conformance template, `stdlib/<kind>/conformance/<stack>` (see `stdlib.md`), or write the module's own `***test reqs***` when it has no stack from the standard library (see `test-reqs.md`)
 2. **The conformance testing script:** write it with `implement-conformance-testing-script`, if the project has none for the module's stack
 3. **The scenarios**, as below
