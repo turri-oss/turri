@@ -54,6 +54,30 @@ function stdlibStackOf(plainFile: string): { kind: string; stack: string } | und
   return visit(resolve(plainFile));
 }
 
+/**
+ * The standard library's conformance template for a module's stack, `stdlib/<kind>/conformance/<stack>`, when the module
+ * imports a stack template that has one - nothing otherwise.
+ */
+export function conformanceTemplateOf(plainFile: string): string | undefined {
+  const template = stdlibStackOf(plainFile);
+  const conformance = template !== undefined ? `stdlib/${template.kind}/conformance/${template.stack}` : undefined;
+  return conformance !== undefined && existsSync(join(STDLIB_ROOT, `${conformance}.plain`)) ? conformance : undefined;
+}
+
+/**
+ * The conformance testing script a module's tests would run with, looked for under its stack - the one pinned, else
+ * the one `stackForModule` gives it - or nothing, with why when there is a why.
+ */
+export function conformanceScriptOf(plainFile: string, buildDir?: string): { script?: string; note?: string } {
+  const stack = stackPinned() ? undefined : stackForModule(plainFile);
+  const scripts = () => {
+    const root = buildDir !== undefined ? projectRootFor(plainFile, buildDir) : projectDirOf(plainFile);
+    return findTestScripts(root, plainFile, buildDir);
+  };
+  const found = stackPinned() ? scripts() : withStack(stack, scripts);
+  return { ...(found.conformance !== undefined ? { script: found.conformance } : {}), ...(found.notes?.conformance !== undefined ? { note: found.notes.conformance } : {}) };
+}
+
 /** The functional specs of a codebase's tree - its own, or ones it inherits - that have scenarios, as `module:func-id`, a module below's first. */
 function withScenarios(tree: MarshalledPlainSource, moduleName: string): string[] {
   const items = (section: string) => ((tree[section] as Array<{ id?: string; module?: string }> | undefined) ?? []);
@@ -75,30 +99,21 @@ export function testingGap(input: { moduleName: string; plainFile: string; tree:
   const { moduleName, plainFile } = input;
   const tested = withScenarios(input.tree, moduleName);
   if (tested.length === 0) return undefined;
-  const stack = stackPinned() ? undefined : stackForModule(plainFile);
-  const scripts = () => {
-    const root = input.buildDir !== undefined ? projectRootFor(plainFile, input.buildDir) : projectDirOf(plainFile);
-    return findTestScripts(root, plainFile, input.buildDir);
-  };
-  const found = stackPinned() ? scripts() : withStack(stack, scripts);
+  const found = conformanceScriptOf(plainFile, input.buildDir);
   const scriptStep = "write the conformance testing script with the implement-conformance-testing-script skill";
   if (((input.tree[TEST_REQUIREMENTS] as unknown[] | undefined) ?? []).length === 0) {
-    const template = stdlibStackOf(plainFile);
-    const conformance = template !== undefined ? `stdlib/${template.kind}/conformance/${template.stack}` : undefined;
-    const reqs =
-      conformance !== undefined && existsSync(join(STDLIB_ROOT, `${conformance}.plain`))
-        ? `import the stack's conformance template, ${conformance}`
-        : "write the module's own ***test reqs***";
+    const conformance = conformanceTemplateOf(plainFile);
+    const reqs = conformance !== undefined ? `import the stack's conformance template, ${conformance}` : "write the module's own ***test reqs***";
     return {
       step: "test reqs",
       text:
         `${moduleName} has scenarios to test - ${named(tested)} - but no ***test reqs***, so its conformance tests cannot be written - the test reqs are ` +
-        `the first step of adding tests. Next step: ${reqs}, with change_plain${found.conformance === undefined ? `; then ${scriptStep}` : ""}.`,
+        `the first step of adding tests. Next step: ${reqs}, with change_plain${found.script === undefined ? `; then ${scriptStep}` : ""}.`,
       short: "scenarios not tested: no test reqs",
     };
   }
-  if (found.conformance === undefined) {
-    const note = found.notes?.conformance;
+  if (found.script === undefined) {
+    const note = found.note;
     return {
       step: "conformance testing script",
       text:

@@ -44,6 +44,24 @@ A yes whose evidence is empty or malformed - two readings that are the same - co
 
 The **report** is what the advisor's file keeps: the questions that were a yes with their evidence, and each input, either agreed - with the readers' output - or split, with its readings.
 
+## What it writes on a yes
+
+What the [step-7 guard](regenerating.md#the-steps-of-adding-tests) would refuse the scenarios for, in turn - only what is missing:
+
+1. **The \*\*\*test reqs\*\*\*, in the tip** - the module at the top of the chain, where its conformance tests live. When the tip's stack has a conformance template in the standard library, `stdlib/<kind>/conformance/<stack>`, turri adds its import to the tip's frontmatter itself. Otherwise one call on the advisor's model writes a `***test reqs***` section, each req a line about `:ConformanceTests:`.
+2. **The conformance testing script,** for the tip's stack: the `implement-conformance-testing-script` skill. It is accepted unread, as a script the chat writes is - it runs on this machine, unfenced, like every testing script (see [the sandbox](sandbox.md)).
+3. **The scenarios:** the `write-test-scenarios` skill, from the report, into `tests/<module>/<func-id>.plain`. It covers each input of the report, an agreed input with the readers' output, and settles a split one by the reading most consistent with the functional spec, its module and the project's conventions, saying why. Its gate's judge - the `judge` role - checks that each scenario covers an input of the report, that an agreed input gets the readers' output, that a split one carries the writer's reading and why, that the scenario-ids are unique, and that the test plain file passes `validate`.
+
+A test reqs section and a script already there are left as they are.
+
+**In the background, with no sign of it:** no pulse in the panel, no spinner, no chat turn. The skills are started by turri itself rather than by `cultivate`, with nobody to ask: a gate that cannot be satisfied is not let through. They work on a copy of the project's \*\*\*plain - its `.plain` files, test plain files, linked resources, testing scripts and `config.turri*.yaml` - in `.turri/advisor/work/`, and everything lands at the end as one \*\*\*plain change, brought up through the work loop as any change is. Test plain files and \*\*\*test reqs\*\*\* are not in the code record, so landing never steers or stops a code pulse: the module's conformance pulse follows once its code is built, as for scenarios you write. Stopped - its text changed, turri quits - the copy is thrown away, and nothing half-written reaches the project. A text, or a file the change touches, that changed in the project while it wrote drops the work instead of landing it, and the functional spec is looked at again as it now is. In [debug mode](config.md#debug-mode) the copy is kept, with its agents' sessions and logs.
+
+**Your edits win.** A scenario stays turri's only while its scenario-id and text hash match what the advisor's file has for it. When a functional spec's text changes and its scenarios are all still turri's, it is looked at again, and its writer may replace them; one you changed or deleted makes them yours, and the functional spec is left to [today's review](regenerating.md#conformance-tests) from then on.
+
+A failed gate or a model error writes nothing, records `failed` and `advisor.failed`, and is tried again only once the functional spec's text changes.
+
+**`write-test-scenarios` is not how the chat writes scenarios.** Asked for scenarios - "write conformance scenarios for core:add-task" - the chat decides and writes them itself, as a \*\*\*plain change you see, whatever `test-advisor` says. The skill runs in the foreground only when you ask for it by name, through `cultivate`.
+
 ## The setting and its model
 
 `test-advisor: true | false` in `config.turri.yaml`, `true` when it is left out - `/turri-config` sets it. `false` turns off only the advisor's own work: asked for scenarios, the chat writes them as it always has, whatever the setting says.

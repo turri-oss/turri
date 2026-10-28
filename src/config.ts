@@ -373,6 +373,14 @@ export function advisorModel(config: ProjectConfig): string | undefined {
   return modelSpec(inheritModel(roleModel(config, "advisor"), coding !== undefined ? { model: coding } : undefined));
 }
 
+/**
+ * The model the judges of a skill turri runs by itself - the test advisor's scenarios - are given: the `judge` role's,
+ * its model alone, as a gate's judges take one. Undefined when the config names none.
+ */
+export function judgeModelOf(plainFile: string): string | undefined {
+  return projectModels(configForSpec(plainFile)).judge?.model;
+}
+
 /** How long each turn of a role's agents may take, in milliseconds: its own, `default`'s, `turn-limit:`'s - or undefined, the harness's default. */
 export function roleTurnLimitMs(config: Pick<ProjectConfig, "models" | "turnLimit">, role: AgentRole | undefined): number | undefined {
   const models = config.models ?? {};

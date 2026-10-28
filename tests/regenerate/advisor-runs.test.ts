@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { currentStopSignal, JobStoppedError } from "../../src/regenerate/activity.ts";
-import { advisorEntry, readAdvisor } from "../../src/regenerate/advisor-records.ts";
+import { advisorEntry, putAdvisorEntry, readAdvisor, textHash } from "../../src/regenerate/advisor-records.ts";
 import { createTestAdvisor } from "../../src/regenerate/advisor-runs.ts";
 import { createJobRegistry } from "../../src/regenerate/jobs.ts";
 import { onLedgerEvent, startLedger, stopLedger, type LedgerEntry } from "../../src/regenerate/ledger.ts";
@@ -137,6 +137,40 @@ describe("which functional specs the test advisor takes", () => {
     advisor.seen(lookAt("app.plain"));
     await advisor.idle();
     expect(asked.map((subject) => subject.funcId)).toEqual(["say-bye"]);
+  });
+
+  it("takes again a functional spec whose scenarios are all turri's, and leaves it once the person edited one", async () => {
+    const scenario = "Running it prints hello.";
+    const writeScenario = (text: string) => {
+      mkdirSync(join(dir, "tests", "app"), { recursive: true });
+      writeFileSync(join(dir, "tests", "app", "say-hello.plain"), testPlainFile("app", "say-hello", { conformance: [`# greets\n${text}`] }));
+    };
+    writeFileSync(join(dir, "app.plain"), module([["say-hello", "Say hello."]]));
+    writeScenario(scenario);
+    putAdvisorEntry(dir, "app", "app.plain", { funcId: "say-hello", hash: textHash("Say hello."), state: "yes", tip: "app.plain", scenarios: [{ kind: "conformance", id: "greets", hash: textHash(scenario) }] });
+    const previous: unknown[] = [];
+    const yes = { verdict: "yes" as const, questions: [{ question: "cost" as const, evidence: "Lost greetings." }], inputs: [] };
+    const advisor = createTestAdvisor({
+      advise: async () => yes,
+      write: async (work) => {
+        previous.push(...work.previous);
+        return { scenarios: work.previous, testReqs: false, script: false };
+      },
+    });
+    // Its text changed, its scenarios all turri's: taken again, turri's scenarios its writer's to replace.
+    writeFileSync(join(dir, "app.plain"), module([["say-hello", "Say hello, twice."]]));
+    advisor.seen(lookAt("app.plain"));
+    await advisor.idle();
+    expect(previous).toEqual([{ kind: "conformance", id: "greets", hash: textHash(scenario) }]);
+    expect(events.map((event) => event.kind)).toEqual(["advisor.classified", "advisor.wrote"]);
+
+    // The person edits turri's scenario: it is theirs now, and a change to the text is left to today's review.
+    writeScenario("Running it prints hello, and exits 0.");
+    writeFileSync(join(dir, "app.plain"), module([["say-hello", "Say hello, three times."]]));
+    advisor.seen(lookAt("app.plain"));
+    await advisor.idle();
+    expect(events).toHaveLength(2);
+    expect(advisorEntry(dir, "app", "say-hello")?.hash).toBe(textHash("Say hello, twice."));
   });
 
   it("does nothing with test-advisor: false", async () => {

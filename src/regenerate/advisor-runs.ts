@@ -43,6 +43,14 @@ import { advise as adviseByModel, type AdvisorCallOptions, type AdvisorSubject }
 /** How many functional specs the advisor works on at once. */
 export const ADVISOR_PARALLEL = 2;
 
+/** Thrown by the writer when what it wrote cannot land as it is: the text it judged, or a file it changed, changed in the project meanwhile. */
+export class AdvisorDroppedError extends Error {
+  constructor(why: string) {
+    super(why);
+    this.name = "AdvisorDroppedError";
+  }
+}
+
 /** What the writer is given on a yes: the functional spec, its report, and where its chain's tests live. */
 export interface AdvisorWork {
   project: string;
@@ -274,12 +282,21 @@ export function createTestAdvisor(options: TestAdvisorOptions = {}): TestAdvisor
         previous,
         signal: work.controller.signal,
       });
-      entryOf("yes", { report, scenarios: written.scenarios });
+      // Landed just as the text changed again: the newer text's entry stays as it is, and knows these scenarios for turri's.
+      const now = advisorEntry(work.project, work.module, work.funcId);
+      if (work.dropped === true && now !== undefined && now.hash !== work.hash) putAdvisorEntry(work.project, work.module, relative(work.project, work.plainFile), { ...now, scenarios: written.scenarios });
+      else entryOf("yes", { report, scenarios: written.scenarios });
       record({ kind: "advisor.wrote", spec: spec(work), scenarios: written.scenarios.map((scenario) => scenario.id), testReqs: written.testReqs, script: written.script }, place(work));
       options.onLanded?.({ project: work.project, module: work.module, funcId: work.funcId, report, written, built: builtNow(work) });
     } catch (error) {
       if (work.dropped === true) {
         record({ kind: "advisor.dropped", spec: spec(work) }, place(work));
+        return;
+      }
+      // The ***plain moved under the writer, perhaps with no loop to see it: the functional spec is taken again as it is now.
+      if (error instanceof AdvisorDroppedError) {
+        record({ kind: "advisor.dropped", spec: spec(work) }, place(work));
+        setTimeout(() => retake(work), 0);
         return;
       }
       // Stopped with the session: left pending, for the next start.
@@ -292,6 +309,16 @@ export function createTestAdvisor(options: TestAdvisorOptions = {}): TestAdvisor
 
   /** Whether the tip's code is built - it has a code record. */
   const builtNow = (work: Work): boolean => readRecord(buildDirUnder(modulesRoot(work.project), basename(work.tip).replace(/\.plain$/, ""))) !== null;
+
+  /** A functional spec taken again, as its module's .plain file has it now - unless it is gone, or the person's to test. */
+  const retake = (work: Work) => {
+    if (stopped) return;
+    const item = currentItem(work.plainFile, work.funcId);
+    const known = advisorEntry(work.project, work.module, work.funcId);
+    if (item === undefined || personsScenarios(known, item).length > 0) return;
+    const text = item.markdown.trim();
+    take({ project: work.project, module: work.module, funcId: work.funcId, plainFile: work.plainFile, tip: work.tip, text, hash: textHash(text) }, known);
+  };
 
   const advisor: TestAdvisor = {
     seen(look) {

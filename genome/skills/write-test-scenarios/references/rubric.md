@@ -1,0 +1,11 @@
+# The scenarios cover the report, and nothing else
+
+The artifact holds the path of a test plain file, the test advisor's report on its functional spec - the questions that were a yes and the inputs to cover, each agreed with its output or split with its readings - the reading the writer took for every split input and why, which input each scenario covers, and what `validate` said. Read the test plain file from disk, and the module it names. Check every criterion. One violation fails the review; name it, with the scenario-id or the input and the words that are wrong.
+
+1. **Every scenario covers an input of the report.** Each scenario in the file that the artifact lists covers at least one input of the report, as it says. None is about something the report does not give.
+2. **Every input is covered.** Each input of the report is covered by at least one scenario.
+3. **An agreed input gets the readers' output.** A scenario covering an agreed input expects exactly the output the report gives it - not another one, not a vaguer one.
+4. **A split input carries the writer's reading, and why.** For every split input, the artifact names the reading taken, which is one of the report's readings, gives a reason for it, and the scenario covering it expects that reading.
+5. **The scenario-ids are unique.** No two scenarios in the file share a scenario-id, and each is lowercase letters, digits and hyphens.
+6. **The file checks.** The artifact shows `validate` passing on the module, with the file in the right place: `tests/<module>/<func-id>.plain` (or under the project's test folder), its frontmatter `module:` and `func_id:` naming the functional spec, `***conformance tests***` then `***acceptance tests***`.
+7. **The scenarios follow the functional spec.** None contradicts, narrows or extends it; each acts through the interface it names, with concrete values, and states one checkable outcome.

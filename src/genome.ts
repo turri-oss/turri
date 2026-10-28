@@ -4,6 +4,7 @@ import { Command, MemorySaver } from "@langchain/langgraph";
 import { compileSkill, type Reporter } from "./graph.ts";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { createExecutor } from "./pi.ts";
+import type { AgentRole } from "./config.ts";
 import { plainWriteTools } from "./plain-files.ts";
 import { toolchainsBlock } from "./stack.ts";
 import { clearOfStop, describeToolCall, describeToolResult, withStopSignal } from "./regenerate/activity.ts";
@@ -60,6 +61,10 @@ export interface RunSkillOptions {
   messages?: SkillMessages;
   /** "provider/model-id" for the executor and the judges. Omitted: pi's default. */
   model?: string;
+  /** "provider/model-id" for the judges alone, when not the executor's: a gate's own `model` still wins. */
+  judgeModel?: string;
+  /** The executor's role: its config (`models:`) laid over `model`, as for any agent. Omitted: none - the model given. */
+  role?: AgentRole;
   /** Lets steps build functionalities in the background while the interview continues. */
   renderQueue?: WorkLoop;
   /** What the user has already said, so the skill does not re-ask it. */
@@ -222,6 +227,7 @@ async function runStoppable(opts: RunSkillOptions): Promise<RunSkillResult> {
     customTools,
     tools: [...builtins, ...names],
     model: opts.model,
+    ...(opts.role !== undefined ? { role: opts.role } : {}),
     // A skill writes specs; the rules it is held to are in its system prompt - and what this machine can build, so the
     // stack it offers or chooses is one that can be regenerated here.
     rules: true,
@@ -312,7 +318,7 @@ async function runStoppable(opts: RunSkillOptions): Promise<RunSkillResult> {
       runDir,
       executor,
       report: opts.report,
-      model: opts.model,
+      model: opts.judgeModel ?? opts.model,
       context: opts.context,
       liveReviewers,
       startAt: resumed?.step,

@@ -35,7 +35,7 @@ metadata:
 ...
 ```
 
-A skill declares its steps with a `## Steps` section whose `###` headings are the steps; without it the whole skill is one step, which is what most skills are. Steps are never inferred from `###` headings elsewhere in the body - prose skills are full of those. Each gate becomes a conditional edge after its step; a single-step skill is gated by naming the skill itself. Of the skills turri ships, `convert-old-syntax` declares one - after its `rewrite`, two judges, reading the files themselves, check that moving a module to func-id headings and test plain files lost, changed and added nothing - and a project's own skill can declare its own.
+A skill declares its steps with a `## Steps` section whose `###` headings are the steps; without it the whole skill is one step, which is what most skills are. Steps are never inferred from `###` headings elsewhere in the body - prose skills are full of those. Each gate becomes a conditional edge after its step; a single-step skill is gated by naming the skill itself. Of the skills turri ships, `convert-old-syntax` declares one - after its `rewrite`, two judges, reading the files themselves, check that moving a module to func-id headings and test plain files lost, changed and added nothing - and `write-test-scenarios` another - one judge checks the scenarios it wrote against the [test advisor](test-advisor.md)'s report - and a project's own skill can declare its own.
 
 `command-only: true` under `metadata:` keeps a skill from the model: it is started only by the person, with its slash command. None of turri's own is; turri registers the command for every such skill, the project's own too. Typed, the command puts what was typed in the chat as the person's message, and lets `cultivate` start the skill once - and so does an option starting with the command - a project's `/release-notes - for this release` - picked in the conversation's `ask_user` (`chosenCommand` in `src/skills.ts`). The answer tells the model to call `cultivate` for it at once, with the person's request word for word as its context (`startPicked`), so they never type the command after picking it; the run starting uses that up, so the model cannot start it again later on its own. Without either, `cultivate` refuses it and the model is told how the person starts it; the skill's line in `cultivate`'s list says so too.
 
@@ -58,6 +58,10 @@ What a run changed is part of its result: every file of the project's \*\*\*plai
 A skill acts on the work loop with the conversation's own tools, on the conversation's loop - never copies of them (`src/loop-tools.ts`). Every skill with the loop has `drift`: what is left to regenerate, what is regenerating, and "Fully regenerated" once nothing is. One that lists `regenerate` and `halt` in `allowed-tools` can regenerate what a module's \*\*\*plain holds and halt a pulse, with why.
 
 Each step is told where its skill's files are, so a path it names - `references/intent.md` - and a skill it says to follow - `implement-unit-testing-script` - are found without searching.
+
+## Skills in the background
+
+A skill is usually started in the foreground, by `cultivate`, with the person watching. turri can also start one itself, in the background - the [test advisor](test-advisor.md) does, with `implement-conformance-testing-script` and `write-test-scenarios`. Background is how a skill is started, not anything in its `SKILL.md`: the same skill runs either way. Started in the background, it has nobody to ask - no `ask_user`, and a gate that cannot be satisfied is not let through - and shows nowhere: no panel, no spinner, no chat turn. It works on a copy of the project's \*\*\*plain, and what it wrote lands at the end as one \*\*\*plain change, or not at all: its stop signal (`runSkill`'s `signal`) throws the copy away. Its agent runs on its starter's role - `advisor` - and its judges on the `judge` role's model.
 
 ## What the harness enforces, not the model
 

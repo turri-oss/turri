@@ -32,11 +32,14 @@ import { createSteeringStore, EVERY_MODULE, moduleNameOf, queueSectionOf, steeri
 import { askedForCommandLine, refusal, selfInvocation, TOOLS_NOT_CLI } from "./self-invocation.ts";
 import { NEW_PROJECT } from "./new-project.ts";
 import { describeChoices, describeResolution, type ModelChoices, modelFor, type RenderWork, resolveModel } from "./regenerate/engine.ts";
-import { checkPlainFile, checkPlainTargets, formatCheckResults } from "./plain/check.ts";
+import { checkPlainFile, formatCheckResults } from "./plain/check.ts";
+import { checkPlainTool } from "./validate-tool.ts";
 import { changedFiles, projectFiles } from "./plain-files.ts";
 import { whyFailed } from "./regenerate/diagnose-job.ts";
 import { createWorkLoop, describeModules, isUpToDate, previewJobs, type WorkLoop } from "./regenerate/loop.ts";
 import { createTestAdvisor, type TestAdvisor } from "./regenerate/advisor-runs.ts";
+import { createAdvisorWriter } from "./regenerate/advisor-writer.ts";
+import { advisorDir } from "./regenerate/advisor-records.ts";
 import { brandNeon, brandPink, plainPaint } from "./regenerate/plain-palette.ts";
 import { halfBlocks, JELLYFISH_FRAME_MS, JELLYFISH_REST, JELLYFISH_SEQUENCE, JELLYFISH_TEXT_FRAMES } from "./jellyfish.ts";
 import { createJobPanel, didNotPass, keyPressed, PANEL_KEY, spinner } from "./regenerate/job-panel.ts";
@@ -405,12 +408,34 @@ export function createTurriCore(
   deployStates.set(jobs, createDeployState());
   // The test advisor watches what the work loop looks at, and picks up what it left pending when turri last quit.
   if (options.advisor === true) {
+    // The conversation's own words on how the work is to be planned - AGENTS.md the advisor reads itself.
+    const context = (plainFile: string) => [...steeringStore.get(EVERY_MODULE), ...steeringStore.get(moduleNameOf(plainFile))];
     const advisor = createTestAdvisor({
-      // The conversation's own words on how the work is to be planned - AGENTS.md the advisor reads itself.
-      context: (plainFile) => [...steeringStore.get(EVERY_MODULE), ...steeringStore.get(moduleNameOf(plainFile))],
+      context,
+      // On a yes, what is missing is written and lands through the session's loop - made with a chat's models, once one is open.
+      write: createAdvisorWriter({
+        context,
+        loop: () => {
+          try {
+            return sessionLoop(session);
+          } catch {
+            return undefined;
+          }
+        },
+      }),
     });
     advisors.set(jobs, advisor);
-    setTimeout(() => advisor.resume(cwd), 0).unref?.();
+    // Where it may have left work pending: the folder turri runs in, and a project in a folder of it - ***plain kept in plain/.
+    const projects = () => {
+      try {
+        return [cwd, ...readdirSync(cwd, { withFileTypes: true }).filter((entry) => entry.isDirectory() && !entry.name.startsWith(".") && existsSync(advisorDir(join(cwd, entry.name)))).map((entry) => join(cwd, entry.name))];
+      } catch {
+        return [cwd];
+      }
+    };
+    setTimeout(() => {
+      for (const project of projects()) advisor.resume(project);
+    }, 0).unref?.();
   }
 
   // What this session does, as facts, in the project's .turri/ledger - a pulse's own in its project. Said once, in the
@@ -2693,44 +2718,6 @@ function registerDeploy(pi: ExtensionAPI, cwd: string, jobs: JobRegistry, state:
     if (event.reason === "quit") await stopDeployed();
   });
 }
-
-/** validate, for the conversation and for the skills that write specs alike. */
-function checkPlainTool(cwd: string) {
-  return defineTool({
-    name: "validate",
-    label: "Validate spec",
-    description:
-      "Validate one or more .plain modules without regenerating: parses each with its test plain files, resolves its " +
-      "imports and required modules, and reports every syntax, concept and structure error with the line it is on, " +
-      "and every test plain file outside its module's folder. A module that passes lists each functional spec with its " +
-      "test plain file and its scenarios - one with no test plain file is not tested. Pass a directory to " +
-      "check every .plain module in it; a test plain file or test folder is refused - name its module. Fast, free, and offline.",
-    promptSnippet: "validate a .plain spec, regenerating nothing",
-    promptGuidelines: [
-      "Run validate after editing a .plain file, and before telling the user a spec is valid or ready. Never shell out to another renderer to check one.",
-    ],
-    parameters: Type.Object({
-      target: Type.String({ description: "A .plain file, or a directory holding .plain files" }),
-      template_dir: Type.Optional(
-        Type.Array(Type.String(), { description: "Extra template directories" }),
-      ),
-    }),
-    async execute(_id, params) {
-      const results = checkPlainTargets(
-        resolve(cwd, params.target),
-        (params.template_dir ?? []).map((dir) => resolve(cwd, dir)),
-      );
-      const failed = results.filter((result) => !result.ok).length;
-      const text =
-        results.length === 0
-          ? `No .plain files found in ${params.target}.`
-          : `${formatCheckResults(results)}\n\n${failed === 0 ? "All specs valid." : `${failed} of ${results.length} failed.`}`;
-
-      return { content: [{ type: "text" as const, text }], details: { failed, checked: results.length } };
-    },
-  });
-}
-
 
 const MILESTONE_ENTRY = "turri_milestone";
 const JOB_ENTRY = "turri_job";
