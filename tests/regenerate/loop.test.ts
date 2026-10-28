@@ -689,10 +689,10 @@ describe("the work loop", () => {
       /** app with no test reqs. */
       const noTestReqs = (specs: Spec[]) => app(specs).replace("***test reqs***\n\n- :ConformanceTests: use pytest.\n\n", "");
       const NO_TEST_REQS =
-        "app has scenarios but no ***test reqs***, so its conformance tests cannot be written - the test reqs are the first step of adding tests. " +
+        "app has scenarios to test - app:say-hello - but no ***test reqs***, so its conformance tests cannot be written - the test reqs are the first step of adding tests. " +
         "Next step: write the module's own ***test reqs***, with change_plain.";
       const NO_SCRIPT =
-        "app has scenarios and ***test reqs*** but no conformance testing script, so nothing can run its conformance tests - the script is the second step of adding tests. " +
+        "app has scenarios to test - app:say-hello - and ***test reqs*** but no conformance testing script, so nothing can run its conformance tests - the script is the second step of adding tests. " +
         "Next step: write the conformance testing script with the implement-conformance-testing-script skill.";
       const noScript = () => rmSync(join(dir, "test_scripts", "run_conformance_tests_python.sh"));
 

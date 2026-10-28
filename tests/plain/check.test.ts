@@ -63,7 +63,7 @@ describe("checkPlainFile", () => {
         "        add-task     tests/todo/add-task.plain     2 conformance, 1 acceptance",
         "        list-tasks   tests/todo/list-tasks.plain   1 conformance",
         "        delete-task  tests/todo/delete-task.plain  no scenarios - not tested",
-        "WARN  todo.plain  todo has scenarios but no ***test reqs***, so its conformance tests cannot be written - the test reqs are the first step of adding tests. " +
+        "WARN  todo.plain  todo has scenarios to test - todo:add-task, todo:list-tasks - but no ***test reqs***, so its conformance tests cannot be written - the test reqs are the first step of adding tests. " +
           "Next step: write the module's own ***test reqs***, with change_plain; then write the conformance testing script with the implement-conformance-testing-script skill.",
       ].join("\n"),
     );
@@ -209,11 +209,11 @@ describe("the steps of adding tests", () => {
     const result = checkPlainFile(join(dir, "shop.plain"));
     expect(result.ok).toBe(true);
     expect(result.warnings).toEqual([
-      "shop has scenarios but no ***test reqs***, so its conformance tests cannot be written - the test reqs are the first step of adding tests. " +
+      "shop has scenarios to test - shop:list-orders - but no ***test reqs***, so its conformance tests cannot be written - the test reqs are the first step of adding tests. " +
         "Next step: import the stack's conformance template, stdlib/backend/conformance/python-flask, with change_plain; " +
         "then write the conformance testing script with the implement-conformance-testing-script skill.",
     ]);
-    expect(formatCheckResults([result]).split("\n").at(-1)).toMatch(/^WARN {2}shop\.plain {2}shop has scenarios but no \*\*\*test reqs\*\*\*/);
+    expect(formatCheckResults([result]).split("\n").at(-1)).toMatch(/^WARN {2}shop\.plain {2}shop has scenarios to test - shop:list-orders - but no \*\*\*test reqs\*\*\*/);
   });
 
   it("warns a module with scenarios and test reqs but no conformance testing script", () => {
@@ -221,11 +221,33 @@ describe("the steps of adding tests", () => {
     const result = checkPlainFile(join(dir, "shop.plain"));
     expect(result.ok).toBe(true);
     expect(result.warnings).toEqual([
-      "shop has scenarios and ***test reqs*** but no conformance testing script, so nothing can run its conformance tests - the script is the second step of adding tests. " +
+      "shop has scenarios to test - shop:list-orders - and ***test reqs*** but no conformance testing script, so nothing can run its conformance tests - the script is the second step of adding tests. " +
         "Next step: write the conformance testing script with the implement-conformance-testing-script skill.",
     ]);
     script();
     expect(checkPlainFile(join(dir, "shop.plain")).warnings).toBeUndefined();
+  });
+
+  it("judges a module another requires by the tip its conformance tests are written in, where its test reqs must be", () => {
+    const flask = "---\nimport:\n  - stdlib/backend/python-flask\n";
+    write("base.plain", `${flask}exported_concepts:\n  - :Order:\n---\n\n***definitions***\n\n- :Order: is something bought.\n\n***functional specs***\n\n# list-orders\nEvery :Order: is listed.\n`);
+    write("tests/base/list-orders.plain", testPlainFile("base", "list-orders", "# lists\nThe orders are listed.\n"));
+    const top = (imports: string) => write("top.plain", `${flask}${imports}requires:\n  - base\n---\n\n***functional specs***\n\n# cancel-order\nAn :Order: can be cancelled.\n`);
+    top("");
+    write("tests/top/cancel-order.plain", testPlainFile("top", "cancel-order"));
+
+    const below =
+      "base's conformance tests are written in top, which requires it: top has scenarios to test - base:list-orders - but no ***test reqs***, " +
+      "so its conformance tests cannot be written - the test reqs are the first step of adding tests. Next step: import the stack's conformance " +
+      "template, stdlib/backend/conformance/python-flask, with change_plain; then write the conformance testing script with the implement-conformance-testing-script skill.";
+    expect(checkPlainFile(join(dir, "base.plain")).warnings).toEqual([below]);
+    expect(checkPlainFile(join(dir, "top.plain")).warnings?.[0]).toMatch(/^top has scenarios to test - base:list-orders - but no \*\*\*test reqs\*\*\*/);
+
+    // The tip's test reqs are the ones its conformance tests are written from: in it, and a script, nothing is missing.
+    top("  - stdlib/backend/conformance/python-flask\n");
+    write("test_scripts/run_conformance_tests_python.sh", "#!/bin/sh\nexit 0\n");
+    expect(checkPlainFile(join(dir, "base.plain")).warnings).toBeUndefined();
+    expect(checkPlainFile(join(dir, "top.plain")).warnings).toBeUndefined();
   });
 
   it("says nothing of a module none of whose functional specs has scenarios - it is not tested, and skipped nothing", () => {

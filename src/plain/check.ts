@@ -1,11 +1,11 @@
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, extname, join, relative, resolve, sep } from "node:path";
 import { testDirOf } from "../config.ts";
 import { projectDirOf, resolveTemplateDirs } from "../regenerate/paths.ts";
 import { importingModules, isImportModule } from "../regenerate/requires.ts";
 import { testingGap } from "../regenerate/testing-steps.ts";
-import { moduleOfTestPlainFile, strayTestPlainFiles, testPlaceOf, testPlainFileRefusal } from "../test-plain-files.ts";
-import { plainFileParser, PLAIN_SOURCE_FILE_EXTENSION, PREVIOUS_SYNTAX_HINT } from "./parser.ts";
+import { moduleOfTestPlainFile, projectModules, strayTestPlainFiles, testPlaceOf, testPlainFileRefusal } from "../test-plain-files.ts";
+import { plainFileParser, PLAIN_SOURCE_FILE_EXTENSION, PREVIOUS_SYNTAX_HINT, readPlainSourceMetadata, REQUIRES_DIRECTIVE } from "./parser.ts";
 import {
   ACCEPTANCE_TESTS,
   CONFORMANCE_TESTS,
@@ -89,6 +89,65 @@ export function missingTestPlainFiles(moduleName: string, tree: MarshalledPlainS
     .map(({ module, funcId }) => `${module === moduleName ? funcId : `${module}:${funcId}`} - add ${shown(join(testDir, module, `${funcId}${PLAIN_SOURCE_FILE_EXTENSION}`), projectDir)}`);
 }
 
+/**
+ * The modules of a project whose requires chains a module is in and that nothing requires: the tips its conformance
+ * tests are written in, by name with their files. None when nothing requires it - it is a tip itself.
+ */
+function tipsAbove(moduleName: string, projectDir: string): Array<{ name: string; file: string }> {
+  const modules = projectModules(projectDir);
+  const requiredBy = new Map<string, string[]>();
+  for (const [name, file] of modules) {
+    let requires: string[] = [];
+    try {
+      requires = (readPlainSourceMetadata(readFileSync(file, "utf8")).metadata[REQUIRES_DIRECTIVE] as string[] | undefined) ?? [];
+    } catch {
+      continue;
+    }
+    for (const required of requires) {
+      const below = basename(required.replace(/^\.\//, ""), PLAIN_SOURCE_FILE_EXTENSION);
+      requiredBy.set(below, [...(requiredBy.get(below) ?? []), name]);
+    }
+  }
+  const tips = new Set<string>();
+  const seen = new Set<string>();
+  const up = (name: string) => {
+    if (seen.has(name)) return;
+    seen.add(name);
+    const above = requiredBy.get(name) ?? [];
+    if (above.length === 0 && name !== moduleName) tips.add(name);
+    for (const next of above) up(next);
+  };
+  up(moduleName);
+  return [...tips].sort().flatMap((name) => (modules.has(name) ? [{ name, file: modules.get(name)! }] : []));
+}
+
+/**
+ * The steps of adding tests a module skipped, as warnings. A module another requires has its conformance tests
+ * written in the tips above it, from their test reqs and with their script: it is judged by each of them, which says so.
+ */
+function testingGapsOf(moduleName: string, path: string, tree: MarshalledPlainSource, projectDir: string, templateDirs: string[]): string[] {
+  const tips = tipsAbove(moduleName, projectDir);
+  if (tips.length === 0) {
+    const gap = testingGap({ moduleName, plainFile: path, tree });
+    return gap !== undefined ? [gap.text] : [];
+  }
+  return tips.flatMap((tip) => {
+    let tipTree: MarshalledPlainSource;
+    try {
+      [, tipTree] = plainFileParser(basename(tip.file), resolveTemplateDirs(tip.file, templateDirs), {
+        allowNoFunctionalities: true,
+        testDir: testDirOf(tip.file),
+        requireTestPlainFiles: false,
+      });
+    } catch {
+      // A tip that does not parse is reported when it is checked itself.
+      return [];
+    }
+    const gap = testingGap({ moduleName: tip.name, plainFile: tip.file, tree: tipTree });
+    return gap !== undefined ? [`${moduleName}'s conformance tests are written in ${tip.name}, which requires it: ${gap.text}`] : [];
+  });
+}
+
 export function checkPlainFile(file: string, templateDirs: string[] = []): CheckResult {
   const path = resolve(file);
 
@@ -123,13 +182,13 @@ export function checkPlainFile(file: string, templateDirs: string[] = []): Check
       };
     }
     // Scenarios with a step of adding tests skipped - the test reqs, or the conformance testing script: a warning, never a failure.
-    const gap = testingGap({ moduleName, plainFile: path, tree });
+    const gaps = testingGapsOf(moduleName, path, tree, projectDir, templateDirs);
     const bindings = Object.entries((tree[TEST_PLAIN_FILES] as Record<string, TestPlainFileBinding> | undefined) ?? {});
     return {
       file,
       ok: true,
       moduleName,
-      ...(gap !== undefined ? { warnings: [gap.text] } : {}),
+      ...(gaps.length > 0 ? { warnings: gaps } : {}),
       functionalSpecs: getFunctionalSpecs(tree).map((item) => ({
         funcId: item.id,
         testPlainFiles: bindings

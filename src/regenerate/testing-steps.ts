@@ -54,10 +54,15 @@ function stdlibStackOf(plainFile: string): { kind: string; stack: string } | und
   return visit(resolve(plainFile));
 }
 
-/** Whether any functional spec of a codebase's tree - its own, or one it inherits - has scenarios. */
-function anyScenarios(tree: MarshalledPlainSource): boolean {
-  const items = (section: string) => ((tree[section] as unknown[] | undefined) ?? []);
-  return [...items(FUNCTIONAL_REQUIREMENTS), ...items(REQUIRED_FUNCTIONAL_SPECS)].some(hasScenarios);
+/** The functional specs of a codebase's tree - its own, or ones it inherits - that have scenarios, as `module:func-id`, a module below's first. */
+function withScenarios(tree: MarshalledPlainSource, moduleName: string): string[] {
+  const items = (section: string) => ((tree[section] as Array<{ id?: string; module?: string }> | undefined) ?? []);
+  return [...items(REQUIRED_FUNCTIONAL_SPECS), ...items(FUNCTIONAL_REQUIREMENTS)].filter(hasScenarios).map((item) => `${item.module ?? moduleName}:${item.id}`);
+}
+
+/** Specs named in a line: the first three, and how many more. */
+function named(specs: string[]): string {
+  return specs.length <= 3 ? specs.join(", ") : `${specs.slice(0, 3).join(", ")} and ${specs.length - 3} more`;
 }
 
 /**
@@ -67,8 +72,9 @@ function anyScenarios(tree: MarshalledPlainSource): boolean {
  * is looked for under the module's stack - the one pinned, else the one `stackForModule` gives it.
  */
 export function testingGap(input: { moduleName: string; plainFile: string; tree: MarshalledPlainSource; buildDir?: string }): TestingGap | undefined {
-  if (!anyScenarios(input.tree)) return undefined;
   const { moduleName, plainFile } = input;
+  const tested = withScenarios(input.tree, moduleName);
+  if (tested.length === 0) return undefined;
   const stack = stackPinned() ? undefined : stackForModule(plainFile);
   const scripts = () => {
     const root = input.buildDir !== undefined ? projectRootFor(plainFile, input.buildDir) : projectDirOf(plainFile);
@@ -86,7 +92,7 @@ export function testingGap(input: { moduleName: string; plainFile: string; tree:
     return {
       step: "test reqs",
       text:
-        `${moduleName} has scenarios but no ***test reqs***, so its conformance tests cannot be written - the test reqs are ` +
+        `${moduleName} has scenarios to test - ${named(tested)} - but no ***test reqs***, so its conformance tests cannot be written - the test reqs are ` +
         `the first step of adding tests. Next step: ${reqs}, with change_plain${found.conformance === undefined ? `; then ${scriptStep}` : ""}.`,
       short: "scenarios not tested: no test reqs",
     };
@@ -96,7 +102,7 @@ export function testingGap(input: { moduleName: string; plainFile: string; tree:
     return {
       step: "conformance testing script",
       text:
-        `${moduleName} has scenarios and ***test reqs*** but no conformance testing script, so nothing can run its conformance ` +
+        `${moduleName} has scenarios to test - ${named(tested)} - and ***test reqs*** but no conformance testing script, so nothing can run its conformance ` +
         `tests - the script is the second step of adding tests. Next step: ${scriptStep}.${note !== undefined ? ` ${note}` : ""}`,
       short: "scenarios not tested: no conformance testing script",
     };
