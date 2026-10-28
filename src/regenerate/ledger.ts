@@ -121,7 +121,13 @@ export type LedgerEvent =
   | { kind: "history.reset"; undone: number; paths: string[] }
   | { kind: "history.rolledBack"; why: string }
   // What the machine lacks.
-  | { kind: "environment.error"; missing: string; source: string; sandbox: boolean };
+  | { kind: "environment.error"; missing: string; source: string; sandbox: boolean }
+  // The test advisor, on a functional spec `spec` (module:func-id): its verdict and the questions that were a yes - the
+  // report stays in .turri/advisor - what it wrote, the work it dropped as the text changed under it, and a failure.
+  | { kind: "advisor.classified"; spec: string; verdict: "yes" | "no"; questions: string[] }
+  | { kind: "advisor.wrote"; spec: string; scenarios: string[]; testReqs: boolean; script: boolean }
+  | { kind: "advisor.dropped"; spec: string }
+  | { kind: "advisor.failed"; spec: string; reason: string };
 
 export type LedgerKind = LedgerEvent["kind"];
 

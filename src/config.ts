@@ -25,6 +25,7 @@ import { projectDirOf } from "./regenerate/paths.ts";
  * mutation-testing: false                                   # give the coding agent and the reviewer can_it_fail (default: true)
  * allow-to-stop-jobs: false                                 # stop a running job the spec moved on from (default: true)
  * release-after-pulse: true                                 # release what each pulse lands, as its last stage, before the next pulse (default: false)
+ * test-advisor: false                                       # check each new or changed functional spec with no scenarios, and write them when it needs them (default: true)
  * sentinel: true                                            # a chat of its own every finished pulse goes to, which tests the release and tells you what is wrong: true, false, or ask - the person asked before it first opens in a session (default: ask)
  * rules-off: [integrations]                                 # ***plain rules to leave out of the prompts, by name (default: none)
  * unittests-script: test_scripts/run_unittests.sh           # the testing scripts - see test-scripts.ts
@@ -234,9 +235,10 @@ export interface ModelChoice {
 /**
  * The agents turri starts, by what they do - each can be given its own model, thinking and turn limit (`models:`).
  * The code fixer of a conformance run and the repair agent are coding agents; the unit-test and conformance arbiters
- * are both `arbiter`.
+ * are both `arbiter`. The test advisor's calls - classifying a functional spec, its probes, its readers, its verifier -
+ * and the agents that write its test reqs, script and scenarios are `advisor`.
  */
-export const AGENT_ROLES = ["chat", "sentinel", "planner", "diagnosis", "release", "coding", "conformance", "explorer", "reviewer", "test-reviewer", "judge", "arbiter", "debugger"] as const;
+export const AGENT_ROLES = ["chat", "sentinel", "planner", "diagnosis", "release", "coding", "conformance", "explorer", "reviewer", "test-reviewer", "judge", "arbiter", "debugger", "advisor"] as const;
 export type AgentRole = (typeof AGENT_ROLES)[number];
 
 /**
@@ -250,6 +252,7 @@ export const ROLE_THINKING: Partial<Record<AgentRole, ThinkingLevel>> = {
   conformance: "low",
   explorer: "low",
   release: "low",
+  advisor: "low",
   reviewer: "medium",
   "test-reviewer": "medium",
   judge: "medium",
@@ -361,6 +364,15 @@ export function roleModel(config: Pick<ProjectConfig, "harnessModel" | "judgeMod
   return inheritModel(own, inheritModel(legacy, choiceOf(models.default)));
 }
 
+/**
+ * What the test advisor's calls and agents run on: `models.advisor` - else `default` - and without either the coding
+ * model alone, thinking as the role has it (ROLE_THINKING). Undefined when the config names no model at all.
+ */
+export function advisorModel(config: ProjectConfig): string | undefined {
+  const coding = projectModels(config).coding?.model;
+  return modelSpec(inheritModel(roleModel(config, "advisor"), coding !== undefined ? { model: coding } : undefined));
+}
+
 /** How long each turn of a role's agents may take, in milliseconds: its own, `default`'s, `turn-limit:`'s - or undefined, the harness's default. */
 export function roleTurnLimitMs(config: Pick<ProjectConfig, "models" | "turnLimit">, role: AgentRole | undefined): number | undefined {
   const models = config.models ?? {};
@@ -455,6 +467,12 @@ export interface ProjectConfig {
    */
   sentinel?: SentinelSetting;
   /**
+   * Whether the test advisor runs: in the chat and a host, each new or changed functional spec with no scenarios is
+   * classified in the background, and on a yes turri writes its test reqs, conformance testing script and scenarios
+   * (docs/test-advisor.md). false turns off only that: asked for scenarios, the chat writes them as before. Unset: true.
+   */
+  testAdvisor?: boolean;
+  /**
    * The folder of the test plain files, from the project's folder: a functional spec's scenarios are in its test plain
    * file in `<test-dir>/<module>/`. Unset: `tests`.
    */
@@ -531,6 +549,7 @@ export const CONFIG_KEYS = {
   allowToStopJobs: "allow-to-stop-jobs",
   releaseAfterPulse: "release-after-pulse",
   sentinel: "sentinel",
+  testAdvisor: "test-advisor",
   testDir: "test-dir",
   unittestsScript: "unittests-script",
   conformanceTestsScript: "conformance-tests-script",
@@ -698,6 +717,7 @@ function readConfigFile(path: string): ProjectConfig {
     allowToStopJobs: typeof raw[CONFIG_KEYS.allowToStopJobs] === "boolean" ? (raw[CONFIG_KEYS.allowToStopJobs] as boolean) : undefined,
     releaseAfterPulse: typeof raw[CONFIG_KEYS.releaseAfterPulse] === "boolean" ? (raw[CONFIG_KEYS.releaseAfterPulse] as boolean) : undefined,
     sentinel: typeof raw[CONFIG_KEYS.sentinel] === "boolean" || raw[CONFIG_KEYS.sentinel] === "ask" ? (raw[CONFIG_KEYS.sentinel] as SentinelSetting) : undefined,
+    testAdvisor: typeof raw[CONFIG_KEYS.testAdvisor] === "boolean" ? (raw[CONFIG_KEYS.testAdvisor] as boolean) : undefined,
     testDir: text(raw[CONFIG_KEYS.testDir]),
     unittestsScript: text(raw[CONFIG_KEYS.unittestsScript]),
     conformanceTestsScript: text(raw[CONFIG_KEYS.conformanceTestsScript]),

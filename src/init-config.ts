@@ -302,6 +302,7 @@ export const DEFAULTS = {
   allowToStopJobs: true,
   releaseAfterPulse: true,
   sentinel: "ask",
+  testAdvisor: true,
   testingScriptsRunOn: "in-place",
   turnLimit: 120,
   compactAt: 100000,
@@ -347,6 +348,11 @@ export function quickStartConfig(vendor: Vendor = "other", bedrock?: BedrockChoi
     "# was released - and tells you in the chat you are in when something needs you. ask: you are asked, with what it does,",
     "# before it first opens in a session; true: it opens without asking; false: none.",
     `sentinel: ${DEFAULTS.sentinel}`,
+    "",
+    "# Whether turri checks, in the background, each new or changed functional spec with no scenarios - could it fail",
+    "# silently, be read two ways, cost a lot when wrong - and when it needs testing, writes its test reqs, conformance",
+    "# testing script and scenarios itself. false: only the scenarios you ask for are written.",
+    `test-advisor: ${DEFAULTS.testAdvisor}`,
     "",
     "# What the testing scripts run on: in-place - the code itself; copy - a fresh copy of it.",
     `testing-scripts-run-on: ${DEFAULTS.testingScriptsRunOn}`,
@@ -426,6 +432,7 @@ export function quickStartConfig(vendor: Vendor = "other", bedrock?: BedrockChoi
     role("judge", strong, "judges a failing conformance run - as judge-model, which it wins over"),
     role("arbiter", strong, "weighs a second review"),
     role("debugger", strong, "a fresh look at unit tests that keep failing the same way"),
+    role("advisor", coding, "the test advisor: which functional specs need scenarios, and writing them"),
     "",
   ].join("\n");
 }
