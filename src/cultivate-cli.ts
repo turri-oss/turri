@@ -55,7 +55,8 @@ async function main() {
   const args = process.argv.slice(2);
   const modelIndex = args.indexOf("--model");
   const model = modelIndex === -1 ? undefined : args[modelIndex + 1];
-  const skillArg = args.filter((arg, i) => !arg.startsWith("--") && i !== modelIndex + 1)[0];
+  // The word after --model is the model, never the skill - and with no --model, no word is.
+  const skillArg = args.filter((arg, i) => !arg.startsWith("--") && (modelIndex === -1 || i !== modelIndex + 1))[0];
 
   if (!skillArg) {
     console.error("usage: turri cultivate <skill name | path-to-skill-dir> [--model provider/id]");
@@ -64,7 +65,13 @@ async function main() {
 
   const cwd = process.cwd();
   // A folder with a SKILL.md, or a skill by name: turri's own or the project's (skills.ts).
-  const named = existsSync(join(skillArg, "SKILL.md")) ? undefined : discoverSkills(PACKAGE_ROOT, cwd).skills.find((found) => found.name === skillArg);
+  const isFolder = existsSync(join(skillArg, "SKILL.md"));
+  const skills = isFolder ? [] : discoverSkills(PACKAGE_ROOT, cwd).skills;
+  const named = skills.find((found) => found.name === skillArg);
+  if (!isFolder && named === undefined) {
+    console.error(`No skill named ${skillArg}, and no SKILL.md in a folder of that name. The skills: ${skills.map((found) => found.name).join(", ")}.`);
+    process.exit(1);
+  }
   const skillDir = named?.dir ?? skillArg;
   const skill = loadSkill(skillDir);
   console.log(c.bold(`skill: ${skill.name}`));
