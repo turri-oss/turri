@@ -40,6 +40,7 @@ import { createWorkLoop, describeModules, isUpToDate, previewJobs, type WorkLoop
 import { createTestAdvisor, type TestAdvisor } from "./regenerate/advisor-runs.ts";
 import { createAdvisorWriter } from "./regenerate/advisor-writer.ts";
 import { advisorDir } from "./regenerate/advisor-records.ts";
+import { advisorLine, advisorNote, TEST_ADVISOR_BLOCK } from "./advisor-chat.ts";
 import { brandNeon, brandPink, plainPaint } from "./regenerate/plain-palette.ts";
 import { halfBlocks, JELLYFISH_FRAME_MS, JELLYFISH_REST, JELLYFISH_SEQUENCE, JELLYFISH_TEXT_FRAMES } from "./jellyfish.ts";
 import { createJobPanel, didNotPass, keyPressed, PANEL_KEY, spinner } from "./regenerate/job-panel.ts";
@@ -423,6 +424,8 @@ export function createTurriCore(
           }
         },
       }),
+      // Scenarios landed: said in the chat the person looks at - a host hears it there too.
+      onLanded: (landing) => void session.advised(landing),
     });
     advisors.set(jobs, advisor);
     // Where it may have left work pending: the folder turri runs in, and a project in a folder of it - ***plain kept in plain/.
@@ -590,6 +593,19 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
     act: (task) => {
       void pi.sendMessage({ customType: "turri_notice_answer", content: task, display: false }, { triggerTurn: true, deliverAs: "followUp" });
     },
+    // The test advisor's scenarios landed: one line, after the fact, as a landed pulse is drawn - and its agent told why,
+    // starting no turn: the line is all the person is told, and the agent does nothing about them unless asked.
+    advised: (landing) => {
+      try {
+        pi.appendEntry(ADVISOR_ENTRY, { text: advisorLine(landing) });
+      } catch {
+        /* the agent is still told */
+      }
+      void pi.sendMessage(
+        { customType: "turri_advisor_landed", content: advisorNote(landing), display: false, details: { module: landing.module, funcId: landing.funcId } },
+        { deliverAs: "nextTurn" },
+      );
+    },
     jobsChanged: () => panel.refresh(),
     thinkingLevel: () => pi.getThinkingLevel(),
     context: contextNow,
@@ -643,7 +659,16 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
       return { systemPrompt: host.systemPrompt !== undefined ? host.systemPrompt(prompt) : prompt };
     }
     return {
-      systemPrompt: conversationSystemPrompt(event.systemPrompt, host, [TOOLS_NOT_CLI, NEW_PROJECT, pulseEndsBlock(session.sentinelOn()), projectConfigBlock(cwd), machineBlock(cwd, machine.now()), rulesBlock()]),
+      systemPrompt: conversationSystemPrompt(event.systemPrompt, host, [
+        TOOLS_NOT_CLI,
+        NEW_PROJECT,
+        pulseEndsBlock(session.sentinelOn()),
+        // Its two paths to scenarios, while the session has a test advisor the project wants.
+        ...(sessionAdvisor(session) !== undefined && readProjectConfig(cwd).testAdvisor !== false ? [TEST_ADVISOR_BLOCK] : []),
+        projectConfigBlock(cwd),
+        machineBlock(cwd, machine.now()),
+        rulesBlock(),
+      ]),
     };
   });
 
@@ -2673,7 +2698,19 @@ function registerSideQuestions(pi: ExtensionAPI, cwd: string, jobs: JobRegistry)
     box.addChild(new Text([theme.fg("muted", `btw: ${data.question}`), theme.fg("text", data.answer)].join("\n"), 0, 0));
     return box;
   });
+
+  // The test advisor's scenarios landed: its one line.
+  pi.registerEntryRenderer(ADVISOR_ENTRY, (entry, _options, theme) => {
+    const data = entry.data as { text: string } | undefined;
+    if (data === undefined) return undefined;
+    const box = new Box(1, 0);
+    box.addChild(new Text(theme.fg("text", data.text), 0, 0));
+    return box;
+  });
 }
+
+/** The line the test advisor's scenarios landing is drawn as, in the transcript and in no model's context. */
+const ADVISOR_ENTRY = "turri_advisor";
 
 /** A side question answered - from the conversation, the skill running, the pulses - and kept in the transcript. */
 async function askOnTheSide(pi: ExtensionAPI, ctx: ExtensionContext, cwd: string, jobs: JobRegistry, question: string): Promise<string> {

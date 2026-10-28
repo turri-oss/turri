@@ -8,6 +8,7 @@ import { debugMode, type SentinelSetting } from "./config.ts";
 import type { AskUserIO } from "./ask.ts";
 import { record } from "./regenerate/ledger.ts";
 import type { Job, JobRegistry } from "./regenerate/jobs.ts";
+import type { AdvisorLanding } from "./regenerate/advisor-runs.ts";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { newNotice, noticeTask, SENTINEL, sentinelStartChoice, wentWrong, type ChatRole, type Conclusion, type Notice, type NoticeAnswer, type NoticeInput } from "./notice.ts";
 
@@ -110,6 +111,8 @@ export interface ChatInstance {
   concluded(conclusion: Conclusion): void;
   /** The person answered a notice with something to do: the chat's agent started on it. */
   act(task: string): void;
+  /** The test advisor's scenarios landed: a line in the chat, and its agent told why - to do nothing about them. */
+  advised(landing: AdvisorLanding): void;
   /** The jobs changed: what it draws of them is drawn again. */
   jobsChanged(): void;
   /** How hard the chat's model thinks now: sub-agents started from it think as hard. */
@@ -210,6 +213,8 @@ export interface TurriCore {
   notice(input: NoticeInput): Notice | undefined;
   /** The sentinel done with a pulse: told to the chat the person looks at. Undefined: no chat to tell. */
   concluded(conclusion: Conclusion): string | undefined;
+  /** The test advisor's scenarios landed: said in the chat the person looks at. Undefined: no chat to say it in. */
+  advised(landing: AdvisorLanding): string | undefined;
   /** The notices put to the person and not yet answered. */
   notices(): Notice[];
   /**
@@ -650,6 +655,19 @@ export function createChats(options: CoreOptions): TurriCore {
         host.onConcluded?.({ ...told, chat: target.id });
       } catch {
         /* a host that throws must not lose it */
+      }
+      changed();
+      return target.id;
+    },
+
+    advised(landing) {
+      const target = personFacing();
+      if (target === undefined) return undefined;
+      if (target.id !== shownId) target.unread = true;
+      try {
+        target.instance?.advised(landing);
+      } catch {
+        /* a chat let go as it was told: the advisor's file and the ledger keep it */
       }
       changed();
       return target.id;

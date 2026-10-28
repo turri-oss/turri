@@ -119,6 +119,10 @@ await turri.dispose();                 // every chat let go, what activate start
 - **The system prompt.** `systemPrompt(prompt)` gets the whole system prompt for the turn - [pi](https://pi.dev)'s, turri's identity and blocks, the rules - after turri's own `before_agent_start` work, and returns what is sent. It is for what `surface` does not cover; to describe the UI, use `surface`, rather than words appended after turri's that contradict them.
 - **The mode.** Each chat is bound in [pi](https://pi.dev)'s `tui` mode: the work runs in the background and keeps the chat free, as the terminal does. Its other UI calls - its notices, its working line, a confirm - come to `uiContext(chat)`, as [pi](https://pi.dev)'s [SDK](https://github.com/earendil-works/pi) describes it.
 
+### The test advisor
+
+A host's session has the [test advisor](test-advisor.md), as the terminal's chat does: new and changed functional specs are checked in the background, and on a yes their test reqs, conformance testing script and scenarios written. Nothing about it is new for a host. Its facts are ledger events - `advisor.classified`, `advisor.wrote`, `advisor.dropped`, `advisor.failed` - heard through `onLedgerEvent`. When scenarios land, the chat the person looks at says so as the terminal's does: an entry of its session, `turri_advisor` (`data.text`, the line), and a hidden message to its agent, `customType: "turri_advisor_landed"`, that starts no turn. `test-advisor` is one of `configSettings()`.
+
 ### The sentinel
 
 The [sentinel](sentinel.md) is one of the host's chats: turri opens it with the first pulse that finishes, through the host's own `create` like any chat - `onChats` hears of it, `role: "sentinel"` - and never moves `focus` to it. It closes like any chat, and the next pulse that finishes opens it again; with it on, `openChat` opens up to eight.

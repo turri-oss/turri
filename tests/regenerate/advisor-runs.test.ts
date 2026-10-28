@@ -173,6 +173,22 @@ describe("which functional specs the test advisor takes", () => {
     expect(advisorEntry(dir, "app", "say-hello")?.hash).toBe(textHash("Say hello, twice."));
   });
 
+  it("says nothing for a no: no writer, no landing", async () => {
+    writeFileSync(join(dir, "app.plain"), module([["say-hello", "Say hello."]]));
+    const landed: unknown[] = [];
+    let wrote = 0;
+    const advisor = createTestAdvisor({
+      advise: saysNo().advise,
+      write: async () => ((wrote += 1), { scenarios: [], testReqs: false, script: false }),
+      onLanded: (landing) => landed.push(landing),
+    });
+    advisor.seen(lookAt("app.plain"));
+    await advisor.idle();
+    expect(wrote).toBe(0);
+    expect(landed).toEqual([]);
+    expect(advisorEntry(dir, "app", "say-hello")?.state).toBe("no");
+  });
+
   it("does nothing with test-advisor: false", async () => {
     writeFileSync(join(dir, "config.turri.yaml"), "test-advisor: false\n");
     writeFileSync(join(dir, "app.plain"), module([["say-hello", "Say hello."]]));

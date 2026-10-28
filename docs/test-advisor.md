@@ -20,6 +20,18 @@ Which functional specs need explicit testing scenarios is not obvious, and not e
 
 A failure - a model error, a call that never answered - is dropped quietly: the entry says `failed` and why, `advisor.failed` goes into the ledger, and the same text is not tried again. Nothing is shown.
 
+## What you see
+
+Nothing while it runs. When scenarios land, one line in the chat you are looking at, after the fact, the way a pulse that landed is mentioned:
+
+> I added 3 scenarios to core:add-task - a wrong implementation could look right. They're tested once its code is built.
+
+The reason is the first question that made the verdict a yes, and the line says when the \*\*\*test reqs\*\*\* or a conformance testing script were written with them. The conformance pulse then shows in the panel like any other. A "no" shows nothing: it is only in the advisor's file and the ledger. The map shows turri's scenarios like yours, with no mark.
+
+The chat's agent is told the report's gist with the line - the questions that were a yes, with their evidence - so it can answer "why are there tests on add-task?". It starts no turn over it, and it never re-does or extends the advisor's scenarios unless you ask. It knows the other path too: asked for scenarios, it decides and writes them itself, as a \*\*\*plain change you see.
+
+A host hears the `advisor.*` events through `onLedgerEvent`, and the line the way the chat has it - see [hosting](hosting.md). Nothing else is new for it.
+
 ## How it decides
 
 Every step is a plain model call on the advisor's model, answered through one tool and checked by turri - none of them is a skill, and none can touch the project. Each is given the functional spec, its module whole, and the project's own words on what matters: its `AGENTS.md`, and what you said in the conversation about how the work is to be planned. There is no keyword filter and no confidence score.

@@ -23,6 +23,8 @@ The session's, shared by every chat:
 
 A pulse's end goes to the [sentinel](sentinel.md) - a chat of turri's own, opened in the background with the first pulse that finishes, once you said to start it under `sentinel: ask` - which checks it, tests what was released, and puts what needs you as a notice in the chat you are in. That chat shows the pulse's end; its agent is told of a pulse that landed, to tell you so and what the sentinel is doing with it - and when the sentinel is done with any pulse, what it found - and nothing more - and not of one that went wrong: the sentinel's notice is what it hears of that. With `sentinel: false`, a pulse's end is told to the chat that asked for it instead, shown or not - its agent reacts to it there; the chat's mark in the strip says it has something new. When that chat has been closed, the chat shown is told. Closing a chat stops its turn, never its pulses.
 
+The session has one [test advisor](test-advisor.md), which checks new and changed functional specs in the background: when it writes scenarios, the chat you are looking at says so in one line, after the fact - its agent told why, and to do nothing more about them.
+
 ## In the terminal
 
 | | |
@@ -65,7 +67,7 @@ In [debug mode](config.md#debug-mode) nothing is deleted. The `engine`'s choices
 
 ## Where there is one chat
 
-[pi](https://pi.dev)'s print, json and rpc modes - `turri -p "…"`, `--mode json`, `--mode rpc` - and a `turri` given its input on stdin have one chat and record none. So does `npm run chat`, pi with turri's extension loaded from its file. The command line's `turri regenerate`, `conform` and the rest have no chat.
+[pi](https://pi.dev)'s print, json and rpc modes - `turri -p "…"`, `--mode json`, `--mode rpc` - and a `turri` given its input on stdin have one chat and record none, and no [test advisor](test-advisor.md). So does `npm run chat`, pi with turri's extension loaded from its file. The command line's `turri regenerate`, `conform` and the rest have no chat, and no test advisor either.
 
 ## In a host
 
