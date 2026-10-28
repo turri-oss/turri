@@ -123,7 +123,7 @@ async function main() {
   process.exit(result.ok ? 0 : 1);
 }
 
-main().catch((err) => {
-  console.error(err);
+main().catch((error) => {
+  console.error(error instanceof Error ? error.message : error);
   process.exit(1);
 });
