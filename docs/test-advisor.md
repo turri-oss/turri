@@ -2,6 +2,30 @@
 
 Which functional specs need explicit testing scenarios is not obvious, and not every one should be tested - only the functionality that matters. The test advisor decides for you: when a functional spec is new or its text changed and it has no scenarios, turri checks in the background whether it needs testing, and when it does, writes what testing it takes itself - the \*\*\*test reqs\*\*\*, the conformance testing script and its scenarios - so the module's conformance pulse runs once its code is built. You are never asked anything.
 
+## How it decides
+
+Every step is a plain model call on the advisor's model, answered through one tool and checked by turri - none of them is a skill, and none can touch the project. Each is given the functional spec, its module whole, and the project's own words on what matters: its `AGENTS.md`, and what you said in the conversation about how the work is to be planned. There is no keyword filter and no confidence score.
+
+**Classifying** is one call with four questions, each yes backed by evidence:
+
+| question | a yes needs |
+| --- | --- |
+| silent failure: could a wrong implementation give output that looks right? | one such wrong output |
+| divergence: is there an input two reasonable readings answer differently? | the input, and both outputs |
+| revisited: is it likely to be changed or built on later? | what would change |
+| cost: would a bug cost money, expose something, lose data or harm users' trust? | the consequence |
+
+A yes whose evidence is empty or malformed - two readings that are the same - counts as no. The verdict is **yes** when silent failure, divergence or cost is a yes; revisited alone, or all four no, is **no**: the coding agent's unit tests are the regression protection there. A no costs one call, and ends there.
+
+**On a yes, the inputs** the scenarios are to cover are picked by readers that disagree on purpose:
+
+1. **Probes:** one call writes 5 to 10 concrete boundary inputs - limits, empty and missing values, the cases the wording leaves open - and the divergence's input joins them.
+2. **Readers:** each predicts every probe's output. There are three - a literal reader, an edge-case hunter, and a reader from another domain - the same call on the same model, differing only by their system prompt. Two run first; when they already disagree on a probe, the third is spared.
+3. **Comparing,** in code: the outputs are compared with whitespace and case left aside, and any disagreement makes the input a candidate - the union of the readers, never a majority.
+4. **Verifying:** one last call keeps, of each candidate, the readings a reasonable person could hold. A candidate left with one is an agreed input; one left with none is dropped.
+
+The **report** is what the advisor's file keeps: the questions that were a yes with their evidence, and each input, either agreed - with the readers' output - or split, with its readings.
+
 ## The setting and its model
 
 `test-advisor: true | false` in `config.turri.yaml`, `true` when it is left out - `/turri-config` sets it. `false` turns off only the advisor's own work: asked for scenarios, the chat writes them as it always has, whatever the setting says.
