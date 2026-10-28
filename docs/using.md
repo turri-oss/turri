@@ -215,4 +215,4 @@ turri cultivate debug-specs            # run a skill directly - by name, the pro
 turri release <file.plain>             # release what is regenerated to dist/<module>, and activate it here
 ```
 
-The ones that build take `--model provider/model-id`; `regenerate` also takes `--build-dir` and `--dry-run`, which plans the work, prints the prompt of each codebase's first pulse and starts nothing. Template directories come from `PLAIN_TEMPLATE_DIRS`. `--help` on any of them lists the rest.
+`turri cultivate` runs a skill on the project's harness model, as the chat does, unless `--model` names another. The ones that build take `--model provider/model-id`; `regenerate` also takes `--build-dir` and `--dry-run`, which plans the work, prints the prompt of each codebase's first pulse and starts nothing. Template directories come from `PLAIN_TEMPLATE_DIRS`. `--help` on any of them lists the rest.

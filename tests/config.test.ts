@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AGENT_ROLES, modelOnly, projectModels, readProjectConfig, ROLE_THINKING, roleModel, roleTurnLimitMs } from "../src/config.ts";
+import { AGENT_ROLES, modelOnly, projectModels, readProjectConfig, ROLE_THINKING, roleModel, roleTurnLimitMs, skillModel } from "../src/config.ts";
 
 let root: string;
 beforeEach(() => {
@@ -127,6 +127,14 @@ describe("models: and turn-limit:", () => {
   const luna = "amazon-bedrock/global.openai.gpt-6-luna";
   const lite = "google/gemini-3.1-flash-lite";
   const opus = "amazon-bedrock/eu.anthropic.claude-opus-5-5";
+
+  it("runs a skill from the command line on the project's harness model, as the chat does, and on pi's default when the project names none", () => {
+    expect(skillModel(root)).toBeUndefined();
+    writeFileSync(join(root, "config.turri.yaml"), `harness-model: ${opus}:medium\ncoding-model: ${lite}\n`);
+    expect(skillModel(root)).toBe(`${opus}:medium`);
+    writeFileSync(join(root, "config.turri.yaml"), `harness-model: ${opus}\nmodels:\n  chat: ${sonnet}\n`);
+    expect(skillModel(root)).toBe(sonnet);
+  });
 
   it("gives each agent role its own model, thinking and turn limit, and every role it does not name the default", () => {
     writeFileSync(

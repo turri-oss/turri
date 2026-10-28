@@ -330,6 +330,14 @@ export function projectModels(config: Pick<ProjectConfig, "harnessModel" | "codi
   return { harness, coding, judge: inheritModel(choiceOf(models.judge), inheritModel(config.judgeModel, inheritModel(choiceOf(models.default), codingModel))) };
 }
 
+/**
+ * What a skill run from the command line runs on: the project's harness model, as a skill in the chat runs on the
+ * chat's - undefined, and pi's default, when the project names none.
+ */
+export function skillModel(root: string): string | undefined {
+  return modelSpec(projectModels(readProjectConfig(root, stackOf(root))).harness);
+}
+
 /** A role entry's model and thinking alone. */
 function choiceOf(entry: RoleChoice | undefined): ModelChoice | undefined {
   if (entry === undefined || (entry.model === undefined && entry.thinking === undefined)) return undefined;

@@ -9,6 +9,7 @@ import { loadSkill } from "./skill.ts";
 import { discoverSkills } from "./skills.ts";
 import { PACKAGE_ROOT } from "./environment.ts";
 import { c } from "./module-report.ts";
+import { skillModel } from "./config.ts";
 
 
 const reporter: Reporter = {
@@ -54,7 +55,7 @@ const reporter: Reporter = {
 async function main() {
   const args = process.argv.slice(2);
   const modelIndex = args.indexOf("--model");
-  const model = modelIndex === -1 ? undefined : args[modelIndex + 1];
+  const model = modelIndex === -1 ? skillModel(process.cwd()) : args[modelIndex + 1];
   // The word after --model is the model, never the skill - and with no --model, no word is.
   const skillArg = args.filter((arg, i) => !arg.startsWith("--") && (modelIndex === -1 || i !== modelIndex + 1))[0];
 
