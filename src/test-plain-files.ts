@@ -1,9 +1,9 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
-import { testDirOf } from "./config.ts";
+import { DEFAULT_TEST_DIR, testDirOf } from "./config.ts";
 import { PLAIN_SOURCE_FILE_EXTENSION } from "./plain/parser.ts";
 import { FUNC_ID_KEY, loadFrontmatter, MODULE_KEY } from "./plain/test-plain-file.ts";
-import { projectDirOf } from "./regenerate/paths.ts";
+import { isProjectDir, projectDirOf } from "./regenerate/paths.ts";
 
 /**
  * Where a project's test plain files are, and what each belongs to: `<test-dir>/<module>/`, every `.plain` file in it
@@ -89,7 +89,7 @@ export interface TestPlace {
 export function testPlaceOf(path: string): TestPlace | undefined {
   const absolute = resolve(path);
   const directory = existsSync(absolute) && statSync(absolute).isDirectory();
-  const projectDir = projectDirOf(directory ? join(absolute, "x.plain") : absolute);
+  const projectDir = projectOfTestPath(absolute, directory);
   const testDir = testDirOf(join(projectDir, "x.plain"));
   const metadata = directory || !existsSync(absolute) ? {} : frontmatterOf(absolute);
   const bound = typeof metadata[MODULE_KEY] === "string" && typeof metadata[FUNC_ID_KEY] === "string";
@@ -103,6 +103,19 @@ export function testPlaceOf(path: string): TestPlace | undefined {
     ...(folderModule !== undefined ? { folderModule } : {}),
     ...(bound ? { module: metadata[MODULE_KEY] as string, funcId: metadata[FUNC_ID_KEY] as string } : {}),
   };
+}
+
+/**
+ * The project a path in a test folder belongs to. One with no config yet has nothing above the path to say so: its
+ * test folder is `tests`, and the project the folder that holds it.
+ */
+function projectOfTestPath(absolute: string, directory: boolean): string {
+  const found = projectDirOf(directory ? join(absolute, "x.plain") : absolute);
+  if (isProjectDir(found)) return found;
+  for (let dir = directory ? absolute : dirname(absolute); dirname(dir) !== dir; dir = dirname(dir)) {
+    if (basename(dir) === DEFAULT_TEST_DIR) return dirname(dir);
+  }
+  return found;
 }
 
 /** A path as a person reads it in the project: from its folder. */

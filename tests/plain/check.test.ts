@@ -168,6 +168,16 @@ describe("checking a directory", () => {
     expect(checkPlainTargets(join(dir, "tests", "todo"))[0]!.error).toBe("`tests/todo/` is the test folder of `todo`; name `todo.plain`.");
   });
 
+  it("refuses a test plain file and a test folder by their paths from the project in a project with no config yet", () => {
+    unlinkSync(join(dir, "config.turri.yaml"));
+    todo();
+    expect(checkPlainFile(join(dir, "tests", "todo", "add-task.plain")).error).toBe(
+      "`tests/todo/add-task.plain` is a test plain file of `todo`; name `todo.plain`, or `todo:add-task` for that one functional spec.",
+    );
+    const results = checkPlainTargets(join(dir, "tests", "todo"));
+    expect(results.map((result) => result.error)).toEqual(["`tests/todo/` is the test folder of `todo`; name `todo.plain`."]);
+  });
+
   it("finds every test plain file outside its module's folder, once, at the end", () => {
     todo();
     write("tests/add-task.plain", testPlainFile("todo", "add-task"));

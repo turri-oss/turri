@@ -51,9 +51,14 @@ export function defaultBuildDir(moduleName: string, cwd: string = process.cwd())
 export function projectDirOf(plainFile: string): string {
   const start = dirname(resolve(plainFile));
   for (let dir = start; ; dir = dirname(dir)) {
-    if (existsSync(join(dir, "config.yaml")) || existsSync(join(dir, MODULES_DIR)) || hasModuleConfig(dir)) return dir;
+    if (isProjectDir(dir)) return dir;
     if (dirname(dir) === dir) return start;
   }
+}
+
+/** Whether a folder says it is a project: it holds a config file or `plain_modules/`. */
+export function isProjectDir(dir: string): boolean {
+  return existsSync(join(dir, "config.yaml")) || existsSync(join(dir, MODULES_DIR)) || hasModuleConfig(dir);
 }
 
 /** Whether a folder holds a config file - config.turri.yaml, a stack's config.turri.<stack>.yaml, or one in the old naming - which makes it a project too. */
