@@ -27,8 +27,9 @@ import { applyChanges, changesBetween, inconsistencies, layoutOf, makeStep, pars
  * 3. Where each new implementation req goes - the group it is about, or the first, when it is about
  *    everything - and each new test req: the group whose conformance tests need it first. An agent judges it.
  *
- * Changes to what is built already - an item edited or taken out, a functional spec built changed - go first, in a
- * job of their own. Every answer is checked; one that does not hold goes back to its agent, twice at most, and then
+ * Changes to what is built already - an item edited or taken out, a functional spec built changed - go where the
+ * grouping agent places each: with the new work it is about, by default, or first, in a job of their own, when it
+ * reshapes what the new work is built on or has nothing to do with it. Every answer is checked; one that does not hold goes back to its agent, twice at most, and then
  * the plan falls back to a functional spec a job. A job past `max-lines-per-pulse` (MAX_LINES_PER_JOB unset) is split. The plan is the queue
  * master's proposal: it reviews it, and may change it, held to the same checks.
  */
@@ -181,8 +182,24 @@ export interface NewSpec {
   place?: number;
 }
 
+/**
+ * A change to what is built already, for the grouping: the number the agent answers with, whether it is changed, taken
+ * out or put in among what is built, what it is - a functional spec, a definition, a req - and its text. `id` and
+ * `module` say which functional spec it is.
+ */
+export interface BuiltChange {
+  number: number;
+  kind: "changed" | "taken out" | "added";
+  what: string;
+  text: string;
+  id?: string;
+  module?: string;
+}
+
 export interface GroupAnswer {
   groups: Array<{ specs: number[]; title: string }>;
+  /** Where each change to what is built goes: with a group, by its number, or "first" - a pulse of its own, before the new work. */
+  built?: Array<{ change: number; to: number | "first" }>;
   /** What of the person's wishes it did not follow, and why. */
   notes?: string;
 }
@@ -224,7 +241,7 @@ export interface TitleAnswer {
  * first functional spec's first line; without it, they keep that.
  */
 export interface ChunkAgents {
-  group(specs: NewSpec[], check: (answer: GroupAnswer) => string[], steering?: Steering[], maxSpecs?: number): Promise<GroupAnswer | undefined>;
+  group(specs: NewSpec[], check: (answer: GroupAnswer) => string[], steering?: Steering[], maxSpecs?: number, built?: BuiltChange[]): Promise<GroupAnswer | undefined>;
   place(input: PlaceInput, check: (answer: PlaceAnswer) => string[]): Promise<PlaceAnswer | undefined>;
   title?(groups: TitleGroup[], check: (answer: TitleAnswer) => string[], track: "code" | "conformance"): Promise<TitleAnswer | undefined>;
 }
@@ -260,8 +277,35 @@ function definedBy(text: string): string[] {
   return extractConceptsFromDefinition(text)[0];
 }
 
-/** What is wrong with a grouping: every new functional spec once, in order, next to each other, none too big. */
-export function groupProblems(specs: NewSpec[], answer: GroupAnswer, maxSpecs = MAX_SPECS_PER_JOB): string[] {
+/**
+ * What is wrong with a grouping: every new functional spec once, in order, next to each other, none too big - and
+ * every change to what is built placed once, with a group or first. A functional spec changed counts in its group: it
+ * is built as the new ones are. One taken out builds nothing, and does not.
+ */
+export function groupProblems(specs: NewSpec[], answer: GroupAnswer, maxSpecs = MAX_SPECS_PER_JOB, built: BuiltChange[] = []): string[] {
+  const problems = newSpecProblems(specs, answer, maxSpecs, built);
+  const placed = new Map<number, number>();
+  for (const entry of answer.built ?? []) {
+    if (!built.some((change) => change.number === entry.change)) problems.push(`There is no change ${entry.change} to what is built.`);
+    placed.set(entry.change, (placed.get(entry.change) ?? 0) + 1);
+    const valid = entry.to === "first" || (Number.isInteger(entry.to) && entry.to >= 1 && entry.to <= answer.groups.length);
+    if (!valid) problems.push(`Change ${entry.change} to what is built goes to ${entry.to}, which is no group: a group's number, or "first".`);
+  }
+  for (const change of built) {
+    const times = placed.get(change.number) ?? 0;
+    if (times === 0) problems.push(`change ${change.number} to what is built is not placed: every one goes with a group, or "first".`);
+    if (times > 1) problems.push(`Change ${change.number} to what is built is placed ${times} times: once.`);
+  }
+  return problems;
+}
+
+/** How many functional specs a group builds: its new ones, and those changed that go with it. */
+function builtIn(group: number, answer: GroupAnswer, built: BuiltChange[]): number {
+  const changed = new Set(built.filter((change) => change.kind !== "taken out" && change.what === "functional spec").map((change) => change.number));
+  return (answer.built ?? []).filter((entry) => entry.to === group && changed.has(entry.change)).length;
+}
+
+function newSpecProblems(specs: NewSpec[], answer: GroupAnswer, maxSpecs: number, built: BuiltChange[]): string[] {
   const problems: string[] = [];
   const numbers = specs.map((spec) => spec.number);
   const given = answer.groups.flatMap((group) => group.specs);
@@ -274,15 +318,22 @@ export function groupProblems(specs: NewSpec[], answer: GroupAnswer, maxSpecs = 
     if (first === undefined || second === undefined) return b === a + 1;
     return first.module === second.module && (second.place ?? second.number) === (first.place ?? first.number) + 1;
   };
-  for (const group of answer.groups) {
+  answer.groups.forEach((group, index) => {
     if (group.specs.length === 0) problems.push(`"${group.title}" has no functional spec.`);
-    if (group.specs.length > maxSpecs) problems.push(`"${group.title}" has ${group.specs.length} functional specs - at most ${maxSpecs}.`);
+    const changed = builtIn(index + 1, answer, built);
+    if (group.specs.length + changed > maxSpecs) {
+      problems.push(
+        changed === 0
+          ? `"${group.title}" has ${group.specs.length} functional specs - at most ${maxSpecs}.`
+          : `"${group.title}" has ${group.specs.length + changed} functional specs to build - ${group.specs.length} new, ${changed} changed - at most ${maxSpecs}.`,
+      );
+    }
     for (let i = 1; i < group.specs.length; i += 1) {
       if (!nextTo(group.specs[i - 1]!, group.specs[i]!)) problems.push(`"${group.title}" groups ${group.specs.join(", ")}: only functional specs next to each other in the same module go together.`);
     }
     if (group.title.trim() === "") problems.push("Every group needs a title.");
     else if (!fitsTitle(group.title)) problems.push(`"${group.title}" is too long for a title: at most ${TITLE_WORDS} words and ${TITLE_CHARS} characters.`);
-  }
+  });
   return problems;
 }
 
@@ -359,6 +410,8 @@ interface Chunk {
   reqs: SpecChange[];
   /** The changes to what is built, for the job that goes first. */
   built?: SpecChange[];
+  /** The changes to what is built that go with this group's new work. */
+  joined?: SpecChange[];
 }
 
 /**
@@ -371,7 +424,7 @@ function placeDefinitions(chunks: Chunk[], definitions: SpecChange[]): void {
   const placed = new Set<SpecChange>();
   for (const chunk of chunks) {
     chunk.definitions = [];
-    const queue = [...chunk.specs, ...chunk.reqs, ...(chunk.built ?? [])].flatMap((change) => namedIn(textOf(change)));
+    const queue = [...chunk.specs, ...chunk.reqs, ...(chunk.built ?? []), ...(chunk.joined ?? [])].flatMap((change) => namedIn(textOf(change)));
     for (let concept = queue.shift(); concept !== undefined; concept = queue.shift()) {
       const definition = byConcept.get(concept);
       if (definition === undefined || placed.has(definition)) continue;
@@ -393,7 +446,7 @@ function movableSize(chunk: Chunk): number {
 }
 
 function sizeOf(chunk: Chunk): number {
-  return [...chunk.specs, ...chunk.definitions, ...chunk.reqs, ...(chunk.built ?? [])].reduce((total, change) => total + linesOf(change), 0);
+  return [...chunk.specs, ...chunk.definitions, ...chunk.reqs, ...(chunk.built ?? []), ...(chunk.joined ?? [])].reduce((total, change) => total + linesOf(change), 0);
 }
 
 /**
@@ -404,7 +457,7 @@ function sizeOf(chunk: Chunk): number {
 function draftOf(chunks: Chunk[], net: SpecChange[]): DraftJob[] {
   return chunks
     .map((chunk) => {
-      const ids = new Set([...chunk.specs, ...chunk.definitions, ...chunk.reqs, ...(chunk.built ?? [])].map((change) => change.id));
+      const ids = new Set([...chunk.specs, ...chunk.definitions, ...chunk.reqs, ...(chunk.built ?? []), ...(chunk.joined ?? [])].map((change) => change.id));
       return { chunk, changes: net.filter((change) => ids.has(change.id)).map((change) => change.id) };
     })
     .filter((entry) => entry.changes.length > 0)
@@ -496,6 +549,36 @@ function conformanceGroups(
   return groups.map((group) => ({ specs: group.specs, title: group.specs.map(titleOfSpec).join("; ") }));
 }
 
+/** What an item of a section is, in the words the grouping agent is told it in. */
+const WHAT: Record<string, string> = {
+  [FUNCTIONAL_REQUIREMENTS]: "functional spec",
+  [REQUIRED_FUNCTIONAL_SPECS]: "functional spec",
+  [DEFINITIONS]: "definition",
+  [NON_FUNCTIONAL_REQUIREMENTS]: "implementation req",
+  [TEST_REQUIREMENTS]: "test req",
+};
+
+/** A change to what is built as the grouping agent is shown it: what it is, how it changes, and its text as it is now - or was, taken out. */
+function builtChangeOf(change: SpecChange, number: number, moduleName: string | undefined): BuiltChange {
+  const id = funcIdOf(change);
+  let module: string | undefined;
+  if (change.section === REQUIRED_FUNCTIONAL_SPECS) {
+    try {
+      module = (JSON.parse(change.after ?? change.before ?? "{}") as { module?: string }).module;
+    } catch {
+      // Not an item with a module.
+    }
+  } else if (change.section === FUNCTIONAL_REQUIREMENTS) module = moduleName;
+  return {
+    number,
+    kind: change.kind === "change" ? "changed" : change.kind === "remove" ? "taken out" : "added",
+    what: WHAT[change.section] ?? change.section,
+    text: textOf(change),
+    ...(id !== undefined ? { id } : {}),
+    ...(module !== undefined ? { module } : {}),
+  };
+}
+
 /** A functional spec's func-id, as the tree it is in has it - or nothing when it says none. */
 function funcIdOf(change: SpecChange): string | undefined {
   for (const side of [change.after, change.before]) {
@@ -544,7 +627,10 @@ async function cut(input: PlanInput, agents?: ChunkAgents, notes?: string[]): Pr
   const otherAdds = net.filter((change) => change.kind === "add" && !inSpecs.has(change) && !placedByKind.has(change) && change.section !== FUNCTIONAL_REQUIREMENTS);
   // Anything else changes what is built on - an edit, a removal, a functional spec built changed or put in among them.
   const builtChanges = net.filter((change) => !inSpecs.has(change) && !placedByKind.has(change) && !otherAdds.includes(change));
-  const hasBuilt = builtChanges.length > 0;
+  // Shown to the grouping agent, which puts each with the new work it belongs with or first; unplaced, each goes first.
+  const builtShown: BuiltChange[] = builtChanges.map((change, index) => builtChangeOf(change, index + 1, input.moduleName));
+  /** Where each change to what is built goes: with the group holding a new functional spec - by that spec's number - or first. */
+  const builtTo = new Map<SpecChange, number | "first">();
   // Named as the person asks for it: "shorty.plain regenerate".
   const whole: DraftJob[] = [{ title: "regenerate", reason: "the whole of the work, in one job", changes: net.map((change) => change.id) }];
   if (specs.length === 0) return checkDraft(input, whole).length === 0 ? whole : [];
@@ -563,9 +649,16 @@ async function cut(input: PlanInput, agents?: ChunkAgents, notes?: string[]): Pr
     };
   });
   const bySpec = new Map(specs.map((change, index) => [index + 1, change]));
+  const firstBuilt = () => builtChanges.filter((change) => (builtTo.get(change) ?? "first") === "first");
   const chunksFor = (list: Array<{ specs: number[]; title: string }>): Chunk[] => [
-    ...(hasBuilt ? [{ title: "Changes to what is built", specs: [], definitions: [], reqs: [], built: builtChanges }] : []),
-    ...list.map((group) => ({ title: group.title, specs: group.specs.map((number) => bySpec.get(number)!), definitions: [], reqs: [] })),
+    ...(firstBuilt().length > 0 ? [{ title: "Changes to what is built", specs: [], definitions: [], reqs: [], built: firstBuilt() }] : []),
+    ...list.map((group) => ({
+      title: group.title,
+      specs: group.specs.map((number) => bySpec.get(number)!),
+      definitions: [],
+      reqs: [],
+      joined: builtChanges.filter((change) => group.specs.includes(builtTo.get(change) as number)),
+    })),
   ];
   const conformance = input.track === "conformance";
   // The conformance tests are grouped and their reqs placed by the harness: their agents are only asked for titles.
@@ -586,8 +679,15 @@ async function cut(input: PlanInput, agents?: ChunkAgents, notes?: string[]): Pr
     say(answer === undefined ? "the titles were not given - each pulse titled by its functional specs' first lines" : `the titles did not hold (${problems.join(" ")}) - each pulse titled by its functional specs' first lines`);
     return list;
   };
-  const grouped = conformance ? undefined : ((await agents?.group(numbered, (answer) => groupProblems(numbered, answer, maxSpecs), input.steering, maxSpecs).catch((error: unknown) => plannerFailed("group", error))) ?? undefined);
-  const holds = grouped !== undefined && groupProblems(numbered, grouped, maxSpecs).length === 0;
+  const grouped = conformance ? undefined : ((await agents?.group(numbered, (answer) => groupProblems(numbered, answer, maxSpecs, builtShown), input.steering, maxSpecs, builtShown.length > 0 ? builtShown : undefined).catch((error: unknown) => plannerFailed("group", error))) ?? undefined);
+  const holds = grouped !== undefined && groupProblems(numbered, grouped, maxSpecs, builtShown).length === 0;
+  // The grouping holds: each change to what is built goes where it was placed.
+  if (holds) {
+    for (const entry of grouped.built ?? []) {
+      const change = builtChanges[entry.change - 1];
+      if (change !== undefined) builtTo.set(change, entry.to === "first" ? "first" : grouped.groups[entry.to - 1]!.specs[0]!);
+    }
+  }
   const made = conformance
     ? conformanceGroups(
         numbered,
@@ -608,9 +708,9 @@ async function cut(input: PlanInput, agents?: ChunkAgents, notes?: string[]): Pr
     if (grouped === undefined) {
       record({ kind: "planner.fellBack", step: "group", why: "no grouping was given" });
       say("the grouping was not given - a functional spec a pulse");
-    } else if (groupProblems(numbered, grouped, maxSpecs).length > 0) {
-      record({ kind: "planner.fellBack", step: "group", why: firstLine(groupProblems(numbered, grouped, maxSpecs).join(" "), 300) });
-      say(`the grouping did not hold (${groupProblems(numbered, grouped, maxSpecs).join(" ")}) - a functional spec a pulse`);
+    } else if (groupProblems(numbered, grouped, maxSpecs, builtShown).length > 0) {
+      record({ kind: "planner.fellBack", step: "group", why: firstLine(groupProblems(numbered, grouped, maxSpecs, builtShown).join(" "), 300) });
+      say(`the grouping did not hold (${groupProblems(numbered, grouped, maxSpecs, builtShown).join(" ")}) - a functional spec a pulse`);
     }
   }
   // Titled before the chunks are made of them: a group split for its size keeps its title, numbered.
@@ -629,7 +729,7 @@ async function cut(input: PlanInput, agents?: ChunkAgents, notes?: string[]): Pr
     const placeInput: PlaceInput = {
       ...(input.steering !== undefined ? { steering: input.steering } : {}),
       groups: newChunks().map((chunk, index) => ({ number: index + 1, title: chunk.title, specs: chunk.specs.map(textOf), definitions: chunk.definitions.map(textOf) })),
-      built: hasBuilt,
+      built: chunks.some((chunk) => chunk.built !== undefined),
       implementationReqs: implementationReqs.map((change, index) => ({ number: index + 1, text: textOf(change) })),
       testReqs: testReqs.map((change, index) => ({ number: index + 1, text: textOf(change) })),
     };
@@ -714,6 +814,7 @@ async function cut(input: PlanInput, agents?: ChunkAgents, notes?: string[]): Pr
   // It does not hold together: a functional spec a job, every req with the first.
   say(`the plan did not hold together (${checkDraft(input, draft)[0]?.slice(0, 120)}) - a functional spec a pulse`);
   placement = undefined;
+  builtTo.clear();
   groups.splice(0, groups.length, ...(await titled(numbered.map((spec, index) => ({ specs: [spec.number], title: titleOf(specs[index]!) })))));
   chunks = chunksFor(groups);
   place();
@@ -725,11 +826,11 @@ async function cut(input: PlanInput, agents?: ChunkAgents, notes?: string[]): Pr
 // ---------------------------------------------------------------------------------------------
 // The agents.
 
-export function groupPrompt(specs: NewSpec[], steering?: Steering[], maxSpecs = MAX_SPECS_PER_JOB): string {
+export function groupPrompt(specs: NewSpec[], steering?: Steering[], maxSpecs = MAX_SPECS_PER_JOB, built: BuiltChange[] = []): string {
   return [
     "You plan how new work on a codebase is built: which of its new functional specs are built together, in one job.",
     "",
-    "Each job is rendered by a coding agent, reviewed and tested, then the next - fewer, fuller jobs: each job costs a",
+    "Each job is regenerated by a coding agent, reviewed and tested, then the next - fewer, fuller jobs: each job costs a",
     "coding session, a test run and a review. So group by default: what builds one feature goes together - the feature,",
     `its edge cases, and the functional specs that build on it - up to ${maxSpecs}: a component and the parts only it uses`,
     "(a timeout handler, a retry handler and the executor that runs a function through both), an endpoint and the one",
@@ -759,7 +860,28 @@ export function groupPrompt(specs: NewSpec[], steering?: Steering[], maxSpecs = 
         `<functional spec number="${spec.number}"${spec.module !== undefined ? ` module="${spec.module}"` : ""} id="${spec.id ?? spec.number}"${spec.place !== undefined ? ` place="${spec.place}"` : ""}${spec.again === true ? ' again="true"' : ""}>\n${spec.text.trim()}\n</functional spec>`,
     ),
     "",
-    "Call submit_groups once, with every one of them in a group.",
+    ...(built.length > 0
+      ? [
+          "The same work changes what is built already - below. Place each change: with the group of new functional specs",
+          'it belongs with, by the group\'s number, or "first" - in a pulse of its own, before the new work.',
+          "",
+          "- With a group, by default, when it is about the same thing as the group's new functional specs: one they build",
+          "  on changed, or one of the same feature changed or taken out. One pulse costs less than two.",
+          '- "first" when it reshapes what the new work is built on - a concept many functional specs use redefined, a',
+          "  functional spec others rely on taken out, a large rewrite - so the new work is built on code already changed and",
+          '  tested. "first" too when it has nothing to do with any group, or is too large to share a pulse.',
+          `- A functional spec changed counts toward its group's ${maxSpecs}; one taken out builds nothing, and does not.`,
+          "",
+          "The changes to what is built:",
+          "",
+          ...built.map(
+            (change) =>
+              `<change number="${change.number}" kind="${change.kind}" what="${change.what}"${change.module !== undefined ? ` module="${change.module}"` : ""}${change.id !== undefined ? ` id="${change.id}"` : ""}>\n${change.text.trim()}\n</change>`,
+          ),
+          "",
+        ]
+      : []),
+    `Call submit_groups once, with every one of them in a group${built.length > 0 ? ", and every change to what is built placed" : ""}.`,
   ].join("\n");
 }
 
@@ -834,12 +956,12 @@ async function askStep<A>(options: { cwd: string; model?: string; label: string;
 export function llmChunkAgents(options: { cwd: string; model?: string; label?: string }): ChunkAgents {
   const label = options.label ?? "queue planner";
   return {
-    group: (specs, check, steering, maxSpecs) =>
+    group: (specs, check, steering, maxSpecs, built) =>
       askStep<GroupAnswer>({
         cwd: options.cwd,
         model: options.model,
         label: `${label} grouping`,
-        task: groupPrompt(specs, steering, maxSpecs),
+        task: groupPrompt(specs, steering, maxSpecs, built),
         check,
         tool: (take) =>
           defineTool({
@@ -848,6 +970,11 @@ export function llmChunkAgents(options: { cwd: string; model?: string; label?: s
             description: `The new functional specs in groups, in order: each group's spec numbers and a title of at most ${TITLE_WORDS} words and ${TITLE_CHARS} characters.`,
             parameters: Type.Object({
               groups: Type.Array(Type.Object({ specs: Type.Array(Type.Number()), title: Type.String({ description: `What the group builds: at most ${TITLE_WORDS} words and ${TITLE_CHARS} characters.` }) })),
+              built: Type.Optional(
+                Type.Array(Type.Object({ change: Type.Number(), to: Type.Union([Type.Number(), Type.Literal("first")]) }), {
+                  description: 'Where each change to what is built goes: with a group, by its number, or "first" - a pulse of its own, before the new work.',
+                }),
+              ),
               notes: Type.Optional(Type.String({ description: NOTES })),
             }),
             async execute(_id, params) {

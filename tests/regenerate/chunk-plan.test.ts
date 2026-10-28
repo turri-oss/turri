@@ -20,11 +20,11 @@ function input(base: object, current: object): PlanInput {
 }
 
 /** Stand-in agents: they answer as told, and record what they were shown. */
-function agents(group?: GroupAnswer, place?: PlaceAnswer): ChunkAgents & { shown: { specs?: unknown; place?: unknown } } {
-  const shown: { specs?: unknown; place?: unknown } = {};
+function agents(group?: GroupAnswer, place?: PlaceAnswer): ChunkAgents & { shown: { specs?: unknown; built?: unknown; place?: unknown } } {
+  const shown: { specs?: unknown; built?: unknown; place?: unknown } = {};
   return {
     shown,
-    group: async (specs) => ((shown.specs = specs), group),
+    group: async (specs, _check, _steering, _maxSpecs, built) => ((shown.specs = specs), (shown.built = built), group),
     place: async (given) => ((shown.place = given), place),
   };
 }
@@ -106,6 +106,48 @@ describe("cutting the queue's work into jobs", () => {
     expect(comments!.diff).toContain("+- :Comment: is a text");
   });
 
+  describe("what is built already, changed, with the new work", () => {
+    // A functional spec changed, one taken out and one added - one edit, as a person makes it.
+    const base = tree({ definitions: DEFS.slice(0, 3), specs: SPECS.slice(0, 3) });
+    const current = { ...(tree({ definitions: DEFS.slice(0, 3) }) as object), "functional specs": [fspec(SPECS[0]!), fspec("A :User: signs in with their :Handle:.", IDS[1]), fspec(SPECS[3]!)] } as never;
+
+    it("shows the grouping agent each change to what is built - what it is, and whether it is changed or taken out", async () => {
+      const chosen = agents({ groups: [{ specs: [1], title: "Comments" }], built: [{ change: 1, to: "first" }, { change: 2, to: "first" }] });
+      await planChunks(input(base, current), chosen);
+      expect(chosen.shown.built).toEqual([
+        expect.objectContaining({ number: 1, kind: "changed", what: "functional spec", id: IDS[1], text: "A :User: signs in with their :Handle:." }),
+        expect.objectContaining({ number: 2, kind: "taken out", what: "functional spec", id: IDS[2], text: SPECS[2] }),
+      ]);
+    });
+
+    it("builds an add, a patch and a removal in one pulse when the agent puts the changes with the new work", async () => {
+      const from = input(base, current);
+      const plan = await planChunks(from, agents({ groups: [{ specs: [1], title: "Comments" }], built: [{ change: 1, to: 1 }, { change: 2, to: 1 }] }));
+      expect(checkDraft(from, plan)).toEqual([]);
+      expect(plan.map((job) => job.title)).toEqual(["Comments"]);
+      const [comments] = jobs(plan, from);
+      expect(comments!.diff).toContain("+A :User: signs in with their :Handle:.");
+      expect(comments!.diff).toContain(`-${SPECS[2]}`);
+      expect(comments!.diff).toContain(`+${SPECS[3]}`);
+    });
+
+    it("builds a change the agent puts first in a pulse of its own, before the new work", async () => {
+      const from = input(base, current);
+      const plan = await planChunks(from, agents({ groups: [{ specs: [1], title: "Comments" }], built: [{ change: 1, to: "first" }, { change: 2, to: 1 }] }));
+      expect(checkDraft(from, plan)).toEqual([]);
+      expect(plan.map((job) => job.title)).toEqual(["Changes to what is built", "Comments"]);
+      const [built, comments] = jobs(plan, from);
+      expect(built!.diff).toContain("+A :User: signs in with their :Handle:.");
+      expect(built!.diff).not.toContain(`-${SPECS[2]}`);
+      expect(comments!.diff).toContain(`-${SPECS[2]}`);
+    });
+
+    it("puts every change to what is built first when the grouping places none of them", async () => {
+      const plan = await planChunks(input(base, current), agents({ groups: [{ specs: [1], title: "Comments" }] }));
+      expect(plan.map((job) => job.title)).toEqual(["Changes to what is built", expect.any(String)]);
+    });
+  });
+
   it("groups functional specs regenerated again as it groups new ones - those next to each other in one job - apart from the changes to what is built", async () => {
     const built = tree({ definitions: DEFS, specs: SPECS });
     const marked = { ...built, "functional specs": SPECS.map((markdown, index) => (index === 1 || index === 2 ? { ...fspec(markdown), regenerate_again: true } : fspec(markdown))) } as never;
@@ -181,6 +223,18 @@ describe("cutting the queue's work into jobs", () => {
     expect(prompt).toContain("up to 5");
     expect(prompt).toContain("Keep a functional spec alone only when it is truly\nindependent");
     expect(prompt).not.toContain("better small than wide");
+  });
+
+  it("asks the grouping agent to place each change to what is built - with the new work it is about by default, first when it reshapes what that is built on", async () => {
+    const { groupPrompt } = await import("../../src/regenerate/chunk-plan.ts");
+    const built = [{ number: 1, kind: "taken out" as const, what: "functional spec", module: "todo", id: "remove-task", text: "A :Task: can be removed." }];
+    const prompt = groupPrompt([{ number: 1, text: "- spec 1" }], undefined, 3, built);
+    expect(prompt).toContain("With a group, by default, when it is about the same thing as the group's new functional specs");
+    expect(prompt).toContain('"first" when it reshapes what the new work is built on');
+    expect(prompt).toContain('<change number="1" kind="taken out" what="functional spec" module="todo" id="remove-task">\nA :Task: can be removed.\n</change>');
+    expect(prompt).toContain("and every change to what is built placed.");
+    // With nothing built changed, none of it.
+    expect(groupPrompt([{ number: 1, text: "- spec 1" }], undefined, 3)).not.toContain("changes what is built already");
   });
 
   it("notes what the plan did not do as asked - the wishes an agent did not follow, and an answer that did not hold, with why", async () => {
@@ -327,6 +381,21 @@ describe("the checks a plan is held to", () => {
     expect(groupProblems(specs, { groups: [{ specs: [2, 1], title: "a" }, { specs: [3, 4], title: "b" }] }).join("\n")).toContain("in the order");
     expect(groupProblems(specs, { groups: [{ specs: [1, 2], title: "a" }] }).join("\n")).toContain("every new functional spec once");
     expect(groupProblems(specs, { groups: [] }).join("\n")).toContain("They hold none.");
+  });
+
+  it("hold every change to what is built placed once, with a group or first - a changed functional spec counted in its group, one taken out not", () => {
+    const built = [
+      { number: 1, kind: "changed" as const, what: "functional spec", text: "changed" },
+      { number: 2, kind: "taken out" as const, what: "functional spec", text: "gone" },
+    ];
+    const two = [{ specs: [1, 2], title: "a" }, { specs: [3, 4], title: "b" }];
+    expect(groupProblems(specs, { groups: two, built: [{ change: 1, to: 1 }, { change: 2, to: "first" }] }, 3, built)).toEqual([]);
+    expect(groupProblems(specs, { groups: two }, 3, built).join("\n")).toContain("change 1 to what is built is not placed");
+    expect(groupProblems(specs, { groups: two, built: [{ change: 1, to: 3 }, { change: 2, to: 1 }] }, 3, built).join("\n")).toContain("goes to 3, which is no group");
+    expect(groupProblems(specs, { groups: two, built: [{ change: 1, to: 1 }, { change: 1, to: 2 }, { change: 2, to: 1 }] }, 3, built).join("\n")).toContain("placed 2 times");
+    // Three to build with the changed one: past two. The one taken out builds nothing, and is not counted.
+    expect(groupProblems(specs, { groups: two, built: [{ change: 1, to: 1 }, { change: 2, to: 2 }] }, 2, built).join("\n")).toContain('"a" has 3 functional specs to build - 2 new, 1 changed - at most 2');
+    expect(groupProblems(specs, { groups: two, built: [{ change: 1, to: "first" }, { change: 2, to: 2 }] }, 2, built)).toEqual([]);
   });
 
   it("hold a group's title to ten words and 70 characters", () => {
