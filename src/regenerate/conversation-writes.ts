@@ -8,7 +8,8 @@ import { basename, dirname, join, resolve } from "node:path";
  * for the command's. But the conversation goes on beside the pulses: the person's model edits a spec, writes a spec
  * diff or runs a command of its own, and a change of its that lands while an agent's `ls` runs would be put back as the
  * agent's - the person's edit undone, silently. So the conversation's file tools, its shell and the spec diffs it applies
- * say here what they write and when, and the audit leaves a change the conversation made while the command ran.
+ * say here what they write and when, and the audit leaves a change the conversation made while the command ran. The
+ * test advisor lands its ***plain change beside the pulses too, and says so here the same way.
  *
  * Only the conversation reaches this: the agents of a pulse are started without extensions, so its hooks never see
  * their tools, and their own writes are fenced to their folders.

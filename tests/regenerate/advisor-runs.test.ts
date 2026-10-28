@@ -189,6 +189,27 @@ describe("which functional specs the test advisor takes", () => {
     expect(advisorEntry(dir, "app", "say-hello")?.state).toBe("no");
   });
 
+  it("says a landing's functional spec is built only when its code is built from the text the scenarios are for", async () => {
+    writeFileSync(join(dir, "app.plain"), module([["say-hello", "Say hello."]]));
+    const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run: lands });
+    await loop.bringUp("app.plain");
+    await loop.drain();
+    const landed: Array<{ funcId: string; built: boolean }> = [];
+    const advisor = createTestAdvisor({
+      advise: async () => ({ verdict: "yes" as const, questions: [{ question: "silent-failure" as const, evidence: "It prints hullo." }], inputs: [] }),
+      write: async () => ({ scenarios: [{ kind: "conformance" as const, id: "greets", hash: textHash("x") }], testReqs: false, script: false }),
+      onLanded: (landing) => landed.push(landing),
+    });
+    // The tip is built with say-hello as it reads, but not with say-bye: its scenarios are tested once it is.
+    writeFileSync(join(dir, "app.plain"), module([["say-hello", "Say hello."], ["say-bye", "Say goodbye."]]));
+    advisor.seen(lookAt("app.plain"));
+    await advisor.idle();
+    expect(landed.map(({ funcId, built }) => ({ funcId, built })).sort((a, b) => a.funcId.localeCompare(b.funcId))).toEqual([
+      { funcId: "say-bye", built: false },
+      { funcId: "say-hello", built: true },
+    ]);
+  });
+
   it("does nothing with test-advisor: false", async () => {
     writeFileSync(join(dir, "config.turri.yaml"), "test-advisor: false\n");
     writeFileSync(join(dir, "app.plain"), module([["say-hello", "Say hello."]]));

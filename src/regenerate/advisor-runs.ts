@@ -307,8 +307,15 @@ export function createTestAdvisor(options: TestAdvisorOptions = {}): TestAdvisor
     }
   };
 
-  /** Whether the tip's code is built - it has a code record. */
-  const builtNow = (work: Work): boolean => readRecord(buildDirUnder(modulesRoot(work.project), basename(work.tip).replace(/\.plain$/, ""))) !== null;
+  /** Whether the functional spec's code is built as its text now reads - the tip's code record has it so. */
+  const builtNow = (work: Work): boolean => {
+    const tipName = basename(work.tip).replace(/\.plain$/, "");
+    const record = readRecord(buildDirUnder(modulesRoot(work.project), tipName));
+    if (record === null) return false;
+    const items = (section: string) => (record[section] as Array<{ id?: string; module?: string; markdown?: string }> | undefined) ?? [];
+    const built = work.module === tipName ? items(FUNCTIONAL_REQUIREMENTS).find((item) => item.id === work.funcId) : items(REQUIRED_FUNCTIONAL_SPECS).find((item) => item.module === work.module && item.id === work.funcId);
+    return built !== undefined && (built.markdown ?? "").trim() === work.text;
+  };
 
   /** A functional spec taken again, as its module's .plain file has it now - unless it is gone, or the person's to test. */
   const retake = (work: Work) => {

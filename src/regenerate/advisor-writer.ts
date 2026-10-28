@@ -12,6 +12,7 @@ import { checkPlainTool } from "../validate-tool.ts";
 import { clearOfStop, JobStoppedError } from "./activity.ts";
 import { scenariosOf, textHash, type AdvisorReport } from "./advisor-records.ts";
 import { AdvisorDroppedError, type AdvisorWork, type AdvisorWritten } from "./advisor-runs.ts";
+import { conversationWriting } from "./conversation-writes.ts";
 import type { WorkLoop } from "./loop.ts";
 import { ensureInScratch, MODULES_DIR, resolveTemplateDirs } from "./paths.ts";
 import { writeTestReqs } from "./test-advisor.ts";
@@ -200,11 +201,17 @@ export function createAdvisorWriter(options: AdvisorWriterOptions): (work: Advis
       if (item === undefined || textHash(item.markdown) !== work.hash) throw new AdvisorDroppedError("the functional spec's text changed while it wrote");
       stopped();
       const originals = new Map(changed.map((path) => [path, existsSync(join(project, path)) ? readFileSync(join(project, path)) : undefined]));
+      // Written beside the pulses as the conversation's writes are: the audit of an agent's command running now leaves them.
       const put = (path: string, content: Buffer | undefined) => {
-        if (content === undefined) rmSync(join(project, path), { force: true });
-        else {
-          mkdirSync(dirname(join(project, path)), { recursive: true });
-          writeFileSync(join(project, path), content);
+        const done = conversationWriting([join(project, path)]);
+        try {
+          if (content === undefined) rmSync(join(project, path), { force: true });
+          else {
+            mkdirSync(dirname(join(project, path)), { recursive: true });
+            writeFileSync(join(project, path), content);
+          }
+        } finally {
+          done();
         }
       };
       for (const path of changed) put(path, existsSync(join(copy, path)) ? readFileSync(join(copy, path)) : undefined);

@@ -132,6 +132,15 @@ describe("what the test advisor writes on a yes", () => {
     expect(readdirSync(join(dir, ".turri", "advisor", "work"))).toEqual([]);
   });
 
+  it("says what it lands, so the audit of an agent's command running meanwhile leaves it", async () => {
+    const { writtenByConversation } = await import("../../src/regenerate/conversation-writes.ts");
+    writeFileSync(join(dir, "app.plain"), `---\nimport:\n  - stdlib/cli/python-argparse\n---\n\n***functional specs***\n\n${SAY_HELLO}`);
+    const since = Date.now() - 1;
+    await createAdvisorWriter({ loop: stubLoop })(workOn());
+    expect(writtenByConversation(join(dir, "tests", "app", "say-hello.plain"), since)).toBe(true);
+    expect(writtenByConversation(join(dir, "app.plain"), since)).toBe(true);
+  });
+
   it("writes the module's own test reqs when its stack has no conformance template", async () => {
     writeFileSync(join(dir, "app.plain"), `***implementation reqs***\n\n- :Implementation: is Python.\n\n***functional specs***\n\n${SAY_HELLO}`);
     await createAdvisorWriter({ loop: stubLoop })(workOn());
