@@ -596,6 +596,10 @@ describe("the side panel's two views", () => {
     expect(lines.find((line) => line.includes("# register"))).toMatch(/^[ ›] {2}◆ {4}│ # register/);
     expect(lines.find((line) => line.includes("# log-in"))).toMatch(/^[ ›] {2}◇ {4}│ # log-in/);
     expect(lines.find((line) => line.includes("# search"))).toMatch(/^[ ›] {2}○ {4}│ # search/);
+    // A line of space between one functional spec and the next, as the file writes them.
+    const logIn = lines.findIndex((line) => line.includes("# log-in"));
+    expect(lines[logIn - 1]).toBe("        │");
+    expect(lines[logIn - 2]).toMatch(/│ \S/);
     // A functional spec with no scenarios says nothing of it on its row: its mark says where it stands.
     expect(lines.find((line) => line.includes("# log-in"))!.trimEnd()).toMatch(/# log-in$/);
     // The legend: up the ladder, every rung whatever the page has - to take out only where something is.

@@ -513,6 +513,10 @@ export function specMapLines(
       add(`${CONTINUED}${style.diff !== undefined ? style.diff.syntax("section", `***${item.section}***`) : style.muted(`***${item.section}***`)}`);
     }
     underImport = false;
+    // Functional specs are written apart, as their file writes them: a line of space between one and the next - one an
+    // opened spec's scenarios end on already does.
+    const above = rows[index - 1];
+    if (item.funcId !== undefined && above?.kind === "item" && above.item.funcId !== undefined && above.item.section === item.section && lines.at(-1) !== CONTINUED.trimEnd()) add(CONTINUED.trimEnd());
     rowStarts.push(lines.length);
     const mark: LineMark = item.state === "removed" ? "removed" : item.mark;
     const gutter = `${pointer}${markText(item, style, now)} ${BAR}`;
