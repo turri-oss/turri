@@ -23,7 +23,7 @@ The session's, shared by every chat:
 
 A pulse's end goes to the [sentinel](sentinel.md) - a chat of turri's own, opened in the background with the first pulse that finishes, once you said to start it under `sentinel: ask` - which checks it, tests what was released, and puts what needs you as a notice in the chat you are in. That chat shows the pulse's end; its agent is told of a pulse that landed, to tell you so and what the sentinel is doing with it - and when the sentinel is done with any pulse, what it found - and nothing more - and not of one that went wrong: the sentinel's notice is what it hears of that. With `sentinel: false`, a pulse's end is told to the chat that asked for it instead, shown or not - its agent reacts to it there; the chat's mark in the strip says it has something new. When that chat has been closed, the chat shown is told. Closing a chat stops its turn, never its pulses.
 
-The session has one [test advisor](test-advisor.md), which checks new and changed functional specs in the background for whether they need testing scenarios.
+The session has one [test advisor](test-advisor.md), which checks new and changed functional specs in the background for whether they need testing scenarios. Its verdict goes to the chat you are looking at, once that chat is idle: on a yes, the chat tells you and writes the scenarios; a no is a line.
 
 ## In the terminal
 

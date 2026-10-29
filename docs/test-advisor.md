@@ -1,6 +1,6 @@
 # The test advisor
 
-Which functional specs need explicit testing scenarios is not obvious, and not every one should be tested - only the functionality that matters. The test advisor decides for you: when a functional spec is new or its text changed and it has no scenarios, turri checks in the background whether it needs testing. It writes nothing in the \*\*\*plain - the chat is the only writer of it - and you are never asked anything.
+Which functional specs need explicit testing scenarios is not obvious, and not every one should be tested - only the functionality that matters. The test advisor decides for you: when a functional spec is new or its text changed and it has no scenarios, turri checks in the background whether it needs testing. When it does, the chat you are looking at tells you so and writes what testing it takes - the \*\*\*test reqs\*\*\*, the conformance testing script and its scenarios - so the module's conformance pulse runs once its code is built. The advisor decides; the chat is the only writer of the \*\*\*plain. You are never asked anything.
 
 ## When it runs
 
@@ -22,11 +22,23 @@ A failure - a model error, a call that never answered - is dropped quietly: the 
 
 ## What you see
 
-A change's result - `regenerate`'s, `change_plain`'s - names the functional specs the advisor has just taken up, and the chat says in a line that testing scenarios are being evaluated for them, and goes on. Its verdict is kept in the advisor's file and the ledger.
+**Being evaluated.** A change's result - `regenerate`'s, `change_plain`'s - names the functional specs the advisor has just taken up, and the chat says in a line that testing scenarios are being evaluated for them, and goes on: there is nothing to wait for.
+
+**A yes** comes back to the chat you are looking at as a message that starts a turn. It holds the report - the questions that were a yes with their evidence, and the inputs to cover - and the chat, asking you nothing:
+
+> core:clear-tasks needs testing scenarios - a wrong implementation could look right. Writing them now.
+
+then writes, with `change_plain`, whatever the [step-7 guard](regenerating.md#the-steps-of-adding-tests) would refuse the scenarios for, in turn and only what is missing: the \*\*\*test reqs\*\*\* of the module at the top of the chain, where its conformance tests live - the stack's conformance template, `stdlib/<kind>/conformance/<stack>`, imported, or the module's own; the conformance testing script for its stack, with `implement-conformance-testing-script`; then the scenarios, in `tests/<module>/<func-id>.plain`. They cover the report's inputs that are this functional spec's - an agreed one with the readers' output, never a placeholder - and a split one is settled by the reading most consistent with the functional spec and its module, the chat saying which it took. The change is visible as any is, and the conformance pulse follows once the code is built.
+
+**A no** is one line turri draws itself, starting no turn and reaching no model:
+
+> core:list-tasks doesn't need testing scenarios - nothing silent to get wrong.
+
+**Never an interruption.** A verdict that arrives while the chat is busy - its agent working, or you typing - waits until it is idle; verdicts that arrive meanwhile come together, as one turn for every yes and a line for each no. One whose functional spec changed meanwhile, or was given scenarios, is let go. A yes is kept in the advisor's file until a chat has it: one that arrives with no chat open, or whose session ends first, is delivered at the next start, as `pending` work is picked up.
 
 Asked for scenarios - "write conformance scenarios for core:add-task" - the chat decides and writes them itself, as a \*\*\*plain change you see, whatever `test-advisor` says.
 
-A host hears the `advisor.*` events through `onLedgerEvent` - see [hosting](hosting.md). Nothing else is new for it.
+A host gets the verdicts in its chats the same way - see [hosting](hosting.md).
 
 ## How it decides
 
@@ -69,6 +81,7 @@ What the advisor made of each functional spec is in `.turri/advisor/<module>.jso
 | `report` | the verdict, the questions that were a yes with their evidence, and on a yes the inputs to cover |
 | `model`, `at` | what it ran on, and when |
 | `tip` | the module at the top of its chain, where its scenarios are tested |
+| `undelivered` | a yes no chat has had yet: delivered at the next start |
 
 Deleting the folder loses only what the advisor knows: an entry that is not there is a functional spec it has not looked at.
 

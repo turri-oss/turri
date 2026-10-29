@@ -52,6 +52,8 @@ export interface AdvisorEntry {
   reason?: string;
   /** The tip's .plain file, from the project: where the chain's scenarios are tested. */
   tip?: string;
+  /** A yes not yet handed to a chat: delivered at the next start, as `pending` work is picked up. */
+  undelivered?: boolean;
 }
 
 export interface AdvisorFile {
@@ -126,6 +128,25 @@ function writeAdvisor(project: string, file: AdvisorFile): void {
 
 /** Every pending entry of a project's advisor files, with the module and its .plain file - what a start picks up. */
 export function pendingEntries(project: string): Array<{ module: string; plainFile: string; entry: AdvisorEntry }> {
+  return entriesWhere(project, (entry) => entry.state === "pending");
+}
+
+/** Every yes of a project's advisor files not yet handed to a chat - what a start delivers. */
+export function undeliveredEntries(project: string): Array<{ module: string; plainFile: string; entry: AdvisorEntry }> {
+  return entriesWhere(project, (entry) => entry.state === "yes" && entry.undelivered === true);
+}
+
+/** A yes handed to a chat: the entry for that text no longer kept for the next start. */
+export function markDelivered(project: string, module: string, funcId: string, hash: string): void {
+  const file = readAdvisor(project, module);
+  const entry = file?.entries[funcId];
+  if (file === undefined || entry === undefined || entry.hash !== hash || entry.undelivered !== true) return;
+  const { undelivered: _delivered, ...rest } = entry;
+  file.entries[funcId] = rest;
+  writeAdvisor(project, file);
+}
+
+function entriesWhere(project: string, wanted: (entry: AdvisorEntry) => boolean): Array<{ module: string; plainFile: string; entry: AdvisorEntry }> {
   const dir = advisorDir(project);
   if (!existsSync(dir)) return [];
   let names: string[];
@@ -138,7 +159,7 @@ export function pendingEntries(project: string): Array<{ module: string; plainFi
     const file = readAdvisor(project, name.slice(0, -".json".length));
     if (file === undefined) return [];
     return Object.values(file.entries)
-      .filter((entry) => entry.state === "pending")
+      .filter(wanted)
       .map((entry) => ({ module: file.module, plainFile: file.plainFile, entry }));
   });
 }

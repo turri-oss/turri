@@ -36,7 +36,7 @@ The workflow signs in to npm with npm's trusted publishing (OIDC), not a token: 
 | `src/extension.ts` | the [pi](https://pi.dev) extension: every tool and command the conversation has - and `createTurriCore`, the session it is built into |
 | `src/chats.ts`, `src/chat-scope.ts`, `src/chat-records.ts` | the session's [chats](chats.md): which chat a pulse is told to, each chat's scope - its id and stack - and `.turri/chats.json` |
 | `src/sentinel.ts`, `src/sentinel-chat.ts` | [the sentinel](sentinel.md): its prompt, what it is told of a pulse, its fenced tools, its guidance; notices - their cards, the terminal's dialog, their answers |
-| `src/regenerate/advisor-runs.ts`, `src/regenerate/test-advisor.ts`, `src/regenerate/advisor-records.ts`, `src/advisor-chat.ts` | [the test advisor](test-advisor.md): which functional specs it takes and when, its model calls, its file in `.turri/advisor/`, and what the chat is told |
+| `src/regenerate/advisor-runs.ts`, `src/regenerate/test-advisor.ts`, `src/regenerate/advisor-records.ts`, `src/advisor-chat.ts` | [the test advisor](test-advisor.md): which functional specs it takes and when, its model calls, its file in `.turri/advisor/`, and how its verdicts reach the chat |
 | `src/chat-terminal.ts`, `src/chat-ui.ts`, `src/chat-commands.ts` | the terminal's chats: [pi](https://pi.dev)'s screen switched between live sessions, a hidden chat's stand-in for it, `/chat` and its keys |
 | `src/host-session.ts` | `createTurri`, the session for a host |
 | `src/skill.ts` | parses `SKILL.md` into steps and gates |

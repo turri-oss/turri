@@ -9,6 +9,7 @@ import type { AskUserIO } from "./ask.ts";
 import { record } from "./regenerate/ledger.ts";
 import type { Job, JobRegistry } from "./regenerate/jobs.ts";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { AdvisorVerdict } from "./regenerate/advisor-runs.ts";
 import { newNotice, noticeTask, SENTINEL, sentinelStartChoice, wentWrong, type ChatRole, type Conclusion, type Notice, type NoticeAnswer, type NoticeInput } from "./notice.ts";
 
 /**
@@ -110,6 +111,11 @@ export interface ChatInstance {
   concluded(conclusion: Conclusion): void;
   /** The person answered a notice with something to do: the chat's agent started on it. */
   act(task: string): void;
+  /**
+   * The test advisor's verdict: once the chat is idle - its agent done, nothing typed - a yes starts a turn that writes its
+   * scenarios, and a no is a line. Those that arrive meanwhile are delivered together.
+   */
+  advised(verdict: AdvisorVerdict): void;
   /** The jobs changed: what it draws of them is drawn again. */
   jobsChanged(): void;
   /** How hard the chat's model thinks now: sub-agents started from it think as hard. */
@@ -210,6 +216,8 @@ export interface TurriCore {
   notice(input: NoticeInput): Notice | undefined;
   /** The sentinel done with a pulse: told to the chat the person looks at. Undefined: no chat to tell. */
   concluded(conclusion: Conclusion): string | undefined;
+  /** The test advisor's verdict, for the chat the person looks at - held until there is one. Undefined: no chat to hand it to yet. */
+  advised(verdict: AdvisorVerdict): string | undefined;
   /** The notices put to the person and not yet answered. */
   notices(): Notice[];
   /**
@@ -316,6 +324,8 @@ export function createChats(options: CoreOptions): TurriCore {
   let consent: "unasked" | "asking" | "given" | "declined" = "unasked";
   let asking: Notice | undefined;
   const held: Job[] = [];
+  /** The test advisor's verdicts that came with no chat of the person's to hand them to: handed on as one comes up. */
+  const unplaced: AdvisorVerdict[] = [];
   const run: RunRecord = { run: randomUUID().slice(0, 8), pid: process.pid, started: new Date().toISOString(), chats: [] };
 
   const changed = () => {
@@ -560,6 +570,8 @@ export function createChats(options: CoreOptions): TurriCore {
         session: () => chat.session,
         live: (instance) => {
           chat.instance = instance;
+          // The advisor's verdicts that waited for a chat of the person's.
+          if (unplaced.length > 0 && personFacing() !== undefined) for (const verdict of unplaced.splice(0)) core.advised(verdict);
         },
       };
     },
@@ -650,6 +662,22 @@ export function createChats(options: CoreOptions): TurriCore {
         host.onConcluded?.({ ...told, chat: target.id });
       } catch {
         /* a host that throws must not lose it */
+      }
+      changed();
+      return target.id;
+    },
+
+    advised(verdict) {
+      const target = personFacing();
+      if (target?.instance === undefined) {
+        unplaced.push(verdict);
+        return undefined;
+      }
+      if (target.id !== shownId) target.unread = true;
+      try {
+        target.instance.advised(verdict);
+      } catch {
+        /* a chat let go as it was told: a yes stays undelivered in the advisor's file, for the next start */
       }
       changed();
       return target.id;

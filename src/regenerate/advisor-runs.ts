@@ -5,7 +5,18 @@ import { plainFileParser } from "../plain/parser.ts";
 import { ACCEPTANCE_TESTS, CONFORMANCE_TESTS, FUNCTIONAL_REQUIREMENTS, REQUIRED_FUNCTIONAL_SPECS, type FunctionalSpecItem } from "../plain/spec.ts";
 import { isStdlibModule } from "../plain/stdlib.ts";
 import { outsideJobs, withStopSignal } from "./activity.ts";
-import { advisorEntry, isCurrent, pendingEntries, putAdvisorEntry, removeAdvisorEntry, textHash, type AdvisorEntry, type AdvisorReport } from "./advisor-records.ts";
+import {
+  advisorEntry,
+  isCurrent,
+  markDelivered,
+  pendingEntries,
+  putAdvisorEntry,
+  removeAdvisorEntry,
+  textHash,
+  undeliveredEntries,
+  type AdvisorEntry,
+  type AdvisorReport,
+} from "./advisor-records.ts";
 import { firstLine, record } from "./ledger.ts";
 import type { SeenSpec } from "./loop.ts";
 import { projectDirOf, resolveTemplateDirs } from "./paths.ts";
@@ -23,7 +34,9 @@ import { advise as adviseByModel, type AdvisorCallOptions, type AdvisorSubject }
  * has that work thrown away - whoever changed it - and the new text starts again. What `pending` is left as turri quits,
  * the next start in the chat or a host picks up.
  *
- * The advisor decides and writes nothing in the ***plain: what it made of a functional spec is kept in its file.
+ * The advisor decides and writes nothing in the ***plain: what it made of a functional spec is kept in its file and
+ * handed on (`onVerdict`) to the chat the person looks at, which writes the scenarios on a yes. A yes not yet handed to a
+ * chat stays marked undelivered, and is handed on again at the next start.
  *
  * It is made only where the session starts in the chat or a host (extension.ts) - never for a headless command, nor
  * pi's print, json and rpc modes - and does nothing in a project whose `test-advisor:` is false.
@@ -32,6 +45,26 @@ import { advise as adviseByModel, type AdvisorCallOptions, type AdvisorSubject }
 /** How many functional specs the advisor works on at once. */
 export const ADVISOR_PARALLEL = 2;
 
+/** A finished verdict, handed on to the chat: the functional spec, what was made of it, and where its scenarios go. */
+export interface AdvisorVerdict {
+  project: string;
+  module: string;
+  funcId: string;
+  /** The module's .plain file. */
+  plainFile: string;
+  /** The tip's .plain file: where the chain's scenarios are tested, and its test reqs and conformance testing script are. */
+  tip: string;
+  /** The test plain file its scenarios go in, from the project: `<test-dir>/<module>/<func-id>.plain`. */
+  testFile: string;
+  /** The hash of the text it judged. */
+  hash: string;
+  report: AdvisorReport;
+  /** Whether it is still about the functional spec as it is now: its text the same, and still with no scenarios. */
+  current(): boolean;
+  /** Handed to a chat: no longer kept for the next start. */
+  delivered(): void;
+}
+
 export interface TestAdvisorOptions {
   /** Whether a project wants the advisor now. Default: its `test-advisor:` is not false. */
   enabled?: (project: string) => boolean;
@@ -39,6 +72,8 @@ export interface TestAdvisorOptions {
   advise?: (subject: AdvisorSubject, options: AdvisorCallOptions) => Promise<AdvisorReport>;
   /** The conversation's own words on what matters for a module - its steering. */
   context?: (plainFile: string) => string[];
+  /** A verdict finished - or a yes left undelivered, at the next start: for the chat the person looks at. Not given: only kept. */
+  onVerdict?: (verdict: AdvisorVerdict) => void;
   /** How many functional specs at once. Default: ADVISOR_PARALLEL. */
   parallel?: number;
 }
@@ -46,7 +81,7 @@ export interface TestAdvisorOptions {
 export interface TestAdvisor {
   /** What the loop looked at: the functional specs to take, and the work whose text changed under it to drop. */
   seen(look: SeenSpec): void;
-  /** Pick up what a project's advisor file has pending - the work turri quit in the middle of. */
+  /** Pick up what a project's advisor file has pending - the work turri quit in the middle of - and hand on its undelivered yeses. */
   resume(project: string): void;
   /** Resolves once nothing is queued or running. */
   idle(): Promise<void>;
@@ -170,6 +205,25 @@ export function createTestAdvisor(options: TestAdvisorOptions = {}): TestAdvisor
   const spec = (work: Work) => `${work.module}:${work.funcId}`;
   const place = (work: Work) => ({ project: work.project, module: work.module });
 
+  /** A verdict handed on to the chat: a yes kept undelivered in the advisor's file until a chat has it. */
+  const handOn = (given: { project: string; module: string; funcId: string; plainFile: string; tip: string; hash: string; report: AdvisorReport }) => {
+    if (options.onVerdict === undefined) return;
+    const { project, module, funcId, plainFile, hash } = given;
+    try {
+      options.onVerdict({
+        ...given,
+        testFile: relative(project, join(testDirOf(plainFile), module, `${funcId}.plain`)),
+        current: () => {
+          const item = currentItem(plainFile, funcId);
+          return item !== undefined && textHash(item.markdown) === hash && !hasScenarios(item) && advisorEntry(project, module, funcId)?.hash === hash;
+        },
+        delivered: () => markDelivered(project, module, funcId, hash),
+      });
+    } catch {
+      /* a chat that throws as it is told: the yes stays undelivered, for the next start */
+    }
+  };
+
   const run = async (work: Work): Promise<void> => {
     const config = (() => {
       try {
@@ -202,7 +256,9 @@ export function createTestAdvisor(options: TestAdvisorOptions = {}): TestAdvisor
       const report = await advise(subject, { cwd: work.project, ...(model !== undefined ? { model } : {}) });
       if (work.controller.signal.aborted) throw new Error("stopped");
       record({ kind: "advisor.classified", spec: spec(work), verdict: report.verdict, questions: report.questions.map((answered) => answered.question) }, place(work));
-      entryOf(report.verdict, { report });
+      // A yes is kept undelivered until a chat has it; a no is only a line, and nothing is lost when it is not drawn.
+      entryOf(report.verdict, { report, ...(report.verdict === "yes" && options.onVerdict !== undefined ? { undelivered: true } : {}) });
+      handOn({ project: work.project, module: work.module, funcId: work.funcId, plainFile: work.plainFile, tip: work.tip, hash: work.hash, report });
     } catch (error) {
       if (work.dropped === true) {
         record({ kind: "advisor.dropped", spec: spec(work) }, place(work));
@@ -260,6 +316,17 @@ export function createTestAdvisor(options: TestAdvisorOptions = {}): TestAdvisor
         }
         const text = item.markdown.trim();
         take({ project, module: pending.module, funcId: item.id, plainFile, tip: resolve(project, pending.entry.tip ?? pending.plainFile), text, hash: textHash(text) });
+      }
+      // A yes no chat had when turri quit: handed on now, while it is still about the functional spec as it is.
+      for (const kept of undeliveredEntries(project)) {
+        const { entry } = kept;
+        const plainFile = resolve(project, kept.plainFile);
+        const item = currentItem(plainFile, entry.funcId);
+        if (entry.report === undefined || item === undefined || textHash(item.markdown) !== entry.hash || hasScenarios(item)) {
+          markDelivered(project, kept.module, entry.funcId, entry.hash);
+          continue;
+        }
+        handOn({ project, module: kept.module, funcId: entry.funcId, plainFile, tip: resolve(project, entry.tip ?? kept.plainFile), hash: entry.hash, report: entry.report });
       }
     },
     idle() {

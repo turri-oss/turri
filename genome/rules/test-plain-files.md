@@ -64,7 +64,7 @@ Only scenarios that exist are kept in step: a change to a functional spec never 
 - A func-id renamed: `func_id:` is renamed in every test plain file bound to it, and the file with it
 
 ## Writing scenarios
-Nothing about testing exists until the person asks for it: a module imports no conformance template, and its functional specs have no test plain files. The first time the person asks for tests in a module, do three things, in this order, each a visible change:
+Nothing about testing exists until the person asks for it, or the test advisor's yes arrives: a module imports no conformance template, and its functional specs have no test plain files. The first time the person asks for tests in a module, or the advisor's yes arrives for one of its functional specs, do three things, in this order, each a visible change - only what is missing:
 1. **Test reqs:** import the stack's conformance template, `stdlib/<kind>/conformance/<stack>` (see `stdlib.md`), or write the module's own `***test reqs***` when it has no stack from the standard library (see `test-reqs.md`)
 2. **The conformance testing script:** write it with `implement-conformance-testing-script`, if the project has none for the module's stack
 3. **The scenarios**, as below
@@ -73,6 +73,7 @@ Then, and for every later request:
 - Decide in prose which scenarios each functional spec named needs, then write them with `change_plain`, conformance and acceptance in one change where both were asked for. Ask for no further confirmation: the change is visible, and turri starts the conformance pulses itself
 - Write scenarios only for the functional specs the person named. Scenarios in one functional spec imply nothing about another, in the same module or not: the person may test one thoroughly and leave the rest untested
 - Write acceptance scenarios only when the person asks for them
+- On the test advisor's yes, the functional spec it names is named, and its report says what to cover: each input that is this functional spec's, an agreed one with the readers' output and never a placeholder, a split one by the reading most consistent with the functional spec and its module - say which you took. Leave out an input it does not settle rather than ask; ask the person nothing
 - One conformance scenario per expected use the functional spec states: its main path first, then each valid variant it names - another input shape, an optional parameter. Stop when each has one, and never write the same outcome twice in different words
 - Write no outcome the functional spec does not state. When a needed one is missing, ask the person, and put the answer in the functional spec first
 - A scenario that needs a dependency to fail - a backend that does not answer, a database that is down - is written only when the test reqs let a test cause that failure, with a local mock of it, say; otherwise ask the person whether to add such a test req or leave the scenario out

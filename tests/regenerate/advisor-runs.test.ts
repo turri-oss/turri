@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { currentStopSignal, JobStoppedError } from "../../src/regenerate/activity.ts";
 import { advisorEntry, readAdvisor } from "../../src/regenerate/advisor-records.ts";
-import { createTestAdvisor } from "../../src/regenerate/advisor-runs.ts";
+import { createTestAdvisor, type AdvisorVerdict } from "../../src/regenerate/advisor-runs.ts";
 import { createJobRegistry } from "../../src/regenerate/jobs.ts";
 import { onLedgerEvent, startLedger, stopLedger, type LedgerEntry } from "../../src/regenerate/ledger.ts";
 import { chainSpec, createWorkLoop, type JobRunner, type SeenSpec } from "../../src/regenerate/loop.ts";
@@ -177,6 +177,76 @@ describe("which functional specs the test advisor takes", () => {
     await advisor.idle();
     expect(asked).toHaveLength(0);
     expect(readAdvisor(dir, "app")).toBeUndefined();
+  });
+});
+
+describe("handing a verdict on to the chat", () => {
+  const yes = { verdict: "yes" as const, questions: [{ question: "cost" as const, evidence: "Lost greetings." }], inputs: [{ input: "Ada", agreed: "Hello, Ada" }] };
+
+  it("hands on a yes and a no with their reports, keeping the yes undelivered until a chat has it", async () => {
+    writeFileSync(join(dir, "app.plain"), module([["say-hello", "Say hello."], ["say-bye", "Say goodbye."]]));
+    const verdicts: AdvisorVerdict[] = [];
+    const advisor = createTestAdvisor({ advise: async (subject) => (subject.funcId === "say-hello" ? yes : { verdict: "no" as const, questions: [], inputs: [] }), onVerdict: (verdict) => verdicts.push(verdict) });
+    advisor.seen(lookAt("app.plain"));
+    await advisor.idle();
+    const hello = verdicts.find((verdict) => verdict.funcId === "say-hello")!;
+    const bye = verdicts.find((verdict) => verdict.funcId === "say-bye")!;
+    expect(hello).toMatchObject({ project: dir, module: "app", plainFile: join(dir, "app.plain"), tip: join(dir, "app.plain"), testFile: join("tests", "app", "say-hello.plain"), report: yes });
+    expect(bye.report.verdict).toBe("no");
+    expect(advisorEntry(dir, "app", "say-hello")?.undelivered).toBe(true);
+    expect(advisorEntry(dir, "app", "say-bye")?.undelivered).toBeUndefined();
+    expect(hello.current()).toBe(true);
+    hello.delivered();
+    expect(advisorEntry(dir, "app", "say-hello")).toMatchObject({ state: "yes", report: yes });
+    expect(advisorEntry(dir, "app", "say-hello")?.undelivered).toBeUndefined();
+  });
+
+  it("says a verdict is no longer current once its text changes or it is given scenarios", async () => {
+    writeFileSync(join(dir, "app.plain"), module([["say-hello", "Say hello."]]));
+    const verdicts: AdvisorVerdict[] = [];
+    const advisor = createTestAdvisor({ advise: async () => yes, onVerdict: (verdict) => verdicts.push(verdict) });
+    advisor.seen(lookAt("app.plain"));
+    await advisor.idle();
+    expect(verdicts[0]!.current()).toBe(true);
+    mkdirSync(join(dir, "tests", "app"), { recursive: true });
+    writeFileSync(join(dir, "tests", "app", "say-hello.plain"), testPlainFile("app", "say-hello", { conformance: ["# greets-ada\nGreeting Ada prints Hello, Ada."] }));
+    expect(verdicts[0]!.current()).toBe(false);
+    rmSync(join(dir, "tests"), { recursive: true, force: true });
+    writeFileSync(join(dir, "app.plain"), module([["say-hello", "Say hello, loudly."]]));
+    expect(verdicts[0]!.current()).toBe(false);
+  });
+
+  it("hands on an undelivered yes again at the next start, and not once it is delivered or its text changed", async () => {
+    writeFileSync(join(dir, "app.plain"), module([["say-hello", "Say hello."]]));
+    const before = createTestAdvisor({ advise: async () => yes, onVerdict: () => {} });
+    before.seen(lookAt("app.plain"));
+    await before.idle();
+    before.stop();
+
+    // turri started again: the yes no chat had is handed on, without a model call.
+    let calls = 0;
+    const verdicts: AdvisorVerdict[] = [];
+    const after = createTestAdvisor({ advise: async () => ((calls += 1), yes), onVerdict: (verdict) => verdicts.push(verdict) });
+    after.resume(dir);
+    await after.idle();
+    expect(calls).toBe(0);
+    expect(verdicts.map((verdict) => [verdict.funcId, verdict.report])).toEqual([["say-hello", yes]]);
+    verdicts[0]!.delivered();
+    const again = createTestAdvisor({ advise: async () => yes, onVerdict: (verdict) => verdicts.push(verdict) });
+    again.resume(dir);
+    expect(verdicts).toHaveLength(1);
+
+    // An undelivered yes whose text changed while turri was away is let go: the loop looks at the new text.
+    const third = createTestAdvisor({ advise: async () => yes, onVerdict: () => {} });
+    writeFileSync(join(dir, "app.plain"), module([["say-hi", "Say hi."]]));
+    third.seen(lookAt("app.plain"));
+    await third.idle();
+    third.stop();
+    writeFileSync(join(dir, "app.plain"), module([["say-hi", "Say hi, twice."]]));
+    const fourth = createTestAdvisor({ advise: async () => yes, onVerdict: (verdict) => verdicts.push(verdict) });
+    fourth.resume(dir);
+    expect(verdicts).toHaveLength(1);
+    expect(advisorEntry(dir, "app", "say-hi")?.undelivered).toBeUndefined();
   });
 });
 

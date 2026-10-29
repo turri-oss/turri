@@ -18,7 +18,7 @@ turri is the first coding agent with the power of regenerative software: [\*\*\*
 | how to start a project, or add a feature, in a conversation | [using](using.md#in-a-conversation) |
 | how to have several chats open at once, and reopen them | [chats](chats.md) |
 | what checks each pulse as it finishes, and tells me what needs me | [the sentinel](sentinel.md) |
-| how turri decides which functional specs need testing scenarios, and how to turn that off | [the test advisor](test-advisor.md) |
+| why the chat wrote scenarios I did not ask for, and how to turn that off | [the test advisor](test-advisor.md) |
 | which model codes, and how to change it | [using](using.md#choosing-a-model), [the project config](config.md#models) |
 | what `config.turri.yaml` can set, and what happens without it | [the project config](config.md) |
 | how a backend and a frontend on different stacks share one project | [the project config](config.md#stacks) |

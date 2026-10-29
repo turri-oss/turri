@@ -39,7 +39,7 @@ import { whyFailed } from "./regenerate/diagnose-job.ts";
 import { createWorkLoop, describeModules, isUpToDate, previewJobs, type WorkLoop } from "./regenerate/loop.ts";
 import { createTestAdvisor, type TestAdvisor } from "./regenerate/advisor-runs.ts";
 import { advisorDir } from "./regenerate/advisor-records.ts";
-import { bindAdvisor, TEST_ADVISOR_BLOCK } from "./advisor-chat.ts";
+import { bindAdvisor, TEST_ADVISOR_BLOCK, verdictDelivery } from "./advisor-chat.ts";
 import { brandNeon, brandPink, plainPaint } from "./regenerate/plain-palette.ts";
 import { halfBlocks, JELLYFISH_FRAME_MS, JELLYFISH_REST, JELLYFISH_SEQUENCE, JELLYFISH_TEXT_FRAMES } from "./jellyfish.ts";
 import { createJobPanel, didNotPass, keyPressed, PANEL_KEY, spinner } from "./regenerate/job-panel.ts";
@@ -410,7 +410,11 @@ export function createTurriCore(
   if (options.advisor === true) {
     // The conversation's own words on how the work is to be planned - AGENTS.md the advisor reads itself.
     const context = (plainFile: string) => [...steeringStore.get(EVERY_MODULE), ...steeringStore.get(moduleNameOf(plainFile))];
-    const advisor = createTestAdvisor({ context });
+    const advisor = createTestAdvisor({
+      context,
+      // A verdict goes to the chat the person looks at - a host's too - which writes the scenarios on a yes.
+      onVerdict: (verdict) => void session.advised(verdict),
+    });
     advisors.set(jobs, advisor);
     // Where it may have left work pending: the folder turri runs in, and a project in a folder of it - ***plain kept in plain/.
     const projects = () => {
@@ -567,6 +571,8 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
     );
   };
   const notices = noticeDialogs(pi, session, link, contextNow);
+  // The test advisor's verdicts, once the chat is idle: a yes starts a turn that writes its scenarios, a no is a line.
+  const verdicts = verdictDelivery(pi, link, contextNow);
   link.live({
     announce,
     landed,
@@ -574,6 +580,7 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
     notice: notices.put,
     noticeOver: notices.over,
     concluded: notices.concluded,
+    advised: verdicts.put,
     act: (task) => {
       void pi.sendMessage({ customType: "turri_notice_answer", content: task, display: false }, { triggerTurn: true, deliverAs: "followUp" });
     },

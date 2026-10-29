@@ -25,7 +25,7 @@ import { projectDirOf } from "./regenerate/paths.ts";
  * mutation-testing: false                                   # give the coding agent and the reviewer can_it_fail (default: true)
  * allow-to-stop-jobs: false                                 # stop a running job the spec moved on from (default: true)
  * release-after-pulse: true                                 # release what each pulse lands, as its last stage, before the next pulse (default: false)
- * test-advisor: false                                       # check each new or changed functional spec with no scenarios for whether it needs them (default: true)
+ * test-advisor: false                                       # check each new or changed functional spec with no scenarios for whether it needs them - on a yes, the chat writes them (default: true)
  * sentinel: true                                            # a chat of its own every finished pulse goes to, which tests the release and tells you what is wrong: true, false, or ask - the person asked before it first opens in a session (default: ask)
  * rules-off: [integrations]                                 # ***plain rules to leave out of the prompts, by name (default: none)
  * unittests-script: test_scripts/run_unittests.sh           # the testing scripts - see test-scripts.ts
@@ -468,8 +468,8 @@ export interface ProjectConfig {
   sentinel?: SentinelSetting;
   /**
    * Whether the test advisor starts by itself: in the chat and a host, each new or changed functional spec with no
-   * scenarios is classified in the background (docs/test-advisor.md). false turns off only that: asked for scenarios,
-   * the chat writes them as before. Unset: true.
+   * scenarios is classified in the background, and on a yes the chat writes its scenarios (docs/test-advisor.md). false
+   * turns off only that: asked for scenarios, the chat writes them as before. Unset: true.
    */
   testAdvisor?: boolean;
   /**
