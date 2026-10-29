@@ -432,7 +432,7 @@ export function quickStartConfig(vendor: Vendor = "other", bedrock?: BedrockChoi
     role("judge", strong, "judges a failing conformance run - as judge-model, which it wins over"),
     role("arbiter", strong, "weighs a second review"),
     role("debugger", strong, "a fresh look at unit tests that keep failing the same way"),
-    role("advisor", coding, "the test advisor: which functional specs need scenarios, and writing them"),
+    role("advisor", coding, "the test advisor: which functional specs need scenarios"),
     "",
   ].join("\n");
 }

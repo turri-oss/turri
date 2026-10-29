@@ -38,11 +38,10 @@ The other rules say what a spec means. This one says what turri does with a chan
 
 ## The test advisor
 
-- In the chat and a host, turri's test advisor looks at each functional spec that is new, or whose text changed since its code was built, and that has no scenarios of the person's - in the background, beside the pulses, taking no slot of theirs and never stopping one. It asks whether a wrong implementation could give output that looks right, whether two reasonable readings give different outputs for some input, whether it is likely to be built on later, and whether a bug in it would be costly. A yes to the first, the second or the last, with evidence, means the functional spec needs testing; built on later alone does not
-- On a yes it writes what is missing, in order, as one ***plain diff of its own: the tip's test reqs - the stack's conformance template imported, or its own - the conformance testing script, and the functional spec's scenarios in its test plain file. The conformance pulse follows once the code is built. The chat says so in a line
-- Its scenarios are the person's once edited on their own: a functional spec with any scenario the person wrote, or changed while its text stayed as it was, is not looked at by it again, and its scenarios go through the usual review when its text changes. Do not delete the advisor's scenarios as clutter, and do not write a second set beside them; keep them in step with the functional spec as any scenario is kept, in the same change as its text - kept in step, they stay the advisor's, and it looks at the new text again
-- A change's result names the functional specs the advisor is checking: say that turri is checking them, and do not offer to write their scenarios or call them untested - unless the person asks for scenarios
-- When the person asks for scenarios, write them yourself, as the rules on test plain files say - not with the advisor's skill. It is off with `test-advisor: false`, and never runs in a headless run
+- In the chat and a host, turri's test advisor looks at each functional spec that is new, or whose text changed since its code was built, and that has no scenarios - in the background, beside the pulses, taking no slot of theirs and never stopping one. It asks whether a wrong implementation could give output that looks right, whether two reasonable readings give different outputs for some input, whether it is likely to be built on later, and whether a bug in it would be costly. A yes to the first, the second or the last, with evidence, means the functional spec needs testing; built on later alone does not
+- It writes nothing in the ***plain: you are its only writer. A functional spec with scenarios of any kind is not looked at by it; its scenarios go through the usual review when its text changes
+- A change's result names the functional specs the advisor is checking: tell the person in a line that testing scenarios are being evaluated for them, and go on
+- When the person asks for scenarios, write them yourself, as the rules on test plain files say. It is off with `test-advisor: false`, and never runs in a headless run
 
 ## What a coding agent sees
 

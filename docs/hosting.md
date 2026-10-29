@@ -121,7 +121,7 @@ await turri.dispose();                 // every chat let go, what activate start
 
 ### The test advisor
 
-A host's session has the [test advisor](test-advisor.md), as the terminal's chat does: new and changed functional specs are checked in the background, and on a yes their test reqs, conformance testing script and scenarios written. Nothing about it is new for a host. Its facts are ledger events - `advisor.classified`, `advisor.wrote`, `advisor.dropped`, `advisor.failed` - heard through `onLedgerEvent`. When scenarios land, the chat the person looks at says so as the terminal's does: an entry of its session, `turri_advisor` (`data.text`, the line), and a hidden message to its agent, `customType: "turri_advisor_landed"`, that starts no turn. `test-advisor` is one of `configSettings()`.
+A host's session has the [test advisor](test-advisor.md), as the terminal's chat does: new and changed functional specs are checked in the background for whether they need testing scenarios. Nothing about it is new for a host. Its facts are ledger events - `advisor.classified`, `advisor.dropped`, `advisor.failed` - heard through `onLedgerEvent`. `test-advisor` is one of `configSettings()`.
 
 ### The sentinel
 

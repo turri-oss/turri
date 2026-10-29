@@ -64,7 +64,7 @@ const ROLE_ABOUT: Record<(typeof AGENT_ROLES)[number] | "default", string> = {
   judge: "judges a failing conformance run - as judge-model, which it wins over",
   arbiter: "weighs a second review",
   debugger: "a fresh look at unit tests that keep failing the same way",
-  advisor: "the test advisor: whether a new or changed functional spec needs scenarios, and writing them",
+  advisor: "the test advisor: whether a new or changed functional spec needs scenarios",
 };
 
 /** Every setting, in the order the list shows them. */
@@ -98,7 +98,7 @@ export function settings(rules: string[] = []): Setting[] {
     { key: "allow-to-stop-jobs", about: "whether turri stops a running pulse the ***plain has moved on from", kind: "boolean", unset: "true", effect: "now" },
     { key: "release-after-pulse", about: "whether every pulse that lands code releases it", kind: "boolean", unset: "false", effect: "next-landing" },
     { key: "sentinel", about: "whether a chat of its own checks every finished pulse, tests the release, and tells you what is wrong - ask: you are asked before it first opens", kind: "choice", options: ["ask", "true", "false"], unset: "ask", effect: "next-landing" },
-    { key: "test-advisor", about: "whether turri checks each new or changed functional spec with no scenarios in the background, and writes its scenarios when it needs them", kind: "boolean", unset: "true", effect: "now" },
+    { key: "test-advisor", about: "whether turri checks each new or changed functional spec with no scenarios in the background, to see whether it needs scenarios", kind: "boolean", unset: "true", effect: "now" },
     { key: "test-dir", about: "the folder of the test plain files, a folder per module in it, by path from the project root", kind: "path", unset: "tests", effect: "now" },
     { key: "unittests-script", about: "the unit testing script, by path from the project root", kind: "path", unset: "the one run_unittests*.sh found", effect: "next-test-run" },
     { key: "conformance-tests-script", about: "the conformance testing script, by path from the project root", kind: "path", unset: "the one run_conformance_tests*.sh found", effect: "next-test-run" },

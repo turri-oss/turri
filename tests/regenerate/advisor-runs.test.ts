@@ -1,9 +1,9 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { currentStopSignal, JobStoppedError } from "../../src/regenerate/activity.ts";
-import { advisorEntry, putAdvisorEntry, readAdvisor, textHash } from "../../src/regenerate/advisor-records.ts";
+import { advisorEntry, readAdvisor } from "../../src/regenerate/advisor-records.ts";
 import { createTestAdvisor } from "../../src/regenerate/advisor-runs.ts";
 import { createJobRegistry } from "../../src/regenerate/jobs.ts";
 import { onLedgerEvent, startLedger, stopLedger, type LedgerEntry } from "../../src/regenerate/ledger.ts";
@@ -128,10 +128,11 @@ describe("which functional specs the test advisor takes", () => {
     expect(asked.map((subject) => subject.text)).toEqual(["Say hello.", "Say hello, loudly."]);
   });
 
-  it("leaves alone a functional spec with the person's scenarios", async () => {
-    writeFileSync(join(dir, "app.plain"), module([["say-hello", "Say hello."], ["say-bye", "Say goodbye."]]));
+  it("leaves alone a functional spec with scenarios of any kind", async () => {
+    writeFileSync(join(dir, "app.plain"), module([["say-hello", "Say hello."], ["say-bye", "Say goodbye."], ["say-hi", "Say hi."]]));
     mkdirSync(join(dir, "tests", "app"), { recursive: true });
     writeFileSync(join(dir, "tests", "app", "say-hello.plain"), testPlainFile("app", "say-hello", { conformance: ["# greets\nIt prints hello."] }));
+    writeFileSync(join(dir, "tests", "app", "say-hi.plain"), testPlainFile("app", "say-hi", { acceptance: ["# hails\nSomeone is greeted."] }));
     const { asked, advise } = saysNo();
     const advisor = createTestAdvisor({ advise });
     advisor.seen(lookAt("app.plain"));
@@ -139,51 +140,17 @@ describe("which functional specs the test advisor takes", () => {
     expect(asked.map((subject) => subject.funcId)).toEqual(["say-bye"]);
   });
 
-  it("takes again a functional spec whose scenarios are turri's or kept in step with its text, and leaves it once the person edited one on its own", async () => {
-    const scenario = "Running it prints hello.";
-    const writeScenario = (text: string) => {
-      mkdirSync(join(dir, "tests", "app"), { recursive: true });
-      writeFileSync(join(dir, "tests", "app", "say-hello.plain"), testPlainFile("app", "say-hello", { conformance: [`# greets\n${text}`] }));
-    };
-    writeFileSync(join(dir, "app.plain"), module([["say-hello", "Say hello."]]));
-    writeScenario(scenario);
-    putAdvisorEntry(dir, "app", "app.plain", { funcId: "say-hello", hash: textHash("Say hello."), state: "yes", tip: "app.plain", scenarios: [{ kind: "conformance", id: "greets", hash: textHash(scenario) }] });
-    const previous: unknown[] = [];
-    const yes = { verdict: "yes" as const, questions: [{ question: "cost" as const, evidence: "Lost greetings." }], inputs: [] };
-    const advisor = createTestAdvisor({
-      advise: async () => yes,
-      write: async (work) => {
-        previous.push(...work.previous);
-        return { scenarios: work.previous, testReqs: false, script: false };
-      },
-    });
-    // Its text changed, its scenarios all turri's: taken again, turri's scenarios its writer's to replace.
-    writeFileSync(join(dir, "app.plain"), module([["say-hello", "Say hello, twice."]]));
+  it("keeps a yes with its report, and writes nothing in the ***plain", async () => {
+    const text = module([["say-hello", "Say hello."]]);
+    writeFileSync(join(dir, "app.plain"), text);
+    const report = { verdict: "yes" as const, questions: [{ question: "silent-failure" as const, evidence: "It prints hullo." }], inputs: [{ input: "no name", agreed: "hello" }] };
+    const advisor = createTestAdvisor({ advise: async () => report });
     advisor.seen(lookAt("app.plain"));
     await advisor.idle();
-    expect(previous).toEqual([{ kind: "conformance", id: "greets", hash: textHash(scenario) }]);
-    expect(events.map((event) => event.kind)).toEqual(["advisor.classified", "advisor.wrote"]);
-
-    // Its scenario kept in step in the same change as its text, as the chat keeps it: still turri's, taken again.
-    previous.length = 0;
-    writeScenario("Running it prints hello three times.");
-    writeFileSync(join(dir, "app.plain"), module([["say-hello", "Say hello, three times."]]));
-    advisor.seen(lookAt("app.plain"));
-    await advisor.idle();
-    expect(previous).toEqual([{ kind: "conformance", id: "greets", hash: textHash("Running it prints hello three times.") }]);
-    expect(events.map((event) => event.kind)).toEqual(["advisor.classified", "advisor.wrote", "advisor.classified", "advisor.wrote"]);
-
-    // The person edits turri's scenario on its own, the text as it was: it is theirs now, and a later change to the
-    // text is left to today's review - it cannot pass for keeping the scenario in step.
-    writeScenario("Running it prints hello three times, and exits 0.");
-    advisor.seen(lookAt("app.plain"));
-    await advisor.idle();
-    writeScenario("Running it prints hello four times, and exits 0.");
-    writeFileSync(join(dir, "app.plain"), module([["say-hello", "Say hello, four times."]]));
-    advisor.seen(lookAt("app.plain"));
-    await advisor.idle();
-    expect(events).toHaveLength(4);
-    expect(advisorEntry(dir, "app", "say-hello")?.hash).toBe(textHash("Say hello, three times."));
+    expect(advisorEntry(dir, "app", "say-hello")).toMatchObject({ state: "yes", report });
+    expect(readFileSync(join(dir, "app.plain"), "utf8")).toBe(text);
+    expect(existsSync(join(dir, "tests"))).toBe(false);
+    expect(events.map((event) => event.kind)).toEqual(["advisor.classified"]);
   });
 
   it("says which functional specs it is taking, while it takes them", async () => {
@@ -198,43 +165,6 @@ describe("which functional specs the test advisor takes", () => {
     while (releases.length > 0) releases.shift()!();
     await advisor.idle();
     expect(advisor.taking(dir)).toEqual([]);
-  });
-
-  it("says nothing for a no: no writer, no landing", async () => {
-    writeFileSync(join(dir, "app.plain"), module([["say-hello", "Say hello."]]));
-    const landed: unknown[] = [];
-    let wrote = 0;
-    const advisor = createTestAdvisor({
-      advise: saysNo().advise,
-      write: async () => ((wrote += 1), { scenarios: [], testReqs: false, script: false }),
-      onLanded: (landing) => landed.push(landing),
-    });
-    advisor.seen(lookAt("app.plain"));
-    await advisor.idle();
-    expect(wrote).toBe(0);
-    expect(landed).toEqual([]);
-    expect(advisorEntry(dir, "app", "say-hello")?.state).toBe("no");
-  });
-
-  it("says a landing's functional spec is built only when its code is built from the text the scenarios are for", async () => {
-    writeFileSync(join(dir, "app.plain"), module([["say-hello", "Say hello."]]));
-    const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run: lands });
-    await loop.bringUp("app.plain");
-    await loop.drain();
-    const landed: Array<{ funcId: string; built: boolean }> = [];
-    const advisor = createTestAdvisor({
-      advise: async () => ({ verdict: "yes" as const, questions: [{ question: "silent-failure" as const, evidence: "It prints hullo." }], inputs: [] }),
-      write: async () => ({ scenarios: [{ kind: "conformance" as const, id: "greets", hash: textHash("x") }], testReqs: false, script: false }),
-      onLanded: (landing) => landed.push(landing),
-    });
-    // The tip is built with say-hello as it reads, but not with say-bye: its scenarios are tested once it is.
-    writeFileSync(join(dir, "app.plain"), module([["say-hello", "Say hello."], ["say-bye", "Say goodbye."]]));
-    advisor.seen(lookAt("app.plain"));
-    await advisor.idle();
-    expect(landed.map(({ funcId, built }) => ({ funcId, built })).sort((a, b) => a.funcId.localeCompare(b.funcId))).toEqual([
-      { funcId: "say-bye", built: false },
-      { funcId: "say-hello", built: true },
-    ]);
   });
 
   it("does nothing with test-advisor: false", async () => {

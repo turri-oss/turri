@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { ACCEPTANCE_TESTS, CONFORMANCE_TESTS, type ScenarioItem } from "../plain/spec.ts";
 import { ensureInScratch } from "./paths.ts";
 
 /**
@@ -39,13 +38,6 @@ export interface AdvisorReport {
 /** Where an entry is: seen and not finished, classified yes or no, or failed - tried again only once its text changes. */
 export type AdvisorState = "pending" | "yes" | "no" | "failed";
 
-/** A scenario turri wrote: its kind, its scenario-id and a hash of its text - turri's while both still match. */
-export interface AdvisorScenario {
-  kind: "conformance" | "acceptance";
-  id: string;
-  hash: string;
-}
-
 export interface AdvisorEntry {
   funcId: string;
   /** The hash of the functional spec's text the entry is about (textHash). */
@@ -56,11 +48,9 @@ export interface AdvisorEntry {
   model?: string;
   /** When the entry was last written, ISO. */
   at: string;
-  /** The scenarios turri wrote for this text. */
-  scenarios?: AdvisorScenario[];
   /** Why it failed, for a failed one. */
   reason?: string;
-  /** The tip's .plain file, from the project: where the chain's test reqs and conformance testing script are. */
+  /** The tip's .plain file, from the project: where the chain's scenarios are tested. */
   tip?: string;
 }
 
@@ -151,30 +141,4 @@ export function pendingEntries(project: string): Array<{ module: string; plainFi
       .filter((entry) => entry.state === "pending")
       .map((entry) => ({ module: file.module, plainFile: file.plainFile, entry }));
   });
-}
-
-/** A functional spec's scenarios, each with its kind and the hash of its text. */
-export function scenariosOf(item: unknown): AdvisorScenario[] {
-  const of = (key: string, kind: AdvisorScenario["kind"]) =>
-    (((item as Record<string, unknown> | null)?.[key] as ScenarioItem[] | undefined) ?? []).map((scenario) => ({ kind, id: scenario.id, hash: textHash(scenario.text) }));
-  return [...of(CONFORMANCE_TESTS, "conformance"), ...of(ACCEPTANCE_TESTS, "acceptance")];
-}
-
-/**
- * The scenarios of a functional spec that are the person's: every one, but those turri wrote - by its entry - whose
- * kind, scenario-id and text hash still match. One the person changed is theirs from then on.
- */
-/**
- * The entry with the scenarios kept in step taken for turri's: a functional spec whose text changed since the entry, its
- * scenarios - turri's before - changed in the same change, as the chat keeps any scenarios in step with a changed text. A
- * scenario changed while the text stayed as it was is the person's. Anything else: the entry as it is.
- */
-export function keptInStep(entry: AdvisorEntry | undefined, item: unknown, hash: string): AdvisorEntry | undefined {
-  if (entry === undefined || entry.hash === hash || (entry.scenarios ?? []).length === 0) return entry;
-  return { ...entry, scenarios: scenariosOf(item) };
-}
-
-export function personsScenarios(entry: AdvisorEntry | undefined, item: unknown): AdvisorScenario[] {
-  const turris = new Set((entry?.scenarios ?? []).map((scenario) => `${scenario.kind} ${scenario.id} ${scenario.hash}`));
-  return scenariosOf(item).filter((scenario) => !turris.has(`${scenario.kind} ${scenario.id} ${scenario.hash}`));
 }

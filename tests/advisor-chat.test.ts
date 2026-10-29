@@ -64,13 +64,13 @@ vi.mock("@earendil-works/pi-coding-agent", async (actual) => {
   };
 });
 
-/** What the session's advisor was made with: its landing is called by hand, as the writer would once scenarios land. */
-let made: { onLanded?: (landing: unknown) => void } | undefined;
+/** What the session's advisor was made with. */
+let made: Record<string, unknown> | undefined;
 vi.mock("../src/regenerate/advisor-runs.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/regenerate/advisor-runs.ts")>();
   return {
     ...actual,
-    createTestAdvisor: (options: { onLanded?: (landing: unknown) => void }) => {
+    createTestAdvisor: (options: Record<string, unknown>) => {
       made = options;
       return { seen() {}, resume() {}, idle: async () => {}, stop() {} };
     },
@@ -78,7 +78,7 @@ vi.mock("../src/regenerate/advisor-runs.ts", async (importOriginal) => {
 });
 
 const { createTurri } = await import("../src/host-session.ts");
-const { advisorLine, advisorNote, TEST_ADVISOR_BLOCK } = await import("../src/advisor-chat.ts");
+const { TEST_ADVISOR_BLOCK } = await import("../src/advisor-chat.ts");
 
 const anything: unknown = new Proxy(() => undefined, {
   get: (_target, key) => (key === "then" || typeof key === "symbol" ? undefined : anything),
@@ -95,32 +95,6 @@ async function systemPrompt(session: Session): Promise<string> {
   return prompt;
 }
 
-const landing = {
-  project: "/p",
-  module: "core",
-  funcId: "add-task",
-  report: { verdict: "yes" as const, questions: [{ question: "silent-failure" as const, evidence: "Adding \"Buy milk\" shows \"Buy mil\"." }, { question: "revisited" as const, evidence: "Due dates later." }], inputs: [] },
-  written: { scenarios: [{ kind: "conformance" as const, id: "adds-one", hash: "a" }, { kind: "conformance" as const, id: "keeps-order", hash: "b" }, { kind: "acceptance" as const, id: "rejects-empty", hash: "c" }], testReqs: false, script: false },
-  built: false,
-};
-
-describe("what the person sees when the test advisor's scenarios land", () => {
-  it("says it in one line, after the fact, with the first reason it judged them needed", () => {
-    expect(advisorLine(landing)).toBe("I added 3 scenarios to core:add-task - a wrong implementation could look right. They're tested once its code is built.");
-    expect(advisorLine({ ...landing, built: true, written: { ...landing.written, testReqs: true, script: true }, report: { ...landing.report, questions: [{ question: "cost", evidence: "x" }] } })).toBe(
-      "I added 3 scenarios to core:add-task, with its test reqs and a conformance testing script - a bug in it would be costly. They're tested now that its code is built.",
-    );
-  });
-
-  it("tells the chat's agent the report's gist, and to do nothing about the scenarios unless asked", () => {
-    const note = advisorNote(landing);
-    expect(note).toContain("conformance adds-one, conformance keeps-order, acceptance rejects-empty");
-    expect(note).toContain("- silent-failure: Adding \"Buy milk\" shows \"Buy mil\".");
-    expect(note).toContain("- revisited: Due dates later.");
-    expect(note).toContain("Do nothing about them");
-  });
-});
-
 describe("the test advisor in a host", () => {
   const cwd = process.cwd();
   beforeEach(() => {
@@ -131,19 +105,7 @@ describe("the test advisor in a host", () => {
   });
   afterEach(() => process.chdir(cwd));
 
-  it("draws the line in the chat the person looks at, and tells its agent why without starting a turn", async () => {
-    const turri = await createTurri();
-    const mine = await turri.openChat();
-    turri.focus(mine.id);
-    expect(made).toBeDefined();
-    made!.onLanded!(landing);
-    expect(sessions[0]!.entries).toEqual([{ type: "turri_advisor", data: { text: advisorLine(landing) } }]);
-    expect(sessions[0]!.sent.map((message) => message.customType)).toEqual(["turri_advisor_landed"]);
-    expect(sessions[0]!.sent[0]).toMatchObject({ content: advisorNote(landing), display: false });
-    expect(sessions[0]!.sent[0]!.options?.triggerTurn).toBeUndefined();
-  });
-
-  it("tells the chat's agent its two paths to scenarios, while the project wants the advisor", async () => {
+  it("tells the chat's agent of the advisor, and that it alone writes scenarios, while the project wants the advisor", async () => {
     const turri = await createTurri();
     const mine = await turri.openChat();
     turri.focus(mine.id);
@@ -163,8 +125,8 @@ describe("what a change's result says of the test advisor", () => {
     const asked: Array<string | undefined> = [];
     bindAdvisor(loop, () => ({ taking: (project?: string) => (asked.push(project), taking) }) as never);
     const note = advisingNote(loop, join(dir, "core.plain"));
-    expect(note).toContain("My test advisor is checking core:clear-tasks, notes:count-words in the background");
-    expect(note).toContain("do not offer to write scenarios for");
+    expect(note).toContain("My test advisor is evaluating core:clear-tasks, notes:count-words in the background");
+    expect(note).toContain("testing scenarios are being evaluated");
     expect(asked).toEqual([dir]);
     taking = [];
     expect(advisingNote(loop, join(dir, "core.plain"))).toBe("");

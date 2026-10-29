@@ -25,7 +25,7 @@ import { projectDirOf } from "./regenerate/paths.ts";
  * mutation-testing: false                                   # give the coding agent and the reviewer can_it_fail (default: true)
  * allow-to-stop-jobs: false                                 # stop a running job the spec moved on from (default: true)
  * release-after-pulse: true                                 # release what each pulse lands, as its last stage, before the next pulse (default: false)
- * test-advisor: false                                       # check each new or changed functional spec with no scenarios, and write them when it needs them (default: true)
+ * test-advisor: false                                       # check each new or changed functional spec with no scenarios for whether it needs them (default: true)
  * sentinel: true                                            # a chat of its own every finished pulse goes to, which tests the release and tells you what is wrong: true, false, or ask - the person asked before it first opens in a session (default: ask)
  * rules-off: [integrations]                                 # ***plain rules to leave out of the prompts, by name (default: none)
  * unittests-script: test_scripts/run_unittests.sh           # the testing scripts - see test-scripts.ts
@@ -236,7 +236,7 @@ export interface ModelChoice {
  * The agents turri starts, by what they do - each can be given its own model, thinking and turn limit (`models:`).
  * The code fixer of a conformance run and the repair agent are coding agents; the unit-test and conformance arbiters
  * are both `arbiter`. The test advisor's calls - classifying a functional spec, its probes, its readers, its verifier -
- * and the agents that write its test reqs, script and scenarios are `advisor`.
+ * are `advisor`.
  */
 export const AGENT_ROLES = ["chat", "sentinel", "planner", "diagnosis", "release", "coding", "conformance", "explorer", "reviewer", "test-reviewer", "judge", "arbiter", "debugger", "advisor"] as const;
 export type AgentRole = (typeof AGENT_ROLES)[number];
@@ -365,20 +365,12 @@ export function roleModel(config: Pick<ProjectConfig, "harnessModel" | "judgeMod
 }
 
 /**
- * What the test advisor's calls and agents run on: `models.advisor` - else `default` - and without either the coding
+ * What the test advisor's calls run on: `models.advisor` - else `default` - and without either the coding
  * model alone, thinking as the role has it (ROLE_THINKING). Undefined when the config names no model at all.
  */
 export function advisorModel(config: ProjectConfig): string | undefined {
   const coding = projectModels(config).coding?.model;
   return modelSpec(inheritModel(roleModel(config, "advisor"), coding !== undefined ? { model: coding } : undefined));
-}
-
-/**
- * The model the judges of a skill turri runs by itself - the test advisor's scenarios - are given: the `judge` role's,
- * its model alone, as a gate's judges take one. Undefined when the config names none.
- */
-export function judgeModelOf(plainFile: string): string | undefined {
-  return projectModels(configForSpec(plainFile)).judge?.model;
 }
 
 /** How long each turn of a role's agents may take, in milliseconds: its own, `default`'s, `turn-limit:`'s - or undefined, the harness's default. */
@@ -475,9 +467,9 @@ export interface ProjectConfig {
    */
   sentinel?: SentinelSetting;
   /**
-   * Whether the test advisor runs: in the chat and a host, each new or changed functional spec with no scenarios is
-   * classified in the background, and on a yes turri writes its test reqs, conformance testing script and scenarios
-   * (docs/test-advisor.md). false turns off only that: asked for scenarios, the chat writes them as before. Unset: true.
+   * Whether the test advisor starts by itself: in the chat and a host, each new or changed functional spec with no
+   * scenarios is classified in the background (docs/test-advisor.md). false turns off only that: asked for scenarios,
+   * the chat writes them as before. Unset: true.
    */
   testAdvisor?: boolean;
   /**

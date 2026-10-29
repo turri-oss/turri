@@ -415,7 +415,7 @@ export async function pickInputs(subject: AdvisorSubject, classification: Classi
   if (readings.length === 0) throw new Error("no reader predicted the probes' outputs");
   const split = splitInputs(readings);
   const candidates = [...split].map(([index, distinct]) => ({ index, input: inputs[index]!, readings: distinct }));
-  // Without the verifier's word, every reading stands: a split left unsettled is the writer's to settle.
+  // Without the verifier's word, every reading stands: a split left unsettled is the chat's to settle as it writes.
   const kept = candidates.length > 0 ? ((await verify(subject, candidates, options)) ?? candidates.map((candidate) => candidate.readings)) : [];
   const out: AdvisorInput[] = [];
   inputs.forEach((input, index) => {
@@ -431,62 +431,6 @@ export async function pickInputs(subject: AdvisorSubject, classification: Classi
     else if (held.length === 1) out.push({ input, agreed: held[0]! });
   });
   return out;
-}
-
-function testReqsPrompt(tip: { module: string; text: string }, context: string[]): string {
-  return [
-    `The module ${tip.module} is about to get its first conformance tests, and has no ***test reqs***: they say how its`,
-    ":ConformanceTests: are written and run. Its stack has no conformance template in the standard library, so write them.",
-    "",
-    `<module name="${tip.module}">`,
-    tip.text.trim(),
-    "</module>",
-    ...(context.length > 0 ? ["", "<the project's own words on what matters>", ...context.map((text) => text.trim()), "</the project's own words on what matters>"] : []),
-    "",
-    "Write 2 to 6 test reqs, each one line about :ConformanceTests: - the test framework of the module's language, how the",
-    "tests reach the built code (they never import it: they run it, call it over its interface, or read what it writes),",
-    "how they start and stop what they test, and how they are run. Each names :ConformanceTests:, says one thing, and adds",
-    "nothing the module already says. No scenario, and no link to a script. Call submit_test_reqs once.",
-  ].join("\n");
-}
-
-/** The fewest and most test reqs written for a module with none. */
-const TEST_REQS = { min: 2, max: 6 };
-
-/**
- * A module's ***test reqs***, written for one whose stack has no conformance template: one call, each req a line about
- * :ConformanceTests:. Throws when the call gives none that hold.
- */
-export async function writeTestReqs(tip: { module: string; text: string }, context: string[], options: AdvisorCallOptions): Promise<string[]> {
-  const answer = await askAdvisor<{ reqs: string[] }>({
-    cwd: options.cwd,
-    model: options.model,
-    label: `${tip.module} test advisor test reqs`,
-    task: testReqsPrompt(tip, context),
-    check: (given) => {
-      const reqs = given.reqs.map(stringOf).filter((req) => req !== "");
-      const problems: string[] = [];
-      if (reqs.length < TEST_REQS.min || reqs.length > TEST_REQS.max) problems.push(`Write ${TEST_REQS.min} to ${TEST_REQS.max} test reqs; you wrote ${reqs.length}.`);
-      for (const req of reqs) {
-        if (!req.includes(":ConformanceTests:")) problems.push(`Name :ConformanceTests: in every test req: "${req}" does not.`);
-        if (req.includes("\n")) problems.push(`Each test req is one line: "${req.split("\n")[0]}..." is not.`);
-      }
-      return problems;
-    },
-    tool: (take) =>
-      defineTool({
-        name: "submit_test_reqs",
-        label: "Submit the test reqs",
-        description: `${TEST_REQS.min} to ${TEST_REQS.max} test reqs, each one line about :ConformanceTests:, without its leading "- ".`,
-        parameters: Type.Object({ reqs: Type.Array(Type.String()) }),
-        async execute(_id, params) {
-          take(params as { reqs: string[] });
-          return { content: [{ type: "text" as const, text: "Recorded." }], details: {}, terminate: true };
-        },
-      }) as ToolDefinition,
-  });
-  if (answer === undefined) throw new Error("the test reqs call gave none that hold");
-  return answer.reqs.map(stringOf).filter((req) => req !== "").map((req) => req.replace(/^-\s+/, ""));
 }
 
 /** The whole judgement: classify, and on a yes pick the inputs. Throws when a call that cannot be done without fails. */

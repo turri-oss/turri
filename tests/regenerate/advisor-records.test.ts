@@ -8,11 +8,9 @@ import {
   advisorPath,
   isCurrent,
   pendingEntries,
-  personsScenarios,
   putAdvisorEntry,
   readAdvisor,
   removeAdvisorEntry,
-  scenariosOf,
   textHash,
 } from "../../src/regenerate/advisor-records.ts";
 
@@ -44,9 +42,9 @@ describe("the test-advisor setting and the advisor role", () => {
 });
 
 describe("the advisor file", () => {
-  it("round-trips an entry, its report and its scenarios, in .turri/advisor/<module>.json", () => {
+  it("round-trips an entry and its report, in .turri/advisor/<module>.json", () => {
     const report = { verdict: "yes" as const, questions: [{ question: "silent-failure" as const, evidence: "returns 3 for 2 + 2" }], inputs: [{ input: "2 + 2", agreed: "4" }, { input: "2 + -2", readings: ["0", "an error"] }] };
-    putAdvisorEntry(dir, "core", "core.plain", { funcId: "add", hash: textHash("Adds two numbers."), state: "yes", report, model: "d/fast", scenarios: [{ kind: "conformance", id: "adds-two", hash: textHash("2 + 2 is 4.") }], tip: "app.plain" });
+    putAdvisorEntry(dir, "core", "core.plain", { funcId: "add", hash: textHash("Adds two numbers."), state: "yes", report, model: "d/fast", tip: "app.plain" });
     putAdvisorEntry(dir, "core", "core.plain", { funcId: "sub", hash: textHash("Subtracts."), state: "pending" });
     expect(existsSync(advisorPath(dir, "core"))).toBe(true);
     // .turri ignores itself, as every scratch folder of turri's does.
@@ -76,25 +74,5 @@ describe("the advisor file", () => {
     writeFileSync(advisorPath(dir, "core"), "{ not json");
     expect(readAdvisor(dir, "core")).toBeUndefined();
     expect(pendingEntries(dir)).toEqual([]);
-  });
-
-  it("knows turri's scenarios by kind, scenario-id and text hash - one the person changed is theirs", () => {
-    const item = {
-      conformance_tests: [{ id: "adds-two", text: "2 + 2 is 4.", linked_resources: [] }],
-      acceptance_tests: [{ id: "rejects-text", text: "Adding a and b is refused, edited.", linked_resources: [] }],
-    };
-    const entry = {
-      funcId: "add",
-      hash: "h",
-      state: "yes" as const,
-      at: "",
-      scenarios: [
-        { kind: "conformance" as const, id: "adds-two", hash: textHash("2 + 2 is 4.") },
-        { kind: "acceptance" as const, id: "rejects-text", hash: textHash("Adding a and b is refused.") },
-      ],
-    };
-    expect(scenariosOf(item).map((scenario) => scenario.id)).toEqual(["adds-two", "rejects-text"]);
-    expect(personsScenarios(entry, item).map((scenario) => scenario.id)).toEqual(["rejects-text"]);
-    expect(personsScenarios(undefined, item)).toHaveLength(2);
   });
 });

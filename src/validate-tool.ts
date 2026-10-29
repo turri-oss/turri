@@ -3,7 +3,7 @@ import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { checkPlainTargets, formatCheckResults } from "./plain/check.ts";
 
-/** validate, for the conversation and for the skills that write specs alike - the test advisor's in the background too. */
+/** validate, for the conversation and for the skills that write specs alike. */
 export function checkPlainTool(cwd: string) {
   return defineTool({
     name: "validate",
