@@ -453,3 +453,14 @@ describe("a step's ***plain diff of the modules below", () => {
     expect(step.textDiff).not.toContain("todo.plain");
   });
 });
+
+describe("a step's diff of the test plain files", () => {
+  it("shows the test plain file of a functional spec that had no scenarios as added whole, never a stub taken out", () => {
+    const before = serializeTree({ "functional specs": [{ id: "create-link", markdown: "Creates a link." }] } as MarshalledPlainSource);
+    const after = serializeTree({ "functional specs": [{ id: "create-link", markdown: "Creates a link.", conformance_tests: [{ id: "creates", text: "It works." }] }] } as MarshalledPlainSource);
+    const step = makeStep("conformance", "", changesBetween(before, after), before, after, "shorty.plain", undefined, { module: "shorty", pathOf: (funcId) => `tests/shorty/${funcId}.plain` });
+    expect(step.textDiff).toContain("+++ b/tests/shorty/create-link.plain");
+    expect(step.textDiff).toContain("@@ -0,0 +1,");
+    expect(step.textDiff).not.toMatch(/^-(?!-- )/m);
+  });
+});

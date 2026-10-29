@@ -272,3 +272,50 @@ describe("brand neon", () => {
     expect(brandNeon({ appearance: "dark" })("⊨")).toContain("38;2;92;225;230");
   });
 });
+
+describe("placing a test plain file's lines", () => {
+  it("places the lines under a test plain file's header in that file alone, never in the module's frontmatter or another test plain file", () => {
+    const module = { name: "shorty.plain", text: "---\nimport:\n  - stdlib/backend/python-fastapi\n---\n\n***functional specs***\n\n# create-link\nCreates a link.\n" };
+    const testFile = (funcId: string, scenario: string) => ({
+      name: `tests/shorty/${funcId}.plain`,
+      text: `---\nmodule: shorty\nfunc_id: ${funcId}\n---\n\n***conformance tests***\n\n# ${scenario}\nIt works.\n\n***acceptance tests***\n`,
+    });
+    const files = [module, testFile("service-info", "get-root"), testFile("create-link", "creates")];
+    const diff = [
+      "diff --git a/tests/shorty/create-link.plain b/tests/shorty/create-link.plain",
+      "--- a/tests/shorty/create-link.plain",
+      "+++ b/tests/shorty/create-link.plain",
+      "@@ -0,0 +1,11 @@",
+      ...files[2]!.text.replace(/\n$/, "").split("\n").map((line) => `+${line}`),
+    ].join("\n");
+    const where = locateDiffLines(diff, files);
+    const placed = Object.values(where);
+    expect(placed.every((at) => at.file === "tests/shorty/create-link.plain")).toBe(true);
+    expect(where[4]).toMatchObject({ file: "tests/shorty/create-link.plain", line: 1 });
+    expect(where[6]).toMatchObject({ file: "tests/shorty/create-link.plain", line: 3 });
+  });
+});
+
+describe("the section a test plain file's lines are in", () => {
+  it("never labels a test plain file's lines with the module's section the diff showed before it", () => {
+    const diff = [
+      "diff --git a/shorty.plain b/shorty.plain",
+      "--- a/shorty.plain",
+      "+++ b/shorty.plain",
+      "@@ @@",
+      " ***functional specs***",
+      "+# create-link",
+      "+Creates a link.",
+      "diff --git a/tests/shorty/create-link.plain b/tests/shorty/create-link.plain",
+      "--- a/tests/shorty/create-link.plain",
+      "+++ b/tests/shorty/create-link.plain",
+      "@@ -0,0 +1,4 @@",
+      "+---",
+      "+module: shorty",
+      "+func_id: create-link",
+      "+---",
+    ].join("\n");
+    const testFile = diffFiles(diff, 80).find((file) => file.file === "tests/shorty/create-link.plain")!;
+    expect(testFile.rows.join("\n")).not.toContain("functional specs");
+  });
+});

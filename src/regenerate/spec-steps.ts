@@ -436,7 +436,8 @@ export type TestPlainPath = (funcId: string, module?: string) => string;
 /**
  * The functional specs' test plain files a change between two serialized trees touches, each as a diff of its own,
  * rebuilt from the trees as the module's file is: only the trees that carry scenarios - the conformance tests' - have
- * any. A functional spec whose scenarios all went is shown with its file emptied.
+ * any. A functional spec that had no scenarios has no test plain file before, so its file shows as added whole; one whose
+ * scenarios all went, as deleted whole - none is preferred to an empty one.
  */
 export function diffTestPlainFiles(before: string, after: string, module: string, pathOf: TestPlainPath): string {
   const carriers = (serialized: string): Map<string, ScenarioCarrier & { module?: string }> => {
@@ -462,7 +463,7 @@ export function diffTestPlainFiles(before: string, after: string, module: string
     .map((key) => {
       const item = now.get(key) ?? was.get(key)!;
       const owner = item.module ?? module;
-      const text = (found: ScenarioCarrier | undefined) => testPlainFileText(owner, found ?? { id: item.id });
+      const text = (found: ScenarioCarrier | undefined) => (found === undefined ? "" : testPlainFileText(owner, found));
       const [from, to] = [text(was.get(key)), text(now.get(key))];
       const path = pathOf(item.id ?? "", owner);
       return from === to ? "" : gitDiff(from, to, 3, [path, path]);

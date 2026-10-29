@@ -68,6 +68,10 @@ export function locateDiffLines(diff: string, files: Array<{ name: string; text:
   });
   const used = new Set<string>();
   let last: { file: number; line: number } | undefined;
+  // A test plain file's part of the diff is that file's alone: its `---` and its section headers are in every one of
+  // them, and in the module's frontmatter - found by text anywhere, they would be placed in the wrong file.
+  const testPlainFile = texts.map((file) => /^---\n(?:.*\n)*?func_id:/.test(file.written.join("\n")));
+  let only: number | undefined;
   const take = (file: number, line: number, index: number) => {
     used.add(`${file}:${line}`);
     const section = sections[file]![line];
@@ -78,12 +82,20 @@ export function locateDiffLines(diff: string, files: Array<{ name: string; text:
     .replace(/\n+$/, "")
     .split("\n")
     .forEach((line, index) => {
-      if (HEADER.test(line) || line.startsWith("+++ ") || line.startsWith("@@") || line.startsWith("\\")) return;
+      const named = /^\+\+\+ (?:b\/)?(.+)$/.exec(line);
+      if (named !== null) {
+        const file = texts.findIndex((candidate, at) => testPlainFile[at] === true && (candidate.name === named[1] || candidate.name.endsWith(`/${named[1]}`) || named[1]!.endsWith(`/${candidate.name}`)));
+        only = file === -1 ? undefined : file;
+        return;
+      }
+      if (line.startsWith("diff --git ")) only = undefined;
+      if (HEADER.test(line) || line.startsWith("@@") || line.startsWith("\\")) return;
       if (line.startsWith("-")) {
         // A removed line still written in a file - taken out of what is compared, not out of the spec - is that file's.
         const removed = asRead(line.slice(1).trimEnd());
         if (removed.trim() === "" || SECTION.test(removed.trim())) return;
-        const file = texts.findIndex((candidate) => candidate.lines.includes(removed));
+        // In a test plain file a removed line is gone: no line of it is that line any more.
+        const file = only !== undefined ? -1 : texts.findIndex((candidate) => candidate.lines.includes(removed));
         if (file !== -1) {
           const at = texts[file]!.lines.indexOf(removed);
           const section = sections[file]![at];
@@ -94,10 +106,10 @@ export function locateDiffLines(diff: string, files: Array<{ name: string; text:
       const text = (line.startsWith("+") || line.startsWith(" ") ? line.slice(1) : line).trimEnd();
       if (text === "") {
         // A blank line: the one right after the line before it, when that is blank.
-        if (last !== undefined && texts[last.file]!.lines[last.line + 1] === "" && !used.has(`${last.file}:${last.line + 1}`)) take(last.file, last.line + 1, index);
+        if (last !== undefined && (only === undefined || last.file === only) && texts[last.file]!.lines[last.line + 1] === "" && !used.has(`${last.file}:${last.line + 1}`)) take(last.file, last.line + 1, index);
         return;
       }
-      const order = last === undefined ? texts.map((_, file) => file) : [last.file, ...texts.map((_, file) => file).filter((file) => file !== last!.file)];
+      const order = only !== undefined ? [only] : last === undefined ? texts.map((_, file) => file) : [last.file, ...texts.map((_, file) => file).filter((file) => file !== last!.file)];
       for (const file of order) {
         const lines = texts[file]!.lines;
         const from = last !== undefined && file === last.file ? last.line + 1 : 0;
@@ -165,6 +177,9 @@ export function diffFiles(diff: string, width: number, paint: DiffPaint = PLAIN_
       rendered ??= headerFile;
       before = [];
       after = [];
+      // A new file starts in no section: a test plain file never has the module's.
+      sectionBefore = undefined;
+      sectionAfter = undefined;
       continue;
     }
     if (HEADER.test(line) || line.startsWith("@@") || line.startsWith("\\")) continue;
