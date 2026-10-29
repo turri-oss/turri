@@ -455,6 +455,14 @@ describe("a step's ***plain diff of the modules below", () => {
 });
 
 describe("a step's diff of the test plain files", () => {
+  it("shows a test plain file as added whole when the tree before lists its functional spec's scenarios empty", () => {
+    const before = serializeTree({ "functional specs": [{ id: "create-link", markdown: "Creates a link.", conformance_tests: [], acceptance_tests: [] }] } as MarshalledPlainSource);
+    const after = serializeTree({ "functional specs": [{ id: "create-link", markdown: "Creates a link.", conformance_tests: [{ id: "creates", text: "It works." }], acceptance_tests: [] }] } as MarshalledPlainSource);
+    const step = makeStep("conformance", "", changesBetween(before, after), before, after, "shorty.plain", undefined, { module: "shorty", pathOf: (funcId) => `tests/shorty/${funcId}.plain` });
+    expect(step.textDiff).toContain("@@ -0,0 +1,");
+    expect(step.textDiff).not.toMatch(/^-(?!-- )/m);
+  });
+
   it("shows the test plain file of a functional spec that had no scenarios as added whole, never a stub taken out", () => {
     const before = serializeTree({ "functional specs": [{ id: "create-link", markdown: "Creates a link." }] } as MarshalledPlainSource);
     const after = serializeTree({ "functional specs": [{ id: "create-link", markdown: "Creates a link.", conformance_tests: [{ id: "creates", text: "It works." }] }] } as MarshalledPlainSource);

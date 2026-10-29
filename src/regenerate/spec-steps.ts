@@ -453,7 +453,8 @@ export function diffTestPlainFiles(before: string, after: string, module: string
       // A module below's functional specs too, by module and func-id: the tip's conformance suite holds the chain's.
       if (section === undefined || !FUNCTIONAL_SECTIONS.includes(section)) continue;
       const item = JSON.parse(line) as ScenarioCarrier & { module?: string };
-      if (item.id !== undefined && (item[CONFORMANCE_TESTS] !== undefined || item[ACCEPTANCE_TESTS] !== undefined)) found.set(`${item.module ?? ""}:${item.id}`, item);
+      // A functional spec with no scenarios - none listed, or the lists empty - has no test plain file.
+      if (item.id !== undefined && (item[CONFORMANCE_TESTS] ?? []).length + (item[ACCEPTANCE_TESTS] ?? []).length > 0) found.set(`${item.module ?? ""}:${item.id}`, item);
     }
     return found;
   };
