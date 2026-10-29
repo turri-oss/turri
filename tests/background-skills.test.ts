@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { ChatLink } from "../src/chats.ts";
-import { doneLine, failedTask, runDetails, skillRunDelivery, startedText } from "../src/background-skills.ts";
+import { doneLine, failedTask, ownChanges, runDetails, skillRunDelivery, startedText } from "../src/background-skills.ts";
 
 describe("a skill run in the background", () => {
   it("is said to be running as it starts - on which model, for which module - and the chat told to go on, not wait", () => {
@@ -63,5 +63,12 @@ describe("what a host is told of a background run", () => {
       runs: [{ skill: "implement-unit-testing-script", kind: "unit", plainFile: "hello.plain" }, { skill: "tidy" }],
     });
     expect(messages[0]!.options).toEqual({ triggerTurn: true, deliverAs: "followUp" });
+  });
+
+  it("counts as a script run's own only its script, a prepare script and a config naming them - not what the chat wrote meanwhile", () => {
+    const changed = ["quotes.plain", "test_scripts/run_conformance_tests_python.sh", "tests/quotes/health.plain", "config.turri.yaml", "test_scripts/prepare_environment_python.sh"];
+    expect(ownChanges(changed, "conformance")).toEqual(["test_scripts/run_conformance_tests_python.sh", "config.turri.yaml", "test_scripts/prepare_environment_python.sh"]);
+    expect(ownChanges(changed, "unit")).toEqual(["config.turri.yaml"]);
+    expect(ownChanges(changed)).toEqual(changed);
   });
 });

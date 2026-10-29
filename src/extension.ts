@@ -20,7 +20,7 @@ import { sandboxAvailable, sandboxSummary } from "./regenerate/os-sandbox.ts";
 import { findTestScripts, scriptKindOfSkill } from "./regenerate/test-scripts.ts";
 import { writingScript } from "./regenerate/scripts-being-written.ts";
 import { applyBedrockRegion } from "./bedrock-region.ts";
-import { BACKGROUND_NOTE, doneLine, failedTask, runDetails, skillRunDelivery, startedText } from "./background-skills.ts";
+import { BACKGROUND_NOTE, doneLine, failedTask, ownChanges, runDetails, skillRunDelivery, startedText } from "./background-skills.ts";
 import { createAskUserTool } from "./tools.ts";
 import { asksFromScratch, asksWholeChain, driftTool, fromWorkingDir, haltTool, loopReply, MODEL_PARAM, regenerateTool, STACK_PARAM, stopJob, WAIT_PARAM, withCallStack, WORKING_DIR_PARAM } from "./loop-tools.ts";
 import { createWebTools } from "./regenerate/web.ts";
@@ -839,7 +839,8 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
       ),
     )
       .then(({ result }) => {
-        const changed = changedFiles(filesBefore, projectFiles(cwd, filesBefore.keys()));
+        // Its own: the chat went on meanwhile, and what it wrote is not the run's.
+        const changed = ownChanges(changedFiles(filesBefore, projectFiles(cwd, filesBefore.keys())), kind);
         if (!result.ok) end({ ok: false, why: "stopped at a review gate, with no approved artifact", output: result.output });
         else if (writes && changed.length === 0) end({ ok: false, why: "ended having changed no file in the project", output: result.output });
         else end({ ok: true, changed });

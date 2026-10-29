@@ -58,6 +58,18 @@ export function startedText(skill: string, options: { model?: string; plainFile?
   ].join("\n");
 }
 
+/**
+ * What a background run changed of the files that changed in the project while it ran: the chat goes on meanwhile, and
+ * what it writes - its ***plain, its test plain files - is not the run's. A run that writes a testing script changes
+ * the script, a prepare script beside a conformance one, and a config file naming them; any other run, all of them.
+ */
+export function ownChanges(changed: string[], kind?: ScriptKind): string[] {
+  if (kind === undefined) return changed;
+  const scripts = kind === "unit" ? ["run_unittests"] : ["run_conformance_tests", "prepare_environment"];
+  const name = (path: string) => path.split("/").at(-1) ?? path;
+  return changed.filter((path) => scripts.some((script) => name(path).startsWith(script)) || /^config(\.turri)?(\.[^.]+)?\.yaml$/.test(name(path)));
+}
+
 /** The line a background run that did its work is drawn as. */
 export function doneLine(skill: string, changed: string[], kind?: ScriptKind): string {
   const files = changed.join(", ");
