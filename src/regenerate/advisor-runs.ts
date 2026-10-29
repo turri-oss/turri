@@ -3,6 +3,7 @@ import { basename, join, relative, resolve } from "node:path";
 import { advisorModel, configForSpec, readProjectConfig, stackOf, testDirOf } from "../config.ts";
 import { plainFileParser } from "../plain/parser.ts";
 import { ACCEPTANCE_TESTS, CONFORMANCE_TESTS, FUNCTIONAL_REQUIREMENTS, REQUIRED_FUNCTIONAL_SPECS, type FunctionalSpecItem } from "../plain/spec.ts";
+import { tipsAbove } from "../plain/check.ts";
 import { isStdlibModule } from "../plain/stdlib.ts";
 import { outsideJobs, withStopSignal } from "./activity.ts";
 import {
@@ -103,7 +104,7 @@ export interface EvaluateRequest {
   funcId: string;
   /** The module's .plain file. */
   plainFile: string;
-  /** The tip its scenarios are tested in. Default: the one the advisor last knew, else the module itself. */
+  /** The tip its scenarios are tested in. Default: the one the advisor last knew, else the module at the top of a chain it is in, else itself. */
   tip?: string;
   /** Why the chat asks - "the coding agent failed three times to implement it" - for the classifier, as context. */
   reason?: string;
@@ -382,7 +383,8 @@ export function createTestAdvisor(options: TestAdvisorOptions = {}): TestAdvisor
       const text = item.markdown.trim();
       const hash = textHash(text);
       const known = advisorEntry(project, asked.module, asked.funcId);
-      const tip = asked.tip ?? (known?.tip !== undefined ? resolve(project, known.tip) : plainFile);
+      // The tip its scenarios are tested in: given, else known, else the module at the top of a chain it is in - itself when none is.
+      const tip = asked.tip ?? (known?.tip !== undefined ? resolve(project, known.tip) : (tipsAbove(asked.module, project)[0]?.file ?? plainFile));
       const reason = asked.reason?.trim();
       const taken = take({ project, module: asked.module, funcId: asked.funcId, plainFile, tip: resolve(tip), text, hash, asked: reason !== undefined && reason !== "" ? { reason } : {} });
       return taken ? "started" : "already";

@@ -75,7 +75,7 @@ function shown(path: string, projectDir: string): string {
  * The modules of a project whose requires chains a module is in and that nothing requires: the tips its conformance
  * tests are written in, by name with their files. None when nothing requires it - it is a tip itself.
  */
-function tipsAbove(moduleName: string, projectDir: string): Array<{ name: string; file: string }> {
+export function tipsAbove(moduleName: string, projectDir: string): Array<{ name: string; file: string }> {
   const modules = projectModules(projectDir);
   const requiredBy = new Map<string, string[]>();
   for (const [name, file] of modules) {

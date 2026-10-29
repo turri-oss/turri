@@ -74,6 +74,18 @@ describe("evaluate_tests", () => {
     expect(events.map((event) => [event.kind, (event as { asked?: boolean }).asked])).toEqual([["advisor.classified", true]]);
   });
 
+  it("evaluates a functional spec of a module below in the tip that requires it, as the loop would", async () => {
+    writeFileSync(join(dir, "todo.plain"), "---\nrequires:\n  - core\n---\n\n***functional specs***\n\n# remove-task\nRemove one task.\n");
+    const subjects: AdvisorSubject[] = [];
+    const verdicts: AdvisorVerdict[] = [];
+    const advisor = createTestAdvisor({ advise: async (subject) => (subjects.push(subject), yes), onVerdict: (verdict) => verdicts.push(verdict) });
+    await call(evaluateTestsTool({ cwd: dir, advisor: () => advisor }), { funcIds: ["core:clear-tasks"] });
+    await advisor.idle();
+    expect(subjects[0]!.testedIn?.module).toBe("todo");
+    expect(verdicts[0]!.tip).toBe(join(dir, "todo.plain"));
+    expect(advisorEntry(dir, "core", "clear-tasks")?.tip).toBe("todo.plain");
+  });
+
   it("evaluates a text the advisor already judged", async () => {
     putAdvisorEntry(dir, "core", "core.plain", { funcId: "add-task", hash: textHash("Add a task to the list."), state: "no", tip: "core.plain" });
     let calls = 0;
