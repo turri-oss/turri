@@ -160,6 +160,18 @@ describe("picking the inputs", () => {
     expect(task).toContain("tested against the code of checkout, which is built on shop");
   });
 
+  it("takes a single probe for a functional spec with a single input, and gives up on none", async () => {
+    answers = {
+      probes: { probes: [{ input: "100" }] },
+      "literal reader": predict(["90"]),
+      "edge-case hunter": predict(["90"]),
+      "another domain's reader": predict(["90"]),
+    };
+    expect(await pickInputs(subject, yes, options)).toEqual([{ input: "100", agreed: "90" }]);
+    answers = { probes: { probes: [] } };
+    await expect(pickInputs(subject, yes, options)).rejects.toThrow(/gave no probes/);
+  });
+
   it("covers the divergence's input as a probe too", async () => {
     answers = {
       probes: { probes: probes.map((input) => ({ input })) },

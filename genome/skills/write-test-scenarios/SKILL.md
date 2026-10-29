@@ -49,7 +49,7 @@ Follow `test-plain-files.md` to the letter:
 - An agreed input: its scenario expects the readers' output, as it is
 - A split input: its scenario expects the reading you took
 - Expected use goes under `***conformance tests***`, the use that is not expected - invalid input, missing data, a limit passed - under `***acceptance tests***`
-- Each scenario is a `# <scenario-id>` heading - short kebab-case from what it checks, unique in the file - and one statement line naming the action and its expected result, with concrete values; `- ` bullets under it only when one line is not enough
+- Each scenario is a `# <scenario-id>` heading - short kebab-case from what it checks, unique in the file - and one statement line naming the action and its expected result, with concrete values - never a placeholder such as `<name>`; `- ` bullets under it only when one line is not enough
 - Black box: act through the interface the functional spec names, and never name a function, class or file of the code
 - A scenario never contradicts, narrows or extends the functional spec
 

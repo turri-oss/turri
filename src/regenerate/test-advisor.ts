@@ -12,7 +12,7 @@ import type { AdvisorAnswer, AdvisorInput, AdvisorQuestion, AdvisorReport } from
  *   input two reasonable readings answer differently (divergence), what would change (revisited), the consequence of a
  *   bug (cost). A yes whose evidence is empty or malformed counts as no. Silent failure, divergence or cost make the
  *   verdict yes; revisited alone does not - the unit tests are the regression protection.
- * - **On a yes, pick the inputs:** one call writes 5-10 boundary probes (and the divergence's input), readers that
+ * - **On a yes, pick the inputs:** one call writes 1-10 boundary probes (and the divergence's input), readers that
  *   differ only by their system prompt each predict every probe's output, code compares them, and any disagreement is a
  *   candidate - the union, never a majority. The third reader is spared when the first two already disagree. One last
  *   call keeps, of each candidate, the readings a reasonable person could hold.
@@ -50,7 +50,7 @@ export interface Classification {
 const RETRIES = 2;
 
 /** The fewest and most probes a functional spec is given. */
-export const MIN_PROBES = 5;
+export const MIN_PROBES = 1;
 export const MAX_PROBES = 10;
 
 /** What a reader answers for an input the functional spec does not settle: a scenario on it would pin a guess. */
@@ -238,16 +238,18 @@ function probesPrompt(subject: AdvisorSubject, classification: Classification): 
     ...classification.questions.map((answered) => `- ${answered.question}: ${answered.evidence}`),
     "</why it needs them>",
     "",
-    `Write ${MIN_PROBES} to ${MAX_PROBES} probes: concrete inputs at the boundaries of what the functional spec says - limits,`,
-    "empty and missing values, duplicates, order, the cases its wording leaves open - each one an input a black-box test",
-    "can give through the interface the functional spec names. Concrete values, never descriptions (\"a long name\").",
+    `Write the probes - as many as the functional spec has real boundaries, ${MIN_PROBES} to ${MAX_PROBES}, one when it has a single input:`,
+    "concrete inputs at the boundaries of what the functional spec says - limits, empty and missing values, duplicates,",
+    "order, the cases its wording leaves open - each one an input a black-box test can give through the interface the",
+    "functional spec names. Concrete values, never descriptions (\"a long name\").",
     "Only inputs whose output the functional spec bears on: never a command, flag, alias or option it does not name, and",
     "never one that exercises another functional spec of the module instead - a test of what it does not say would pin a guess.",
-    "Do not say what the output should be. Call submit_probes once.",
+    "Never pad to reach a number: an input that tests nothing new is noise in the scenarios. Do not say what the output",
+    "should be. Call submit_probes once.",
   ].join("\n");
 }
 
-/** The probes: 5-10 boundary inputs, and the divergence's input when the classification found one. */
+/** The probes: 1-10 boundary inputs, and the divergence's input when the classification found one. */
 async function probes(subject: AdvisorSubject, classification: Classification, options: AdvisorCallOptions): Promise<string[]> {
   const answer = await askAdvisor<{ probes: Array<{ input: string }> }>({
     cwd: options.cwd,
