@@ -656,7 +656,7 @@ describe("the work loop", () => {
       expect(JSON.stringify(tested)).toContain("It works.");
     });
 
-    it("are written for a functional spec with scenarios and none for one whose test plain file is empty", async () => {
+    it("are written for a functional spec with scenarios and none for one with no test plain file", async () => {
       writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye."]));
       scenariosIn("say-goodbye");
       const code = runner();
@@ -821,7 +821,8 @@ describe("the work loop", () => {
       await loop.bringUp("app.plain");
       await loop.drain();
       const codeJobs = code.ran.length;
-      writeFileSync(join(dir, "tests", "app", "say-goodbye.plain"), testPlainFile("app", "say-goodbye"));
+      // Its scenarios all taken out: its test plain file is deleted - an empty one is a syntax error.
+      rmSync(join(dir, "tests", "app", "say-goodbye.plain"));
       await loop.bringUp("app.plain", { specChange: true });
       await loop.drain();
       expect(code.ran).toHaveLength(codeJobs);
@@ -961,7 +962,8 @@ describe("the work loop", () => {
       await loop.drain();
       expect(describeDrift(loop.drift("app.plain"))).toContain("conformance tests: written for what is built - no drift");
       writeFileSync(join(dir, "tests", "app", "say-hello.plain"), testPlainFile("app", "say-hello", { acceptance: ["# works\nIt works, and says so.", "# loud\nIt says hello loudly."] }));
-      writeFileSync(join(dir, "tests", "app", "say-goodbye.plain"), testPlainFile("app", "say-goodbye"));
+      // Its scenarios all taken out: its test plain file is deleted - an empty one is a syntax error.
+      rmSync(join(dir, "tests", "app", "say-goodbye.plain"));
       const text = describeDrift(loop.drift("app.plain"));
       expect(text).toContain("conformance tests: to write or change - written once the code is built, or now with conform\n");
       expect(text).toContain("    app:say-hello     1 added, 1 changed\n");
@@ -1018,9 +1020,9 @@ describe("the work loop", () => {
       const code = runner();
       const tests = conformanceRunner();
       const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run: code.run, runConformance: tests.runConformance });
-      await expect(loop.conformance("app.plain")).rejects.toThrow(/^No functional spec of app has scenarios - every test plain file of it is empty, so there is nothing to test: write the conformance or acceptance scenarios first/);
+      await expect(loop.conformance("app.plain")).rejects.toThrow(/^No functional spec of app has scenarios - none has a test plain file - so there is nothing to test: write the conformance or acceptance scenarios first/);
       scenariosIn("say-hello");
-      await expect(loop.conformance("app.plain", { funcIds: ["app:say-goodbye"] })).rejects.toThrow(/^app:say-goodbye has no scenarios - its test plain file is empty, so there is nothing to test: write the conformance or acceptance scenarios first, with change_plain.*Nothing was started\.$/);
+      await expect(loop.conformance("app.plain", { funcIds: ["app:say-goodbye"] })).rejects.toThrow(/^app:say-goodbye has no scenarios - no test plain file - so there is nothing to test: write the conformance or acceptance scenarios first, with change_plain.*Nothing was started\.$/);
       await expect(loop.conformance("app.plain", { funcIds: ["app:say-hello", "app:say-thanks"] })).rejects.toThrow("app has no functional spec app:say-thanks. Nothing was started.");
       expect(code.ran).toEqual([]);
       expect(tests.ran).toEqual([]);

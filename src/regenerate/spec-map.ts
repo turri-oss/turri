@@ -56,7 +56,7 @@ export interface MapItem {
   was?: string;
   /** A functional spec's func-id: what it is matched and kept by. */
   funcId?: string;
-  /** A functional spec's scenarios, as its test plain file has them now: none, an empty one - it is not tested. */
+  /** A functional spec's scenarios, as its test plain file has them now: none, with no file - it is not tested. */
   scenarios: MapScenarios;
   /** Its line in the code's tree now, and in the code record's: what a pulse's trees are matched by. */
   line?: string;

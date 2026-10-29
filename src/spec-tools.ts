@@ -62,7 +62,7 @@ export function createSpecDiffTools(options: {
     promptSnippet: "apply a git diff of the .plain specs and start building it",
     promptGuidelines: [
       "Every change to a .plain file in the product phase goes through change_plain, as a git diff with paths relative to the project root. It writes the change and starts its build in one step.",
-      "A functional spec is a `# <func-id>` heading and its text; each has a test plain file, tests/<module>/<func-id>.plain, written in the same diff as the spec: its `module:` and `func_id:`, then `***conformance tests***` and `***acceptance tests***`, each scenario a `# <scenario-id>` heading and its text. plain_file stays the module's .plain file when the diff touches only its test plain files.",
+      "A functional spec is a `# <func-id>` heading and its text. One with scenarios has a test plain file, tests/<module>/<func-id>.plain: its `module:` and `func_id:`, then `***conformance tests***` and `***acceptance tests***`, each scenario a `# <scenario-id>` heading and its text - a section only when it has a scenario, an empty one being a syntax error. One with no scenarios has no test plain file. plain_file stays the module's .plain file when the diff touches only its test plain files.",
       skillPaced
         ? "One change per answer, and a new one only after the user has answered a question about it. Set fixes_earlier to correct something already written."
         : "Write the changes one after another, on your own: no answer is needed between them, and none is asked for. Set fixes_earlier to correct something already written.",

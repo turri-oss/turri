@@ -164,7 +164,9 @@ describe("turri init-config", () => {
     expect(message).toContain("with Anthropic's models on Amazon Bedrock (eu)");
     expect(message).toContain("AWS_PROFILE");
     expect(message).toContain("AWS_BEARER_TOKEN_BEDROCK");
-    expect(message).toContain("AWS_REGION=eu-central-1");
+    // The region is turri's to set: said, never asked for.
+    expect(message).toContain("turri calls eu's models in eu-central-1. AWS_REGION, set, overrides it");
+    expect(message).not.toContain("export AWS_REGION");
     expect(projectModels(readProjectConfig(dir))).toMatchObject({
       harness: { model: "amazon-bedrock/eu.anthropic.claude-opus-5-5", thinking: "medium" },
       coding: { model: "amazon-bedrock/eu.anthropic.claude-haiku-5-5", thinking: "low" },
@@ -294,7 +296,8 @@ describe("turri init-config with the two models given", () => {
     expect(message).toContain("with xAI's models on Amazon Bedrock (global)");
     expect(message).toMatch(/you talk to +amazon-bedrock\/global\.xai\.grok-4\.7:medium/);
     expect(message).toMatch(/it codes +amazon-bedrock\/global\.xai\.grok-4\.6:low/);
-    expect(message).toContain("AWS_REGION=us-east-1");
+    // global's models are served in us-east-1, pi's default: no region is said at all.
+    expect(message).not.toContain("AWS_REGION");
   });
 
   it("writes a pair the other way round from the preset - each where it belongs, never one for the other", async () => {
@@ -335,17 +338,17 @@ describe("turri init-config with the two models given", () => {
     expect(existsSync(join(dir, "config.turri.yaml"))).toBe(false);
   });
 
-  it("names the AWS region to set for a geography pi does not call in us-east-1 - Japan's, Australia's", async () => {
+  it("names the AWS region turri calls a geography in that pi does not call in us-east-1 - Japan's, Australia's - asking for none", async () => {
     for (const [geography, region] of [["jp", "ap-northeast-1"], ["au", "ap-southeast-2"]] as const) {
       const sub = join(dir, geography);
       mkdirSync(sub);
       const { message } = await initConfig(sub, { models: { harness: `amazon-bedrock/${geography}.anthropic.claude-opus-5-5`, coding: `amazon-bedrock/${geography}.anthropic.claude-haiku-5-5` } });
       expect(message).toContain(`with Anthropic's models on Amazon Bedrock (${geography})`);
-      expect(message).toContain(`export AWS_REGION=${region}`);
-      expect(message).toContain(`AWS_REGION has to be in ${geography}'s geography, as ${region} is`);
+      expect(message).toContain(`turri calls ${geography}'s models in ${region}.`);
+      expect(message).not.toContain("export AWS_REGION");
     }
     const global = (await initConfig(dir, { models: { harness: "amazon-bedrock/global.xai.grok-4.7", coding: "amazon-bedrock/global.xai.grok-4.6" } })).message;
-    expect(global).not.toContain("has to be in");
+    expect(global).not.toContain("turri calls");
   });
 
   it("has an AWS region for every geography pi's catalogue serves Bedrock's models in, and says which need AWS_REGION set", async () => {

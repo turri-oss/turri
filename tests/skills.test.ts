@@ -165,3 +165,23 @@ describe("the skills the person starts themselves", () => {
     expect(told).toContain("never ask them to type /kickoff");
   });
 });
+
+describe("the skills that run in the background", () => {
+  it("are turri's two that write a testing script, on the coding model - each marked in cultivate's list - and no other of its own", () => {
+    const { skills } = discoverSkills(process.cwd(), project);
+    const background = skills.filter((skill) => skill.background);
+    expect(background.map((skill) => [skill.name, skill.model])).toEqual([
+      ["implement-conformance-testing-script", "coding"],
+      ["implement-unit-testing-script", "coding"],
+    ]);
+    expect(catalogueLine(background[0]!)).toContain("Runs in the background: cultivate returns at once");
+    expect(catalogueLine(skills.find((skill) => skill.name === "analyze-func-specs")!)).not.toContain("in the background");
+  });
+
+  it("name no model but the coding one", () => {
+    const own = join(project, ".turri", "skills", "tidy");
+    mkdirSync(own, { recursive: true });
+    writeFileSync(join(own, "SKILL.md"), "---\nname: tidy\ndescription: tidy, described.\nallowed-tools: [read]\nmetadata:\n  background: true\n  model: judge\n---\n\nDo it.\n");
+    expect(discoverSkills(process.cwd(), project).pending).toEqual([expect.stringContaining("tidy")]);
+  });
+});

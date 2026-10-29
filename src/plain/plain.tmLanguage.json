@@ -63,7 +63,7 @@
                             "match": "^\\s*(requires):"
                         },
                         {
-                            "match": "^\\s*(module:)\\s*([a-zA-Z_][a-zA-Z0-9_]*)?",
+                            "match": "^\\s*(module:)\\s*([^\\s#][^\\s#]*)?",
                             "captures": {
                                 "1": {
                                     "name": "keyword.control.import.plain"
@@ -74,11 +74,18 @@
                             }
                         },
                         {
-                            "name": "keyword.control.import.plain",
-                            "match": "^\\s*(func_id):"
+                            "match": "^\\s*(func_id:)\\s*([a-z0-9]+(?:-[a-z0-9]+)*)?(?=\\s|$)",
+                            "captures": {
+                                "1": {
+                                    "name": "keyword.control.import.plain"
+                                },
+                                "2": {
+                                    "name": "entity.name.tag.id.plain"
+                                }
+                            }
                         },
                         {
-                            "match": "^\\s*-\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+                            "match": "^\\s*-\\s+([^\\s#:][^\\s#]*)",
                             "captures": {
                                 "1": {
                                     "name": "entity.name.type.class.plain"

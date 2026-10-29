@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { funcIdsIn, newFileDiff, testPlainFile, writePlain } from "./test-plain.ts";
+import { writePlain } from "./test-plain.ts";
 
 /** What each render was told the change is, and where it landed, in order. */
 const rendered: string[] = [];
@@ -39,16 +39,8 @@ const idOf = (text: string) =>
 const specs = (fs: string[]) => fs.map((text) => `# ${idOf(text)}\n${text}`).join("\n\n");
 const plain = (fs: string[]) =>
   `***definitions***\n\n- :User: is a person.\n\n***implementation reqs***\n\n- Python.\n${fs.length ? `\n***functional specs***\n\n${specs(fs)}\n` : ""}`;
-/** A git diff that removes a file, as taking a functional spec out removes its test plain file. */
-const goneFileDiff = (path: string, text: string) => {
-  const lines = text.split("\n").slice(0, -1);
-  return [`diff --git a/${path} b/${path}`, "deleted file mode 100644", `--- a/${path}`, "+++ /dev/null", `@@ -1,${lines.length} +0,0 @@`, ...lines.map((line) => `-${line}`), ""].join("\n");
-};
-/** The change to a module's file, with the test plain files of the functional specs it adds or takes out. */
+/** The change to a module's file: a functional spec it adds has no scenarios, and so no test plain file. */
 const fileDiff = (file: string, before: string, after: string) => {
-  const module = file.replace(/^.*\//, "").replace(/\.plain$/, "");
-  const was = funcIdsIn(before);
-  const is = funcIdsIn(after);
   return [
     `diff --git a/${file} b/${file}`,
     `--- a/${file}`,
@@ -57,9 +49,7 @@ const fileDiff = (file: string, before: string, after: string) => {
     ...before.split("\n").slice(0, -1).map((line) => `-${line}`),
     ...after.split("\n").slice(0, -1).map((line) => `+${line}`),
     "",
-  ].join("\n") +
-    is.filter((id) => !was.includes(id)).map((id) => newFileDiff(`tests/${module}/${id}.plain`, testPlainFile(module, id))).join("") +
-    was.filter((id) => !is.includes(id)).map((id) => goneFileDiff(`tests/${module}/${id}.plain`, testPlainFile(module, id))).join("");
+  ].join("\n");
 };
 const diffOf = (before: string, after: string) => fileDiff("app.plain", before, after);
 

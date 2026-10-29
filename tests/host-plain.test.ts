@@ -158,8 +158,8 @@ describe("the test plain files of a project", () => {
   });
 
   it("gives a stray, an unparsable or an unbound one its error, bound to nothing", () => {
-    testPlain("nowhere", "x.plain", "---\nmodule: nowhere\nfunc_id: x\n---\n\n***conformance tests***\n\n***acceptance tests***\n");
-    testPlain("app", "gone.plain", "---\nmodule: app\nfunc_id: gone\n---\n\n***conformance tests***\n\n***acceptance tests***\n");
+    testPlain("nowhere", "x.plain", "---\nmodule: nowhere\nfunc_id: x\n---\n\n***conformance tests***\n\n# works\nIt works.\n");
+    testPlain("app", "gone.plain", "---\nmodule: app\nfunc_id: gone\n---\n\n***conformance tests***\n\n# works\nIt works.\n");
     testPlain("app", "bad.plain", "---\nmodule: app\nfunc_id: fill-cart\n---\n\n***acceptance tests***\n\n***conformance tests***\n");
     const nodes = plainGraph(project).testPlainFiles;
     const of = (folder: string, name: string) => nodes.find((node) => node.file === join(project, "tests", folder, name))!;
@@ -244,5 +244,19 @@ describe("concepts in a piece of text", () => {
     expect(conceptBeingTyped("Then :")).toEqual({ typed: ":", start: 5 });
     expect(conceptBeingTyped("Then :User:")).toBeUndefined();
     expect(conceptBeingTyped("Then :User: and")).toBeUndefined();
+  });
+});
+
+describe("where a module's test plain files are", () => {
+  it("is the project's tests folder unless test-dir names another, its stack's over the project's", async () => {
+    const { DEFAULT_TEST_DIR, testDirOf } = await import("../src/host.ts");
+    expect(DEFAULT_TEST_DIR).toBe("tests");
+    writeFileSync(join(project, "config.turri.yaml"), "");
+    expect(testDirOf(join(project, "app.plain"))).toBe(join(project, "tests"));
+    writeFileSync(join(project, "config.turri.yaml"), "test-dir: scenarios\n");
+    expect(testDirOf(join(project, "app.plain"))).toBe(join(project, "scenarios"));
+    writeFileSync(join(project, "config.turri.backend.yaml"), "test-dir: backend-tests\n");
+    writeFileSync(join(project, "backend.plain"), "***functional specs***\n\n# ping\nIt answers.\n");
+    expect(testDirOf(join(project, "backend.plain"))).toBe(join(project, "backend-tests"));
   });
 });

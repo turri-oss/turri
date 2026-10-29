@@ -85,6 +85,10 @@ describe("checking the models answer", () => {
     expect(fixFor("amazon-bedrock", "AccessDeniedException: You don't have access to the model with the specified model ID.")).toContain("model access");
     expect(fixFor("amazon-bedrock", "The security token included in the request is invalid.")).toContain("AWS_PROFILE");
     expect(fixFor("amazon-bedrock", "getaddrinfo ENOTFOUND bedrock-runtime.nowhere-1.amazonaws.com")).toContain("AWS_REGION");
+    // With the region turri calls it in, the hint says that region and where it comes from - never "set AWS_REGION" alone.
+    const turris = "turri calls Bedrock in eu-central-1, the region the models' geography needs - AWS_REGION, set, overrides it";
+    expect(fixFor("amazon-bedrock", "getaddrinfo ENOTFOUND bedrock-runtime.nowhere-1.amazonaws.com", turris)).toBe(`the model has to be served in the region it is called in - ${turris}`);
+    expect(fixFor("amazon-bedrock", "AccessDeniedException: You don't have access to the model with the specified model ID.", turris)).toContain("for its region - turri calls Bedrock in eu-central-1");
     expect(fixFor("google", "429 Resource has been exhausted (e.g. check quota).")).toContain("try again later");
     // pi has no credentials for it at all: sign in, not "see what the provider said".
     expect(fixFor("anthropic", "Provider is not configured: anthropic")).toBe("sign in to anthropic: ANTHROPIC_API_KEY, or /login in turri");

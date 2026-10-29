@@ -55,7 +55,7 @@ const reporter: Reporter = {
 async function main() {
   const args = process.argv.slice(2);
   const modelIndex = args.indexOf("--model");
-  const model = modelIndex === -1 ? skillModel(process.cwd()) : args[modelIndex + 1];
+  const modelAsked = modelIndex === -1 ? undefined : args[modelIndex + 1];
   // The word after --model is the model, never the skill - and with no --model, no word is.
   const skillArg = args.filter((arg, i) => !arg.startsWith("--") && (modelIndex === -1 || i !== modelIndex + 1))[0];
 
@@ -75,6 +75,8 @@ async function main() {
   }
   const skillDir = named?.dir ?? skillArg;
   const skill = loadSkill(skillDir);
+  // A skill that names the coding model (metadata.model: coding) runs on it, harness-model on the rest; --model wins.
+  const model = modelAsked ?? skillModel(cwd, skill.model === "coding" ? "coding" : "harness");
   console.log(c.bold(`skill: ${skill.name}`));
   for (const line of describeGates(skill)) console.log(`  ${c.dim(line)}`);
 

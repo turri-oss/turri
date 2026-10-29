@@ -11,7 +11,7 @@ import { createWorkLoop, describeModules, type JobRunner } from "../../src/regen
 import { recordHistory } from "../../src/regenerate/lineage.ts";
 import { readRecord, writeCodeRecord, writeTestsRecord } from "../../src/regenerate/records.ts";
 import { findTestScripts } from "../../src/regenerate/test-scripts.ts";
-import { newFileDiff, testPlainFile, writePlain } from "../test-plain.ts";
+import { testPlainFile, writePlain } from "../test-plain.ts";
 
 // A project of two stacks, as a person sets one up: a Python backend and a TypeScript frontend side by side, each
 // stack's file naming its own unit testing script, config.turri.yaml naming none - test_scripts/ holds both, so it
@@ -136,6 +136,7 @@ describe("a module of a project of stacks", () => {
 
   it("writes the conformance tests of its functional specs with scenarios with its stack too, once its code is built", async () => {
     writePlain(dir, "backend.plain", app(["Serve the orders."], "is Python."));
+    mkdirSync(join(dir, "tests", "backend"), { recursive: true });
     writeFileSync(join(dir, "tests", "backend", "serve-the-orders.plain"), testPlainFile("backend", "serve-the-orders", { acceptance: ["# lists\nThe orders are listed."] }));
     writeFileSync(join(dir, "test_scripts", "run_conformance_tests_python.sh"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
     const { run } = runner();
@@ -285,8 +286,6 @@ describe("a spec change written in a project of stacks", () => {
       ...after.split("\n").slice(0, -1).map((line) => `+${line}`),
       "",
     ].join("\n");
-  /** The test plain files a change adds with the functional specs it adds: empty, as the spec needs them. */
-  const testsFor = (module: string, added: string[]) => added.map((line) => newFileDiff(`tests/${module}/${slug(line)}.plain`, testPlainFile(module, slug(line)))).join("");
   const write = (loop: ReturnType<typeof createWorkLoop>) => {
     const { tools } = createSpecDiffTools({ loop, cwd: dir, paced: false });
     return (params: object) => tools[0]!.execute("id", params as never, undefined, undefined, {} as never) as Promise<{ content: Array<{ text: string }> }>;
@@ -297,7 +296,7 @@ describe("a spec change written in a project of stacks", () => {
     const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run });
     const before = app(["Serve the orders.", "Serve the invoices."], "is Python.");
     const after = app(["Serve the orders.", "Serve the invoices.", "Serve the refunds."], "is Python.");
-    const result = await write(loop)({ plain_file: "backend.plain", diff: fileDiff("backend.plain", before, after) + testsFor("backend", ["Serve the refunds."]) });
+    const result = await write(loop)({ plain_file: "backend.plain", diff: fileDiff("backend.plain", before, after) });
     await loop.drain();
     expect(result.content[0]!.text).toContain("Building in the background");
     expect(result.content[0]!.text).toContain("stack backend");
@@ -311,18 +310,18 @@ describe("a spec change written in a project of stacks", () => {
     writePlain(dir, "api.plain", before);
     const { ran, run } = runner();
     const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run });
-    const result = await write(loop)({ plain_file: "api.plain", diff: fileDiff("api.plain", before, after) + testsFor("api", ["Serve the refunds."]) });
+    const result = await write(loop)({ plain_file: "api.plain", diff: fileDiff("api.plain", before, after) });
     expect(readFileSync(join(dir, "api.plain"), "utf8")).toBe(after);
-    expect(result.content[0]!.text).toContain("Applied the change to api.plain, tests/api/serve-the-refunds.plain.");
+    expect(result.content[0]!.text).toContain("Applied the change to api.plain.");
     expect(result.content[0]!.text).toContain("Not built yet - api.plain would be built with no stack");
     expect(loop.status()).toEqual([]);
     // A stack the project has no file for: written all the same, and said.
     const later = app(["Serve the orders.", "Serve the refunds.", "Serve the invoices."], "is Python.");
-    const wrong = await write(loop)({ plain_file: "api.plain", diff: fileDiff("api.plain", after, later) + testsFor("api", ["Serve the invoices."]), stack: "mobile", fixes_earlier: true });
+    const wrong = await write(loop)({ plain_file: "api.plain", diff: fileDiff("api.plain", after, later), stack: "mobile", fixes_earlier: true });
     expect(wrong.content[0]!.text).toContain("Not built yet - There is no stack mobile");
     // Passed with the next change, everything written so far is built.
     const last = app(["Serve the orders.", "Serve the refunds.", "Serve the invoices.", "Serve the receipts."], "is Python.");
-    await write(loop)({ plain_file: "api.plain", diff: fileDiff("api.plain", later, last) + testsFor("api", ["Serve the receipts."]), stack: "backend", fixes_earlier: true });
+    await write(loop)({ plain_file: "api.plain", diff: fileDiff("api.plain", later, last), stack: "backend", fixes_earlier: true });
     await loop.drain();
     expect(ran.map((pulse) => pulse.stack)).toEqual(["backend", "backend", "backend", "backend"]);
     expect(readRecord(join(dir, "plain_modules", "api", "code"))).not.toBeNull();

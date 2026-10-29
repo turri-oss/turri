@@ -44,6 +44,7 @@ const { testPlainFile, writePlain } = await import("../test-plain.ts");
 
 /** A functional spec given a conformance scenario in its test plain file: it has conformance tests to write. */
 function withScenario(module: string, funcId: string) {
+  mkdirSync(join(dir, "tests", module), { recursive: true });
   writeFileSync(join(dir, "tests", module, `${funcId}.plain`), testPlainFile(module, funcId, { conformance: [`# works\n${funcId} works.`] }));
 }
 

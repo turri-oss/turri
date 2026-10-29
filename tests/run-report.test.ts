@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { syncTestPlainFiles, testPlainFile } from "./test-plain.ts";
+import { testPlainFile } from "./test-plain.ts";
 import { overrideConfig, projectModels, readProjectConfig, booleanOption, roleModel } from "../src/config.ts";
 import { configKeyOptions, parseArgs } from "../src/cli-options.ts";
 import { headlessOptions, moduleStates } from "../src/loop-cli.ts";
@@ -202,14 +202,13 @@ describe("writing the run report", () => {
 /** A functional spec's func-id: its first two words - "App one, changed." is still `app-one`. */
 const idOf = (text: string) => text.toLowerCase().replace(/[^a-z0-9 ]/g, "").split(" ").slice(0, 2).join("-");
 
-/** A spec of its own functional specs, requiring another or not, each with its test plain file. */
+/** A spec of its own functional specs, requiring another or not. */
 function spec(name: string, specs: string[], requires?: string): string {
   const file = join(dir, `${name}.plain`);
   writeFileSync(
     file,
     `${requires !== undefined ? `---\nrequires:\n  - ${requires}\n---\n\n` : ""}***implementation reqs***\n\n- Python.\n\n***functional specs***\n\n${specs.map((text) => `# ${idOf(text)}\n${text}`).join("\n\n")}\n`,
   );
-  syncTestPlainFiles(dir);
   return file;
 }
 

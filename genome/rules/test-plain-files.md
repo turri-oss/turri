@@ -9,14 +9,14 @@ A test plain file holds the test scenarios of one functional spec. Conformance s
 ## Where it lives
 - Every test plain file of a module lives in `tests/<module>/`, with `tests/` beside the module (`test-dir:` in `config.turri.yaml` can name another folder). This is a rule, not a convention: a file's folder matches its `module:`, and a `.plain` file in `tests/` outside a module's folder is an error `turri validate` reports
 - Name the file after its functional spec, `tests/<module>/<func-id>.plain`; the name is convention, the frontmatter is what binds it
-- A functional spec with no scenarios has no test plain file: it is not tested. Write one only to give a functional spec scenarios, and never an empty one - an empty file says no more than none, and is one more file to keep in step
+- A functional spec with no scenarios has no test plain file: it is not tested. Write one only to give a functional spec scenarios, and never an empty one - an empty file is a syntax error, as an empty section is
 - When turri's test advisor's yes arrives for a functional spec, you add its test plain file, with the test reqs and conformance testing script it needs (see `turri-regeneration.md`) - as below, asking nothing
 - More than one test plain file may bind to one functional spec: their scenarios are merged, and the scenario-ids must be unique across them. Write one file per functional spec, and keep a person's extra files as they are
 - A test plain file is never a module: never import or require one, and never name one where a module is asked for
 
 ## File skeleton
 - YAML frontmatter, then `***conformance tests***`, then `***acceptance tests***`, each section heading at the start of a line
-- Both sections are always there, even with nothing under them
+- A section is there only with at least one scenario under it: a section with none is a syntax error - leave it out. A file with no section at all is one too: a functional spec with no scenarios has no test plain file
 - The frontmatter has exactly two keys, both required:
   - `module:` - the module the functional spec is in: its file name without `.plain`
   - `func_id:` - the functional spec's func-id (see `semantic-ids.md`)
@@ -24,7 +24,7 @@ A test plain file holds the test scenarios of one functional spec. Conformance s
 - No other section: no `***definitions***`, `***implementation reqs***`, `***test reqs***` or `***functional specs***`
 - Comment lines starting with `>` are allowed, as in a module
 
-The minimum - the file of a functional spec that is not tested:
+The minimum - one scenario, its section alone:
 
 ```plain
 ---
@@ -34,7 +34,8 @@ func_id: add-task
 
 ***conformance tests***
 
-***acceptance tests***
+# add-valid-task
+Adding a :Task: named "Buy milk" to an empty :TaskList: shows one :Task: named "Buy milk".
 ```
 
 ## Scenarios
@@ -59,6 +60,7 @@ func_id: add-task
 Only scenarios that exist are kept in step: a change to a functional spec never calls for new ones. In the same ***plain diff as the change:
 - A new functional spec gets no test plain file, unless the person asks for its tests
 - A functional spec whose body changes has its scenarios, if it has any, reviewed: one that no longer follows from it is changed or taken out, and your reply says so
+- The last scenario of a section taken out: the section is taken out with it. The last scenario of the file: the file is deleted
 - A functional spec split into several: each part gets its own test plain file, and each scenario moves to the part it tests
 - A functional spec taken out: its test plain file, if it has one, is deleted
 - A functional spec moved to another module: its test plain file moves to that module's folder, with `module:` changed

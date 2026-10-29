@@ -10,6 +10,10 @@ description: >-
   etc.) to a ***plain project, or wants to regenerate / adapt the existing
   Java runner.
 allowed-tools: [read, write, edit, bash, ls, grep, find]
+metadata:
+  # In the chat it runs in the background, on the coding model of the module it is for: its end comes back to the chat.
+  background: true
+  model: coding
 ---
 
 # Implement Unit Testing Script
@@ -134,7 +138,7 @@ Notes:
 
 ## Workflow
 
-1. Confirm the target **language**, **shell flavor** (Bash or PowerShell), and **dependency manifest** (`pom.xml`, `requirements.txt` / `pyproject.toml`, `package.json`, `go.mod`, `Cargo.toml`, ...). Ask if any is unclear.
+1. Take the target **language**, **test framework** and **dependency manifest** (`pom.xml`, `requirements.txt` / `pyproject.toml`, `package.json`, `go.mod`, `Cargo.toml`, ...) from the module the script is for: its stack - the `stdlib/...` template it imports - its implementation reqs, and the project. You run in the background, with nobody to ask: decide what they leave open, the choice most consistent with them, and say what you decided in your result. The script is Bash; a PowerShell copy only when the context asks for one.
 2. Read [assets/run_unittests_java.sh](assets/run_unittests_java.sh) to refresh the exact structure.
 3. Translate each of the eight steps above into the equivalent commands for the target language **and** shell. The toolchain check, dependency install, static checks and test invocation are the language-specific parts; the rest is mechanical translation between Bash and PowerShell syntax.
 4. Pick the dependency-isolation mechanism from the [Dependency isolation](#dependency-isolation) table and use it consistently in steps 6, 7 and 8, and the checks from the [Static checks](#static-checks) table.

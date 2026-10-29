@@ -138,22 +138,28 @@ function signIn(provider: string): string {
     anthropic: "ANTHROPIC_API_KEY, or /login in turri",
     openai: "OPENAI_API_KEY, or /login in turri",
     google: "GEMINI_API_KEY",
-    "amazon-bedrock": "AWS_PROFILE (aws configure, or aws sso login) or AWS_BEARER_TOKEN_BEDROCK, and AWS_REGION",
+    "amazon-bedrock": "AWS_PROFILE (aws configure, or aws sso login) or AWS_BEARER_TOKEN_BEDROCK",
   };
   return keys[provider] ?? `the key pi reads for ${provider}, or /login in turri - https://pi.dev lists them`;
 }
 
-/** What to do about a provider's error, from what it says. */
-export function fixFor(provider: string, problem: string): string {
+/**
+ * What to do about a provider's error, from what it says. `region`: for Bedrock, the region it is called in and where
+ * that comes from, as a line (bedrock-region.ts `describeBedrockRegion`) - turri sets it, so a person is not told to.
+ */
+export function fixFor(provider: string, problem: string, region?: string): string {
   const text = problem.toLowerCase();
+  const where = region !== undefined ? ` - ${region}` : " - the region pi calls Bedrock in, which AWS_REGION, set, chooses";
   if (/access (to|denied).*model|don't have access|not authorized to (invoke|access)|model access|accessdenied/.test(text) && provider === "amazon-bedrock") {
-    return "ask for access to this model in the Bedrock console, under model access - for the region in AWS_REGION";
+    return `ask for access to this model in the Bedrock console, under model access, for its region${where}`;
   }
   if (/provider is not configured|no credentials|not logged in/.test(text)) return `sign in to ${provider}: ${signIn(provider)}`;
   if (/401|403|unauthori[sz]ed|forbidden|invalid.*(api key|x-api-key|token|credential)|credential|security token|could not load|unable to locate|expired|no api key|missing api key|authentication/.test(text)) {
     return `check the credentials pi reads for ${provider}: ${signIn(provider)}`;
   }
-  if (/region|endpoint|enotfound|getaddrinfo/.test(text)) return provider === "amazon-bedrock" ? "check AWS_REGION: the model has to be served there" : "check the network, and the provider's endpoint";
+  if (/region|endpoint|enotfound|getaddrinfo/.test(text)) {
+    return provider === "amazon-bedrock" ? `the model has to be served in the region it is called in${where}` : "check the network, and the provider's endpoint";
+  }
   if (/not found|404|does not exist|unknown model|invalid model/.test(text)) return "the provider does not serve this model id: change it in config.turri.yaml";
   if (/429|rate|quota|overloaded|capacity/.test(text)) return "the provider is busy or the quota is used up: try again later";
   if (/timeout|timed out|aborted/.test(text)) return "the provider did not answer in time: check the network, then try again";
@@ -168,7 +174,7 @@ function commonPrefix(a: string, b: string): number {
 }
 
 /** Each model the config uses, tried: answered, or what is wrong and what to do. One request a model. */
-export async function checkModels(models: UsedModel[], access: ModelAccess): Promise<ModelVerdict[]> {
+export async function checkModels(models: UsedModel[], access: ModelAccess, options: { bedrockRegion?: string } = {}): Promise<ModelVerdict[]> {
   return Promise.all(
     models.map(async ({ spec, usedBy }): Promise<ModelVerdict> => {
       const slash = spec.indexOf("/");
@@ -185,7 +191,7 @@ export async function checkModels(models: UsedModel[], access: ModelAccess): Pro
       const problem = await access.ask(model);
       if (problem === undefined) return { ok: true, spec, usedBy, ms: Date.now() - started };
       const said = problem.split("\n").find((line) => line.trim() !== "")?.trim().slice(0, 300) ?? problem;
-      return { ok: false, spec, usedBy, problem: said, fix: fixFor(provider, problem) };
+      return { ok: false, spec, usedBy, problem: said, fix: fixFor(provider, problem, provider === "amazon-bedrock" ? options.bedrockRegion : undefined) };
     }),
   );
 }

@@ -335,10 +335,11 @@ export function projectModels(config: Pick<ProjectConfig, "harnessModel" | "codi
 
 /**
  * What a skill run from the command line runs on: the project's harness model, as a skill in the chat runs on the
- * chat's - undefined, and pi's default, when the project names none.
+ * chat's - or its coding model, for a skill that names it (`metadata.model: coding`) - undefined, and pi's default,
+ * when the project names none.
  */
-export function skillModel(root: string): string | undefined {
-  return modelSpec(projectModels(readProjectConfig(root, stackOf(root))).harness);
+export function skillModel(root: string, role: "harness" | "coding" = "harness"): string | undefined {
+  return modelSpec(projectModels(readProjectConfig(root, stackOf(root)))[role]);
 }
 
 /** A role entry's model and thinking alone. */

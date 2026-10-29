@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { newFileDiff, testPlainFile, writePlain } from "../test-plain.ts";
+import { writePlain } from "../test-plain.ts";
 import { CONFORMANCE_SCRIPT, writeTestScripts } from "../test-scripts.ts";
 
 /**
@@ -66,7 +66,7 @@ const PASSING_TEST = "import unittest\nfrom app import value\n\nclass AppTest(un
 let dir: string;
 let cwd: string;
 const plain = (fs: string[]) => `***implementation reqs***\n\n- Python.\n\n***functional specs***\n\n${fs.join("\n\n")}\n`;
-const diff = ["diff --git a/app.plain b/app.plain", "--- a/app.plain", "+++ b/app.plain", "@@ -8 +8,4 @@", " One.", "+", "+# two", "+Two.", ""].join("\n") + newFileDiff("tests/app/two.plain", testPlainFile("app", "two"));
+const diff = ["diff --git a/app.plain b/app.plain", "--- a/app.plain", "+++ b/app.plain", "@@ -8 +8,4 @@", " One.", "+", "+# two", "+Two.", ""].join("\n");
 /** What the agent was sent about its work: its notes turns, which come once it passed, left out. */
 const work = () => prompts.filter((prompt) => !prompt.includes("call update_notes"));
 const code = (file: string) => join(dir, "plain_modules", "app", "code", file);

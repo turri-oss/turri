@@ -229,6 +229,11 @@ const SKILL: Record<ScriptKind, { skill: string; file: string; what: string }> =
   conformance: { skill: "implement-conformance-testing-script", file: "run_conformance_tests", what: "conformance testing script" },
 };
 
+/** The kind of testing script a skill writes, by its name - one that writes none, undefined. */
+export function scriptKindOfSkill(skill: string): ScriptKind | undefined {
+  return (Object.keys(SKILL) as ScriptKind[]).find((kind) => SKILL[kind].skill === skill);
+}
+
 /** Raised before a build starts when the script that would decide it is done is missing. */
 export class MissingTestScriptError extends Error {
   // Declared fields, not parameter properties: node's own type stripping cannot run those.

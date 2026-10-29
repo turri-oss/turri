@@ -288,7 +288,7 @@ export function formatCheckResults(results: CheckResult[]): string {
           ? `PASS  ${name}  no functional specs yet${requires}`
           : `PASS  ${name}  ${specs.length} functional spec${specs.length === 1 ? "" : "s"}${requires}`,
       );
-      // No test plain file is a functional spec not tested, as an empty one is - and the way to say so.
+      // No test plain file is a functional spec not tested - the one way to say so: an empty one is a syntax error.
       lines.push(...columns(specs.map((spec) => [spec.funcId, spec.testPlainFiles.length > 0 ? spec.testPlainFiles.join(", ") : "no test plain file", scenarioCounts(spec)])));
       for (const warning of result.warnings ?? []) lines.push(`WARN  ${name}  ${warning}`);
     } else {

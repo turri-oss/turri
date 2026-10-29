@@ -500,12 +500,12 @@ function signInText(vendor: Vendor, bedrock?: BedrockChoice, models?: ModelSet):
     return [
       brand.bold("Sign in to AWS"),
       `  ${set("AWS_PROFILE")}   ${brand.muted("your profile (aws configure, or aws sso login)")}`,
-      `  ${set("AWS_REGION", region)}`,
       `  ${brand.muted("or, instead of a profile, a Bedrock API key:")} ${set("AWS_BEARER_TOKEN_BEDROCK")}`,
       "",
       brand.muted(keep),
+      // The region is turri's to set (bedrock-region.ts): said, not asked for.
       ...(bedrockNeedsAwsRegion(geography)
-        ? [brand.muted(`AWS_REGION has to be in ${geography}'s geography, as ${region} is: pi calls Bedrock in us-east-1 unless it - or the profile - names another.`)]
+        ? [brand.muted(`turri calls ${geography}'s models in ${region}. AWS_REGION, set, overrides it - and so does your AWS profile's region, when it is in ${geography}.`)]
         : []),
       brand.muted("Your AWS account needs access to the models: Bedrock console, model access."),
     ];

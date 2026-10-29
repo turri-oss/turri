@@ -262,10 +262,10 @@ export async function renderConformanceTests(
     );
   }
 
-  // A functional spec's tests are its scenarios': one with none - an empty test plain file - has nothing to test.
+  // A functional spec's tests are its scenarios': one with none - no test plain file - has nothing to test.
   if (!forChange && (specifications[CONFORMANCE_TESTS] ?? []).length + (specifications[ACCEPTANCE_TESTS] ?? []).length === 0) {
     throw new Error(
-      `${moduleName}:${funcId} has no scenarios - its test plain file is empty, so there is nothing to test: write its conformance or ` +
+      `${moduleName}:${funcId} has no scenarios - no test plain file - so there is nothing to test: write its conformance or ` +
         "acceptance scenarios first.",
     );
   }
@@ -1251,6 +1251,7 @@ export function buildingSpec(
   const kind = (name: string, scenarios: Array<{ id: string; text: string }> | undefined) =>
     (scenarios ?? []).length > 0 ? ["", `${name}:`, ...(scenarios ?? []).map((scenario) => `# ${scenario.id}\n${scenario.text.trim()}`)] : [];
   return {
+    spec: { module: moduleName, funcId },
     label: `${moduleName}:${funcId}, functional spec of ${total}`,
     text: [(specifications["functional specs"].at(-1) ?? "").trim(), ...kind("conformance tests", specifications[CONFORMANCE_TESTS]), ...kind("acceptance tests", specifications[ACCEPTANCE_TESTS])].join("\n"),
   };

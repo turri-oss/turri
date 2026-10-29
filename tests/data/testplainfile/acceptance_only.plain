@@ -1,0 +1,9 @@
+---
+module: task-manager
+func_id: add-task
+---
+
+***acceptance tests***
+
+# rejects-empty
+An empty name is refused.

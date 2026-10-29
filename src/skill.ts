@@ -99,6 +99,16 @@ export interface Skill {
    * (`metadata.command-only: true`): cultivate runs it only when the person has just typed its command.
    */
   commandOnly: boolean;
+  /**
+   * Run in the background (`metadata.background: true`): in the chat, cultivate starts it and returns at once, and what
+   * it did comes back to the chat once the chat is idle. Nobody is asked anything while it runs.
+   */
+  background: boolean;
+  /**
+   * The model it runs on (`metadata.model`): `coding`, the coding model of the module it is for. Omitted: the chat's
+   * model, or `harness-model` from the command line.
+   */
+  model?: "coding";
 }
 
 interface RawContinuous {
@@ -244,6 +254,10 @@ export function loadSkill(skillDir: string): Skill {
     }
   }
 
+  const rawModel = (data.metadata as Record<string, unknown> | undefined)?.model;
+  if (rawModel !== undefined && rawModel !== "coding") throw new Error(`${name}: 'metadata.model' is coding, or left out for the chat's model`);
+  const model = rawModel === "coding" ? ("coding" as const) : undefined;
+
   return {
     name,
     description,
@@ -255,6 +269,8 @@ export function loadSkill(skillDir: string): Skill {
     questioning: capped,
     diffPerAnswer,
     commandOnly: (data.metadata as Record<string, unknown> | undefined)?.["command-only"] === true,
+    background: (data.metadata as Record<string, unknown> | undefined)?.background === true,
+    ...(model !== undefined ? { model } : {}),
   };
 }
 

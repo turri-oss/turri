@@ -27,8 +27,9 @@ function write(path: string, text: string): void {
   writeFileSync(path, text);
 }
 
+/** A test plain file, each section only with scenarios: one with none is a syntax error. */
 const scenarioFile = (module: string, funcId: string, conformance = "", acceptance = "") =>
-  `---\nmodule: ${module}\nfunc_id: ${funcId}\n---\n\n***conformance tests***\n\n${conformance}\n***acceptance tests***\n\n${acceptance}`;
+  `---\nmodule: ${module}\nfunc_id: ${funcId}\n---\n${conformance !== "" ? `\n***conformance tests***\n\n${conformance}` : ""}${acceptance !== "" ? `\n***acceptance tests***\n\n${acceptance}` : ""}`;
 
 const parse = (root: string, requireTestPlainFiles = false, testDirs?: string[]) =>
   parseProject("todo.plain", [root], testDirs ?? [join(root, "tests")], requireTestPlainFiles);
@@ -105,7 +106,7 @@ describe("binding test plain files", () => {
     write(join(root, "tests/a.plain"), scenarioFile("todo", "add-task", "# works\nIt works.\n"));
     write(join(root, "tests/b.plain"), scenarioFile("todo", "add-task", "", "# works\nIt works again.\n"));
     expect(messageOf(() => parse(root))).toBe(
-      "Plain syntax error: Syntax error at line 11 in test plain file 'tests/b.plain': Duplicate scenario-id `works` for functionality 'todo:add-task'; it is first used at line 8 in test plain file 'tests/a.plain'.",
+      "Plain syntax error: Syntax error at line 8 in test plain file 'tests/b.plain': Duplicate scenario-id `works` for functionality 'todo:add-task'; it is first used at line 8 in test plain file 'tests/a.plain'.",
     );
   });
 
@@ -156,7 +157,7 @@ describe("binding test plain files", () => {
     const root = tmp();
     write(join(root, "todo.plain"), MODULE);
     write(join(root, "tests/a.plain"), "---\nmodule: todo\nfunc_id: add-task\n---\n\n***conformance tests***\n");
-    expect(messageOf(() => parse(root))).toContain("Test plain file 'tests/a.plain' has no `***acceptance tests");
+    expect(messageOf(() => parse(root))).toContain("in test plain file 'tests/a.plain': The `***conformance tests***` section has no scenarios");
   });
 
   it("checks the scenarios' concepts against the module they bind to", () => {
@@ -215,12 +216,12 @@ describe("binding test plain files", () => {
     "---\nmodule: todo\nfunc_id: list-tasks\n---\n***conformance tests***\n***acceptance tests***\n",
     // The conventional placeholder comment in an empty conformance section.
     "---\nmodule: todo\nfunc_id: list-tasks\n---\n\n***conformance tests***\n\n> add conformance test scenarios here\n\n***acceptance tests***\n",
-  ])("takes a test plain file with empty sections as the file the check asks for", (content) => {
+  ])("refuses a test plain file with empty sections, though the reference's check asks for one", (content) => {
     const root = tmp();
     write(join(root, "todo.plain"), MODULE);
     write(join(root, "tests/a.plain"), scenarioFile("todo", "add-task", "# works\nIt works.\n"));
     write(join(root, "tests/b.plain"), content);
-    expect(functionalities(parse(root, true))["list-tasks"]![CONFORMANCE_TESTS]).toEqual([]);
+    expect(messageOf(() => parse(root, true))).toContain("The `***conformance tests***` section has no scenarios");
   });
 
   it("checks the required modules first", () => {

@@ -421,7 +421,8 @@ describe("a conformance step's ***plain diff", () => {
     const step = makeStep("one", "", changes, serializeTree(before), serializeTree(after), "app.plain", undefined, { module: "app", pathOf: (funcId) => `tests/app/${funcId}.plain` });
     expect(step.textDiff).toContain("--- a/tests/app/one.plain\n+++ b/tests/app/one.plain");
     expect(step.textDiff).toContain("-It runs.\n+It runs and exits 0.");
-    expect(step.textDiff).toContain(" ***acceptance tests***\n+\n+# greets\n+It greets.");
+    // A section that had no scenarios was not in the file: it is added whole.
+    expect(step.textDiff).toContain("+***acceptance tests***\n+\n+# greets\n+It greets.");
     // The module's file has the functional spec alone, unchanged: its scenarios are in its test plain file.
     expect(step.textDiff).not.toContain("a/app.plain");
   });

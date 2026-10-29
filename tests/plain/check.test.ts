@@ -19,8 +19,9 @@ function write(path: string, text: string): void {
   writeFileSync(join(dir, path), text);
 }
 
-const testPlainFile = (module: string, funcId: string, conformance = "", acceptance = "") =>
-  `---\nmodule: ${module}\nfunc_id: ${funcId}\n---\n\n***conformance tests***\n\n${conformance}\n***acceptance tests***\n\n${acceptance}`;
+/** A test plain file, each section only with scenarios - one with none is a syntax error - and one scenario when none is given. */
+const testPlainFile = (module: string, funcId: string, conformance = "# works\nIt works.\n", acceptance = "") =>
+  `---\nmodule: ${module}\nfunc_id: ${funcId}\n---\n${conformance !== "" ? `\n***conformance tests***\n\n${conformance}` : ""}${acceptance !== "" ? `\n***acceptance tests***\n\n${acceptance}` : ""}`;
 
 const TODO = `***definitions***
 
@@ -42,12 +43,11 @@ Every :Task: is listed.
 A :Task: can be deleted.
 `;
 
-/** The todo module, every functional spec with its test plain file. */
+/** The todo module: two functional specs with scenarios, and one - delete-task - with none, and so no test plain file. */
 function todo(): void {
   write("todo.plain", TODO);
   write("tests/todo/add-task.plain", testPlainFile("todo", "add-task", "# add-one\nIt adds one.\n\n# add-two\nIt adds two.\n", "# add-then-list\nAdd, then list.\n"));
   write("tests/todo/list-tasks.plain", testPlainFile("todo", "list-tasks", "# lists\nIt lists.\n"));
-  write("tests/todo/delete-task.plain", testPlainFile("todo", "delete-task"));
 }
 
 describe("checkPlainFile", () => {
@@ -60,16 +60,16 @@ describe("checkPlainFile", () => {
     expect(formatCheckResults([result])).toBe(
       [
         "PASS  todo.plain  3 functional specs",
-        "        add-task     tests/todo/add-task.plain     2 conformance, 1 acceptance",
-        "        list-tasks   tests/todo/list-tasks.plain   1 conformance",
-        "        delete-task  tests/todo/delete-task.plain  no scenarios - not tested",
+        "        add-task     tests/todo/add-task.plain    2 conformance, 1 acceptance",
+        "        list-tasks   tests/todo/list-tasks.plain  1 conformance",
+        "        delete-task  no test plain file           no scenarios - not tested",
         "WARN  todo.plain  todo has scenarios to test - todo:add-task, todo:list-tasks - but no ***test reqs***, so its conformance tests cannot be written - the test reqs are the first step of adding tests. " +
           "Next step: write the module's own ***test reqs***, with change_plain; then write the conformance testing script with the implement-conformance-testing-script skill.",
       ].join("\n"),
     );
   });
 
-  it("passes a functional spec with no test plain file - not tested, as one whose file is empty - its own or a required module's", () => {
+  it("passes a functional spec with no test plain file - not tested - its own or a required module's", () => {
     write("todo.plain", TODO);
     write("tests/todo/add-task.plain", testPlainFile("todo", "add-task", "# add-one\nIt adds one.\n"));
     const result = checkPlainFile(join(dir, "todo.plain"));
@@ -193,9 +193,10 @@ describe("checking a directory", () => {
 
 describe("the steps of adding tests", () => {
   const SHOP = "---\nimport:\n  - stdlib/backend/python-flask\n---\n\n***definitions***\n\n- :Order: is something bought.\n\n***functional specs***\n\n# list-orders\nEvery :Order: is listed.\n";
+  /** The shop module, its functional spec with the scenario given - none: no test plain file. */
   const shop = (text = SHOP, scenario = "# lists\nThe orders are listed.\n") => {
     write("shop.plain", text);
-    write("tests/shop/list-orders.plain", testPlainFile("shop", "list-orders", scenario));
+    if (scenario !== "") write("tests/shop/list-orders.plain", testPlainFile("shop", "list-orders", scenario));
   };
   const script = () => write("test_scripts/run_conformance_tests_python.sh", "#!/bin/sh\nexit 0\n");
 
@@ -229,7 +230,6 @@ describe("the steps of adding tests", () => {
     write("tests/base/list-orders.plain", testPlainFile("base", "list-orders", "# lists\nThe orders are listed.\n"));
     const top = (imports: string) => write("top.plain", `${flask}${imports}requires:\n  - base\n---\n\n***functional specs***\n\n# cancel-order\nAn :Order: can be cancelled.\n`);
     top("");
-    write("tests/top/cancel-order.plain", testPlainFile("top", "cancel-order"));
 
     const below =
       "base's conformance tests are written in top, which requires it: top has scenarios to test - base:list-orders - but no ***test reqs***, " +
@@ -271,6 +271,7 @@ describe("checking what a change touched", () => {
 
   it("checks the module of a test plain file the change deleted - which passes, that functional spec not tested now", () => {
     todo();
+    write("tests/todo/delete-task.plain", testPlainFile("todo", "delete-task"));
     unlinkSync(join(dir, "tests", "todo", "delete-task.plain"));
     const [result] = checkTouchedPlain([join(dir, "tests", "todo", "delete-task.plain")]);
     expect(result).toMatchObject({ ok: true, moduleName: "todo" });
@@ -284,7 +285,6 @@ describe("test plain files of a module", () => {
     write("tests/todo/more/extra.plain", testPlainFile("todo", "add-task"));
     expect(testPlainFilesOf(join(dir, "todo.plain")).map((path) => path.slice(dir.length + 1))).toEqual([
       "tests/todo/add-task.plain",
-      "tests/todo/delete-task.plain",
       "tests/todo/list-tasks.plain",
       "tests/todo/more/extra.plain",
     ]);

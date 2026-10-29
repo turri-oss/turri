@@ -210,7 +210,7 @@ The extracted component's functional spec and the rewritten original must togeth
 
 The replacements take the position of the original. Earlier functional specs remain unchanged. The first replacement should make sense given only the functional specs above it. Each subsequent replacement can reference behavior from the ones before it.
 
-The original's test plain file is split the same way: each scenario moves to the replacement it tests, and one that no longer fits a single replacement is rewritten to fit the one it tests most. A replacement no scenario moves to gets an empty test plain file (see `test-plain-files.md`).
+The original's test plain file is split the same way: each scenario moves to the replacement it tests, and one that no longer fits a single replacement is rewritten to fit the one it tests most. A replacement no scenario moves to gets no test plain file - never an empty one (see `test-plain-files.md`).
 
 ## Validation Checklist
 

@@ -65,17 +65,31 @@ describe("test plain files", () => {
     expect(scenariosOf(parsed).map((scenario) => scenario.lineNumber)).toEqual([10, 14, 26, 33, 38]);
   });
 
-  it.each(["empty_sections.plain", "minimal.plain", "comment_only_conformance.plain"])("lets both sections of %s be empty", (fileName) => {
+  it.each([
+    ["missing_acceptance_section.plain", ["works"], []],
+    ["acceptance_only.plain", [], ["rejects-empty"]],
+  ])("lets %s leave out a section it has no scenarios for", (fileName, conformance, acceptance) => {
     const parsed = parse(fileName);
     expect([parsed.module, parsed.funcId]).toEqual(["task-manager", "add-task"]);
-    expect([parsed.conformanceTests, parsed.acceptanceTests]).toEqual([[], []]);
+    expect([parsed.conformanceTests.map((scenario) => scenario.id), parsed.acceptanceTests.map((scenario) => scenario.id)]).toEqual([conformance, acceptance]);
   });
 
   it.each([
-    ["missing_acceptance_section.plain", "Plain syntax error: Test plain file 'missing_acceptance_section.plain' has no `***acceptance tests***` section."],
+    ["empty_sections.plain", 6],
+    ["minimal.plain", 5],
+    // A comment is no scenario.
+    ["comment_only_conformance.plain", 6],
+  ])("refuses a section with no scenarios in %s, at its heading", (fileName, line) => {
+    expect(() => parse(fileName)).toThrow(
+      `Plain syntax error: Syntax error at line ${line} in test plain file '${fileName}': The \`***conformance tests***\` section has no scenarios. Leave out a section with none.`,
+    );
+  });
+
+  it.each([
+    ["no_sections.plain", "Plain syntax error: Test plain file 'no_sections.plain' has no scenarios. A functional spec with none has no test plain file: delete it."],
     [
       "sections_out_of_order.plain",
-      "Plain syntax error: Syntax error at line 6 in test plain file 'sections_out_of_order.plain': The `***acceptance tests***` section must come after `***conformance tests***`.",
+      "Plain syntax error: Syntax error at line 11 in test plain file 'sections_out_of_order.plain': The `***conformance tests***` section must come before `***acceptance tests***`.",
     ],
     ["duplicate_section.plain", "Plain syntax error: Syntax error at line 11 in test plain file 'duplicate_section.plain': Duplicate section `***conformance tests***`."],
     [
@@ -129,7 +143,7 @@ describe("test plain files", () => {
   });
 
   const head = "---\nmodule: todo\nfunc_id: add-task\n---\n\n***conformance tests***\n\n";
-  const tail = "\n***acceptance tests***\n";
+  const tail = "";
 
   it.each([
     // A shell comment, and one that repeats a scenario-id.
@@ -178,7 +192,7 @@ describe("test plain files", () => {
     writeFileSync(join(dir, "shape.plain"), "  - exit status is {{ status | code_variable }}");
     const text =
       "---\nmodule: m\nfunc_id: f\n---\n\n***conformance tests***\n\n# works\n" +
-      'It works.\n{% include "shape.plain", status: "0" %}\n\n***acceptance tests***\n';
+      'It works.\n{% include "shape.plain", status: "0" %}\n';
     const parsed = parseTestPlainFileSource(text, "f.plain", [dir], {});
     expect(scenarioItem(parsed.conformanceTests[0]!)).toEqual({
       id: "works",

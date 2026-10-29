@@ -87,6 +87,8 @@ function laidOut(changes: SpecChange[], file: string, asGiven = false, testPlain
     // Where this section's lines start in the diff: after the lines so far, its hunk header and its section header.
     const offset = lines.length + 2;
     for (const change of own) {
+      // Only its scenarios changed: they are its test plain file's, whose diff follows - the module's file shows nothing of it.
+      if (testPlain !== undefined && scenariosOnly(change)) continue;
       const before = change.kind === "add" ? [] : itemLines(change.before);
       const after = change.kind === "remove" ? [] : itemLines(change.after);
       // Where it is found: its first line now, or - removed - its first line as it was.
@@ -101,7 +103,24 @@ function laidOut(changes: SpecChange[], file: string, asGiven = false, testPlain
     if (body.length === 0) continue;
     lines.push("@@ @@", ` ${heading(section)}`, ...body);
   }
-  return { diff: `${lines.join("\n")}\n${testPlain !== undefined ? testPlainDiffs(changes, testPlain) : ""}${resourceDiff(changes, file)}`, starts };
+  // Nothing of the module's file changed - a conformance job's scenarios alone: no block for it at all.
+  const own = lines.length > 3 ? `${lines.join("\n")}\n` : "";
+  return { diff: `${own}${testPlain !== undefined ? testPlainDiffs(changes, testPlain) : ""}${resourceDiff(changes, file)}`, starts };
+}
+
+/** Whether a change to a functional spec is to its scenarios alone: its text, and all else of it, as it was. */
+function scenariosOnly(change: SpecChange): boolean {
+  if (change.kind !== "change" || change.before === undefined || change.after === undefined) return false;
+  const rest = (serialized: string) => {
+    try {
+      const { conformance_tests: _conformance, acceptance_tests: _acceptance, ...others } = JSON.parse(serialized) as Record<string, unknown>;
+      return JSON.stringify(others);
+    } catch {
+      return undefined;
+    }
+  };
+  const [was, now] = [rest(change.before), rest(change.after)];
+  return was !== undefined && was === now && change.before !== change.after;
 }
 
 /**

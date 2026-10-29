@@ -67,7 +67,7 @@ describe("a job's change as its agent is given it", () => {
     expect(diff).not.toContain("It is loud.");
   });
 
-  it("lays out a conformance job's changed scenarios as a diff of the functional spec's test plain file, after the module's", () => {
+  it("lays out a conformance job's changed scenarios as a diff of the functional spec's test plain file alone - nothing of the module's file, which did not change", () => {
     const change: SpecChange = {
       id: "f", section: "functional specs", kind: "change", position: 1,
       before: item("One.", { id: "one", conformance_tests: [], acceptance_tests: [{ id: "loud", text: "It is loud." }] }),
@@ -80,7 +80,8 @@ describe("a job's change as its agent is given it", () => {
     expect(block).toContain("+It is very loud.");
     // Only what changed, among the lines around it: the rest of the file is never taken out and put back.
     expect(block).not.toContain("-func_id: one");
-    expect(diff.indexOf("diff --git a/app.plain")).toBeLessThan(diff.indexOf("diff --git a/tests/app/one.plain"));
+    expect(diff).not.toContain("diff --git a/app.plain");
+    expect(diff).not.toContain("***functional specs***");
     // Without a module to lay them out for - a code job - no test plain file is shown.
     expect(changeDiff([change], "app.plain")).not.toContain("tests/app/one.plain");
   });
@@ -94,15 +95,31 @@ describe("a job's change as its agent is given it", () => {
       after: item("Creates a link.", { id: "create-link", conformance_tests: [...two, { id: "url-echoed", text: "The url comes back as given." }], acceptance_tests: [] }),
     };
     const block = changeDiff([added], "shorty.plain", view).split("diff --git a/tests/shorty/create-link.plain")[1]!;
-    expect(block.split("\n").filter((line) => /^[-+](?![-+]{2} )/.test(line))).toEqual(["+# url-echoed", "+The url comes back as given.", "+"]);
+    expect(block.split("\n").filter((line) => /^[-+](?![-+]{2} )/.test(line))).toEqual(["+", "+# url-echoed", "+The url comes back as given."]);
     const fresh: SpecChange = {
       id: "f", section: "functional specs", kind: "change", position: 1,
       before: item("Creates a link.", { id: "create-link", conformance_tests: [], acceptance_tests: [] }),
       after: item("Creates a link.", { id: "create-link", conformance_tests: two, acceptance_tests: [] }),
     };
-    const whole = changeDiff([fresh], "shorty.plain", view).split("diff --git a/tests/shorty/create-link.plain")[1]!;
+    const all = changeDiff([fresh], "shorty.plain", view);
+    const whole = all.split("diff --git a/tests/shorty/create-link.plain")[1]!;
     expect(whole).toContain("@@ -0,0 +1,");
     expect(whole).not.toMatch(/^-(?!-- )/m);
+    // The test plain file alone: no section header of the module's over it, which a test plain file does not have.
+    expect(all.startsWith("diff --git a/tests/shorty/create-link.plain")).toBe(true);
+    expect(all).not.toContain("***functional specs***");
+  });
+
+  it("keeps a functional spec in the module's file when its text changed with its scenarios - its scenarios in its test plain file", () => {
+    const view = { module: "shorty", pathOf: (funcId: string) => `tests/shorty/${funcId}.plain` };
+    const both: SpecChange = {
+      id: "f", section: "functional specs", kind: "change", position: 1,
+      before: item("Creates a link.", { id: "create-link", conformance_tests: [], acceptance_tests: [] }),
+      after: item("Creates a short link.", { id: "create-link", conformance_tests: [{ id: "creates", text: "It answers 201." }], acceptance_tests: [] }),
+    };
+    const diff = changeDiff([both], "shorty.plain", view);
+    expect(diff).toContain(" ***functional specs***\n-# create-link\n-Creates a link.\n+# create-link\n+Creates a short link.");
+    expect(diff.indexOf("diff --git a/shorty.plain")).toBeLessThan(diff.indexOf("diff --git a/tests/shorty/create-link.plain"));
   });
 
   it("shows a required module's functional spec under the functional specs heading its file has, never the parser's key for it", () => {

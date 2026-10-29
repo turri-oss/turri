@@ -324,3 +324,23 @@ describe("how the test advisor works", () => {
     expect(events.map((event) => event.kind)).toEqual(["advisor.failed"]);
   });
 });
+
+describe("the text an advisor entry is about", () => {
+  it("is the text plainGraph gives a functional spec: textHash of its item's text is the hash the advisor writes", async () => {
+    const { plainGraph } = await import("../../src/plain/graph.ts");
+    const { textHash } = await import("../../src/regenerate/advisor-records.ts");
+    writeFileSync(join(dir, "schema.json"), "{}\n");
+    writeFileSync(
+      join(dir, "app.plain"),
+      "***implementation reqs***\n\n- :Implementation: is Python.\n\n***functional specs***\n\n# add-task\n" +
+        "`todo add <name>` adds a task, as [the schema](schema.json) says.\n- It prints `Added task <n>: <name>`.\n  - The name is trimmed.\n",
+    );
+    const { advise } = saysNo();
+    const advisor = createTestAdvisor({ advise });
+    advisor.seen(lookAt("app.plain"));
+    await advisor.idle();
+    const entry = advisorEntry(dir, "app", "add-task")!;
+    const item = plainGraph(dir).items.find((candidate) => candidate.funcId === "add-task")!;
+    expect(textHash(item.text)).toBe(entry.hash);
+  });
+});

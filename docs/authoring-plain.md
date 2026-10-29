@@ -28,7 +28,7 @@ A `.plain` file is one module: optional YAML frontmatter, then up to four sectio
 | `***test reqs***` | everything about the black-box conformance tests: framework, how they run, mocking | `- :ConformanceTests: use pytest and call the CLI as a subprocess.` |
 | `***functional specs***` | WHAT it does - observable, language-agnostic behaviour, one functionality under each `# <func-id>` heading, in the order they are built | `# add-task` over `A :User: can add a :Task:.` |
 
-A functional spec is a `# <func-id>` heading - lowercase letters and digits in words joined by `-`, unique in its module - and its text under it, as free markdown: paragraphs, lists, code blocks. Each has a test plain file, `tests/<module>/<func-id>.plain` (the folder is `test-dir`), with `module:` and `func_id:` in its frontmatter, then `***conformance tests***` and `***acceptance tests***`, each scenario a `# <scenario-id>` heading and its text. A test plain file with no scenario in it says the functional spec is not tested yet; one is still needed. People and turri name a functional spec `<module>:<func-id>` - `todo:add-task`.
+A functional spec is a `# <func-id>` heading - lowercase letters and digits in words joined by `-`, unique in its module - and its text under it, as free markdown: paragraphs, lists, code blocks. Its scenarios, when it has any, are in its test plain file, `tests/<module>/<func-id>.plain` (the folder is `test-dir`), with `module:` and `func_id:` in its frontmatter, then `***conformance tests***` and `***acceptance tests***`, each scenario a `# <scenario-id>` heading and its text - a section only when it has a scenario: an empty one is a syntax error. A functional spec with no scenarios has no test plain file, and is not tested; an empty test plain file is a syntax error too. People and turri name a functional spec `<module>:<func-id>` - `todo:add-task`.
 
 The frontmatter connects modules:
 
@@ -46,7 +46,7 @@ Beyond that: \*\*\*plain links to files under `resources/` with markdown link sy
 
 ## Tests, when they are asked for
 
-A test plain file holds the scenarios of one functional spec: `***conformance tests***` for its expected use - the main path, with valid input and the data there - and `***acceptance tests***` for the use that is not expected - invalid input, missing authentication, missing data. Scenarios alone decide what is tested: the conformance agent writes at least one test for each, labelled with its scenario-id, and none of its own. A functional spec whose test plain file is empty is not tested.
+A test plain file holds the scenarios of one functional spec: `***conformance tests***` for its expected use - the main path, with valid input and the data there - and `***acceptance tests***` for the use that is not expected - invalid input, missing authentication, missing data. Scenarios alone decide what is tested: the conformance agent writes at least one test for each, labelled with its scenario-id, and none of its own.
 
 ```plain
 ---
@@ -65,10 +65,10 @@ Adding a :Task: named "Buy milk" to an empty :TaskList: shows one :Task: named "
 Adding a :Task: named "Go" is rejected with the error "Name must be at least 3 characters".
 ```
 
-Nothing about testing is written until the person asks for it: a module imports its stack alone, and a new functional spec gets its test plain file empty, in the same \*\*\*plain diff. The first time the person asks for tests in a module, turri does three things, in this order, each a change they see:
+Nothing about testing is written until the person asks for it, or the [test advisor](test-advisor.md) finds a functional spec that needs it: a module imports its stack alone, and a new functional spec gets no test plain file. The first time tests are written in a module, turri does three things, in this order, each a change the person sees:
 
 1. **The test reqs** - the stack's conformance template, `stdlib/<kind>/conformance/<stack>`, or the module's own `***test reqs***` when it has no stack from the standard library.
-2. **The conformance testing script** - with `implement-conformance-testing-script`, when the project has none for the module's stack.
+2. **The conformance testing script** - with `implement-conformance-testing-script`, when the project has none for the module's stack. It runs in the background on the module's coding model; the conformance tests wait for it.
 3. **The scenarios** - for the functional specs the person named, conformance scenarios and, only when asked for, acceptance scenarios, written with `change_plain` with no further confirmation. Scenarios in one functional spec say nothing about another: the rest stay untested until they are asked for too.
 
 Scenarios that exist are kept in step with their functional specs: a functional spec changed has its scenarios reviewed in the same \*\*\*plain diff, and one split, moved, renamed or taken out takes its test plain file with it. The rules are in `test-plain-files.md`.
@@ -178,6 +178,6 @@ Every skill in `genome/skills/` can be run from a conversation; most are also us
 turri validate app.plain     # or validate in a conversation
 ```
 
-It parses \*\*\*plain with this repo's own parser - each module with its test plain files - resolves its imports and required modules, and reports every syntax, concept and structure error with its line, every functional spec without a test plain file, and every test plain file outside its module's folder - no model, no API key. The interview skills run it before a phase ends, and `change_plain` refuses a change that leaves a file that does not pass. Pass the project directory to check every module at once.
+It parses \*\*\*plain with this repo's own parser - each module with its test plain files - resolves its imports and required modules, and reports every syntax, concept and structure error with its line, and every test plain file outside its module's folder; it lists each functional spec with its scenarios - `no scenarios - not tested` for one without, which is no problem - and warns of a step of adding tests that was skipped. No model, no API key. The interview skills run it before a phase ends, and `change_plain` refuses a change that leaves a file that does not pass. Pass the project directory to check every module at once.
 
 What `check` cannot see - a fact in the wrong section, a functional spec that is too big, two that conflict, wording no test can check - is what the rules, the skills and the reviewers are for.

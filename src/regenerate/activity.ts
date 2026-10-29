@@ -42,10 +42,13 @@ export interface ActivitySink {
   spec?(spec: BuildingSpec | undefined): void;
 }
 
-/** A functional spec as it is being built: where it sits, and its text as the spec has it. */
+/** A functional spec as it is being built: which it is, where it sits, and its text as the spec has it. */
 export interface BuildingSpec {
-  /** E.g. "rt_tuples functionality 2 of 5". */
+  /** The functional spec, as data: for a host to light it without reading the label. */
+  spec: { module: string; funcId: string };
+  /** For a person: "core:add-task, functional spec of 3". */
   label: string;
+  /** Its text, with its scenarios after it. */
   text: string;
   /**
    * When work on it began - set by the job, and kept while the same one goes on to its next stage

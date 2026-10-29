@@ -10,6 +10,10 @@ description: >-
   a new language (Node.js, Go, Rust, Flutter, etc.) to a ***plain project, or
   wants to regenerate / adapt one of the existing runners.
 allowed-tools: [read, write, edit, bash, ls, grep, find]
+metadata:
+  # In the chat it runs in the background, on the coding model of the module it is for: its end comes back to the chat.
+  background: true
+  model: coding
 ---
 
 # Implement Conformance Testing Script
@@ -202,7 +206,7 @@ The harness never runs `.ps1` scripts. These notes apply only to an optional cop
 
 ## Workflow
 
-1. Confirm the target **language** and **dependency manifest** (`pom.xml`, `requirements.txt` / `pyproject.toml`, `package.json`, `go.mod`, `Cargo.toml`, ...). Ask if either is unclear.
+1. Take the target **language**, **conformance test framework** and **dependency manifest** (`pom.xml`, `requirements.txt` / `pyproject.toml`, `package.json`, `go.mod`, `Cargo.toml`, ...) from the module the script is for: its stack - the `stdlib/...` template it imports, and its conformance template `stdlib/<kind>/conformance/<stack>` - its ***test reqs***, and the project. You run in the background, with nobody to ask: decide what they leave open, the choice most consistent with them, and say what you decided in your result.
 2. Read [assets/run_conformance_tests_java.sh](assets/run_conformance_tests_java.sh) and [assets/run_conformance_tests_python.sh](assets/run_conformance_tests_python.sh) to refresh the exact structure.
 3. Translate each step into the equivalent Bash commands for the target language. The toolchain check, dependency install, and test invocation are the language-specific parts; the rest is mechanical.
 4. Pick the right row from the [Dependency isolation](#dependency-isolation) table — use the same flag/env var in steps 7, 7b and 8 — and the checks from [Static checks of the tests](#static-checks-of-the-tests).

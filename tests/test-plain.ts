@@ -1,15 +1,16 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 /**
- * Test plain files for a test project: every functional spec has one, in `tests/<module>/`, or its module does not
- * parse. These write the empty one - both sections, no scenario - that a functional spec with no tests has.
+ * Test plain files for a test project. A functional spec with no scenarios has none - a missing one is valid, and an
+ * empty one is a syntax error - so only a functional spec given scenarios is given one.
  */
 
-/** A test plain file's text: its binding, and its two sections, each with the scenarios given. */
+/** A test plain file's text: its binding, and each section that has scenarios, with them - a section with none is left out. */
 export function testPlainFile(module: string, funcId: string, scenarios: { conformance?: string[]; acceptance?: string[] } = {}): string {
-  const section = (items: string[] | undefined) => (items ?? []).map((item) => `${item.trim()}\n`).join("\n");
-  return `---\nmodule: ${module}\nfunc_id: ${funcId}\n---\n\n***conformance tests***\n\n${section(scenarios.conformance)}\n***acceptance tests***\n\n${section(scenarios.acceptance)}`;
+  const section = (title: string, items: string[] | undefined) =>
+    (items ?? []).length === 0 ? "" : `\n***${title}***\n\n${(items ?? []).map((item) => `${item.trim()}\n`).join("\n")}`;
+  return `---\nmodule: ${module}\nfunc_id: ${funcId}\n---\n${section("conformance tests", scenarios.conformance)}${section("acceptance tests", scenarios.acceptance)}`;
 }
 
 /** The func-ids of a module's functional specs, as its text writes them. */
@@ -18,48 +19,9 @@ export function funcIdsIn(text: string): string[] {
   return [...after.matchAll(/^# ([a-z0-9]+(?:-[a-z0-9]+)*)\s*$/gm)].map((match) => match[1]!);
 }
 
-/**
- * Every functional spec of the modules in a project's folder given an empty test plain file, where it has none - and the
- * empty ones of functional specs taken out, or of modules gone, removed. A test plain file with scenarios is left as it is.
- */
-export function syncTestPlainFiles(projectDir: string, testDir = "tests"): void {
-  const modules = new Map<string, string[]>();
-  for (const name of readdirSync(projectDir).filter((entry) => entry.endsWith(".plain"))) {
-    modules.set(basename(name, ".plain"), funcIdsIn(readFileSync(join(projectDir, name), "utf8")));
-  }
-  const root = join(projectDir, testDir);
-  // Taken out: the empty test plain files of functional specs, or modules, that are no more.
-  if (existsSync(root)) {
-    for (const module of readdirSync(root)) {
-      const folder = join(root, module);
-      let files: string[];
-      try {
-        files = readdirSync(folder).filter((entry) => entry.endsWith(".plain"));
-      } catch {
-        continue;
-      }
-      for (const file of files) {
-        const funcId = basename(file, ".plain");
-        if (modules.get(module)?.includes(funcId) === true) continue;
-        if (readFileSync(join(folder, file), "utf8") === testPlainFile(module, funcId)) rmSync(join(folder, file));
-      }
-    }
-  }
-  for (const [module, funcIds] of modules) {
-    for (const funcId of funcIds) {
-      const folder = join(root, module);
-      const bound = existsSync(folder) && readdirSync(folder).some((file) => file.endsWith(".plain") && new RegExp(`^func_id: ${funcId}\\s*$`, "m").test(readFileSync(join(folder, file), "utf8")));
-      if (bound) continue;
-      mkdirSync(folder, { recursive: true });
-      writeFileSync(join(folder, `${funcId}.plain`), testPlainFile(module, funcId));
-    }
-  }
-}
-
-/** Write a module and keep its test plain files in step with it. */
+/** Write a module. Its functional specs need no test plain files: one with no scenarios has none. */
 export function writePlain(projectDir: string, name: string, text: string): void {
   writeFileSync(join(projectDir, name), text);
-  syncTestPlainFiles(projectDir);
 }
 
 /** A git diff that adds a file, as a ***plain change adds a test plain file. */

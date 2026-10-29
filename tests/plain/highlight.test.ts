@@ -25,11 +25,11 @@ describe("***plain, highlighted by turri's own grammar", () => {
     ]);
   });
 
-  it("reads a test plain file - its module: as a module, its func_id:, both sections, and each scenario's id heading", () => {
+  it("reads a test plain file - its module: as a module, its func_id: as an id, both sections, and each scenario's id heading", () => {
     expect(read(["---", "module: todo", "func_id: add-task", "---", "", "***conformance tests***", "", "# rejects-empty-title", "An empty title is refused.", "", "***acceptance tests***"])).toEqual([
       ["---|-"],
       ["module:|keyword", " |-", "todo|module"],
-      ["func_id:|keyword", " add-task|-"],
+      ["func_id:|keyword", " |-", "add-task|id"],
       ["---|-"],
       [],
       ["***conformance tests***|section"],
@@ -39,6 +39,22 @@ describe("***plain, highlighted by turri's own grammar", () => {
       [],
       ["***acceptance tests***|section"],
     ]);
+  });
+
+  it("reads a test plain file's module: whole, hyphens and dots and folders too, and its func_id: as an id only when it is one", () => {
+    expect(read(["---", "module: my-app", "func_id: add-task-2", "---"])).toEqual([["---|-"], ["module:|keyword", " |-", "my-app|module"], ["func_id:|keyword", " |-", "add-task-2|id"], ["---|-"]]);
+    expect(read(["---", "module: billing.v2", "---"])[1]).toEqual(["module:|keyword", " |-", "billing.v2|module"]);
+    expect(read(["---", "module: stdlib/backend/python-flask", "---"])[1]).toEqual(["module:|keyword", " |-", "stdlib/backend/python-flask|module"]);
+    // A comment after it is not part of it.
+    expect(read(["---", "module: todo # the task list", "---"])[1]).toEqual(["module:|keyword", " |-", "todo|module", " # the task list|-"]);
+    // A module listed whole, as module: takes it - and a concept listed is still a concept.
+    expect(read(["---", "import:", "  - stdlib/backend/python-flask", "exported_concepts:", "  - :Order:", "---"]).slice(2, 5)).toEqual([
+      ["  - |-", "stdlib/backend/python-flask|module"],
+      ["exported_concepts:|keyword"],
+      ["  - |-", ":Order:|concept"],
+    ]);
+    // Not a func-id: the key alone.
+    expect(read(["---", "func_id: Add Task", "---"])[1]).toEqual(["func_id:|keyword", " Add Task|-"]);
   });
 
   it("reads a functional spec's func-id heading as an id, and a section header only at the start of a line", () => {

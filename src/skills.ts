@@ -78,7 +78,9 @@ export function catalogueLine(skill: FoundSkill): string {
   const whose = skill.origin === "turri" ? "" : ` (this project's, ${skill.origin.project})`;
   // One the person starts themselves - typed, or picked among the options the model offers: never run unasked.
   const byCommand = skill.commandOnly ? ` Started only by the person, with /${skill.name} or by picking it when you offer it with ask_user: never run it unasked.` : "";
-  return `- ${skill.name}${whose}: ${skill.description}${byCommand}`;
+  // One that runs in the background: the chat goes on, and its end comes back to it.
+  const background = skill.background ? " Runs in the background: cultivate returns at once, and its end comes back to this chat - pass plainFile, the module it is for." : "";
+  return `- ${skill.name}${whose}: ${skill.description}${byCommand}${background}`;
 }
 
 /** What is said under the list about the skills it leaves out. */

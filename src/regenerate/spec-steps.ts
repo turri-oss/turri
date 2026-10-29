@@ -423,11 +423,13 @@ function fileItemText(line: string): string {
 type ScenarioItem = { id?: string; text?: string };
 type ScenarioCarrier = { id?: string; [CONFORMANCE_TESTS]?: ScenarioItem[]; [ACCEPTANCE_TESTS]?: ScenarioItem[] };
 
-/** A functional spec's test plain file, as it would read: its binding, then its two sections, each scenario under its id. */
+/** A functional spec's test plain file, as it would read: its binding, then each section that has scenarios, each scenario under its id. */
 export function testPlainFileText(module: string, item: ScenarioCarrier): string {
+  // A section with no scenarios is left out: it is a syntax error.
   const section = (title: string, scenarios: ScenarioItem[] | undefined) =>
-    (scenarios ?? []).length === 0 ? title : `${title}\n\n${(scenarios ?? []).map((scenario) => `# ${scenario.id ?? ""}\n${(scenario.text ?? "").trim()}`).join("\n\n")}`;
-  return `---\nmodule: ${module}\nfunc_id: ${item.id ?? ""}\n---\n\n${section("***conformance tests***", item[CONFORMANCE_TESTS])}\n\n${section("***acceptance tests***", item[ACCEPTANCE_TESTS])}\n`;
+    (scenarios ?? []).length === 0 ? [] : [`${title}\n\n${(scenarios ?? []).map((scenario) => `# ${scenario.id ?? ""}\n${(scenario.text ?? "").trim()}`).join("\n\n")}`];
+  const sections = [...section("***conformance tests***", item[CONFORMANCE_TESTS]), ...section("***acceptance tests***", item[ACCEPTANCE_TESTS])];
+  return `---\nmodule: ${module}\nfunc_id: ${item.id ?? ""}\n---\n\n${sections.join("\n\n")}\n`;
 }
 
 /** One file's two texts as git diffs them, named `path` on both sides: an empty side is the file added or taken out whole. */
@@ -442,7 +444,7 @@ export type TestPlainPath = (funcId: string, module?: string) => string;
  * The functional specs' test plain files a change between two serialized trees touches, each as a diff of its own,
  * rebuilt from the trees as the module's file is: only the trees that carry scenarios - the conformance tests' - have
  * any. A functional spec that had no scenarios has no test plain file before, so its file shows as added whole; one whose
- * scenarios all went, as deleted whole - none is preferred to an empty one.
+ * scenarios all went, as deleted whole - an empty one is a syntax error.
  */
 export function diffTestPlainFiles(before: string, after: string, module: string, pathOf: TestPlainPath): string {
   const carriers = (serialized: string): Map<string, ScenarioCarrier & { module?: string }> => {

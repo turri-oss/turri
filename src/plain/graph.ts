@@ -98,7 +98,7 @@ export interface PlainItemNode {
   text: string;
   /** A functional spec's func-id, its `# <func-id>` heading. */
   funcId?: string;
-  /** A functional spec's test plain file, and its scenarios - none when it has no file, or an empty one. */
+  /** A functional spec's test plain file, and its scenarios - none when it has no file. */
   testPlainFile?: string | null;
   scenarios?: { conformance: PlainScenario[]; acceptance: PlainScenario[] };
   /** The concepts a definition defines. */

@@ -258,7 +258,7 @@ export function regenerateTool(options: LoopToolsOptions & { loop: (ctx: Extensi
       const plainFile = plainFileOf(options.cwd, given, "regenerate");
       return withCallStack(plainFile, given.stack, async () => {
         const check = checkPlainFile(plainFile);
-        // The parser's message as it gives it, every functional spec without a test plain file, and turri's next step for the old syntax.
+        // The parser's message as it gives it, a test plain file out of place, and turri's next step for the old syntax.
         if (!check.ok) throw new Error(`${relative(options.cwd, plainFile) || plainFile} does not parse, so nothing can be regenerated from it yet:\n${formatCheckResults([check])}`);
         const again = given.funcIds ?? [];
         if (again.length > 0 && given.from_scratch !== undefined) throw new Error("Name funcIds or set from_scratch, not both: from scratch regenerates every one of them.");

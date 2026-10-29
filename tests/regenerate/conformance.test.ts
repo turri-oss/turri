@@ -148,7 +148,7 @@ describe("renderConformanceTests", () => {
     writePlain(project, "withreqs.plain", WITH_TEST_REQS);
     await expect(
       renderConformanceTests({ plainFile: join(project, "withreqs.plain"), funcId: "simple-functionality", buildDir, conformanceDir, dryRun: true }),
-    ).rejects.toThrow("withreqs:simple-functionality has no scenarios - its test plain file is empty, so there is nothing to test");
+    ).rejects.toThrow("withreqs:simple-functionality has no scenarios - no test plain file - so there is nothing to test");
   });
 
   describe("the prompt", () => {
@@ -160,6 +160,7 @@ describe("renderConformanceTests", () => {
       writeFileSync(join(buildDir, "pkg", "helper.py"), "x = 2");
 
       writePlain(project, "withreqs.plain", WITH_TEST_REQS);
+      mkdirSync(join(project, "tests", "withreqs"), { recursive: true });
       writeFileSync(
         join(project, "tests", "withreqs", "simple-functionality.plain"),
         testPlainFile("withreqs", "simple-functionality", { conformance: ["# runs\nIt runs and exits 0."], acceptance: ["# greets\nIt prints a greeting."] }),

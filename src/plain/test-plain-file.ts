@@ -11,8 +11,9 @@ import { ACCEPTANCE_TEST_HEADING, CONFORMANCE_TEST_HEADING, isSemanticId, type C
  * Port of test_plain_file.py: test plain files, the conformance and acceptance scenarios of one functionality.
  *
  * A test plain file binds to a functionality with the frontmatter keys `module` and `func_id`. It holds a
- * `***conformance tests***` section followed by an `***acceptance tests***` section; each scenario in them is a
- * `# <scenario-id>` heading followed by free text, which is kept verbatim.
+ * `***conformance tests***` section, an `***acceptance tests***` section or both, in that order, each with at least one
+ * scenario: a section with none is left out, and a file with none is not written - a functional spec with no scenarios has
+ * no test plain file. Each scenario is a `# <scenario-id>` heading followed by free text, which is kept verbatim.
  */
 
 export const MODULE_KEY = "module";
@@ -105,9 +106,11 @@ function trimBlankLines(lines: string[]): string[] {
   return lines.slice(start, end);
 }
 
-/** The scenarios of the rendered content, keyed by section heading; raise on the first structural error. */
+/** The scenarios of the rendered content, keyed by section heading - a section left out, none; raise on the first structural error. */
 export function readScenarios(renderedText: string, name: string): Record<string, Scenario[]> {
   const sections: Record<string, Scenario[]> = {};
+  // Each section's heading line, for one left with no scenario.
+  const sectionLines = new Map<string, number>();
   let currentSection: string | null = null;
   let current: Scenario | null = null;
   let body: string[] = [];
@@ -153,13 +156,14 @@ export function readScenarios(renderedText: string, name: string): Record<string
         );
       }
       if (heading in sections) throw error(`${where}: Duplicate section \`***${heading}***\`.`);
-      if (heading !== SECTION_HEADINGS[Object.keys(sections).length]) {
-        throw error(`${where}: The \`***${heading}***\` section must come after \`***${SECTION_HEADINGS[0]}***\`.`);
+      if (heading === SECTION_HEADINGS[0] && SECTION_HEADINGS[1] in sections) {
+        throw error(`${where}: The \`***${heading}***\` section must come before \`***${SECTION_HEADINGS[1]}***\`.`);
       }
       closeScenario();
       current = null;
       currentSection = heading;
       sections[heading] = [];
+      sectionLines.set(heading, lineNumber);
     } else if (line.startsWith("# ") || line === "#") {
       const scenarioId = line.slice(1).trim();
       if (currentSection === null) {
@@ -200,9 +204,15 @@ export function readScenarios(renderedText: string, name: string): Record<string
   closeScenario();
 
   for (const heading of SECTION_HEADINGS) {
-    if (!(heading in sections)) throw error(`Test plain file '${name}' has no \`***${heading}***\` section.`);
+    if (sections[heading]?.length === 0) {
+      throw error(`${at(sectionLines.get(heading)!, name)}: The \`***${heading}***\` section has no scenarios. Leave out a section with none.`);
+    }
+  }
+  if (Object.keys(sections).length === 0) {
+    throw error(`Test plain file '${name}' has no scenarios. A functional spec with none has no test plain file: delete it.`);
   }
 
+  for (const heading of SECTION_HEADINGS) sections[heading] ??= [];
   return sections;
 }
 

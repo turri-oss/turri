@@ -74,7 +74,7 @@ describe("the side panel", () => {
   it("shows the queue alone - not the agents' traces, which are in each pulse's log", async () => {
     const { createSidePanel } = await import("../../src/regenerate/side-panel.ts");
     const job = await jobWith(() => {
-      reportSpec({ label: "app 1 of 1", text: "The app prints hello.\n\nMore of it." });
+      reportSpec({ spec: { module: "app", funcId: "print-hello" }, label: "app 1 of 1", text: "The app prints hello.\n\nMore of it." });
       reportStage("conformance tests failing - working out whether the code, the tests or the spec are wrong");
       reportTranscript({ kind: "prompt", text: "Decide what is wrong.", agent: judge });
       reportTranscript({ kind: "text", text: "The code drops the /api/v2 prefix.", agent: judge });
@@ -178,6 +178,7 @@ describe("the side panel", () => {
 
 describe("the functional spec a job is building", () => {
   const spec = {
+    spec: { module: "rt_tuples", funcId: "tuple-arithmetic" },
     label: "rt_tuples functionality 2 of 5",
     text: "A :Tuple: supports arithmetic.\n  - Adding two tuples adds each component.\n\nacceptance tests:\n- (3, -2, 5, 1) + (-2, 3, 1, 0) is (1, 1, 6, 1).",
   };
@@ -196,6 +197,9 @@ describe("the functional spec a job is building", () => {
       },
     });
     await new Promise((done) => setTimeout(done, 10));
+
+    // Which functional spec, as data - for a host to light it without reading the label.
+    expect(job.building!.spec).toEqual({ module: "rt_tuples", funcId: "tuple-arithmetic" });
 
     // With how long it has been on it.
     const now = job.building!.since! + 7_000;
@@ -233,7 +237,7 @@ describe("the functional spec a job is building", () => {
 });
 
 describe("the spec text shown for a functionality", () => {
-  it("carries its scenarios of both kinds, each under its id, which the conformance tests carry out", async () => {
+  it("names its module and func-id as data, and carries its scenarios of both kinds, each under its id, which the conformance tests carry out", async () => {
     const { buildingSpec } = await import("../../src/regenerate/conformance.ts");
     const specifications = {
       "functional specs": ["One.", "A :Tuple: supports arithmetic."],
@@ -241,6 +245,7 @@ describe("the spec text shown for a functionality", () => {
       acceptance_tests: [{ id: "adds", text: "1 + 1 is 2." }],
     };
     expect(buildingSpec("rt_tuples", "tuple-arithmetic", 5, specifications as never)).toEqual({
+      spec: { module: "rt_tuples", funcId: "tuple-arithmetic" },
       label: "rt_tuples:tuple-arithmetic, functional spec of 5",
       text: "A :Tuple: supports arithmetic.\n\nconformance tests:\n# subtracts\n2 - 1 is 1.\n\nacceptance tests:\n# adds\n1 + 1 is 2.",
     });

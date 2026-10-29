@@ -149,6 +149,17 @@ if (command === "-v" || command === "--version") {
   process.exit(0);
 }
 
+// The AWS region the project's Bedrock models need, set before any model is called - here, and in the pi the chat starts,
+// which inherits it - unless the person set one (bedrock-region.ts). The models named on the command line count too. A
+// command that calls no model is left alone.
+if (!["validate", "drift", "lineage", "ledger", "init-config"].includes(command ?? "")) {
+  const { applyBedrockRegion } = await import("./bedrock-region.ts");
+  const named = argv.flatMap((arg, at) =>
+    ["--harness-model", "--coding-model", "--model"].includes(arg) ? [argv[at + 1] ?? ""] : arg.startsWith("--harness-model=") || arg.startsWith("--coding-model=") || arg.startsWith("--model=") ? [arg.slice(arg.indexOf("=") + 1)] : [],
+  );
+  applyBedrockRegion(process.cwd(), { also: named.filter((model) => model !== "") });
+}
+
 // turri alone is the conversation, and so is turri with pi's options - `turri -c`, `turri --harness-model <m>`. A word
 // turri does not know is an error below, not a conversation started on it.
 if (command === undefined || command.startsWith("-")) chat(argv);

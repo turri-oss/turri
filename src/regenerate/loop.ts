@@ -47,6 +47,8 @@ import { listFiles } from "./testing.ts";
 import { makeRenames, pureRenames, renameText } from "./renames.ts";
 import { casesOf, codeWork, stillWanted, whyNotWanted, type JobCases, type ScenarioCases, type TouchedSpec } from "./drift.ts";
 import { testingGap } from "./testing-steps.ts";
+import { onScriptRunEnded, scriptBeingWritten } from "./scripts-being-written.ts";
+import { findTestScripts, projectRootFor, type ScriptKind } from "./test-scripts.ts";
 
 /**
  * The work loop - see docs/regenerating.md.
@@ -424,7 +426,7 @@ export interface ModuleCompletion {
   specified: number;
   /** Of those, the ones the delivered codebase's code record has as the spec has them now. */
   completed: number;
-  /** Its own functional specs with scenarios: those that are tested - one with an empty test plain file is not. */
+  /** Its own functional specs with scenarios: those that are tested - one with no test plain file is not. */
   withScenarios: number;
   /** Of the completed ones, those its conformance tests are recorded as written for, as the spec has them now - their scenarios too. */
   conformanceTested: number;
@@ -635,10 +637,20 @@ export function createWorkLoop(options: {
     const untested = funcIds.filter((funcId) => !hasScenarios(items.find((item) => item.id === funcId)));
     if (untested.length > 0) {
       throw new Error(
-        `${namesOf(moduleName, untested)} ${untested.length === 1 ? "has" : "have"} no scenarios - ${untested.length === 1 ? "its" : "their"} test plain file${untested.length === 1 ? " is" : "s are"} empty, so there is nothing to test: ` +
+        `${namesOf(moduleName, untested)} ${untested.length === 1 ? "has" : "have"} no scenarios - no test plain file - so there is nothing to test: ` +
           "write the conformance or acceptance scenarios first, with change_plain, and their tests are written once the code is built. Nothing was started.",
       );
     }
+  };
+
+  /**
+   * Whether a codebase lacks a testing script of this kind that is being written in the background now: it waits for it,
+   * rather than fail for want of it, and is looked at again once the run ends.
+   */
+  const awaitsScript = (state: ModuleState, kind: ScriptKind): boolean => {
+    const tip = tipEntry(state);
+    const root = projectRootFor(tip.plainFile, tip.buildDir);
+    return scriptBeingWritten(root, kind, stackForModule(tip.plainFile)) && findTestScripts(root, tip.plainFile, tip.buildDir)[kind] === undefined;
   };
 
   /** The work of a track, from where it is built from to what it is to be. */
@@ -1027,6 +1039,10 @@ export function createWorkLoop(options: {
       .catch((error: unknown) => reportActivity(`  the work loop: ${error instanceof Error ? error.message : String(error)}`));
     return ticking;
   };
+  // A testing script written in the background, or not: what waited for it is looked at again - started, or failed for want of it.
+  onScriptRunEnded(() => {
+    if (asked.size > 0 && options.dryRun !== true) void tick();
+  });
 
   /** The files asked for, each with how: what the loop brings up, worked out again each look. */
   const asked = new Map<string, { model?: string; guidance?: string }>();
@@ -1084,17 +1100,24 @@ export function createWorkLoop(options: {
     }
     const now = active();
     looking = now;
-    for (const key of order) {
-      const state = modules.get(key)!;
-      // A codebase left behind - built on since - is not looked at, unless a job of it is still running; what it had
-      // planned, or waited for, is no longer shown.
-      if (now.has(state) || state.running !== undefined) await inStack(state, () => look(state));
-      else {
-        state.why = "left behind: the code is built on further up the chain, where changes to it are made";
-        state.waitsFor = undefined;
-        state.plan = undefined;
-        state.conformancePlan = undefined;
+    // Why each codebase stands as it does, before this look: one that changed is told, as a plan that changed is - a
+    // module that starts or stops waiting moves no job, and would otherwise go unseen until something else did.
+    const whyBefore = new Map([...modules.values()].map((state) => [state, state.why]));
+    try {
+      for (const key of order) {
+        const state = modules.get(key)!;
+        // A codebase left behind - built on since - is not looked at, unless a job of it is still running; what it had
+        // planned, or waited for, is no longer shown.
+        if (now.has(state) || state.running !== undefined) await inStack(state, () => look(state));
+        else {
+          state.why = "left behind: the code is built on further up the chain, where changes to it are made";
+          state.waitsFor = undefined;
+          state.plan = undefined;
+          state.conformancePlan = undefined;
+        }
       }
+    } finally {
+      if ([...modules.values()].some((state) => state.why !== whyBefore.get(state))) options.registry.notify?.();
     }
   };
 
@@ -1246,7 +1269,13 @@ export function createWorkLoop(options: {
       state.plan = undefined;
       // Its scenarios untested for a step of adding tests it skipped: no conformance pulse starts - it waits on that step.
       const gap = state.conformanceHalted === undefined && readRecord(tip.buildDir) !== null ? gapOf(state, spec) : undefined;
-      state.why = state.conformanceHalted?.why ?? (gap !== undefined ? `waiting for its ${gap.step}: ${gap.text}` : UP_TO_DATE);
+      state.why =
+        state.conformanceHalted?.why ??
+        (gap === undefined
+          ? UP_TO_DATE
+          : gap.step === "conformance testing script" && awaitsScript(state, "conformance")
+            ? SCRIPT_BEING_WRITTEN("conformance testing script")
+            : `waiting for its ${gap.step}: ${gap.text}`);
       return;
     }
     const fromKey = serializeTree(from);
@@ -1258,6 +1287,10 @@ export function createWorkLoop(options: {
         state.why = NO_PLAN;
         return;
       }
+    }
+    if (awaitsScript(state, "unit")) {
+      state.why = SCRIPT_BEING_WRITTEN("unit testing script");
+      return;
     }
     state.why = undefined;
     startJob(state, spec, from, state.plan.jobs[0]!);
@@ -1514,7 +1547,7 @@ export function createWorkLoop(options: {
       // Refused before anything is touched: nothing to test, a functional spec not there, or one with no scenarios.
       if (withScenarios.length === 0) {
         throw new Error(
-          `No functional spec of ${self.moduleName} has scenarios - every test plain file of it is empty, so there is nothing to test: ` +
+          `No functional spec of ${self.moduleName} has scenarios - none has a test plain file - so there is nothing to test: ` +
             "write the conformance or acceptance scenarios first, with change_plain, and their tests are written once the code is built. Nothing was started.",
         );
       }
@@ -1814,6 +1847,8 @@ const OLD_RECORDS_WHY = (codebases: string[]): string =>
 export const UP_TO_DATE = "built from the ***plain as it is";
 
 /** Why a codebase with work left has no plan: the planner found none. */
+/** Why a codebase waits for a testing script being written in the background. */
+const SCRIPT_BEING_WRITTEN = (what: string) => `waiting for its ${what}, which is being written`;
 const NO_PLAN = "the planner found no way to cut the work into pulses that hold together";
 
 /**

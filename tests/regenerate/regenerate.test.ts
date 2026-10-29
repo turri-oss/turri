@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { writeTestScripts } from "../test-scripts.ts";
-import { funcIdsIn, newFileDiff, testPlainFile, writePlain } from "../test-plain.ts";
+import { writePlain } from "../test-plain.ts";
 import { NOTES_FILE, readNotes } from "../../src/regenerate/notes.ts";
 import { BEGIN } from "../../src/pi.ts";
 
@@ -78,12 +78,7 @@ let cwd: string;
 /** A functional spec's func-id: the words of its first line, up to a comma. */
 const idOf = (text: string) => text.split(/[,\n]/)[0]!.toLowerCase().match(/[a-z0-9]+/g)!.join("-");
 const plain = (fs: string[]) => `***implementation reqs***\n\n- Python.\n\n***functional specs***\n\n${fs.map((text) => `# ${idOf(text)}\n${text}`).join("\n\n")}\n`;
-/** A git diff that removes a file, as a ***plain change removes a test plain file. */
-const goneFileDiff = (path: string, text: string) => {
-  const lines = text.split("\n").slice(0, -1);
-  return [`diff --git a/${path} b/${path}`, "deleted file mode 100644", `--- a/${path}`, "+++ /dev/null", `@@ -1,${lines.length} +0,0 @@`, ...lines.map((line) => `-${line}`), ""].join("\n");
-};
-/** The change to app.plain, and to the test plain files of the functional specs it adds and takes out. */
+/** The change to app.plain: a functional spec it adds has no scenarios, and so no test plain file. */
 const diffOf = (before: string, after: string) =>
   [
     "diff --git a/app.plain b/app.plain",
@@ -93,9 +88,7 @@ const diffOf = (before: string, after: string) =>
     ...before.split("\n").slice(0, -1).map((line) => `-${line}`),
     ...after.split("\n").slice(0, -1).map((line) => `+${line}`),
     "",
-  ].join("\n") +
-  funcIdsIn(after).filter((id) => !funcIdsIn(before).includes(id)).map((id) => newFileDiff(`tests/app/${id}.plain`, testPlainFile("app", id))).join("") +
-  funcIdsIn(before).filter((id) => !funcIdsIn(after).includes(id)).map((id) => goneFileDiff(`tests/app/${id}.plain`, testPlainFile("app", id))).join("");
+  ].join("\n");
 
 beforeEach(async () => {
   dir = realpathSync(mkdtempSync(join(tmpdir(), "turri-specdiff-")));
@@ -793,7 +786,7 @@ describe("the history of a rendered spec change", () => {
     recordHistory(result.buildDir, "render app:two");
 
     const log = historyLog(result.buildDir);
-    expect(log).toMatch(/spec diff: app\.plain, two\.plain \+\d+ −\d+ · .+/);
+    expect(log).toMatch(/spec diff: app\.plain \+\d+ −\d+ · .+/);
     const commit = log.split("\n").find((line) => line.includes("spec diff:"))!.split("  ")[0]!;
     expect(historyShow(result.buildDir, commit)).toContain("+Two.");
     expect(head(result.buildDir)).toBeDefined();

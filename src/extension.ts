@@ -12,12 +12,15 @@ import { allocateImageId, Box, type Component, getCapabilities, getPngDimensions
 import { defineTool, getMarkdownTheme, UserMessageComponent } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { CODING_MODEL_ENV } from "./chat-models.ts";
-import { AGENT_ROLES, chosenStack, CONFIG_FILE, configForSpec, hasProjectConfig, LEGACY_CONFIG_FILE, projectConfigFile, stackConfigFileIn, stackOf, stacksOf, withStack, modelOnly, modelSpec, projectModels, readProjectConfig, roleModel, splitModelSpec } from "./config.ts";
-import { modulesRoot, skillRunDir } from "./regenerate/paths.ts";
+import { AGENT_ROLES, chosenStack, CONFIG_FILE, configForSpec, stackForModule, hasProjectConfig, LEGACY_CONFIG_FILE, projectConfigFile, stackConfigFileIn, stackOf, stacksOf, withStack, modelOnly, modelSpec, projectModels, readProjectConfig, roleModel, splitModelSpec } from "./config.ts";
+import { modulesRoot, projectDirOf, skillRunDir } from "./regenerate/paths.ts";
 import { sweepOrphanedGroups } from "./regenerate/shell.ts";
 import { readScript, scriptAgainstMachine, stackOnMachine, toolchainsBlock } from "./stack.ts";
 import { sandboxAvailable, sandboxSummary } from "./regenerate/os-sandbox.ts";
-import { findTestScripts } from "./regenerate/test-scripts.ts";
+import { findTestScripts, scriptKindOfSkill } from "./regenerate/test-scripts.ts";
+import { writingScript } from "./regenerate/scripts-being-written.ts";
+import { applyBedrockRegion } from "./bedrock-region.ts";
+import { BACKGROUND_NOTE, doneLine, failedTask, runDetails, skillRunDelivery, startedText } from "./background-skills.ts";
 import { createAskUserTool } from "./tools.ts";
 import { asksFromScratch, asksWholeChain, driftTool, fromWorkingDir, haltTool, loopReply, MODEL_PARAM, regenerateTool, STACK_PARAM, stopJob, WAIT_PARAM, withCallStack, WORKING_DIR_PARAM } from "./loop-tools.ts";
 import { createWebTools } from "./regenerate/web.ts";
@@ -345,6 +348,8 @@ export function createTurriCore(
 ): TurriCore {
   dropNoise();
   const cwd = process.cwd();
+  // The AWS region the project's Bedrock models need, before any model is called - a host has no shell to export it in.
+  applyBedrockRegion(cwd);
   let core: TurriCore | undefined;
   // Finished work is announced twice, to two audiences, because pi treats them differently - see ChatInstance.announce:
   // in the chat that asked for it, or the one shown when that is closed.
@@ -778,6 +783,82 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
     });
   }
 
+  // A skill that runs in the background: started, and the turn goes on; its end comes back to this chat once it is idle.
+  const skillRunEnds = skillRunDelivery(pi, link, contextNow);
+  pi.on("session_shutdown", (event) => {
+    if (event.reason === "quit") for (const controller of backgroundSkillRuns.values()) controller.abort();
+  });
+  const startInBackground = (
+    skill: (typeof skills)[number],
+    params: { context?: string },
+    plainFile: string | undefined,
+    ctx: ExtensionContext,
+  ): { text: string; details: { background: true; started?: false } & ReturnType<typeof runDetails> } => {
+    const key = `${cwd}\0${skill.name}`;
+    if (backgroundSkillRuns.has(key)) {
+      return { text: `${skill.name} is running in the background already; what it does comes back to this chat when it ends. Nothing new was started.`, details: { background: true, started: false } };
+    }
+    const model = skill.model === "coding" ? jobModel(ctx, "spec_changes", undefined, plainFile) : conversationModel(ctx);
+    const stack = plainFile !== undefined ? stackForModule(plainFile) : chosenStack();
+    const kind = scriptKindOfSkill(skill.name);
+    const shown = plainFile !== undefined ? relative(cwd, plainFile) || basename(plainFile) : undefined;
+    // While it writes a testing script, the modules that need it wait for it rather than fail for want of it.
+    const written = kind !== undefined ? writingScript({ project: plainFile !== undefined ? projectDirOf(plainFile) : cwd, kind, ...(stack !== undefined ? { stack } : {}) }) : () => {};
+    const controller = new AbortController();
+    backgroundSkillRuns.set(key, controller);
+    const context = [
+      conversationContext(ctx, params.context),
+      shown !== undefined ? `It is for ${shown}${stack !== undefined ? `, on the stack ${stack}` : ""}.` : undefined,
+      BACKGROUND_NOTE,
+    ]
+      .filter((part) => part !== undefined && part.trim() !== "")
+      .join("\n\n");
+    const filesBefore = projectFiles(cwd);
+    const writes = ["write", "edit", "bash", "change_plain"].some((tool) => skill.allowedTools.includes(tool));
+    const quiet: Reporter = { step: () => {}, artifact: () => {}, gate: () => {}, judge: () => {}, outcome: () => {} };
+    const about = runDetails(kind, shown);
+    const end = (ended: { ok: true; changed: string[] } | { ok: false; why: string; output?: string }) =>
+      skillRunEnds.put(
+        ended.ok
+          ? { skill: skill.name, ok: true, line: doneLine(skill.name, ended.changed, kind), ...about }
+          : { skill: skill.name, ok: false, line: `${skill.name} ${ended.why}.`, task: failedTask(skill.name, ended.why, ended.output, kind), ...about },
+      );
+    void captureConsole(() =>
+      withStack(stack, () =>
+        runSkill({
+          skillDir: skill.dir,
+          signal: controller.signal,
+          cwd,
+          runDir: skillRunDir(cwd, skill.name),
+          report: quiet,
+          context,
+          ...(model !== undefined ? { model } : {}),
+          // Nobody is asked: a gate that cannot be satisfied stands.
+          escalate: async () => false,
+        }),
+      ),
+    )
+      .then(({ result }) => {
+        const changed = changedFiles(filesBefore, projectFiles(cwd, filesBefore.keys()));
+        if (!result.ok) end({ ok: false, why: "stopped at a review gate, with no approved artifact", output: result.output });
+        else if (writes && changed.length === 0) end({ ok: false, why: "ended having changed no file in the project", output: result.output });
+        else end({ ok: true, changed });
+      })
+      .catch((error: unknown) => {
+        // Stopped as turri quits: nobody is left to tell.
+        if (error instanceof JobStoppedError) return;
+        end({ ok: false, why: `failed: ${error instanceof Error ? error.message : String(error)}` });
+      })
+      .finally(() => {
+        backgroundSkillRuns.delete(key);
+        written();
+      });
+    return {
+      text: startedText(skill.name, { ...(model !== undefined ? { model } : {}), ...(shown !== undefined ? { plainFile: shown } : {}), ...(kind !== undefined ? { kind } : {}) }),
+      details: { background: true, ...about },
+    };
+  };
+
   pi.registerTool({
     name: "cultivate",
     label: "Cultivate",
@@ -793,6 +874,7 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
       // pi lists .agents/skills among its own skills too: read and followed by hand, a skill's gates would be skipped.
       "A skill cultivate lists may also be among your own skills, from the project's .agents/skills: run it with cultivate all the same, never by reading its SKILL.md and following it.",
       "cultivate returns the reviewed artifact and a trace of every gate decision. Report the artifact to the user; do not rewrite it.",
+      "A skill that runs in the background returns at once: go on with the turn, without waiting or telling the person to wait. Its end comes back to this chat by itself - a line when it did its work, a message to act on when it did not.",
       "If cultivate fails, say so and stop. Never carry out the skill's work yourself in the conversation - the gates and the judges are the point of running it, and an unreviewed hand-run silently drops them.",
       "Always pass `context` to cultivate, summarising what the user has already told you.",
     ],
@@ -821,6 +903,13 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
           description: "Start a new run even though an interrupted one exists here, discarding it.",
         }),
       ),
+      plainFile: Type.Optional(
+        Type.String({
+          description:
+            "The module the skill's work is for - its .plain file, e.g. backend.plain: a testing script is written for that module's stack, " +
+            "on its coding model. Omitted: the project's.",
+        }),
+      ),
     }),
     async execute(_id, params, signal, onUpdate, ctx) {
       const skill = skills.find((s) => s.name === params.skill);
@@ -831,6 +920,17 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
         };
       }
       if (!gate.mayStart(skill)) return { content: [{ type: "text" as const, text: startedByCommandOnly(skill.name) }], details: { notStarted: true } };
+      const plainFile = params.plainFile !== undefined && params.plainFile.trim() !== "" ? resolve(cwd, params.plainFile.trim()) : undefined;
+      if (plainFile !== undefined && !existsSync(plainFile)) {
+        return { content: [{ type: "text" as const, text: `There is no ${params.plainFile} here. Nothing was started.` }], details: { notStarted: true } };
+      }
+
+      // A skill that runs in the background, in a chat - where its end can come back to: started, and the turn goes on.
+      if (skill.background && !shouldWait(ctx.mode, undefined)) {
+        gate.started(skill.name);
+        const started = startInBackground(skill, params, plainFile, ctx);
+        return { content: [{ type: "text" as const, text: started.text }], details: started.details };
+      }
 
       // A new run clears the run folder. An interrupted one is not thrown away by accident:
       // whether to pick it up or start over is the user's call.
@@ -980,7 +1080,7 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
           push(`  A: ${answer}`);
           recordExchange(pi, { skill: skill.name, question, answer, ...(said !== undefined && said.trim() !== "" ? { said: said.trim() } : {}) });
         }, (question) => askOnTheSide(pi, ctx, cwd, jobs, question), dialogs),
-        model: conversationModel(ctx),
+        model: skill.model === "coding" ? jobModel(ctx, "spec_changes", undefined, plainFile) : conversationModel(ctx),
         // Renders queued by a step land in the same registry as everything else, so
         // pulses sees them without knowing a skill started them.
         // Asked per job as it is queued, so a model chosen mid-interview applies from then on.
@@ -1319,7 +1419,7 @@ function conformTool(options: {
       "the module inherits, and, where one fails, fixes the test or the code, whichever is wrong. What they are written for is " +
       "recorded apart from the code. The work loop starts these pulses by itself for every functional spec with scenarios whose " +
       "tests are behind, once the module's code is built; conform starts them now, or for the functional specs named. A " +
-      "functional spec with no scenarios - an empty test plain file - is refused: there is nothing to test until scenarios " +
+      "functional spec with no scenarios - no test plain file - is refused: there is nothing to test until scenarios " +
       "are written. So is one the spec does not have, and a module with scenarios that skipped a step of adding tests - " +
       "no test reqs, or no conformance testing script for its stack: the refusal names the next step.",
     promptSnippet: "conform: write and run the conformance tests of functional specs with scenarios",
@@ -1642,6 +1742,9 @@ function chatModelOf(ctx: ExtensionContext): string | undefined {
 }
 let lastChatModel: string | undefined;
 
+/** The skills running in the background, by project and skill - one at a time each, whichever chat started it - with what stops them. */
+const backgroundSkillRuns = new Map<string, AbortController>();
+
 /** The models chosen in this session, by kind of work - for every chat. Saved in the chat they were chosen in, so reopening it keeps them. */
 const chosenModels: ModelChoices = {};
 /** When they were last chosen: a chat reopened with older choices of its own leaves them be. */
@@ -1658,6 +1761,18 @@ const MODEL_CHOICE_ENTRY = "turri_render_models";
  * of work, or the project's - `model:` in config.turri.yaml - or the conversation's.
  */
 function jobModel(ctx: ExtensionContext, work: RenderWork, named?: string, plainFile?: string): string | undefined {
+  const model = jobModelOf(ctx, work, named, plainFile);
+  // The AWS region worked out again, with every model a job ran on this session: the config's may have changed since,
+  // and one chosen in the session counts as the config's do - two needing two regions are said, not flipped between.
+  if (model !== undefined) jobModels.add(model);
+  applyBedrockRegion(plainFile !== undefined ? projectDirOf(plainFile) : process.cwd(), { also: [...jobModels] });
+  return model;
+}
+
+/** Every model a job ran on in this session. */
+const jobModels = new Set<string>();
+
+function jobModelOf(ctx: ExtensionContext, work: RenderWork, named?: string, plainFile?: string): string | undefined {
   if (named !== undefined && named.trim() !== "") {
     const resolved = resolveModel(named, ctx.modelRegistry);
     if (!resolved.ok) throw new Error(describeResolution(resolved));

@@ -15,11 +15,14 @@ export type { AskUserIO } from "./ask.ts";
 export * as pi from "@earendil-works/pi-coding-agent";
 
 // The project and its settings.
-export { configForSpec, debugMode, hasProjectConfig, modelSpec, projectModels, readProjectConfig, stacksOf, type ProjectConfig } from "./config.ts";
+export { configForSpec, debugMode, DEFAULT_TEST_DIR, hasProjectConfig, modelSpec, projectModels, readProjectConfig, stacksOf, testDirOf, type ProjectConfig } from "./config.ts";
 export { MODULES_DIR, projectDirOf, resolveTemplateDirs } from "./regenerate/paths.ts";
 // Every setting of config.turri.yaml as /turri-config knows it - what it takes, what it is unset, when a change takes
 // effect - and what the file has now: for a host that shows them all, changing each through /turri-config.
 export { configSettings, currentValue, EFFECT_TEXT, overriddenBy, readConfigText, type Effect, type Setting, type SettingKind } from "./config-edit.ts";
+// The AWS region a project's Bedrock models are called in, and where it comes from - what turri sets itself, as a host's
+// session starts, when the models need one and the person set none.
+export { bedrockRegionFor, type BedrockRegion, type BedrockRegionSource } from "./bedrock-region.ts";
 // A project's first config.turri.yaml, as `turri init-config` writes it - the vendor, or the two models themselves, chosen by the host.
 export {
   BEDROCK_DEFAULT,

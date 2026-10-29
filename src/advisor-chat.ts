@@ -3,6 +3,7 @@ import { basename, join, relative, resolve } from "node:path";
 import { defineTool, type ExtensionAPI, type ExtensionContext, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Box, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { chatBusy } from "./chat-idle.ts";
 import type { ChatLink } from "./chats.ts";
 import { readProjectConfig } from "./config.ts";
 import { modulePlainFile } from "./plain/parser.ts";
@@ -75,7 +76,8 @@ export function yesTask(verdicts: AdvisorVerdict[]): string {
     `1. Tell the person in a line for each, e.g. "${yesLine(verdicts[0]!)}"`,
     "2. With change_plain, write whatever the step-7 guard would refuse, in this order, only what is missing: the ***test reqs*** of the module",
     "   it is tested in - the stack's conformance template, stdlib/<kind>/conformance/<stack>, imported, or the module's own - then the",
-    "   conformance testing script for its stack, with implement-conformance-testing-script, then the scenarios in its test plain file.",
+    "   conformance testing script for its stack, with implement-conformance-testing-script - cultivate, plainFile the module it is tested in,",
+    "   which returns at once: go straight on - then the scenarios in its test plain file.",
     "3. Cover each input of the report that is this functional spec's: an agreed one with the readers' output, never a placeholder such as",
     "   <name> where a value belongs; a split one settled by the reading most consistent with the functional spec and its module - say which",
     "   reading you took. Leave out an input that exercises another functional spec, or nothing this one says.",
@@ -106,19 +108,7 @@ export function verdictDelivery(pi: ExtensionAPI, link: ChatLink, context: () =>
     return box;
   });
 
-  /** Whether the chat is busy: its agent working, or the person typing - or no session to tell yet. */
-  const busy = (): boolean => {
-    const session = link.session();
-    if (session === undefined || session.isStreaming || session.isCompacting || session.isRetrying) return true;
-    const ctx = context();
-    try {
-      if (ctx !== undefined && (!ctx.isIdle() || ctx.hasPendingMessages())) return true;
-      if (ctx?.hasUI === true && ctx.ui.getEditorText().trim() !== "") return true;
-    } catch {
-      /* a context let go: the session says enough */
-    }
-    return false;
-  };
+  const busy = () => chatBusy(link, context);
 
   const later = (ms: number) => {
     if (timer !== undefined) return;

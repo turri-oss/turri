@@ -9,6 +9,7 @@ import { findTestScripts, onThisMachine } from "./regenerate/test-scripts.ts";
 import { configKeyOptions, parseArgs } from "./cli-options.ts";
 import { hasProjectConfig, readProjectConfig, stackOf } from "./config.ts";
 import { checkModels, modelsInUse, piModelAccess, type ModelAccess } from "./model-check.ts";
+import { bedrockRegionFor, describeBedrockRegion, regionInGeography, type BedrockRegion } from "./bedrock-region.ts";
 import { brand } from "./brand.ts";
 import { readScript, scriptAgainstMachine, stackOnMachine } from "./stack.ts";
 
@@ -186,7 +187,8 @@ export async function checkProjectModels(project: string, access?: ModelAccess):
   }
   let verdicts;
   try {
-    verdicts = await checkModels(used, access ?? (await piModelAccess()));
+    const region = describeBedrockRegion(bedrockRegionFor(project));
+    verdicts = await checkModels(used, access ?? (await piModelAccess()), region !== undefined ? { bedrockRegion: region } : {});
   } catch (error) {
     return [{ level: "missing", name: "Models", detail: `pi's models could not be read: ${error instanceof Error ? error.message : String(error)}` }];
   }
@@ -239,8 +241,28 @@ async function allChecks(options: DoctorOptions & CliOptions): Promise<Check[]> 
   const project = options.dir;
   if (project === undefined) return checks;
   if (hasProjectConfig(project) || existsSync(join(project, "plain_modules"))) checks.push(...checkProject(project, { has: (command) => onThisMachine(command, env) !== undefined }));
+  if (hasProjectConfig(project)) checks.push(...checkBedrockRegion(project, env));
   if (asksModels(options)) checks.push(...(await checkProjectModels(project)));
   return checks;
+}
+
+/**
+ * The AWS region a project's Bedrock models are called in, when it uses any: turri's, the person's or the profile's - and
+ * what is wrong with it, when the models need two, or the person's is not in their geography. Nothing when it uses none.
+ */
+export function checkBedrockRegion(project: string, env: NodeJS.ProcessEnv = process.env): Check[] {
+  let decided: BedrockRegion;
+  try {
+    decided = bedrockRegionFor(project, { env });
+  } catch {
+    return [];
+  }
+  const line = describeBedrockRegion(decided);
+  if (decided.models.length === 0 || line === undefined) return [];
+  const outside = decided.source === "set" && decided.needs !== undefined && decided.region !== undefined && !regionInGeography(decided.region, decided.needs.geography);
+  if (decided.conflict !== undefined) return [{ level: "missing", name: "AWS region", detail: "the Bedrock models need two regions", more: [line] }];
+  if (outside) return [{ level: "missing", name: "AWS region", detail: `${decided.region}, which does not serve ${decided.needs!.geography}'s models`, more: [line] }];
+  return [{ level: "ok", name: "AWS region", detail: line }];
 }
 
 /** What the checks add up to: whether turri can run here, and a line saying so - with its marks, uncoloured. */

@@ -1,5 +1,6 @@
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { applyBedrockRegion } from "./bedrock-region.ts";
 import { CONFIG_FILE, LEGACY_CONFIG_FILE, THINKING_LEVELS, usesLegacyConfig } from "./config.ts";
 import {
   currentValue,
@@ -85,6 +86,8 @@ export function registerTurriConfig(pi: ExtensionAPI, options: TurriConfigOption
     const adopting = usesLegacyConfig(cwd);
     const text = writeSetting(cwd, setting.key, value);
     const notes: string[] = [];
+    // A model changed: the AWS region its Bedrock models need is worked out again - set, moved or taken back by turri.
+    if (setting.key.endsWith("-model") || setting.key.startsWith("models.")) applyBedrockRegion(cwd);
     // What turri fixed at its start, changed now.
     if (setting.key === "harness-model" || setting.key === "models.chat") {
       const said = await options.live.chatModel(options.chatSpec(), ctx);
