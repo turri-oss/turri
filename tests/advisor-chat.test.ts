@@ -72,13 +72,16 @@ vi.mock("@earendil-works/pi-coding-agent", async (actual) => {
 
 /** What the session's advisor was made with: its verdicts are handed on by hand, as the advisor hands them on. */
 let made: { onVerdict?: (verdict: AdvisorVerdict) => void } | undefined;
+/** What a host asked the advisor to evaluate. */
+const evaluated: Array<{ module: string; funcId: string; reason?: string }> = [];
+
 vi.mock("../src/regenerate/advisor-runs.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/regenerate/advisor-runs.ts")>();
   return {
     ...actual,
     createTestAdvisor: (options: { onVerdict?: (verdict: AdvisorVerdict) => void }) => {
       made = options;
-      return { seen() {}, resume() {}, idle: async () => {}, stop() {}, taking: () => [] };
+      return { seen() {}, resume() {}, idle: async () => {}, stop() {}, taking: () => [], evaluate: (asked: { module: string; funcId: string; reason?: string }) => (evaluated.push(asked), asked.funcId === "no-such-thing" ? ("missing" as const) : ("started" as const)) };
     },
   };
 });
@@ -174,6 +177,16 @@ describe("the test advisor's verdicts in a host's chat", () => {
     expect(sent.content).toContain("Ask the person nothing");
     expect(sessions[1]!.entries).toEqual([]);
     expect(yes.told).toBe(1);
+  });
+
+  it("lets a host ask the advisor itself, as evaluate_tests does, and says what came of each", async () => {
+    writeFileSync("core.plain", "***functional specs***\n\n# add-task\nAdd a task.\n");
+    const turri = await createTurri();
+    evaluated.length = 0;
+    const outcome = turri.evaluateTests(["core:add-task", "core:no-such-thing"], { reason: "the person pressed Evaluate" });
+    expect(outcome.started).toEqual(["core:add-task"]);
+    expect(outcome.missing).toHaveLength(1);
+    expect(evaluated[0]).toMatchObject({ module: "core", funcId: "add-task", reason: "the person pressed Evaluate" });
   });
 
   it("draws one line for a no, starting no turn", async () => {

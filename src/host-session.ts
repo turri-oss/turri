@@ -2,7 +2,8 @@ import { createAgentSession, DefaultResourceLoader, getAgentDir, SessionManager,
 import type { AskUserIO } from "./ask.ts";
 import { lastRun } from "./chat-records.ts";
 import { interruptChat, type ChatInfo, type TurriHost } from "./chats.ts";
-import { createTurriCore, sessionLoop } from "./extension.ts";
+import { evaluateTests, type EvaluateOutcome } from "./advisor-chat.ts";
+import { createTurriCore, sessionAdvisor, sessionLoop } from "./extension.ts";
 import { stopDeployed } from "./regenerate/release.ts";
 import type { JobRegistry } from "./regenerate/jobs.ts";
 import type { WorkLoop } from "./regenerate/loop.ts";
@@ -68,6 +69,13 @@ export interface Turri {
    * hears each as it is put (`onNotice`) and as it ends (`onNoticeOver`).
    */
   notices(): Notice[];
+  /**
+   * The test advisor asked to evaluate functional specs, as the chat's `evaluate_tests` does - for a host's own way in,
+   * a button on a functional spec: `module:func-id`s, or func-ids of `plainFile`'s module, even a text judged already and
+   * whatever `test-advisor` says, `reason` given to it as context. It returns at once; each verdict comes to the chat the
+   * person looks at, as the advisor's verdicts do - a yes starting a turn that writes the scenarios, a no a line.
+   */
+  evaluateTests(funcIds: string[], options?: { plainFile?: string; reason?: string }): EvaluateOutcome;
   /**
    * A notice answered: one of its actions (by index or label) - the chat it is in started on it - the person's own words
    * about it, dismissed, or - `ignorable: true` - ignored for good: left as the build has it, the sentinel told not to
@@ -139,6 +147,7 @@ export async function createTurri(options: TurriOptions = {}): Promise<Turri> {
     },
     decline: async (id) => core.decline(id),
     notices: () => core.notices(),
+    evaluateTests: (funcIds, options) => evaluateTests(cwd, sessionAdvisor(core), funcIds, options),
     answer: async (id, answer) => core.answer(id, answer),
     onChats: (listener) => core.onChats(() => listener(core.chats())),
     dispose,

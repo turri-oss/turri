@@ -249,6 +249,39 @@ function namedSpecs(cwd: string, names: string[], plainFile: string | undefined)
   });
 }
 
+/** What an evaluation asked for came to, by functional spec - each named `module:func-id`, a missing one with why. */
+export interface EvaluateOutcome {
+  /** Being evaluated now: the verdict comes to the chat the person looks at. */
+  started: string[];
+  /** Being evaluated already. */
+  already: string[];
+  /** With scenarios already: not evaluated. */
+  scenarios: string[];
+  /** Not found, with why. */
+  missing: string[];
+}
+
+/**
+ * The test advisor asked to evaluate functional specs - `module:func-id`s, or func-ids of `plainFile`'s module (else the
+ * one the project's config names) - even a text it judged already, and whatever `test-advisor` says: `evaluate_tests`'s
+ * and a host's `evaluateTests`. It returns at once.
+ */
+export function evaluateTests(cwd: string, advisor: TestAdvisor | undefined, funcIds: string[], options: { plainFile?: string; reason?: string } = {}): EvaluateOutcome {
+  if (advisor === undefined) throw new Error("This session has no test advisor: it runs in the chat and a host only.");
+  if (funcIds.length === 0) throw new Error("Name the functional specs to evaluate, each as module:func-id.");
+  const said: EvaluateOutcome = { started: [], already: [], scenarios: [], missing: [] };
+  for (const spec of namedSpecs(cwd, funcIds, options.plainFile)) {
+    if (spec.asked === undefined) {
+      said.missing.push(`${spec.name}: ${spec.missing}`);
+      continue;
+    }
+    const outcome = advisor.evaluate({ ...spec.asked, ...(options.reason !== undefined ? { reason: options.reason } : {}) });
+    if (outcome === "missing") said.missing.push(`${spec.name}: its module has no such functional spec`);
+    else said[outcome].push(spec.name);
+  }
+  return said;
+}
+
 /**
  * evaluate_tests: the chat's own way to the test advisor - a functional spec evaluated in the background, whatever
  * `test-advisor` says, and even when its text was judged already. It returns at once; the verdict comes back to the chat
@@ -276,19 +309,7 @@ export function evaluateTestsTool(options: { cwd: string; advisor: () => TestAdv
       reason: Type.Optional(Type.String({ description: "Why you ask, for the advisor to weigh: \"the coding agent failed three times to implement it\"" })),
     }),
     async execute(_id, params) {
-      const advisor = options.advisor();
-      if (advisor === undefined) throw new Error("This session has no test advisor: it runs in the chat and a host only.");
-      if (params.funcIds.length === 0) throw new Error("Name the functional specs to evaluate, each as module:func-id.");
-      const said = { started: [] as string[], already: [] as string[], scenarios: [] as string[], missing: [] as string[] };
-      for (const spec of namedSpecs(options.cwd, params.funcIds, params.plain_file)) {
-        if (spec.asked === undefined) {
-          said.missing.push(`${spec.name}: ${spec.missing}`);
-          continue;
-        }
-        const outcome = advisor.evaluate({ ...spec.asked, ...(params.reason !== undefined ? { reason: params.reason } : {}) });
-        if (outcome === "missing") said.missing.push(`${spec.name}: its module has no such functional spec`);
-        else said[outcome].push(spec.name);
-      }
+      const said = evaluateTests(options.cwd, options.advisor(), params.funcIds, { ...(params.plain_file !== undefined ? { plainFile: params.plain_file } : {}), ...(params.reason !== undefined ? { reason: params.reason } : {}) });
       const list = (names: string[]) => names.join(", ");
       const one = (names: string[], single: string, many: string) => (names.length === 1 ? single : many);
       const text = [

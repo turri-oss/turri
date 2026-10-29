@@ -70,6 +70,11 @@ export { createJobRegistry, defaultParallelJobs, type Job, type JobRegistry, typ
 export { describeTurnIncident, onModelEvent, type TranscriptEntry } from "./regenerate/activity.ts";
 export { sweepOrphanedGroups } from "./regenerate/shell.ts";
 
+// The test advisor: what it made of each functional spec of a module - pending, yes, no or failed, with its report - by
+// func-id, an entry current while its hash is textHash of the functional spec's text; and what an evaluation came to.
+export { readAdvisor, textHash, type AdvisorEntry, type AdvisorFile, type AdvisorReport, type AdvisorState } from "./regenerate/advisor-records.ts";
+export type { EvaluateOutcome } from "./advisor-chat.ts";
+
 // What turri did, as facts: the ledger, heard live and read back - this session's pulses and every earlier one's.
 export { ledgerDir, onLedgerEvent, readLedger, type AgentRef, type LedgerEntry, type LedgerEvent, type LedgerKind, type LedgerQuery } from "./regenerate/ledger.ts";
 export { asJob, describePulseView, describeRuns, earlierPulses, ledgerProjects, pulseView, runViews, type PulseView, type RunView } from "./regenerate/ledger-view.ts";
