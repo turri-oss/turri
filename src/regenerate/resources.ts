@@ -14,6 +14,8 @@ export interface LoadedResource {
   image?: ResourceImage;
   /** Where the file is: copy_resource copies it whole from here. */
   source?: string;
+  /** It is in the codebase already, at this path - a file the base folder held: used from there, never copied. */
+  inCodebase?: string;
   /** Its text was cut for the prompt: how long it is whole. */
   cutFrom?: number;
 }

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { plainFileParser, withParseCache } from "../plain/parser.ts";
 import { STDLIB_ROOT } from "../plain/stdlib.ts";
@@ -47,6 +47,8 @@ import { listFiles } from "./testing.ts";
 import { makeRenames, pureRenames, renameText } from "./renames.ts";
 import { casesOf, codeWork, stillWanted, whyNotWanted, type JobCases, type ScenarioCases, type TouchedSpec } from "./drift.ts";
 import { testingGap } from "./testing-steps.ts";
+import { baseFolderDrift, baseOfCodebase, seedFromBaseFolder } from "./base-folder.ts";
+import { BASE_RECORD_FILE } from "./paths.ts";
 import { onScriptRunEnded, scriptBeingWritten } from "./scripts-being-written.ts";
 import { findTestScripts, projectRootFor, type ScriptKind } from "./test-scripts.ts";
 
@@ -135,6 +137,12 @@ export interface ModuleStatus {
   stack?: string;
   /** Pure renames turri makes once the running pulse ends - a func-id or a scenario-id, nothing else with it: nothing regenerated. */
   renames?: string[];
+  /**
+   * The base folder its codebase started from (base-folder.ts): the folder as `base-folder:` named it, and how many of
+   * the files that came from it the codebase has still - carried up with the code to a module built on it. None when it
+   * started from none, or has no code yet.
+   */
+  base?: { folder: string; files: number };
 }
 
 interface ModuleState {
@@ -184,6 +192,8 @@ interface ModuleState {
   halted?: { why: string; specKey: string; pulse?: { number: number; before: string; after: string }; cause?: string };
   /** Halted by the person (`WorkLoop.halt`): nothing runs here until it is asked for again - a spec change does not start it. */
   held?: { why: string };
+  /** Its base folder as the status says it, and what it was read at - the two records' times: read again only when either moves. */
+  base?: { at: string; base: ModuleStatus["base"] };
   /** How many pulses have started here this session: the next is numbered one more. */
   pulses?: number;
   /** The spec as the last look read it. */
@@ -210,6 +220,8 @@ export interface DriftReport {
   startOver?: ModuleStatus["startOver"];
   /** Pure renames not made yet - a func-id or a scenario-id, nothing else changed with it: made by turri, nothing regenerated. */
   renames?: string[];
+  /** How its base folder stands against what its codebase started from, when they do not agree (base-folder.ts). */
+  baseFolder?: string;
 }
 
 /** What is left to regenerate, as the conversation and the command line read it. */
@@ -232,6 +244,7 @@ export function describeDrift(reports: DriftReport[]): string {
       else if (report.conformance !== undefined) lines.push("  conformance tests: to write or change - written once the code is built, or now with conform", ...conformanceLines(report.module, report.conformance));
       else lines.push("  conformance tests: none written here");
       for (const rename of report.renames ?? []) lines.push(`  renames ${rename} - the records and the tests' labels only, nothing regenerated`);
+      if (report.baseFolder !== undefined) lines.push(`  ${report.baseFolder}`);
       if (report.running !== undefined) lines.push(`  regenerating now: pulse ${report.running.jobId} - ${report.running.title}`);
       if (report.why !== undefined) lines.push(`  ${report.why}`);
       if (report.startOver !== undefined) {
@@ -372,6 +385,15 @@ export interface MapPlan {
 }
 
 const tipOf = (chain: ChainEntry[]): ChainEntry => chain.at(-1)!;
+
+/** When a file was last written, as a key - none when it is not there. */
+const modifiedAt = (path: string): string => {
+  try {
+    return String(statSync(path).mtimeMs);
+  } catch {
+    return "-";
+  }
+};
 
 /** Whether a module's codebase has been started: code in it, or a record. */
 const started = (entry: ChainEntry) => listFiles(entry.buildDir).length > 0 || readRecord(entry.buildDir) !== null;
@@ -653,6 +675,20 @@ export function createWorkLoop(options: {
     return scriptBeingWritten(root, kind, stackForModule(tip.plainFile)) && findTestScripts(root, tip.plainFile, tip.buildDir)[kind] === undefined;
   };
 
+  /**
+   * The base folder a codebase started from, as its status says it. Counting the files still there looks at each, and the
+   * status is read often: so it is read again only when the base record or the code record moved - a pulse landed.
+   */
+  const baseOfState = (state: ModuleState): ModuleStatus["base"] => {
+    const dir = tipEntry(state).buildDir;
+    const at = [BASE_RECORD_FILE, RECORD_FILE].map((name) => modifiedAt(join(dir, name))).join(":");
+    if (state.base?.at !== at) {
+      const started = baseOfCodebase(dir);
+      state.base = { at, base: started !== undefined ? { folder: started.folder, files: started.files.length } : undefined };
+    }
+    return state.base.base;
+  };
+
   /** The work of a track, from where it is built from to what it is to be. */
   const workOf = (track: Track, from: MarshalledPlainSource, state: ModuleState, spec: SpecSnapshot) =>
     track === "code" ? codeWork(from, spec.tree) : changesBetween(serializeTree(from), serializeTree(conformanceOf(state, spec, from)));
@@ -842,6 +878,8 @@ export function createWorkLoop(options: {
             copyRequiredCode(below.buildDir, tip.buildDir, tip.moduleName, below.moduleName);
           }
         }
+        // Nothing here yet, and nothing below: the codebase starts from its base folder, when the config names one.
+        if (tip.requires === null && !started(tip)) inStack(state, () => seedFromBaseFolder(tip.buildDir, tip.plainFile, tip.moduleName));
         // A conformance job is shown the spec whole - its test reqs and scenarios are its to write from.
         const result = await (conformance ? runConformance : run)(
           {
@@ -1365,9 +1403,11 @@ export function createWorkLoop(options: {
     const tip = tipEntry(state);
     // While a pulse runs, the renames made once it ends: shown as renames, never as a functional spec taken out and one added.
     const renames = state.running !== undefined && state.running.planned.track === "code" && seen !== undefined ? pureRenames(readRecord(tip.buildDir), readRecord(testsDirOf(state)), seen, tip.moduleName).renames : [];
+    const base = baseOfState(state);
     const status: ModuleStatus = {
       module: tip.moduleName,
       plainFile: tip.plainFile,
+      ...(base !== undefined ? { base } : {}),
       ...(renames.length > 0 ? { renames: renames.map(renameText) } : {}),
       ...(state.stack?.name !== undefined ? { stack: state.stack.name } : {}),
       ...(state.running !== undefined
@@ -1504,6 +1544,9 @@ export function createWorkLoop(options: {
               if (renamed !== undefined && renamed.renames.length > 0) report.renames = renamed.renames.map(renameText);
               const from = renamed?.code !== undefined && renamed.code !== null ? codeTree(renamed.code) : builtOf(state);
               const fresh = tip.requires === null && !started(tip);
+              // A codebase that requires nothing starts from its base folder: one changed since, or missing, is said.
+              const base = tip.requires === null ? baseFolderDrift(tip.buildDir, tip.plainFile) : undefined;
+              if (base !== undefined) report.baseFolder = base;
               const code = codeWork(from, spec.tree);
               report.code = code.length === 0 ? null : casesOf(from, code, { fresh, module: tip.moduleName });
               if (conformanceWanted(state, spec)) {

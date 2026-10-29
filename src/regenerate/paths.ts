@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 
 /** A module's code record and its tests' - `code/.turri.json`, `tests/.turri.json` (records.ts). */
 export const RECORD_FILE = ".turri.json";
+/** What a codebase started from, when it started from a base folder (base-folder.ts): beside the code record, never code. */
+export const BASE_RECORD_FILE = ".turri-base.json";
 
 /**
  * The ***plain standard library: import modules for generic pieces of software that ship with turri,

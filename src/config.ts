@@ -13,6 +13,7 @@ import { projectDirOf } from "./regenerate/paths.ts";
  * ```yaml
  * module: prism_cli.plain                                   # what `turri regenerate` builds by default
  * test-dir: tests                                           # where the test plain files are, a folder per module: tests/<module>/ (default: tests)
+ * base-folder: existing-app                                 # a codebase that requires none starts as a copy of it - code to build on, assets to use
  * harness-model:                                            # the model you chat with in `turri`
  *   model: anthropic/claude-opus-5-5
  *   thinking: high
@@ -479,6 +480,11 @@ export interface ProjectConfig {
    * file in `<test-dir>/<module>/`. Unset: `tests`.
    */
   testDir?: string;
+  /**
+   * A folder, from the project's folder, that a codebase requiring no other module starts from - a copy of it, once,
+   * before its first pulse: code to build on, files to use (src/regenerate/base-folder.ts). Unset: it starts empty.
+   */
+  baseFolder?: string;
   /** Path from the root to the unit testing script. */
   unittestsScript?: string;
   /** Path from the root to the conformance testing script. */
@@ -553,6 +559,7 @@ export const CONFIG_KEYS = {
   sentinel: "sentinel",
   testAdvisor: "test-advisor",
   testDir: "test-dir",
+  baseFolder: "base-folder",
   unittestsScript: "unittests-script",
   conformanceTestsScript: "conformance-tests-script",
   prepareEnvironmentScript: "prepare-environment-script",
@@ -721,6 +728,7 @@ function readConfigFile(path: string): ProjectConfig {
     sentinel: typeof raw[CONFIG_KEYS.sentinel] === "boolean" || raw[CONFIG_KEYS.sentinel] === "ask" ? (raw[CONFIG_KEYS.sentinel] as SentinelSetting) : undefined,
     testAdvisor: typeof raw[CONFIG_KEYS.testAdvisor] === "boolean" ? (raw[CONFIG_KEYS.testAdvisor] as boolean) : undefined,
     testDir: text(raw[CONFIG_KEYS.testDir]),
+    baseFolder: text(raw[CONFIG_KEYS.baseFolder]),
     unittestsScript: text(raw[CONFIG_KEYS.unittestsScript]),
     conformanceTestsScript: text(raw[CONFIG_KEYS.conformanceTestsScript]),
     prepareEnvironmentScript: text(raw[CONFIG_KEYS.prepareEnvironmentScript]),

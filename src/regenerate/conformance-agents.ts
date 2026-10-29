@@ -12,7 +12,8 @@ import { reportActivity } from "./activity.ts";
 import { runTiming, withTestingScripts, type ScriptRun, type TestScripts } from "./test-scripts.ts";
 import { createWebTools, WEB_TOOLS } from "./web.ts";
 import { diffFiles, digestFiles } from "./codebase.ts";
-import { ERROR_CAUSE_RULES, fixMethod, INTEGRITY_RULES, specPrimer } from "./prompt.ts";
+import { BASE_FOLDER_RULES, baseFolderBlock, ERROR_CAUSE_RULES, fixMethod, INTEGRITY_RULES, specPrimer } from "./prompt.ts";
+import { baseOfCodebase } from "./base-folder.ts";
 import { conformanceReviewCasesBlock } from "./cases.ts";
 import type { JobCases } from "./drift.ts";
 import { REVIEW_LESSON } from "./notes.ts";
@@ -1331,6 +1332,7 @@ export async function createCodeFixer(options: {
  * word for word through every fix of the run; each failure comes as a message (`codeFixPrompt`).
  */
 export function codeFixerTask(options: { buildDir: string; conformanceDir?: string; spec: SpecContext }): string {
+  const base = baseOfCodebase(options.buildDir);
   return [
     specPrimer({ testReqs: false }),
     `You are the coding agent of the \`${options.spec.moduleName}\` specification. Its code is in ${options.buildDir}. When its`,
@@ -1340,6 +1342,8 @@ export function codeFixerTask(options: { buildDir: string; conformanceDir?: stri
     options.spec.text.trim(),
     "</specification>",
     "",
+    // What came from the base folder its codebase started from: a fix keeps it.
+    ...(base !== undefined ? [baseFolderBlock(base)!, ""] : []),
     ...fixMethod({ what: "conformance tests", fixes: "code", runTool: "run_conformance_tests" }),
     "",
     "run_conformance_tests runs the project's conformance testing script on the code as it now is, with the whole",
@@ -1362,6 +1366,7 @@ export function codeFixerTask(options: { buildDir: string; conformanceDir?: stri
     "Keep the build's identity as it is - its name, coordinates, version, package and main class - unless the",
     "specification asks for another: the tests and other builds point at them. Leave in your notes what holds about",
     "the code for the next agent, not an account of this fix: the harness records the attempts itself.",
+    ...(base !== undefined ? BASE_FOLDER_RULES : []),
     ...INTEGRITY_RULES,
     ...ERROR_CAUSE_RULES,
   ].join("\n");

@@ -4,6 +4,7 @@ import { testDirOf } from "../config.ts";
 import { projectDirOf, resolveTemplateDirs } from "../regenerate/paths.ts";
 import { importingModules, isImportModule } from "../regenerate/requires.ts";
 import { testingGap } from "../regenerate/testing-steps.ts";
+import { missingBaseFolder } from "../regenerate/base-folder.ts";
 import { moduleOfTestPlainFile, projectModules, strayTestPlainFiles, testPlaceOf, testPlainFileRefusal } from "../test-plain-files.ts";
 import { plainFileParser, PLAIN_SOURCE_FILE_EXTENSION, PREVIOUS_SYNTAX_HINT, readPlainSourceMetadata, REQUIRES_DIRECTIVE } from "./parser.ts";
 import {
@@ -155,6 +156,9 @@ export function checkPlainFile(file: string, templateDirs: string[] = []): Check
     });
     // Scenarios with a step of adding tests skipped - the test reqs, or the conformance testing script: a warning, never a failure.
     const gaps = testingGapsOf(moduleName, path, tree, projectDir, templateDirs);
+    // A codebase that requires nothing starts from its base folder: one named and not there stops its first pulse.
+    const base = requiredModules.length === 0 && !isImportModule(path) ? missingBaseFolder(path) : undefined;
+    if (base !== undefined) gaps.push(base);
     const bindings = Object.entries((tree[TEST_PLAIN_FILES] as Record<string, TestPlainFileBinding> | undefined) ?? {});
     return {
       file,

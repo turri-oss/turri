@@ -100,6 +100,7 @@ export function settings(rules: string[] = []): Setting[] {
     { key: "sentinel", about: "whether a chat of its own checks every finished pulse, tests the release, and tells you what is wrong - ask: you are asked before it first opens", kind: "choice", options: ["ask", "true", "false"], unset: "ask", effect: "next-landing" },
     { key: "test-advisor", about: "whether turri checks each new or changed functional spec with no scenarios in the background, to see whether it needs scenarios - on a yes, the chat writes them", kind: "boolean", unset: "true", effect: "now" },
     { key: "test-dir", about: "the folder of the test plain files, a folder per module in it, by path from the project root", kind: "path", unset: "tests", effect: "now" },
+    { key: "base-folder", about: "a folder a codebase that requires no other module starts from, by path from the project root - code to build on, files to use, copied in once", kind: "path", unset: "none: it starts empty", effect: "next-pulse" },
     { key: "unittests-script", about: "the unit testing script, by path from the project root", kind: "path", unset: "the one run_unittests*.sh found", effect: "next-test-run" },
     { key: "conformance-tests-script", about: "the conformance testing script, by path from the project root", kind: "path", unset: "the one run_conformance_tests*.sh found", effect: "next-test-run" },
     { key: "prepare-environment-script", about: "run on the build before every conformance testing script run, by path from the project root - optional", kind: "path", unset: "the one prepare_environment*.sh found, else none", effect: "next-test-run" },
@@ -374,12 +375,13 @@ export function pathOptions(dir: string, key: string): string[] {
     }
   };
   if (key === "module") return list("", (name) => name.endsWith(".plain")).sort();
-  if (key === "test-dir") {
+  if (key === "test-dir" || key === "base-folder") {
+    const own = key === "test-dir" ? ["tests"] : [];
     try {
       const folders = readdirSync(dir).filter((name) => !name.startsWith(".") && name !== "plain_modules" && name !== "node_modules" && statSync(join(dir, name)).isDirectory());
-      return [...new Set(["tests", ...folders])].sort();
+      return [...new Set([...own, ...folders])].sort();
     } catch {
-      return ["tests"];
+      return own;
     }
   }
   const prefix =

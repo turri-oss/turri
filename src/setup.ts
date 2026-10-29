@@ -1,15 +1,16 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, rmSync } from "node:fs";
-import { join, relative } from "node:path";
+import { existsSync, rmSync, statSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { globalExtensionFile, MIN_NODE, nodeVersionOk, PACKAGE_ROOT, turriOnPath } from "./environment.ts";
 import { sandboxAvailable, sandboxWith, type Wall } from "./regenerate/os-sandbox.ts";
 import { findTestScripts, onThisMachine } from "./regenerate/test-scripts.ts";
 import { configKeyOptions, parseArgs } from "./cli-options.ts";
-import { hasProjectConfig, readProjectConfig, stackOf } from "./config.ts";
+import { CONFIG_FILE, hasProjectConfig, readProjectConfig, stackConfigFile, stackOf, stacksOf } from "./config.ts";
 import { checkModels, modelsInUse, piModelAccess, type ModelAccess } from "./model-check.ts";
 import { bedrockRegionFor, describeBedrockRegion, regionInGeography, type BedrockRegion } from "./bedrock-region.ts";
+import { baseFiles } from "./regenerate/base-folder.ts";
 import { brand } from "./brand.ts";
 import { readScript, scriptAgainstMachine, stackOnMachine } from "./stack.ts";
 
@@ -241,9 +242,30 @@ async function allChecks(options: DoctorOptions & CliOptions): Promise<Check[]> 
   const project = options.dir;
   if (project === undefined) return checks;
   if (hasProjectConfig(project) || existsSync(join(project, "plain_modules"))) checks.push(...checkProject(project, { has: (command) => onThisMachine(command, env) !== undefined }));
-  if (hasProjectConfig(project)) checks.push(...checkBedrockRegion(project, env));
+  if (hasProjectConfig(project)) checks.push(...checkBedrockRegion(project, env), ...checkBaseFolders(project));
   if (asksModels(options)) checks.push(...(await checkProjectModels(project)));
   return checks;
+}
+
+/**
+ * The base folders the project's config names - its own, and each stack's - each there with its files, or not: a codebase
+ * that requires nothing starts from one, and its first pulse stops when it is not there. Nothing when none is named.
+ */
+export function checkBaseFolders(project: string): Check[] {
+  const named = new Map<string, string[]>();
+  for (const [stack, config] of [[undefined, readProjectConfig(project)] as const, ...stacksOf(project).map((stack) => [stack, readProjectConfig(project, stack)] as const)]) {
+    if (config.baseFolder === undefined) continue;
+    named.set(config.baseFolder, [...(named.get(config.baseFolder) ?? []), stack === undefined ? CONFIG_FILE : stackConfigFile(stack)]);
+  }
+  return [...named].map(([folder, files]): Check => {
+    const path = resolve(project, folder);
+    const name = `base folder ${folder}`;
+    if (!existsSync(path) || !statSync(path).isDirectory()) {
+      return { level: "missing", name, detail: `${existsSync(path) ? "not a folder" : "not there"} - named in ${files.join(", ")}`, fix: "make the folder, or name the right one in base-folder:, by path from the project's folder" };
+    }
+    const count = baseFiles(path).length;
+    return { level: "ok", name, detail: `${count} file${count === 1 ? "" : "s"} to start a codebase from - named in ${files.join(", ")}` };
+  });
 }
 
 /**

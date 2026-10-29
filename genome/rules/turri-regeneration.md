@@ -50,6 +50,7 @@ The other rules say what a spec means. This one says what turri does with a chan
 - A coding agent sees its prompt and its module's code - nothing else. It cannot read `.plain` files, this conversation, AGENTS.md or the person. It never sees a functional spec's scenarios: those are the conformance tests'
 - What the code needs to know has to be in the spec. A fact said only in the conversation, AGENTS.md or notes never reaches the code, and is lost at the next regeneration
 - Steering reaches the agents that plan the work - how it is cut and in what order - not what the code does. What the code does is changed in the spec
+- A codebase that requires no module may start from a base folder (`base-folder:` in config.turri.yaml): an existing codebase, files to use - images, animations - or both, copied in once before its first pulse and up the chain with the code. The agents that change and review its code are told what came from it, and keep it unless a functional spec asks otherwise. Refer to what is in it in the spec - in words, or by a link into the folder, relative to the module's file as every link is - for the code to use it: a file it holds that no functional spec names is kept, never used. A change to the folder later reaches the code only when the module is regenerated from scratch
 
 ## How bad code is fixed
 

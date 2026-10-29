@@ -8,6 +8,7 @@ import { resolveTemplateDirs } from "./paths.ts";
 import { inheritedRecord, inheritedTestsRecord, readRecord, RECORD_FILE, writeCodeRecord, writeTestsRecord } from "./records.ts";
 import { head, historyLog, recordHistory } from "./lineage.ts";
 import { listFiles } from "./testing.ts";
+import { carryBaseRecord } from "./base-folder.ts";
 
 /**
  * `requires` chains.
@@ -264,8 +265,9 @@ export function copyRequiredCode(
     copyFileSync(join(from, file), target);
     copied.push(file);
   }
-  // The working notes describe this code, so they come up with it.
+  // The working notes describe this code, so they come up with it - and so does what it started from, a base folder's files.
   if (existsSync(notesPath(from)) && !existsSync(notesPath(to))) copyFileSync(notesPath(from), notesPath(to));
+  carryBaseRecord(from, to);
   // What the code is built from comes with it, as what the new module inherits - not as its own work.
   const built = readRecord(from);
   writeCodeRecord(to, built !== null ? inheritedRecord(built, fromModule) : {});

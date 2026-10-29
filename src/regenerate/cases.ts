@@ -12,10 +12,20 @@ import { scenarioLabel } from "./test-kinds.ts";
 /** Functional specs, each by its func-id - with the module it belongs to, a func-id being unique in its module only - and its first line. */
 const named = (specs: TouchedSpec[]) => specs.map((spec) => `${spec.module !== undefined ? `\`${spec.module}:${spec.funcId}\`` : `\`${spec.funcId}\``} (${spec.text})`).join("; ");
 
-/** What the coding agent does, case by case. */
-export function codeCasesBlock(cases: JobCases): string[] {
+/**
+ * What the coding agent does, case by case. `fromBase`: the codebase started from a base folder - nothing is built from
+ * the specification, but the folder is not empty, and a project in it is built on, never set up anew.
+ */
+export function codeCasesBlock(cases: JobCases, fromBase = false): string[] {
   const lines: string[] = [];
-  if (cases.fresh) {
+  if (cases.fresh && fromBase) {
+    lines.push(
+      "- Nothing is built from the specification yet, and the codebase holds what the base folder had. Where that is a",
+      "  project - a layout, a dependency manifest, unit tests - build on it: add to them, never set them up anew. Where it",
+      "  is files alone, set the project up around them - its layout, its dependency manifest, and its unit tests where",
+      "  the unit testing script runs them. Then build what follows, with its unit tests.",
+    );
+  } else if (cases.fresh) {
     lines.push(
       "- Nothing is built yet: set the project up first - its layout, its dependency manifest, and its unit tests",
       "  where the unit testing script runs them - then build what follows, with its unit tests.",

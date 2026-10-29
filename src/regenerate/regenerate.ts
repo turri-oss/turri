@@ -50,7 +50,8 @@ import { summarizeDiff } from "./job-panel.ts";
 import { conversationWriting } from "./conversation-writes.ts";
 import { resolveTemplateDirs } from "./paths.ts";
 import { type ChainEntry, copyRequiredCode, findCodebaseTip, newlyRequired } from "./requires.ts";
-import { createCopyResourceTool, loadLinkedResources, resourceImages } from "./resources.ts";
+import { baseOfCodebase, inCodebaseOf, seedFromBaseFolder } from "./base-folder.ts";
+import { createCopyResourceTool, loadLinkedResources, resourceFile, resourceImages } from "./resources.ts";
 import { markTold, waitingSteer, type JobSteering } from "./steering.ts";
 import { misplacedConformanceTests, misplacedTestsPrompt } from "./test-kinds.ts";
 import { sectionsOf } from "./state.ts";
@@ -343,6 +344,11 @@ export async function renderSpecDiff(options: RenderSpecDiffOptions): Promise<Re
     stage(`no code here yet - starting from ${source.moduleName}'s code`);
     copyRequiredCode(source.buildDir, buildDir, moduleName, source.moduleName);
   }
+  // A codebase that requires nothing starts from its base folder, when the config names one: code to build on, files to use.
+  if (empty && tip.requires === null && !dryRun) {
+    const seeded = seedFromBaseFolder(buildDir, tip.plainFile, moduleName);
+    if (seeded !== undefined) stage(`no code here yet - starting from the base folder ${seeded.folder}, ${seeded.files.length} file${seeded.files.length === 1 ? "" : "s"}`);
+  }
   // What the agent is shown it starts from: a dry run copies nothing, and reads the code it would start from where it is.
   const seen = dryRun && source !== undefined ? source.buildDir : buildDir;
 
@@ -374,7 +380,14 @@ export async function renderSpecDiff(options: RenderSpecDiffOptions): Promise<Re
     builtFuncIds.length > 0
       ? getSpecificationsForFrid(builtNow, builtFuncIds.at(-1)!)[0]
       : { ...sectionsOf(builtNow), [FUNCTIONAL_REQUIREMENTS]: [], [CONFORMANCE_TESTS]: [], [ACCEPTANCE_TESTS]: [] };
-  const linkedResources = loadLinkedResources(tree, lastFuncId ?? null, resolveTemplateDirs(tip.plainFile, templateDirs));
+  const resourceDirs = resolveTemplateDirs(tip.plainFile, templateDirs);
+  // A linked file the base folder held, in the codebase still, is used from there: its path is said, and it is not copied.
+  const linkedResources = loadLinkedResources(tree, lastFuncId ?? null, resourceDirs).map((resource) => {
+    const file = resourceFile(resource.target, resourceDirs);
+    const inCodebase = file === null ? undefined : inCodebaseOf(file, seen, tip.plainFile);
+    return inCodebase !== undefined ? { ...resource, inCodebase } : resource;
+  });
+  const startedFrom = baseOfCodebase(seen);
   const prompt = buildSpecDiffPrompt({
     moduleName,
     diff: options.diff,
@@ -388,6 +401,7 @@ export async function renderSpecDiff(options: RenderSpecDiffOptions): Promise<Re
     codebase: codebaseMap(seen),
     empty: listFiles(seen).length === 0,
     ...(options.cases !== undefined ? { cases: options.cases } : {}),
+    ...(startedFrom !== undefined ? { base: startedFrom } : {}),
   });
 
   const digestsBefore = digestFiles(buildDir);
@@ -650,7 +664,7 @@ export async function renderSpecDiff(options: RenderSpecDiffOptions): Promise<Re
         what: `the spec change to module \`${moduleName}\``,
         // As the coding agent had it: the spec the code was built from, and the change.
         // Steered before the review, the change as the agent has it now.
-        spec: reviewedSpec({ moduleName, specifications: specificationsBefore, funcIds: builtFuncIds, modules: sectionModules(builtNow, moduleName), required: getInheritedFunctionalSpecs(builtNow), change: steeredChange() ?? codingText ?? changeText ?? options.diff }),
+        spec: reviewedSpec({ moduleName, specifications: specificationsBefore, funcIds: builtFuncIds, modules: sectionModules(builtNow, moduleName), required: getInheritedFunctionalSpecs(builtNow), change: steeredChange() ?? codingText ?? changeText ?? options.diff, ...(startedFrom !== undefined ? { base: startedFrom } : {}) }),
         forChange: true,
         ...(options.cases !== undefined ? { cases: options.cases } : {}),
         label: `${moduleName} spec change`,

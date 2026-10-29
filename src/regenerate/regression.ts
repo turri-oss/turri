@@ -6,6 +6,7 @@ import { reportActivity, reportStage, unitOf } from "./activity.ts";
 import { confinedTools } from "./confine.ts";
 import { projectRootOf } from "./paths.ts";
 import { buildRegressionFixPrompt, sectionModules } from "./prompt.ts";
+import { baseOfCodebase } from "./base-folder.ts";
 import { abandonWork, landWork, markWork, type WorkStart } from "./lineage.ts";
 import { record } from "./ledger.ts";
 import { missingToolchainError } from "./environment-error.ts";
@@ -74,6 +75,8 @@ async function repairRegression(input: {
   const runs: TestRun[] = [];
 
   const fence = confinedTools({ workdir: input.buildDir, reportsEnvironment: true });
+  // What came from the base folder its codebase started from: the repair keeps it.
+  const startedFrom = baseOfCodebase(input.buildDir);
   const notes = notesForSession(input.buildDir, `${input.step} regression repair`);
   reportStage(`${unitOf(input.moduleName)}: starting the repair agent${input.model ? ` (${input.model})` : ""}`);
   const session = await createExecutor({
@@ -104,6 +107,7 @@ async function repairRegression(input: {
           specifications,
           modules: sectionModules(input.tree, input.moduleName),
           required: input.required,
+          ...(startedFrom !== undefined ? { base: startedFrom } : {}),
           failure: input.failure,
         }),
         input.scripts,

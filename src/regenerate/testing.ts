@@ -6,7 +6,7 @@ import { reportActivity } from "./activity.ts";
 import { maskSecrets } from "./masking.ts";
 import { NOTES_FILE } from "./notes.ts";
 import { modulesScratchDir } from "./paths.ts";
-import { RECORD_FILE } from "./paths.ts";
+import { BASE_RECORD_FILE, RECORD_FILE } from "./paths.ts";
 import { missingToolchain, runUnitScript, scriptFailure, type ScriptRun } from "./test-scripts.ts";
 import { COMMAND_TIMEOUT_MS } from "./shell.ts";
 import { pulseWrote } from "./pulse-files.ts";
@@ -217,6 +217,7 @@ export const NOT_CODE = new Set([
   // Working notes for the agents: not part of the codebase either (see notes.ts).
   NOTES_FILE,
   RECORD_FILE,
+  BASE_RECORD_FILE,
 ]);
 
 export function listFiles(root: string): string[] {

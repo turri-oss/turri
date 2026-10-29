@@ -120,6 +120,8 @@ export function specPrimer(options: { testReqs: boolean }): string {
     "  code-copy - is code that lives elsewhere, linked so you know what your code plugs into: build on it as the",
     "  specification says, and never copy it, nor recreate it or what it belongs to.",
     "  An image among them is attached to your first message, numbered in the order they are listed: look at it.",
+    "  One marked in-codebase is in your codebase already, at that path - it came from the base folder: use it from",
+    "  there, and never copy it or make another.",
     "- <spec change>: a change to the specification, section by section, each section in its own tag - what it adds,",
     "  what it changes (before and now), and what it removes.",
     "",
@@ -241,10 +243,38 @@ function linkedResourcesSection(resources: LoadedResource[]): string | null {
   // A text resource has one home in the codebase, should the code need it: its path, made relative to the codebase.
   const rendered = resources.map(
     (resource) =>
-      `<resource name="${resource.text}" path="${resource.target}"${resource.image !== undefined ? ` type="${resource.image.mimeType}"` : isCodeResource(resource.target) ? ' kind="code"' : ` code-copy="${codeCopyOf(resource.target)}"`}>\n${resource.content}\n</resource>`,
+      `<resource name="${resource.text}" path="${resource.target}"${resource.image !== undefined ? ` type="${resource.image.mimeType}"` : ""}${resource.inCodebase !== undefined ? ` in-codebase="${resource.inCodebase}"` : resource.image !== undefined ? "" : isCodeResource(resource.target) ? ' kind="code"' : ` code-copy="${codeCopyOf(resource.target)}"`}>\n${resource.content}\n</resource>`,
   );
   return `<linked resources>\n${rendered.join("\n\n")}\n</linked resources>`;
 }
+
+/** How many files of the base folder a coding agent is shown by name: the rest are counted. */
+const BASE_LISTING = 200;
+
+/**
+ * The base folder a codebase started from, for its coding agents (base-folder.ts): that it did, and the files that came
+ * from it - code to build on, files to use, or both: the block says neither, for it may be either.
+ */
+export function baseFolderBlock(base: { folder: string; files: string[] } | undefined): string | null {
+  if (base === undefined) return null;
+  const shown = base.files.slice(0, BASE_LISTING);
+  const more = base.files.length - shown.length;
+  return [
+    `<base folder name="${base.folder}">`,
+    `This codebase started from a copy of the base folder ${base.folder}. Whatever it holds - code to build on, files to`,
+    "use, or both - the specification may refer to, in words or by linking into it. These files came from it, and are here still:",
+    ...shown.map((file) => `- ${file}`),
+    ...(more > 0 ? [`- ... and ${more} more`] : []),
+    "</base folder>",
+  ].join("\n");
+}
+
+/** The rule for what came from the base folder, for an agent that changes the code: it stays, used where it is. */
+export const BASE_FOLDER_RULES = [
+  "- What came from the base folder stays, used where it is, unless a functional spec asks otherwise: code in it is",
+  "  built on - its structure, conventions and tests kept, its tests passing - and a file in it is used from its path,",
+  "  never copied, moved or made again.",
+];
 
 /** How to work, for any agent writing code in this codebase from a spec. `mechanical`: the job writes no new tests. */
 function workingRules(hasCodebase: boolean, mechanical = false): string[] {
@@ -288,6 +318,8 @@ export interface SpecDiffPromptInput {
   cases?: JobCases;
   /** The module each definition and req belongs to: see `sectionModules`. */
   modules?: SectionModules;
+  /** The base folder the codebase started from, and the files from it it has still (base-folder.ts). */
+  base?: { folder: string; files: string[] };
 }
 
 /**
@@ -307,6 +339,8 @@ export function reviewedSpec(input: {
   change?: string;
   /** The module each definition and req belongs to: see `sectionModules`. */
   modules?: SectionModules;
+  /** The base folder the codebase started from, and the files from it it has still (base-folder.ts). */
+  base?: { folder: string; files: string[] };
 }): string {
   const { specifications } = input;
   const functionalities = specifications[FUNCTIONAL_REQUIREMENTS] ?? [];
@@ -317,6 +351,14 @@ export function reviewedSpec(input: {
     moduleSection(DEFINITIONS, specifications[DEFINITIONS] ?? [], input.moduleName, input.modules),
     moduleSection(NON_FUNCTIONAL_REQUIREMENTS, specifications[NON_FUNCTIONAL_REQUIREMENTS] ?? [], input.moduleName, input.modules),
     alreadyImplemented(input.moduleName, functionalities, input.funcIds, required),
+    // What came from the base folder is the codebase's start, not this work: kept, it is neither scope crept in nor left over.
+    ...(input.base !== undefined
+      ? [
+          baseFolderBlock(input.base),
+          "What came from the base folder is not this work's: a file from it that no functional spec names is kept as it is -",
+          "not scope crept in, nor something left to clean up. A change to it, or its removal, that no functional spec asks for is.",
+        ]
+      : []),
     "<new in this work>",
     specChangeBlock(input.change ?? "(the change is not known)"),
     "</new in this work>",
@@ -518,7 +560,9 @@ export function buildSpecDiffPrompt(input: SpecDiffPromptInput): string {
     "",
     input.empty
       ? "Nothing is built yet: the working directory is empty, and the change is the whole specification."
-      : "The working directory holds the code built so far, from the specs below - the specs before the change.",
+      : input.base !== undefined && input.funcIds.length === 0 && input.required.length === 0
+        ? "Nothing is built from the specification yet: the working directory holds what the base folder had (<base folder> below), and the change is the whole specification."
+        : "The working directory holds the code built so far, from the specs below - the specs before the change.",
     "The specification the code is built from follows - its functional specs in <already implemented> - and then",
     "<spec change>, the change to it, section by section: the specification below with the change applied is what the",
     "code has to do once you are done. Your task is to apply the change to the code - everything it adds, changes and",
@@ -528,19 +572,21 @@ export function buildSpecDiffPrompt(input: SpecDiffPromptInput): string {
     moduleSection(NON_FUNCTIONAL_REQUIREMENTS, specifications[NON_FUNCTIONAL_REQUIREMENTS], input.moduleName, input.modules),
     all.length === 0 ? null : `<already implemented>\n${functionalitiesByModule(all, input.moduleName, "implemented")}\n</already implemented>`,
     input.codebase ? `<codebase>\n${input.codebase}\n</codebase>` : null,
+    baseFolderBlock(input.base),
     linkedResourcesSection(input.linkedResources),
     input.changes !== undefined && input.changes.length > 0
       ? specChangeBlock(describeSpecChange(input.changes, input.moduleName))
       : `<spec change>\n${RAW_CHANGE_NOTE}\n\n${withoutTestPlainFiles(input.diff).trim()}\n</spec change>`,
     "",
     ...(input.cases !== undefined
-      ? codeCasesBlock(input.cases)
+      ? codeCasesBlock(input.cases, input.base !== undefined)
       : [
           "- Implement what the change adds. Update what it changes. Remove what it removes - its code and its",
           "  unit tests - where nothing that remains still needs it.",
           "- A change to a definition or an implementation req reaches every functional spec that relies on it. Follow it there.",
         ]),
     "- Everything the change does not touch must keep working, and its tests passing.",
+    ...(input.base !== undefined ? BASE_FOLDER_RULES : []),
     ...workingRules(Boolean(input.codebase), input.cases?.mechanical === true),
   ];
   return parts.filter((part): part is string => part !== null).join("\n");
@@ -818,6 +864,8 @@ export interface RegressionFixPromptInput {
   required?: RequiredSpec[];
   /** The module each definition and req belongs to: see `sectionModules`. */
   modules?: SectionModules;
+  /** The base folder the codebase started from, and the files from it it has still (base-folder.ts). */
+  base?: { folder: string; files: string[] };
 }
 
 /**
@@ -841,6 +889,7 @@ export function buildRegressionFixPrompt(input: RegressionFixPromptInput): strin
     // All of it is in the code, the required modules' functionalities included, and any of it
     // may be what the latest change broke.
     alreadyImplemented(input.moduleName, specifications[FUNCTIONAL_REQUIREMENTS], input.funcIds, input.required ?? []),
+    baseFolderBlock(input.base),
     `<conformance failure>\n${input.failure}\n</conformance failure>`,
     "",
     "Change the implementation so every functionality listed as already implemented works at the same time.",
@@ -850,6 +899,7 @@ export function buildRegressionFixPrompt(input: RegressionFixPromptInput): strin
     "- Do not special-case the test. Make the behaviour the specification describes actually true.",
     "- Keep the existing unit tests passing. Run any tests you like with bash; before you finish, call",
     "  run_conformance_tests and run_unit_tests - the project's scripts, run as the harness runs them.",
+    ...(input.base !== undefined ? BASE_FOLDER_RULES : []),
     ...INTEGRITY_RULES,
     ...ERROR_CAUSE_RULES,
     "- Keep the build's identity as it is: its name, coordinates, version, package and main class. Change one only",
