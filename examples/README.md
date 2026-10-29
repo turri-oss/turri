@@ -6,7 +6,7 @@ Each example is software that grows while you talk about it. You start with one 
 | --- | --- | --- |
 | [guestbook](guestbook.md) | a backend API that keeps messages, and a dedicated frontend to read and sign it | a backend and a frontend as two modules regenerating side by side, a feature added while the first pulse runs, a rule changed inside a running pulse |
 | [tidy](tidy.md) | a command-line tool that sorts a folder of files into subfolders | trying the first command while the next is still regenerating, and dropping a feature mid-build |
-| [shorty](shorty.md) | a backend service: a URL shortener with click counts | conformance tests growing with the code - written for each feature once it is built, and the whole suite kept passing as more lands |
+| [shorty](shorty.md) | a backend service: a URL shortener with click counts | conformance tests where they matter, without asking - the test advisor picks the features that need them, and the whole suite is kept passing as more lands |
 
 New to **turri**? Start with [guestbook](guestbook.md): it is the quickest.
 

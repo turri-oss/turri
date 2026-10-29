@@ -64,5 +64,5 @@ It starts at once, and the code it deletes stays in `/lineage`. The new code wil
 
 ## Where next
 
-- [shorty](shorty.md) - conformance tests growing with the code.
+- [shorty](shorty.md) - conformance tests where they matter, decided for you.
 - [The standard library](../docs/authoring-plain.md#the-standard-library) - every stack, and what each settles.

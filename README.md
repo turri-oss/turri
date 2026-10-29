@@ -151,14 +151,14 @@ Then say what you want:
 
 > A small API where people can register and sign in, in Python.
 
-In a new project **turri** starts it itself, without asking how: it chooses the stack - the one you name, else a standard library stack this machine can build - writes the module and its unit testing script (and the conformance tests' when you ask for them), regenerates the smallest thing that runs at once, then the main thing you described, and says what it chose and what it would write next. Every change after is yours to ask for: **turri** writes it as \*\*\*plain and regenerates it. While it works:
+In a new project **turri** starts it itself, without asking how: it chooses the stack - the one you name, else a standard library stack this machine can build - writes the module and its unit testing script (and the conformance tests' when you ask for them, or the [test advisor](docs/test-advisor.md) finds a functional spec that needs them), regenerates the smallest thing that runs at once, then the main thing you described, and says what it chose and what it would write next. Every change after is yours to ask for: **turri** writes it as \*\*\*plain and regenerates it. While it works:
 
 - the **panel** above the input shows every build - its stage, what its agents are doing, its model and cost - and the queue behind it;
 - ask to try it at any time - "let me try it" - and **`release`** puts what is built so far in `dist/<module>` and **`activate`** starts it, installing what it needs - nothing to approve;
 - the **side panel** (`ctrl+h`) takes the screen and opens on **regen** - \*\*\*plain, every item marked planned, working, regenerated, validating, conform or needs you - and `p` turns it to the **pulses** (`/pulses`) - every pulse, running, queued and finished, and what each regenerates; what its agents did is in each pulse's log in `.turri/jobs/`, kept with `--debug` (`debug: true`);
 - **`/halt`** halts a pulse, **`/lineage`** shows every generation of a module, and the **`drift`** tool says what is left to regenerate;
 - **`/btw <question>`** asks turri something on the side - answered at once, even while a question waits for you (typed as the answer, under "Something else…"), and left out of the conversation;
-- **`/turri-config`** changes any setting of the project's `config.turri.yaml` - the models, review, conformance tests, how many pulses at once - and says when it takes effect: now, at your next message, or at the next pulse. No restart: `/turri-config review false`, or `/turri-config` alone to pick from the list;
+- **`/turri-config`** changes any setting of the project's `config.turri.yaml` - the models, review, the test advisor, how many pulses at once - and says when it takes effect: now, at your next message, or at the next pulse. No restart: `/turri-config review false`, or `/turri-config` alone to pick from the list;
 - **`/sentinel`** says whether the sentinel checks every pulse that finishes: `ask` (you are asked before it first opens), `on` or `off`;
 - **`/stack`** chooses the stack to build with, in a project whose backend and frontend each have their own testing scripts in `config.turri.<stack>.yaml` - `/stack backend`, `/stack none` - for the session (`--stack <name>` on the command line). The chat's model builds each part with its own stack by itself, pinned to that module's pulses.
 
@@ -190,7 +190,7 @@ Start at the [documentation index](docs/README.md), or go straight to a page:
 | | |
 | --- | --- |
 | [Installation](docs/installation.md) | doctor, what turri needs of this machine, **turri** and `pi`, environment variables |
-| [Examples](examples/README.md) | projects to build with turri step by step: guestbook - a backend and a frontend in minutes - a CLI, and a backend service with conformance tests |
+| [Examples](examples/README.md) | projects to build with turri step by step: guestbook - a backend and a frontend in minutes - a CLI, and a backend service tested where it matters |
 | [Using **turri**](docs/using.md) | the conversation, skills, tools, pulses and regen, choosing models, the command line |
 | [The project config](docs/config.md) | `config.turri.yaml` and each stack's `config.turri.<stack>.yaml`: every key, models and their inheritance, conformance, the testing scripts, stacks and choosing one, the old `config.yaml` |
 | [Deploy](docs/deploy.md) | trying what is built: the last commit in `dist/<module>`, started on your machine, nothing installed without asking |
