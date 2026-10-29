@@ -469,7 +469,8 @@ export interface ProjectConfig {
   /**
    * Whether the test advisor starts by itself: in the chat and a host, each new or changed functional spec with no
    * scenarios is classified in the background, and on a yes the chat writes its scenarios (docs/test-advisor.md). false
-   * turns off only that: asked for scenarios, the chat writes them as before. Unset: true.
+   * turns off only that: the chat's evaluate_tests still works, and asked for scenarios, the chat writes them as before.
+   * Unset: true.
    */
   testAdvisor?: boolean;
   /**

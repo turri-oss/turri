@@ -89,6 +89,24 @@ export interface TestAdvisor {
   stop(): void;
   /** The functional specs it is judging for now, or about to - `module:func-id`, a project's alone when named. */
   taking(project?: string): string[];
+  /**
+   * The chat's own way in (evaluate_tests): a functional spec evaluated now - even a text already judged, and whatever
+   * `test-advisor` says - its verdict handed on as any is. `already`: it is being evaluated now; `scenarios`: it has some,
+   * and is not evaluated; `missing`: its module has no such functional spec.
+   */
+  evaluate(asked: EvaluateRequest): "started" | "already" | "scenarios" | "missing";
+}
+
+/** A functional spec the chat asks the advisor to evaluate. */
+export interface EvaluateRequest {
+  module: string;
+  funcId: string;
+  /** The module's .plain file. */
+  plainFile: string;
+  /** The tip its scenarios are tested in. Default: the one the advisor last knew, else the module itself. */
+  tip?: string;
+  /** Why the chat asks - "the coding agent failed three times to implement it" - for the classifier, as context. */
+  reason?: string;
 }
 
 interface Work {
@@ -103,6 +121,8 @@ interface Work {
   controller: AbortController;
   /** Thrown away: its text changed while it ran. */
   dropped?: boolean;
+  /** At the chat's asking, with why: run whatever `test-advisor` says. */
+  asked?: { reason?: string };
 }
 
 /** The functional spec's own place in a module, as its own .plain file has it now - or nothing. */
@@ -169,19 +189,21 @@ export function createTestAdvisor(options: TestAdvisorOptions = {}): TestAdvisor
     }
   };
 
-  /** Take a functional spec, marked pending at once - unless the same text is taken already. */
-  const take = (given: Omit<Work, "key" | "controller">) => {
+  /** Take a functional spec, marked pending at once - unless the same text is taken already. Whether it was taken. */
+  const take = (given: Omit<Work, "key" | "controller">): boolean => {
     const key = keyOf(given.project, given.module, given.funcId);
     drop(key, given.hash);
-    if (queue.some((work) => work.key === key) || running.get(key)?.hash === given.hash) return;
+    if (queue.some((work) => work.key === key) || running.get(key)?.hash === given.hash) return false;
     putAdvisorEntry(given.project, given.module, relative(given.project, given.plainFile), {
       funcId: given.funcId,
       hash: given.hash,
       state: "pending",
       tip: relative(given.project, given.tip),
+      ...(given.asked !== undefined ? { asked: given.asked } : {}),
     });
     queue.push({ ...given, key, controller: new AbortController() });
     pump();
+    return true;
   };
 
   const pump = () => {
@@ -244,7 +266,8 @@ export function createTestAdvisor(options: TestAdvisorOptions = {}): TestAdvisor
       });
     };
     try {
-      if (!enabled(work.project)) return;
+      // The setting turns off only what a change starts: the chat's asking stands.
+      if (work.asked === undefined && !enabled(work.project)) return;
       const subject: AdvisorSubject = {
         module: work.module,
         funcId: work.funcId,
@@ -252,10 +275,11 @@ export function createTestAdvisor(options: TestAdvisorOptions = {}): TestAdvisor
         moduleText: readFileSync(work.plainFile, "utf8"),
         ...(resolve(work.tip) !== resolve(work.plainFile) && existsSync(work.tip) ? { testedIn: { module: basename(work.tip).replace(/\.plain$/, ""), text: readFileSync(work.tip, "utf8") } } : {}),
         context: [...agentsText(work.project), ...(options.context?.(work.plainFile) ?? [])],
+        ...(work.asked?.reason !== undefined ? { reason: work.asked.reason } : {}),
       };
       const report = await advise(subject, { cwd: work.project, ...(model !== undefined ? { model } : {}) });
       if (work.controller.signal.aborted) throw new Error("stopped");
-      record({ kind: "advisor.classified", spec: spec(work), verdict: report.verdict, questions: report.questions.map((answered) => answered.question) }, place(work));
+      record({ kind: "advisor.classified", spec: spec(work), verdict: report.verdict, questions: report.questions.map((answered) => answered.question), asked: work.asked !== undefined }, place(work));
       // A yes is kept undelivered until a chat has it; a no is only a line, and nothing is lost when it is not drawn.
       entryOf(report.verdict, { report, ...(report.verdict === "yes" && options.onVerdict !== undefined ? { undelivered: true } : {}) });
       handOn({ project: work.project, module: work.module, funcId: work.funcId, plainFile: work.plainFile, tip: work.tip, hash: work.hash, report });
@@ -305,8 +329,11 @@ export function createTestAdvisor(options: TestAdvisorOptions = {}): TestAdvisor
       }
     },
     resume(project) {
-      if (stopped || !enabled(project)) return;
+      if (stopped) return;
+      // With the setting off, only what the chat asked for is picked up.
+      const wants = enabled(project);
       for (const pending of pendingEntries(project)) {
+        if (!wants && pending.entry.asked === undefined) continue;
         const plainFile = resolve(project, pending.plainFile);
         const item = currentItem(plainFile, pending.entry.funcId);
         // Gone, or given scenarios meanwhile: nothing is left to pick up.
@@ -315,7 +342,16 @@ export function createTestAdvisor(options: TestAdvisorOptions = {}): TestAdvisor
           continue;
         }
         const text = item.markdown.trim();
-        take({ project, module: pending.module, funcId: item.id, plainFile, tip: resolve(project, pending.entry.tip ?? pending.plainFile), text, hash: textHash(text) });
+        take({
+          project,
+          module: pending.module,
+          funcId: item.id,
+          plainFile,
+          tip: resolve(project, pending.entry.tip ?? pending.plainFile),
+          text,
+          hash: textHash(text),
+          ...(pending.entry.asked !== undefined ? { asked: pending.entry.asked } : {}),
+        });
       }
       // A yes no chat had when turri quit: handed on now, while it is still about the functional spec as it is.
       for (const kept of undeliveredEntries(project)) {
@@ -336,6 +372,20 @@ export function createTestAdvisor(options: TestAdvisorOptions = {}): TestAdvisor
     taking(project) {
       const mine = (work: Work) => project === undefined || resolve(work.project) === resolve(project);
       return [...new Set([...running.values(), ...queue].filter(mine).map((work) => `${work.module}:${work.funcId}`))];
+    },
+    evaluate(asked) {
+      const plainFile = resolve(asked.plainFile);
+      const project = projectDirOf(plainFile);
+      const item = currentItem(plainFile, asked.funcId);
+      if (item === undefined) return "missing";
+      if (hasScenarios(item)) return "scenarios";
+      const text = item.markdown.trim();
+      const hash = textHash(text);
+      const known = advisorEntry(project, asked.module, asked.funcId);
+      const tip = asked.tip ?? (known?.tip !== undefined ? resolve(project, known.tip) : plainFile);
+      const reason = asked.reason?.trim();
+      const taken = take({ project, module: asked.module, funcId: asked.funcId, plainFile, tip: resolve(tip), text, hash, asked: reason !== undefined && reason !== "" ? { reason } : {} });
+      return taken ? "started" : "already";
     },
     stop() {
       stopped = true;

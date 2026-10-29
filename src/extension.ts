@@ -39,7 +39,7 @@ import { whyFailed } from "./regenerate/diagnose-job.ts";
 import { createWorkLoop, describeModules, isUpToDate, previewJobs, type WorkLoop } from "./regenerate/loop.ts";
 import { createTestAdvisor, type TestAdvisor } from "./regenerate/advisor-runs.ts";
 import { advisorDir } from "./regenerate/advisor-records.ts";
-import { bindAdvisor, TEST_ADVISOR_BLOCK, verdictDelivery } from "./advisor-chat.ts";
+import { bindAdvisor, evaluateTestsTool, TEST_ADVISOR_BLOCK, verdictDelivery } from "./advisor-chat.ts";
 import { brandNeon, brandPink, plainPaint } from "./regenerate/plain-palette.ts";
 import { halfBlocks, JELLYFISH_FRAME_MS, JELLYFISH_REST, JELLYFISH_SEQUENCE, JELLYFISH_TEXT_FRAMES } from "./jellyfish.ts";
 import { createJobPanel, didNotPass, keyPressed, PANEL_KEY, spinner } from "./regenerate/job-panel.ts";
@@ -755,6 +755,8 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
   registerSteering(pi, cwd);
   registerSideQuestions(pi, cwd, jobs);
   registerStacks(pi, cwd);
+  // The chat's own way to the test advisor, while the session has one - whatever test-advisor says.
+  if (sessionAdvisor(session) !== undefined) pi.registerTool(evaluateTestsTool({ cwd, advisor: () => sessionAdvisor(session) }));
   // More chats beside this one, in the terminal: /chat, alt+n, alt+1…9 (chat-commands.ts).
   if (session.terminal) registerChats(pi, session);
 

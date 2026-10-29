@@ -54,6 +54,8 @@ export interface AdvisorEntry {
   tip?: string;
   /** A yes not yet handed to a chat: delivered at the next start, as `pending` work is picked up. */
   undelivered?: boolean;
+  /** Pending at the chat's asking (evaluate_tests), with why: picked up at the next start whatever `test-advisor` says. */
+  asked?: { reason?: string };
 }
 
 export interface AdvisorFile {

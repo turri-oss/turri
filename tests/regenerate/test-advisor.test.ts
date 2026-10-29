@@ -8,15 +8,15 @@ type StubSession = { tools: Array<{ name: string; execute: (...args: unknown[]) 
 
 /** What each call answers with, by the end of its label. */
 let answers: Record<string, unknown> = {};
-/** The labels of the calls made, in order, and each one's role and system prompt. */
-const made: Array<{ label: string; role?: string; system?: string }> = [];
+/** The labels of the calls made, in order, and each one's role, system prompt and task. */
+const made: Array<{ label: string; role?: string; system?: string; task?: string }> = [];
 
 vi.mock("../../src/pi.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/pi.ts")>();
   return {
     ...actual,
-    createExecutor: vi.fn(async (opts: { customTools: StubSession["tools"]; label: string; system?: string; role?: string }) => {
-      made.push({ label: opts.label, role: opts.role, system: opts.system });
+    createExecutor: vi.fn(async (opts: { customTools: StubSession["tools"]; label: string; system?: string; role?: string; task?: string }) => {
+      made.push({ label: opts.label, role: opts.role, system: opts.system, task: opts.task });
       return { tools: opts.customTools, label: opts.label, system: opts.system, dispose() {} };
     }),
     ask: vi.fn(async (session: StubSession) => {
@@ -74,6 +74,16 @@ describe("classifying a functional spec", () => {
 
   it("fails when the classifier never answers", async () => {
     await expect(classify(subject, options)).rejects.toThrow("gave no answer");
+  });
+
+  it("gives the classifier the chat's reason for asking, as context, and nothing when there is none", async () => {
+    answers = { classifying: { silent_failure: no, divergence: no, revisited: no, cost: no } };
+    await classify({ ...subject, reason: "the coding agent failed three times to implement it" }, options);
+    expect(made[0]!.task).toContain("<why it was asked for>\nthe coding agent failed three times to implement it\n</why it was asked for>");
+    expect(made[0]!.task).toContain("This is context, not evidence");
+    made.length = 0;
+    await classify(subject, options);
+    expect(made[0]!.task).not.toContain("<why it was asked for>");
   });
 });
 

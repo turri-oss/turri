@@ -4,6 +4,8 @@ Which functional specs need explicit testing scenarios is not obvious, and not e
 
 ## When it runs
 
+**Two ways in.** By itself, for every new or changed functional spec without scenarios, as below. And when the chat asks, with `evaluate_tests` - see [asking for an evaluation](#asking-for-an-evaluation).
+
 **Only in the chat and a host.** Never in a headless command - `turri regenerate`, `conform`, `change-plain` and the rest - and never in [pi](https://pi.dev)'s print, json and rpc modes (`turri -p`), which end when the answer is printed. That is decided where the session starts: the terminal's chat and a host's session have one, nothing else does.
 
 **What it looks at:** a functional spec, in any module, that is new or whose text changed since its code was built - measured against the code record, what the code was built from: text that differs from the record, or a functional spec not built yet. Then against the advisor's file: a text already looked at, under its hash, is not looked at again. So a fresh project's first functional specs are looked at, and a project already built that has no advisor file gets no backlog: only what changes from now on is.
@@ -40,6 +42,15 @@ Asked for scenarios - "write conformance scenarios for core:add-task" - the chat
 
 A host gets the verdicts in its chats the same way - see [hosting](hosting.md).
 
+## Asking for an evaluation
+
+The chat has a tool of its own, `evaluate_tests`: the functional specs as `module:func-id`s - or func-ids, with `plain_file` - and an optional `reason`. It returns at once - "Testing scenarios for core:add-task are being evaluated in the background; the verdict comes back to this chat." - and the verdict comes back as any verdict does. The chat calls it:
+
+- when you ask whether something needs tests - "does add-task need tests?";
+- on its own, as another way of saying what a functional spec means: when pulses keep failing on a complicated one, say, scenarios may pin down what it should do.
+
+It evaluates even a text the advisor already judged. A functional spec being evaluated already is not started twice, and one that has scenarios is answered at once as such and not evaluated. It works whatever `test-advisor` says. The `reason` - "the coding agent failed three times to implement it" - reaches the classifier as context, never as evidence.
+
 ## How it decides
 
 Every step is a plain model call on the advisor's model, answered through one tool and checked by turri - none of them is a skill, and none can touch the project. Each is given the functional spec, its module whole - and for a module below, the tip its scenarios are tested in, whose own functional specs show in the same commands - and the project's own words on what matters: its `AGENTS.md`, and what you said in the conversation about how the work is to be planned. There is no keyword filter and no confidence score.
@@ -66,7 +77,7 @@ The **report** is what the advisor's file keeps: the questions that were a yes w
 
 ## The setting and its model
 
-`test-advisor: true | false` in `config.turri.yaml`, `true` when it is left out - `/turri-config` sets it. `false` turns off only the advisor's own start: asked for scenarios, the chat writes them as it always has, whatever the setting says.
+`test-advisor: true | false` in `config.turri.yaml`, `true` when it is left out - `/turri-config` sets it. `false` turns off only the advisor's own start: `evaluate_tests` still works, and asked for scenarios, the chat writes them as it always has, whatever the setting says.
 
 Every call the advisor makes runs on `models.advisor` - see [models per role](config.md#models-per-role). Without one it runs on `default`'s model, else the coding model alone, thinking low.
 
@@ -82,6 +93,7 @@ What the advisor made of each functional spec is in `.turri/advisor/<module>.jso
 | `model`, `at` | what it ran on, and when |
 | `tip` | the module at the top of its chain, where its scenarios are tested |
 | `undelivered` | a yes no chat has had yet: delivered at the next start |
+| `asked` | pending at the chat's asking, with its reason: picked up at the next start whatever `test-advisor` says |
 
 Deleting the folder loses only what the advisor knows: an entry that is not there is a functional spec it has not looked at.
 
@@ -91,6 +103,6 @@ Three facts go into [the ledger](using.md#the-ledger), the report staying in the
 
 | event | |
 | --- | --- |
-| `advisor.classified` | the functional spec, `module:func-id`, its verdict and the questions that were a yes |
+| `advisor.classified` | the functional spec, `module:func-id`, its verdict, the questions that were a yes, and whether the chat asked for it (`asked: true`) or a change started it |
 | `advisor.dropped` | the work on a functional spec thrown away, its text changed while it ran |
 | `advisor.failed` | why it failed |

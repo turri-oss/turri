@@ -26,6 +26,7 @@ While a skill runs, a line above the input shows its phases, every one by name -
 | `glimpse` | the pulse a module's codebases would start next, and the whole prompt its coding agent would get - starting nothing |
 | `steer` | say how the work is planned - which functional specs go together, what first - for the project or one module, for the session; the next plan follows it, beside what AGENTS.md says under a heading naming the queue |
 | `conform` | write and run conformance tests for functional specs - now, or ahead of their code: every one tested in one conformance pulse, as far as a size guardrail lets (or one a functional spec, or a pulse each of groups you name - 1-3 and 4-6 - when you ask for that), started once every one named is regenerated; whatever the config says |
+| `evaluate_tests` | have the [test advisor](test-advisor.md) judge whether functional specs need explicit testing scenarios, in the background - returning at once, the verdict coming back to the chat; whatever `test-advisor` says |
 | `validate` | validate \*\*\*plain, regenerating nothing - a module whose functional specs have scenarios but which has no test reqs, or no conformance testing script for its stack, passes with a warning naming the next step (see [the steps of adding tests](regenerating.md#the-steps-of-adding-tests)) |
 | `engine` | show or choose the model the code is regenerated on - see [below](#choosing-a-model) |
 | `pulses` | the pulses - running, planned and finished - or one of them |

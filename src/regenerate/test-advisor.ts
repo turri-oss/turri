@@ -30,6 +30,8 @@ export interface AdvisorSubject {
   context: string[];
   /** A module below's: the tip its scenarios are tested in - built on it, its own functional specs beside it. */
   testedIn?: { module: string; text: string };
+  /** Why the chat asked for the evaluation (evaluate_tests) - "the coding agent failed three times to implement it" - for the classifier, as context. */
+  reason?: string;
 }
 
 export interface AdvisorCallOptions {
@@ -178,6 +180,9 @@ function classifyPrompt(subject: AdvisorSubject): string {
     "functionality where a wrong implementation would go unnoticed, where readers would disagree, or where a bug is costly.",
     "",
     ...subjectBlock(subject),
+    ...(subject.reason !== undefined && subject.reason.trim() !== ""
+      ? ["", "<why it was asked for>", subject.reason.trim(), "</why it was asked for>", "This is context, not evidence: answer the questions from the functional spec, its module and the project."]
+      : []),
     "",
     "Answer four questions about the functional spec. Each yes needs concrete evidence; without it, answer no.",
     "1. silent_failure: could an incorrect implementation give output that looks plausible but is wrong? Evidence: one such",

@@ -11,7 +11,7 @@ type Handler = (event: unknown, ctx: unknown) => unknown;
 type Sent = { customType: string; content: string; display: boolean; options?: { triggerTurn?: boolean; deliverAs?: string } };
 
 /** A chat's session: what turri sent it, the entries it drew in it, its handlers, and the session itself. */
-type Session = { sent: Sent[]; entries: Array<{ type: string; data: unknown }>; handlers: Map<string, Handler[]>; session: { isStreaming: boolean } };
+type Session = { sent: Sent[]; entries: Array<{ type: string; data: unknown }>; handlers: Map<string, Handler[]>; tools: string[]; session: { isStreaming: boolean } };
 
 const sessions: Session[] = [];
 
@@ -45,7 +45,7 @@ vi.mock("@earendil-works/pi-coding-agent", async (actual) => {
         abortBash: () => {},
         dispose: () => {},
       };
-      const state: Session = { sent: [], entries: [], handlers: new Map(), session };
+      const state: Session = { sent: [], entries: [], handlers: new Map(), tools: [], session };
       sessions.push(state);
       const api = new Proxy(
         {},
@@ -59,7 +59,9 @@ vi.mock("@earendil-works/pi-coding-agent", async (actual) => {
                   ? (event: string, handler: Handler) => state.handlers.set(event, [...(state.handlers.get(event) ?? []), handler])
                   : key === "getAllTools"
                     ? () => []
-                    : () => undefined,
+                    : key === "registerTool"
+                      ? (tool: { name: string }) => state.tools.push(tool.name)
+                      : () => undefined,
         },
       );
       for (const factory of resourceLoader.factories) factory(api);
@@ -244,6 +246,13 @@ describe("the test advisor's verdicts in a host's chat", () => {
     await settle();
     expect(sessions[0]!.sent.map((sent) => sent.customType)).toEqual(["turri_advisor_verdict"]);
     expect(early.told).toBe(1);
+  });
+
+  it("gives a host's chat evaluate_tests, whatever test-advisor says", async () => {
+    writeFileSync("config.turri.yaml", "sentinel: false\ntest-advisor: false\n");
+    const turri = await createTurri();
+    await turri.openChat();
+    expect(sessions[0]!.tools).toContain("evaluate_tests");
   });
 
   it("tells the chat's agent of the advisor, and that it alone writes scenarios, while the project wants the advisor", async () => {

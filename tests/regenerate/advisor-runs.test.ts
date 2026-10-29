@@ -98,7 +98,7 @@ describe("which functional specs the test advisor takes", () => {
     expect(asked[0]!.text).toBe("Say hello.");
     expect(advisorEntry(dir, "app", "say-hello")).toMatchObject({ state: "no", tip: "app.plain" });
     expect(events.map((event) => event.kind)).toEqual(["advisor.classified"]);
-    expect(events[0]).toMatchObject({ spec: "app:say-hello", verdict: "no", questions: [], module: "app" });
+    expect(events[0]).toMatchObject({ spec: "app:say-hello", verdict: "no", questions: [], asked: false, module: "app" });
 
     // A project built before, with no advisor file: what is built as it is now is not looked at - no backlog.
     rmSync(join(dir, ".turri", "advisor"), { recursive: true, force: true });

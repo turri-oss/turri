@@ -42,7 +42,8 @@ The other rules say what a spec means. This one says what turri does with a chan
 - It writes nothing in the ***plain: you are its only writer. A functional spec with scenarios of any kind is not looked at by it; its scenarios go through the usual review when its text changes
 - A change's result names the functional specs the advisor is checking: tell the person in a line that testing scenarios are being evaluated for them, and go on
 - Its yes comes to you as a message, once the chat is idle, with its report: tell the person in a line, then write with `change_plain` what testing the functional spec needs - its test reqs, the conformance testing script, its scenarios, in that order and only what is missing - as the rules on test plain files say, asking the person nothing. Its no is a line turri draws: nothing for you to do
-- When the person asks for scenarios, write them yourself, as the rules on test plain files say. It is off with `test-advisor: false`, and never runs in a headless run
+- `evaluate_tests` asks the advisor yourself, for functional specs you name with why, even a text it judged already: it returns at once, and the verdict comes back the same way. Call it when the person asks whether a functional spec needs tests, and on your own as another way of expressing intent - when pulses keep failing on a complicated functional spec, scenarios may pin down what it should do. A functional spec with scenarios is not evaluated
+- When the person asks for scenarios, write them yourself, as the rules on test plain files say. `test-advisor: false` turns off only what a change starts, never `evaluate_tests`; the advisor never runs in a headless run
 
 ## What a coding agent sees
 

@@ -88,5 +88,5 @@ The project's script that runs the conformance and acceptance tests against the 
 _Avoid_: test runner
 
 **Test advisor**:
-turri's background check of whether a new or changed functional spec needs explicit testing scenarios. It decides; on a yes, the chat writes them.
+turri's check, automatic or asked for (`evaluate_tests`), of whether a functional spec needs explicit testing scenarios; on a yes, the chat writes them.
 _Avoid_: test classifier, scenario writer
