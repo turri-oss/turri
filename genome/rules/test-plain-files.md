@@ -10,6 +10,7 @@ A test plain file holds the test scenarios of one functional spec. Conformance s
 - Every test plain file of a module lives in `tests/<module>/`, with `tests/` beside the module (`test-dir:` in `config.turri.yaml` can name another folder). This is a rule, not a convention: a file's folder matches its `module:`, and a `.plain` file in `tests/` outside a module's folder is an error `turri validate` reports
 - Name the file after its functional spec, `tests/<module>/<func-id>.plain`; the name is convention, the frontmatter is what binds it
 - A functional spec with no scenarios has no test plain file: it is not tested. Write one only to give a functional spec scenarios, and never an empty one - an empty file says no more than none, and is one more file to keep in step
+- When turri's test advisor's yes arrives for a functional spec, you add its test plain file, with the test reqs and conformance testing script it needs (see `turri-regeneration.md`) - as below, asking nothing
 - More than one test plain file may bind to one functional spec: their scenarios are merged, and the scenario-ids must be unique across them. Write one file per functional spec, and keep a person's extra files as they are
 - A test plain file is never a module: never import or require one, and never name one where a module is asked for
 

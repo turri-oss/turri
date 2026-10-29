@@ -18,7 +18,7 @@ import { refuseTestPlainFile } from "./test-plain-files.ts";
  * A finished verdict reaches the chat the person looks at once it is idle - never interrupting it: a yes is a message
  * that starts a turn, in which the chat tells the person and writes the scenarios with change_plain, asking nothing; a
  * no is one line drawn by turri, starting no turn. What else the chat is told of the advisor - in its system prompt, in a
- * change's result - is here too.
+ * change's result - is here too, and its own way to it, evaluate_tests.
  */
 
 /** Why, in a few words, by the first question of a yes. */
@@ -177,19 +177,24 @@ export function verdictDelivery(pi: ExtensionAPI, link: ChatLink, context: () =>
   };
 }
 
-/** The test advisor and the chat, in its system prompt while the session has the advisor and the project wants it. */
+/**
+ * The test advisor and the chat, in its system prompt while the session has the advisor and the project wants it: the
+ * two ways an evaluation starts, what to say while it runs, what to do with its verdict, and when to ask for one.
+ */
 export const TEST_ADVISOR_BLOCK = [
   "<test advisor>",
-  "My test advisor checks each new or changed functional spec that has no scenarios, in the background, for whether it needs explicit testing",
-  "scenarios - it could fail silently, be read two ways, or cost a lot when wrong. It writes nothing: you are the only writer of the ***plain.",
-  "- A change's result names the functional specs it is checking: tell the person, in a line, that testing scenarios are being evaluated for",
-  "  them, and go on - there is nothing to wait for.",
-  "- A yes comes to you as a message: tell the person in a line, and write the test reqs, conformance testing script and scenarios it needs",
-  "  with change_plain, as it says - asking the person nothing.",
+  "My test advisor decides whether a functional spec needs explicit testing scenarios - whether it could fail silently, be read two ways, or",
+  "cost a lot when wrong - in the background. You are the only writer of the ***plain: it writes nothing, and you write what its yes calls for.",
+  "An evaluation starts two ways:",
+  "- By itself, for each new or changed functional spec that has no scenarios. A change's result names the ones it took up.",
+  "- When you call evaluate_tests - even for a text it judged already. Call it when the person asks whether a functional spec needs tests,",
+  "  and on your own, as another way of saying what one means: when pulses keep failing on a complicated functional spec, scenarios may pin",
+  "  down what it should do - say why in its reason. A functional spec with scenarios is not evaluated.",
+  "When a change's result or evaluate_tests says a functional spec is being evaluated, tell the person so in a line, and go on: nothing waits",
+  "for it. Its verdict comes back to this chat once you are idle:",
+  "- A yes is a message with its report: tell the person in a line, then write with change_plain what testing it needs - the test reqs, the",
+  "  conformance testing script and its scenarios, in that order and only what is missing - as the message says, asking the person nothing.",
   "- A no is a line turri draws itself: there is nothing for you to do.",
-  "- evaluate_tests starts an evaluation yourself, returning at once - its verdict comes back the same way. Call it when the person asks whether",
-  "  a functional spec needs tests, and on your own as another way of saying what one means: when pulses keep failing on a complicated",
-  "  functional spec, scenarios may pin down what it should do - say why in its reason. It evaluates even a text already judged.",
   "When the person asks you for scenarios (\"write conformance scenarios for core:add-task\"), decide and write them yourself, with change_plain,",
   "as a ***plain change they see, as the rules say - whatever test-advisor says.",
   "</test advisor>",

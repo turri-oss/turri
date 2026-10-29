@@ -1,20 +1,20 @@
 # The test advisor
 
-Which functional specs need explicit testing scenarios is not obvious, and not every one should be tested - only the functionality that matters. The test advisor decides for you: when a functional spec is new or its text changed and it has no scenarios, turri checks in the background whether it needs testing. When it does, the chat you are looking at tells you so and writes what testing it takes - the \*\*\*test reqs\*\*\*, the conformance testing script and its scenarios - so the module's conformance pulse runs once its code is built. The advisor decides; the chat is the only writer of the \*\*\*plain. You are never asked anything.
+Which functional specs need explicit testing scenarios is not obvious, and not every one should be tested - only the functionality that matters. The test advisor decides for you: when a functional spec is new or its text changed and it has no scenarios - or when the chat asks - turri checks in the background whether it needs testing. When it does, the chat you are looking at tells you so and writes what testing it takes - the \*\*\*test reqs\*\*\*, the conformance testing script and its scenarios - so the module's conformance pulse runs once its code is built. The advisor decides; the chat is the only writer of the \*\*\*plain. You are never asked anything.
 
 ## When it runs
 
-**Two ways in.** By itself, for every new or changed functional spec without scenarios, as below. And when the chat asks, with `evaluate_tests` - see [asking for an evaluation](#asking-for-an-evaluation).
+**Two ways in.** By itself, for every new or changed functional spec without scenarios, as below - what `test-advisor: false` turns off. And when the chat asks, with `evaluate_tests`, whatever the setting - see [asking for an evaluation](#asking-for-an-evaluation).
 
 **Only in the chat and a host.** Never in a headless command - `turri regenerate`, `conform`, `change-plain` and the rest - and never in [pi](https://pi.dev)'s print, json and rpc modes (`turri -p`), which end when the answer is printed. That is decided where the session starts: the terminal's chat and a host's session have one, nothing else does.
 
-**What it looks at:** a functional spec, in any module, that is new or whose text changed since its code was built - measured against the code record, what the code was built from: text that differs from the record, or a functional spec not built yet. Then against the advisor's file: a text already looked at, under its hash, is not looked at again. So a fresh project's first functional specs are looked at, and a project already built that has no advisor file gets no backlog: only what changes from now on is.
+**What it looks at by itself:** a functional spec, in any module, that is new or whose text changed since its code was built - measured against the code record, what the code was built from: text that differs from the record, or a functional spec not built yet. Then against the advisor's file: a text already looked at, under its hash, is not looked at again. So a fresh project's first functional specs are looked at, and a project already built that has no advisor file gets no backlog: only what changes from now on is.
 
 **What it leaves alone:**
 - a functional spec with scenarios of any kind - [today's review](regenerating.md#conformance-tests) of its scenarios covers it when its text changes
 - the standard library's templates, which have no functional specs
 
-**When:** as soon as the work loop sees a \*\*\*plain change - a `change_plain`, a `regenerate`, a pulse ending - beside the code pulse it plans. The functional spec is marked `pending` in the advisor's file there and then, so quitting loses nothing: the next start in the chat or a host picks up every `pending` entry.
+**When:** by itself, as soon as the work loop sees a \*\*\*plain change - a `change_plain`, a `regenerate`, a pulse ending - beside the code pulse it plans. The functional spec is marked `pending` in the advisor's file there and then, so quitting loses nothing: the next start in the chat or a host picks up every `pending` entry.
 
 **Two at a time at most,** outside `parallel-jobs` and the lanes: it never takes a pulse's slot, no pulse waits for it, and it never steers or stops one.
 
@@ -24,13 +24,13 @@ A failure - a model error, a call that never answered - is dropped quietly: the 
 
 ## What you see
 
-**Being evaluated.** A change's result - `regenerate`'s, `change_plain`'s - names the functional specs the advisor has just taken up, and the chat says in a line that testing scenarios are being evaluated for them, and goes on: there is nothing to wait for.
+**Being evaluated.** A change's result - `regenerate`'s, `change_plain`'s - names the functional specs the advisor has just taken up, as `evaluate_tests` names the ones it was asked for, and the chat says in a line that testing scenarios are being evaluated for them, and goes on: there is nothing to wait for.
 
-**A yes** comes back to the chat you are looking at as a message that starts a turn. It holds the report - the questions that were a yes with their evidence, and the inputs to cover - and the chat, asking you nothing:
+**A yes** comes back to the chat you are looking at as a message that starts a turn. It holds the report - the questions that were a yes with their evidence, and the inputs to cover - and the chat, asking you nothing, tells you in a line:
 
 > core:clear-tasks needs testing scenarios - a wrong implementation could look right. Writing them now.
 
-then writes, with `change_plain`, whatever the [step-7 guard](regenerating.md#the-steps-of-adding-tests) would refuse the scenarios for, in turn and only what is missing: the \*\*\*test reqs\*\*\* of the module at the top of the chain, where its conformance tests live - the stack's conformance template, `stdlib/<kind>/conformance/<stack>`, imported, or the module's own; the conformance testing script for its stack, with `implement-conformance-testing-script`; then the scenarios, in `tests/<module>/<func-id>.plain`. They cover the report's inputs that are this functional spec's - an agreed one with the readers' output, never a placeholder - and a split one is settled by the reading most consistent with the functional spec and its module, the chat saying which it took. The change is visible as any is, and the conformance pulse follows once the code is built.
+Then it writes, with `change_plain`, whatever the [step-7 guard](regenerating.md#the-steps-of-adding-tests) would refuse the scenarios for, in turn and only what is missing: the \*\*\*test reqs\*\*\* of the module it is tested in - the top of its chain, where its conformance tests live - the stack's conformance template, `stdlib/<kind>/conformance/<stack>`, imported, or the module's own; the conformance testing script for its stack, with `implement-conformance-testing-script`; then the scenarios, in `tests/<module>/<func-id>.plain`. They cover the report's inputs that are this functional spec's - an agreed one with the readers' output, never a placeholder - and a split one is settled by the reading most consistent with the functional spec and its module, the chat saying which it took. The change is visible as any is, and the conformance pulse follows once the code is built.
 
 **A no** is one line turri draws itself, starting no turn and reaching no model:
 
