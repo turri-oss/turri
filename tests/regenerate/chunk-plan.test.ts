@@ -299,8 +299,10 @@ describe("cutting the queue's work into jobs", () => {
     expect(moduleFile).toContain(`+# ${IDS[0]}\n+A visitor registers a :User:.`);
     expect(moduleFile).not.toContain("It works.");
     expect(testPlainFiles.map((file) => file.split("\n")[0])).toEqual([`diff --git a/tests/app/${IDS[0]}.plain b/tests/app/${IDS[0]}.plain`, `diff --git a/tests/app/${IDS[1]}.plain b/tests/app/${IDS[1]}.plain`]);
-    // New to the tests: shown against the empty test plain file it was.
-    expect(testPlainFiles[0]).toContain(" ***acceptance tests***\n+\n+# works\n+A visitor registers a :User:. It works.");
+    // New to the tests: it had no test plain file, so the file is added whole.
+    expect(testPlainFiles[0]).toContain("@@ -0,0 +1,");
+    expect(testPlainFiles[0]).toContain("+***acceptance tests***\n+\n+# works\n+A visitor registers a :User:. It works.");
+    expect(testPlainFiles[0]).not.toMatch(/^-(?!-- )/m);
     // A code step has no test plain file: its trees carry no scenarios.
     const code = await planChunks({ ...from, track: "code" as const, current: tree({ definitions: DEFS, specs: SPECS.slice(0, 2) }) }, counted().given);
     expect(stepsOf({ ...from, track: "code" as const, current: tree({ definitions: DEFS, specs: SPECS.slice(0, 2) }) }, code).map((job) => job.step.textDiff).join("")).not.toContain("tests/app/");

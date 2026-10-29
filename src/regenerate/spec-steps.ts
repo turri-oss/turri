@@ -430,6 +430,11 @@ export function testPlainFileText(module: string, item: ScenarioCarrier): string
   return `---\nmodule: ${module}\nfunc_id: ${item.id ?? ""}\n---\n\n${section("***conformance tests***", item[CONFORMANCE_TESTS])}\n\n${section("***acceptance tests***", item[ACCEPTANCE_TESTS])}\n`;
 }
 
+/** One file's two texts as git diffs them, named `path` on both sides: an empty side is the file added or taken out whole. */
+export function diffFileTexts(before: string, after: string, path: string): string {
+  return before === after ? "" : gitDiff(before, after, 3, [path, path]);
+}
+
 /** Where a functional spec's test plain file is, by its func-id and - a module below's - its module: the path a diff names it by. */
 export type TestPlainPath = (funcId: string, module?: string) => string;
 

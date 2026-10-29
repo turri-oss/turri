@@ -78,10 +78,31 @@ describe("a job's change as its agent is given it", () => {
     expect(block).toContain("--- a/tests/app/one.plain\n+++ b/tests/app/one.plain");
     expect(block).toContain("-It is loud.");
     expect(block).toContain("+It is very loud.");
-    expect(block).toContain("-func_id: one\n");
+    // Only what changed, among the lines around it: the rest of the file is never taken out and put back.
+    expect(block).not.toContain("-func_id: one");
     expect(diff.indexOf("diff --git a/app.plain")).toBeLessThan(diff.indexOf("diff --git a/tests/app/one.plain"));
     // Without a module to lay them out for - a code job - no test plain file is shown.
     expect(changeDiff([change], "app.plain")).not.toContain("tests/app/one.plain");
+  });
+
+  it("shows a scenario added to a test plain file as that scenario added, and a new test plain file as added whole", () => {
+    const view = { module: "shorty", pathOf: (funcId: string) => `tests/shorty/${funcId}.plain` };
+    const two = [{ id: "creates", text: "It answers 201." }, { id: "codes-differ", text: "Two codes differ." }];
+    const added: SpecChange = {
+      id: "f", section: "functional specs", kind: "change", position: 1,
+      before: item("Creates a link.", { id: "create-link", conformance_tests: two, acceptance_tests: [] }),
+      after: item("Creates a link.", { id: "create-link", conformance_tests: [...two, { id: "url-echoed", text: "The url comes back as given." }], acceptance_tests: [] }),
+    };
+    const block = changeDiff([added], "shorty.plain", view).split("diff --git a/tests/shorty/create-link.plain")[1]!;
+    expect(block.split("\n").filter((line) => /^[-+](?![-+]{2} )/.test(line))).toEqual(["+# url-echoed", "+The url comes back as given.", "+"]);
+    const fresh: SpecChange = {
+      id: "f", section: "functional specs", kind: "change", position: 1,
+      before: item("Creates a link.", { id: "create-link", conformance_tests: [], acceptance_tests: [] }),
+      after: item("Creates a link.", { id: "create-link", conformance_tests: two, acceptance_tests: [] }),
+    };
+    const whole = changeDiff([fresh], "shorty.plain", view).split("diff --git a/tests/shorty/create-link.plain")[1]!;
+    expect(whole).toContain("@@ -0,0 +1,");
+    expect(whole).not.toMatch(/^-(?!-- )/m);
   });
 
   it("shows a required module's functional spec under the functional specs heading its file has, never the parser's key for it", () => {

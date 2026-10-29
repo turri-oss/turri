@@ -1,6 +1,6 @@
 import { DEFINITIONS, FUNCTIONAL_REQUIREMENTS, NON_FUNCTIONAL_REQUIREMENTS, REQUIRED_FUNCTIONAL_SPECS, TEST_REQUIREMENTS } from "../plain/spec.ts";
 import type { DiffWhere } from "./diff-view.ts";
-import { resourceDiff, testPlainFileText, type SpecChange, type TestPlainPath } from "./spec-steps.ts";
+import { diffFileTexts, resourceDiff, testPlainFileText, type SpecChange, type TestPlainPath } from "./spec-steps.ts";
 
 /**
  * A job's change as its agent is given it, for the panels: the same items `describeSpecChange` writes into
@@ -104,7 +104,11 @@ function laidOut(changes: SpecChange[], file: string, asGiven = false, testPlain
   return { diff: `${lines.join("\n")}\n${testPlain !== undefined ? testPlainDiffs(changes, testPlain) : ""}${resourceDiff(changes, file)}`, starts };
 }
 
-/** Each test plain file a conformance job's changes touch, laid out as the module's file is: what it was, and what it is. */
+/**
+ * Each test plain file a conformance job's changes touch, as git diffs it: the lines that changed, among the lines around
+ * them - a functional spec with no scenarios has no file, so a new one is added whole and one whose scenarios all went is
+ * taken out whole.
+ */
 function testPlainDiffs(changes: SpecChange[], testPlain: TestPlainView): string {
   const scenarioCarrier = (line: string | undefined) => {
     if (line === undefined) return undefined;
@@ -123,11 +127,10 @@ function testPlainDiffs(changes: SpecChange[], testPlain: TestPlainView): string
       const funcId = now?.id ?? was?.id;
       if (funcId === undefined) return [];
       const module = now?.module ?? was?.module ?? testPlain.module;
-      const before = testPlainFileText(module, (was ?? { id: funcId }) as never).split("\n").slice(0, -1);
-      const after = testPlainFileText(module, (now ?? { id: funcId }) as never).split("\n").slice(0, -1);
-      if (before.join("\n") === after.join("\n")) return [];
-      const path = testPlain.pathOf(funcId, module);
-      return [[`diff --git a/${path} b/${path}`, `--- a/${path}`, `+++ b/${path}`, "@@ @@", ...before.map((line) => `-${line}`), ...after.map((line) => `+${line}`), ""].join("\n")];
+      const fileOf = (carrier: typeof was) =>
+        carrier !== undefined && (carrier.conformance_tests ?? []).length + (carrier.acceptance_tests ?? []).length > 0 ? testPlainFileText(module, carrier as never) : "";
+      const diff = diffFileTexts(fileOf(was), fileOf(now), testPlain.pathOf(funcId, module));
+      return diff === "" ? [] : [diff];
     })
     .join("");
 }
