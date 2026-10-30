@@ -4,6 +4,7 @@ import { advisorModel, configForSpec, readProjectConfig, stackOf, testDirOf } fr
 import { plainFileParser } from "../plain/parser.ts";
 import { ACCEPTANCE_TESTS, CONFORMANCE_TESTS, FUNCTIONAL_REQUIREMENTS, REQUIRED_FUNCTIONAL_SPECS, type FunctionalSpecItem } from "../plain/spec.ts";
 import { tipsAbove } from "../plain/check.ts";
+import { conformanceTestsOnIn } from "../conformance-switch.ts";
 import { isStdlibModule } from "../plain/stdlib.ts";
 import { outsideJobs, withStopSignal } from "./activity.ts";
 import {
@@ -152,10 +153,10 @@ function agentsText(project: string): string[] {
   }
 }
 
-/** Whether a project wants the advisor: its `test-advisor:` is not false. */
+/** Whether a project wants the advisor: it conformance tests (`conformance-tests: true`), and its `test-advisor:` is not false. */
 function wanted(project: string): boolean {
   try {
-    return readProjectConfig(project, stackOf(project)).testAdvisor !== false;
+    return conformanceTestsOnIn(project) && readProjectConfig(project, stackOf(project)).testAdvisor !== false;
   } catch {
     return true;
   }
@@ -331,6 +332,8 @@ export function createTestAdvisor(options: TestAdvisorOptions = {}): TestAdvisor
     },
     resume(project) {
       if (stopped) return;
+      // Conformance tests off: the advisor is off with them - nothing pending is picked up, not even what the chat asked for.
+      if (options.enabled === undefined && !conformanceTestsOnIn(project)) return;
       // With the setting off, only what the chat asked for is picked up.
       const wants = enabled(project);
       for (const pending of pendingEntries(project)) {

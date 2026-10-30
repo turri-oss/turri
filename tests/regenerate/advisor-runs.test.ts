@@ -22,7 +22,7 @@ beforeEach(() => {
   dir = realpathSync(mkdtempSync(join(tmpdir(), "turri-advisor-runs-")));
   cwd = process.cwd();
   process.chdir(dir);
-  writeFileSync(join(dir, "config.turri.yaml"), "");
+  writeFileSync(join(dir, "config.turri.yaml"), "conformance-tests: true\n");
   events = [];
   startLedger({ mode: "test", project: dir });
   unlisten = onLedgerEvent((entry) => {
@@ -168,7 +168,7 @@ describe("which functional specs the test advisor takes", () => {
   });
 
   it("does nothing with test-advisor: false", async () => {
-    writeFileSync(join(dir, "config.turri.yaml"), "test-advisor: false\n");
+    writeFileSync(join(dir, "config.turri.yaml"), "conformance-tests: true\ntest-advisor: false\n");
     writeFileSync(join(dir, "app.plain"), module([["say-hello", "Say hello."]]));
     const { asked, advise } = saysNo();
     const advisor = createTestAdvisor({ advise });

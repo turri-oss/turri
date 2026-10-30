@@ -148,7 +148,7 @@ describe("the test advisor's verdicts in a host's chat", () => {
     sessions.length = 0;
     made = undefined;
     process.chdir(mkdtempSync(join(tmpdir(), "turri-advisor-chat-")));
-    writeFileSync("config.turri.yaml", "sentinel: false\n");
+    writeFileSync("config.turri.yaml", "conformance-tests: true\nsentinel: false\n");
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -262,7 +262,7 @@ describe("the test advisor's verdicts in a host's chat", () => {
   });
 
   it("gives a host's chat evaluate_tests, whatever test-advisor says", async () => {
-    writeFileSync("config.turri.yaml", "sentinel: false\ntest-advisor: false\n");
+    writeFileSync("config.turri.yaml", "conformance-tests: true\nsentinel: false\ntest-advisor: false\n");
     const turri = await createTurri();
     await turri.openChat();
     expect(sessions[0]!.tools).toContain("evaluate_tests");
@@ -273,7 +273,7 @@ describe("the test advisor's verdicts in a host's chat", () => {
     const mine = await turri.openChat();
     turri.focus(mine.id);
     expect(await systemPrompt(sessions[0]!)).toContain(TEST_ADVISOR_BLOCK);
-    writeFileSync("config.turri.yaml", "sentinel: false\ntest-advisor: false\n");
+    writeFileSync("config.turri.yaml", "conformance-tests: true\nsentinel: false\ntest-advisor: false\n");
     expect(await systemPrompt(sessions[0]!)).not.toContain("<test advisor>");
   });
 });
@@ -282,7 +282,7 @@ describe("what a change's result says of the test advisor", () => {
   it("names the functional specs the advisor is taking, and nothing when it takes none or the loop has no advisor", async () => {
     const { advisingNote, bindAdvisor } = await import("../src/advisor-chat.ts");
     const dir = mkdtempSync(join(tmpdir(), "turri-advising-"));
-    writeFileSync(join(dir, "config.turri.yaml"), "sentinel: false\n");
+    writeFileSync(join(dir, "config.turri.yaml"), "conformance-tests: true\nsentinel: false\n");
     const loop = {} as never;
     let taking: string[] = ["core:clear-tasks", "notes:count-words"];
     const asked: Array<string | undefined> = [];

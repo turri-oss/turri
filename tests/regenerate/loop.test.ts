@@ -19,7 +19,7 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "turri-loop-"));
   cwd = process.cwd();
   process.chdir(dir);
-  writeFileSync(join(dir, "config.yaml"), "");
+  writeFileSync(join(dir, "config.yaml"), "conformance-tests: true\n");
   // A conformance testing script, never run here - the runners are stubs - but without one no conformance pulse starts.
   mkdirSync(join(dir, "test_scripts"));
   writeFileSync(join(dir, "test_scripts", "run_conformance_tests_python.sh"), "#!/bin/sh\nexit 0\n");
@@ -74,7 +74,7 @@ function runner() {
 
 describe("releasing after each pulse", () => {
   it("releases what each pulse landed as its last stage, under release-after-pulse - before the next pulse starts", async () => {
-    writeFileSync(join(dir, "config.yaml"), "release-after-pulse: true\n");
+    writeFileSync(join(dir, "config.yaml"), "conformance-tests: true\nrelease-after-pulse: true\n");
     writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye.", "Count to ten."]));
     const { ran, run } = runner();
     const events: string[] = [];
@@ -111,7 +111,7 @@ describe("releasing after each pulse", () => {
     expect(release).not.toHaveBeenCalled();
 
     rmSync(join(dir, "plain_modules"), { recursive: true, force: true });
-    writeFileSync(join(dir, "config.yaml"), "release-after-pulse: true\n");
+    writeFileSync(join(dir, "config.yaml"), "conformance-tests: true\nrelease-after-pulse: true\n");
     gate.land = false;
     loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run, release });
     await loop.bringUp("app.plain");
@@ -120,7 +120,7 @@ describe("releasing after each pulse", () => {
   });
 
   it("keeps what a pulse landed when its release fails, and says so", async () => {
-    writeFileSync(join(dir, "config.yaml"), "release-after-pulse: true\n");
+    writeFileSync(join(dir, "config.yaml"), "conformance-tests: true\nrelease-after-pulse: true\n");
     writePlain(dir, "app.plain", app(["Say hello."]));
     const { run } = runner();
     const registry = createJobRegistry();
@@ -394,7 +394,7 @@ describe("the work loop", () => {
   });
 
   it("lets the running job land under allow-to-stop-jobs: false, and regenerates what changed since on top of it", async () => {
-    writeFileSync(join(dir, "config.yaml"), "allow-to-stop-jobs: false\n");
+    writeFileSync(join(dir, "config.yaml"), "conformance-tests: true\nallow-to-stop-jobs: false\n");
     writePlain(dir, "app.plain", app(["Say hello."]));
     const { ran, gate, holdNext, run } = runner();
     const registry = createJobRegistry();
@@ -584,7 +584,7 @@ describe("the work loop", () => {
 
     it("are not planned out for a functional spec edited while its tests are being written - they are written again for its new text", async () => {
       // The running pulse is let finish: what comes after it is planned ahead, from what it will land.
-      writeFileSync(join(dir, "config.yaml"), "allow-to-stop-jobs: false\n");
+      writeFileSync(join(dir, "config.yaml"), "conformance-tests: true\nallow-to-stop-jobs: false\n");
       writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye."]));
       scenariosIn("say-hello");
       scenariosIn("say-goodbye");
@@ -1482,7 +1482,7 @@ describe("the work loop", () => {
       });
 
       it("stop a pulse building on it even under allow-to-stop-jobs: false - the person asked", async () => {
-        writeFileSync(join(dir, "config.yaml"), "allow-to-stop-jobs: false\n");
+        writeFileSync(join(dir, "config.yaml"), "conformance-tests: true\nallow-to-stop-jobs: false\n");
         const { code, tests, loop } = await builtBelow();
         const work = loop();
         code.holdNext();

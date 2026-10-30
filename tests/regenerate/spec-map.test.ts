@@ -20,7 +20,7 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "turri-spec-map-"));
   cwd = process.cwd();
   process.chdir(dir);
-  writeFileSync(join(dir, "config.yaml"), "conformance-tests: false\n");
+  writeFileSync(join(dir, "config.yaml"), "conformance-tests: true\n");
 });
 afterEach(() => {
   process.chdir(cwd);

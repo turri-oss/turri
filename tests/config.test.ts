@@ -85,13 +85,16 @@ describe("the project's config.yaml", () => {
       mutationTesting: true,
       unittestsScript: "run_unittests.sh",
       conformanceTestsScript: undefined,
+      conformanceTests: true,
     });
   });
 
-  it("reads no conformance-tests or conformance-budget: what is tested is the functional specs with scenarios", () => {
+  it("reads conformance-tests as a yes or no - a word it is not, nothing - and no conformance-budget", () => {
     writeFileSync(join(root, "config.yaml"), "conformance-tests: false\nconformance-budget: 30%\n");
-    expect(readProjectConfig(root)).not.toHaveProperty("conformanceTests");
+    expect(readProjectConfig(root).conformanceTests).toBe(false);
     expect(readProjectConfig(root)).not.toHaveProperty("conformanceBudget");
+    writeFileSync(join(root, "config.yaml"), "conformance-tests: chosen\n");
+    expect(readProjectConfig(root).conformanceTests).toBeUndefined();
   });
 });
 

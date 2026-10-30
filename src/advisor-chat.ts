@@ -4,6 +4,7 @@ import { defineTool, type ExtensionAPI, type ExtensionContext, type ToolDefiniti
 import { Box, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { chatBusy } from "./chat-idle.ts";
+import { conformanceTestsOnIn } from "./conformance-switch.ts";
 import type { ChatLink } from "./chats.ts";
 import { readProjectConfig } from "./config.ts";
 import { modulePlainFile } from "./plain/parser.ts";
@@ -258,6 +259,9 @@ export interface EvaluateOutcome {
  */
 export function evaluateTests(cwd: string, advisor: TestAdvisor | undefined, funcIds: string[], options: { plainFile?: string; reason?: string } = {}): EvaluateOutcome {
   if (advisor === undefined) throw new Error("This session has no test advisor: it runs in the chat and a host only.");
+  if (!conformanceTestsOnIn(cwd)) {
+    throw new Error("Conformance tests are off for this project (conformance-tests: false, or unset), and the test advisor with them. They are turned on in the chat - by asking for them - or with conformance-tests: true in config.turri.yaml.");
+  }
   if (funcIds.length === 0) throw new Error("Name the functional specs to evaluate, each as module:func-id.");
   const said: EvaluateOutcome = { started: [], already: [], scenarios: [], missing: [] };
   for (const spec of namedSpecs(cwd, funcIds, options.plainFile)) {

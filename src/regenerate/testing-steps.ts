@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { conformanceTestsOn } from "../conformance-switch.ts";
 import { stackForModule, stackPinned, withStack } from "../config.ts";
 import { IMPORT_DIRECTIVE, readPlainSourceMetadata } from "../plain/parser.ts";
 import { FUNCTIONAL_REQUIREMENTS, REQUIRED_FUNCTIONAL_SPECS, TEST_REQUIREMENTS, type MarshalledPlainSource } from "../plain/spec.ts";
@@ -97,6 +98,8 @@ function named(specs: string[]): string {
  */
 export function testingGap(input: { moduleName: string; plainFile: string; tree: MarshalledPlainSource; buildDir?: string }): TestingGap | undefined {
   const { moduleName, plainFile } = input;
+  // Conformance tests off: none is written, so no step of adding them is skipped.
+  if (!conformanceTestsOn(plainFile)) return undefined;
   const tested = withScenarios(input.tree, moduleName);
   if (tested.length === 0) return undefined;
   const found = conformanceScriptOf(plainFile, input.buildDir);

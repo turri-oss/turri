@@ -99,6 +99,7 @@ export function settings(rules: string[] = []): Setting[] {
     { key: "release-after-pulse", about: "whether every pulse that lands code releases it", kind: "boolean", unset: "false", effect: "next-landing" },
     { key: "sentinel", about: "whether a chat of its own checks every finished pulse, tests the release, and tells you what is wrong - ask: you are asked before it first opens", kind: "choice", options: ["ask", "true", "false"], unset: "ask", effect: "next-landing" },
     { key: "test-advisor", about: "whether turri checks each new or changed functional spec with no scenarios in the background, to see whether it needs scenarios - on a yes, the chat writes them", kind: "boolean", unset: "true", effect: "now" },
+    { key: "conformance-tests", about: "whether functional specs' scenarios are written and conformance tested - false: none, the test advisor and conform off", kind: "boolean", unset: "false", effect: "now" },
     { key: "test-dir", about: "the folder of the test plain files, a folder per module in it, by path from the project root", kind: "path", unset: "tests", effect: "now" },
     { key: "base-folder", about: "a folder a codebase that requires no other module starts from, by path from the project root - code to build on, files to use, copied in once", kind: "path", unset: "none: it starts empty", effect: "next-pulse" },
     { key: "unittests-script", about: "the unit testing script, by path from the project root", kind: "path", unset: "the one run_unittests*.sh found", effect: "next-test-run" },

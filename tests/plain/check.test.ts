@@ -8,7 +8,7 @@ import { testPlainFileRefusal, testPlainFilesOf } from "../../src/test-plain-fil
 let dir: string;
 beforeEach(() => {
   dir = realpathSync(mkdtempSync(join(tmpdir(), "turri-check-")));
-  writeFileSync(join(dir, "config.turri.yaml"), "conformance-tests: false\n");
+  writeFileSync(join(dir, "config.turri.yaml"), "conformance-tests: true\n");
 });
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true });

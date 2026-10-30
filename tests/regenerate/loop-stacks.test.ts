@@ -22,7 +22,7 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "turri-loop-stacks-"));
   cwd = process.cwd();
   process.chdir(dir);
-  writeFileSync(join(dir, "config.turri.yaml"), "");
+  writeFileSync(join(dir, "config.turri.yaml"), "conformance-tests: true\n");
   writeFileSync(join(dir, "config.turri.backend.yaml"), "unittests-script: test_scripts/run_unittests_python.sh\n");
   writeFileSync(join(dir, "config.turri.frontend.yaml"), "unittests-script: test_scripts/run_unittests_typescript.sh\n");
   mkdirSync(join(dir, "test_scripts"));
@@ -172,7 +172,7 @@ describe("a module of a project of stacks", () => {
   });
 
   it("pinned to none - asked for before its stack's file was there - takes its own stack on its next spec change", async () => {
-    writeFileSync(join(dir, "config.turri.yaml"), "unittests-script: test_scripts/run_unittests_python.sh\n");
+    writeFileSync(join(dir, "config.turri.yaml"), "conformance-tests: true\nunittests-script: test_scripts/run_unittests_python.sh\n");
     rmSync(join(dir, "config.turri.backend.yaml"));
     writePlain(dir, "backend.plain", app(["Serve the orders."], "is Python."));
     const { ran, run } = runner();
@@ -255,7 +255,7 @@ describe("the chat's tools in a project of stacks", () => {
   it("refuse a stack the project has no file for, and take none - config.turri.yaml alone - when it names its own script", () => {
     expect(() => withCallStack(join(dir, "backend.plain"), "mobile", () => "built")).toThrow("There is no stack mobile in");
     expect(() => withCallStack(join(dir, "backend.plain"), "mobile", () => "built")).toThrow("Its stacks: backend, frontend - or none.");
-    writeFileSync(join(dir, "config.turri.yaml"), "unittests-script: test_scripts/run_unittests_python.sh\n");
+    writeFileSync(join(dir, "config.turri.yaml"), "conformance-tests: true\nunittests-script: test_scripts/run_unittests_python.sh\n");
     expect(withCallStack(join(dir, "backend.plain"), undefined, () => chosenStack() ?? "none")).toBe("none");
     expect(withCallStack(join(dir, "backend.plain"), "none", () => chosenStack() ?? "none")).toBe("none");
   });

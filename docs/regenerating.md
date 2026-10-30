@@ -316,6 +316,8 @@ A change that regenerates nothing - definitions moved to a common module, reqs r
 
 ## Conformance tests
 
+**On or off.** A project has them only with `conformance-tests: true` ([config](config.md#conformance-tests)); unset, they are off - no scenarios written or tested, no conformance testing script, no conformance pulse, the test advisor off - and everything below is what turri does once they are on. The chat always knows they are off and how they are turned on: you asking it for conformance tests, or agreeing when it offers them, has it call `turn_on_conformance_tests`, which writes `conformance-tests: true` and gives it `conform` and `evaluate_tests` back.
+
 The unit tests are written by the agent that wrote the code. Conformance tests are the other half: black box, end to end - and what they test is the scenarios. A functional spec's scenarios are in its test plain file, `<test-dir>/<module>/<func-id>.plain` ([authoring](authoring-plain.md#what-plain-is-made-of)), with its conformance scenarios under `***conformance tests***` and its acceptance scenarios under `***acceptance tests***`, each a `# <scenario-id>` heading and its text. A functional spec with scenarios is tested; one with no test plain file is not. There is no setting for it: to have a functional spec tested, write its scenarios - in the chat, its agent writes them with `change_plain` when you ask for conformance tests. In the chat and a host, the [test advisor](test-advisor.md) checks in the background whether a new or changed functional spec needs testing, and on a yes the chat writes its scenarios - with the test reqs and the conformance testing script, when they are missing.
 
 ```bash

@@ -12,6 +12,7 @@ import { projectDirOf } from "./regenerate/paths.ts";
  *
  * ```yaml
  * module: prism_cli.plain                                   # what `turri regenerate` builds by default
+ * conformance-tests: false                                  # whether scenarios are written and conformance tested - false: none, the test advisor off (default: false)
  * test-dir: tests                                           # where the test plain files are, a folder per module: tests/<module>/ (default: tests)
  * base-folder: existing-app                                 # a codebase that requires none starts as a copy of it - code to build on, assets to use
  * harness-model:                                            # the model you chat with in `turri`
@@ -481,6 +482,13 @@ export interface ProjectConfig {
    */
   testDir?: string;
   /**
+   * Whether functional specs' scenarios are written and conformance tested (conformance-switch.ts). False: none - no
+   * conformance pulse, no conformance testing script, the test advisor and the chat's conform and evaluate_tests off; the
+   * test plain files there are kept, and not tested. The person asking for tests, or agreeing to the chat's offer, turns it
+   * on. Unset: false.
+   */
+  conformanceTests?: boolean;
+  /**
    * A folder, from the project's folder, that a codebase requiring no other module starts from - a copy of it, once,
    * before its first pulse: code to build on, files to use (src/regenerate/base-folder.ts). Unset: it starts empty.
    */
@@ -559,6 +567,7 @@ export const CONFIG_KEYS = {
   sentinel: "sentinel",
   testAdvisor: "test-advisor",
   testDir: "test-dir",
+  conformanceTests: "conformance-tests",
   baseFolder: "base-folder",
   unittestsScript: "unittests-script",
   conformanceTestsScript: "conformance-tests-script",
@@ -706,7 +715,7 @@ export function configForSpec(plainFile: string): ProjectConfig {
 }
 
 /** One config file, read, or nothing of it when it is not there or does not parse. */
-function readConfigFile(path: string): ProjectConfig {
+export function readConfigFile(path: string): ProjectConfig {
   let parsed: unknown;
   try {
     if (!statSync(path).isFile()) return {};
@@ -728,6 +737,7 @@ function readConfigFile(path: string): ProjectConfig {
     sentinel: typeof raw[CONFIG_KEYS.sentinel] === "boolean" || raw[CONFIG_KEYS.sentinel] === "ask" ? (raw[CONFIG_KEYS.sentinel] as SentinelSetting) : undefined,
     testAdvisor: typeof raw[CONFIG_KEYS.testAdvisor] === "boolean" ? (raw[CONFIG_KEYS.testAdvisor] as boolean) : undefined,
     testDir: text(raw[CONFIG_KEYS.testDir]),
+    conformanceTests: typeof raw[CONFIG_KEYS.conformanceTests] === "boolean" ? (raw[CONFIG_KEYS.conformanceTests] as boolean) : undefined,
     baseFolder: text(raw[CONFIG_KEYS.baseFolder]),
     unittestsScript: text(raw[CONFIG_KEYS.unittestsScript]),
     conformanceTestsScript: text(raw[CONFIG_KEYS.conformanceTestsScript]),

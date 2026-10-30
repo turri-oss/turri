@@ -5,6 +5,8 @@ import { projectDirOf, resolveTemplateDirs } from "../regenerate/paths.ts";
 import { importingModules, isImportModule } from "../regenerate/requires.ts";
 import { testingGap } from "../regenerate/testing-steps.ts";
 import { missingBaseFolder } from "../regenerate/base-folder.ts";
+import { conformanceTestsOn } from "../conformance-switch.ts";
+import { testedFuncIds } from "../regenerate/records.ts";
 import { moduleOfTestPlainFile, projectModules, strayTestPlainFiles, testPlaceOf, testPlainFileRefusal } from "../test-plain-files.ts";
 import { plainFileParser, PLAIN_SOURCE_FILE_EXTENSION, PREVIOUS_SYNTAX_HINT, readPlainSourceMetadata, REQUIRES_DIRECTIVE } from "./parser.ts";
 import {
@@ -109,6 +111,13 @@ export function tipsAbove(moduleName: string, projectDir: string): Array<{ name:
  * written in the tips above it, from their test reqs and with their script: it is judged by each of them, which says so.
  */
 function testingGapsOf(moduleName: string, path: string, tree: MarshalledPlainSource, projectDir: string, templateDirs: string[]): string[] {
+  // Conformance tests off: no step of adding them is skipped - and scenarios written are said not to be tested.
+  if (!conformanceTestsOn(path)) {
+    const tested = testedFuncIds(tree);
+    return tested.length > 0
+      ? [`its scenarios are not tested - ${tested.map((funcId) => `${moduleName}:${funcId}`).join(", ")}: conformance tests are off (conformance-tests: false, or unset). Asking for them in the chat turns them on, or conformance-tests: true in config.turri.yaml.`]
+      : [];
+  }
   const tips = tipsAbove(moduleName, projectDir);
   if (tips.length === 0) {
     const gap = testingGap({ moduleName, plainFile: path, tree });

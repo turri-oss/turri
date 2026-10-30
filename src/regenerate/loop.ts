@@ -51,6 +51,7 @@ import { testingGap } from "./testing-steps.ts";
 import { baseFolderDrift, baseOfCodebase, seedFromBaseFolder } from "./base-folder.ts";
 import { BASE_RECORD_FILE } from "./paths.ts";
 import { onScriptRunEnded, scriptBeingWritten } from "./scripts-being-written.ts";
+import { conformanceTestsOn } from "../conformance-switch.ts";
 import { findTestScripts, projectRootFor, type ScriptKind } from "./test-scripts.ts";
 
 /**
@@ -231,6 +232,8 @@ export interface DriftReport {
   baseFolder?: string;
   /** conform named these functional specs, as `module:func-id`: the conformance tests are written for them alone until the module is asked for again. */
   conformanceOnly?: string[];
+  /** Conformance tests are off here (`conformance-tests:`): none written or run. */
+  conformanceOff?: true;
 }
 
 /** What is left to regenerate, as the conversation and the command line read it. */
@@ -258,7 +261,7 @@ export function describeDrift(reports: DriftReport[]): string {
           ...conformanceLines(report.module, report.conformance),
         );
       }
-      else lines.push("  conformance tests: none written here");
+      else lines.push(report.conformanceOff === true ? "  conformance tests: off (conformance-tests: false) - none written or run" : "  conformance tests: none written here");
       for (const rename of report.renames ?? []) lines.push(`  renames ${rename} - the records and the tests' labels only, nothing regenerated`);
       if (report.baseFolder !== undefined) lines.push(`  ${report.baseFolder}`);
       if (report.running !== undefined) lines.push(`  regenerating now: pulse ${report.running.jobId} - ${report.running.title}`);
@@ -653,6 +656,7 @@ export function createWorkLoop(options: {
    * functional spec's text changed, regenerated again or taken out - the tests of each are behind, and are written.
    */
   const conformanceWanted = (state: ModuleState, spec: SpecSnapshot): boolean =>
+    conformanceTestsOn(tipEntry(state).plainFile) &&
     ((spec.tree[TEST_REQUIREMENTS] as unknown[] | undefined) ?? []).length > 0 && readRecord(tipEntry(state).buildDir) !== null && gapOf(state, spec) === undefined;
 
   /**
@@ -1592,7 +1596,7 @@ export function createWorkLoop(options: {
             // The codebase as the loop knows it, or - never asked for - as its records have it.
             const state = modules.get(tip.buildDir) ?? { chain: codebase, askedFile: file, guidance: [] };
             return inStack(state, (): DriftReport => {
-              const report: DriftReport = { module: tip.moduleName, plainFile: tip.plainFile, code: undefined, conformance: undefined };
+              const report: DriftReport = { module: tip.moduleName, plainFile: tip.plainFile, code: undefined, conformance: undefined, ...(conformanceTestsOn(tip.plainFile) ? {} : { conformanceOff: true as const }) };
               let spec: SpecSnapshot;
               try {
                 spec = chainSpec(codebase);
@@ -1648,6 +1652,12 @@ export function createWorkLoop(options: {
       // a codebase built on it - by a module above - is disposable, and is deleted, a pulse running there stopped first;
       // the module above is regenerated from it once they pass. Only when there are tests to write: asked again for tests
       // it has, nothing is touched.
+      if (!conformanceTestsOn(self.plainFile)) {
+        throw new Error(
+          `Conformance tests are off for ${self.moduleName} (conformance-tests: false, or unset): nothing is conformance tested. ` +
+            "They are turned on in the chat - by asking for them - or with conformance-tests: true in config.turri.yaml. Nothing was started.",
+        );
+      }
       const named = request.funcIds === undefined ? undefined : funcIdsNamed(self.moduleName, [...new Set(request.funcIds)]);
       const ownSpec = chainSpec(own).tree;
       const withScenarios = testedFuncIds(ownSpec);

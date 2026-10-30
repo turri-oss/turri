@@ -20,6 +20,7 @@ import { sandboxAvailable, sandboxSummary } from "./regenerate/os-sandbox.ts";
 import { findTestScripts, scriptKindOfSkill } from "./regenerate/test-scripts.ts";
 import { writingScript } from "./regenerate/scripts-being-written.ts";
 import { applyBedrockRegion } from "./bedrock-region.ts";
+import { conformanceBlock, conformanceTestsOnIn, CONFORMANCE_TOOLS, TURN_ON_TOOL, turnOnConformanceTestsTool } from "./conformance-switch.ts";
 import { BACKGROUND_NOTE, doneLine, failedTask, ownChanges, runDetails, skillRunDelivery, startedText } from "./background-skills.ts";
 import { createAskUserTool } from "./tools.ts";
 import { asksFromScratch, asksWholeChain, driftTool, fromWorkingDir, haltTool, loopReply, MODEL_PARAM, regenerateTool, STACK_PARAM, stopJob, WAIT_PARAM, withCallStack, WORKING_DIR_PARAM } from "./loop-tools.ts";
@@ -66,7 +67,7 @@ import { describeSpecConflict } from "./regenerate/stop-report.ts";
 import { inheritProviders, inheritThinkingLevel } from "./pi.ts";
 import { beginCapture, captureConsole, describeCaptured, dropNoise } from "./quiet.ts";
 import { loadRules, renderRulesBlock } from "./rules.ts";
-import { registerTurriConfig } from "./config-command.ts";
+import { registerTurriConfig, ruleNames } from "./config-command.ts";
 import { writeSetting } from "./config-edit.ts";
 import { describeStdlib } from "./stdlib.ts";
 import { DECLINED, peekKeyListener, runAsk, type AskUser, type AskUserIO, type AskUserRequest } from "./ask.ts";
@@ -646,8 +647,10 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
         TOOLS_NOT_CLI,
         NEW_PROJECT,
         pulseEndsBlock(session.sentinelOn()),
+        // Conformance tests - what they are, whether they are on here, and how they are turned on: every turn, read afresh.
+        conformanceBlock(conformanceTestsOnIn(cwd)),
         // The test advisor, and that the chat alone writes scenarios - while the session has one the project wants.
-        ...(sessionAdvisor(session) !== undefined && readProjectConfig(cwd).testAdvisor !== false ? [TEST_ADVISOR_BLOCK] : []),
+        ...(sessionAdvisor(session) !== undefined && conformanceTestsOnIn(cwd) && readProjectConfig(cwd).testAdvisor !== false ? [TEST_ADVISOR_BLOCK] : []),
         projectConfigBlock(cwd),
         machineBlock(cwd, machine.now()),
         rulesBlock(),
@@ -762,6 +765,26 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
   registerStacks(pi, cwd);
   // The chat's own way to the test advisor, while the session has one - whatever test-advisor says.
   if (sessionAdvisor(session) !== undefined) pi.registerTool(evaluateTestsTool({ cwd, advisor: () => sessionAdvisor(session) }));
+  // Conformance tests on or off: conform and evaluate_tests are the chat's while they are on, the tool that turns them on
+  // while they are off - set as each turn starts, and at once when the chat turns them on. Not the sentinel's: it has its own.
+  const conformanceTools = () => {
+    if (isSentinel) return;
+    try {
+      const on = conformanceTestsOnIn(cwd);
+      const registered = new Set(pi.getAllTools().map((tool) => tool.name));
+      const active = pi.getActiveTools();
+      const wanted = [
+        ...active.filter((name) => !CONFORMANCE_TOOLS.includes(name) && name !== TURN_ON_TOOL),
+        ...(on ? CONFORMANCE_TOOLS : [TURN_ON_TOOL]).filter((name) => registered.has(name)),
+      ];
+      if (wanted.length !== active.length || wanted.some((name) => !active.includes(name))) pi.setActiveTools(wanted);
+    } catch {
+      /* not bound to a session yet: the next turn sets them */
+    }
+  };
+  if (!isSentinel) pi.registerTool(turnOnConformanceTestsTool({ cwd, turnedOn: conformanceTools }));
+  pi.on("session_start", () => conformanceTools());
+  pi.on("before_agent_start", () => conformanceTools());
   // More chats beside this one, in the terminal: /chat, alt+n, alt+1…9 (chat-commands.ts).
   if (session.terminal) registerChats(pi, session);
 
@@ -921,6 +944,13 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
         };
       }
       if (!gate.mayStart(skill)) return { content: [{ type: "text" as const, text: startedByCommandOnly(skill.name) }], details: { notStarted: true } };
+      // The conformance testing script is for conformance tests: none is written while they are off.
+      if (scriptKindOfSkill(skill.name) === "conformance" && !conformanceTestsOnIn(cwd)) {
+        return {
+          content: [{ type: "text" as const, text: `${skill.name} writes the conformance testing script, and conformance tests are off for this project (conformance-tests: false, or unset). Turn them on first - with ${TURN_ON_TOOL}, once the person asked for them or agreed - then run it. Nothing was started.` }],
+          details: { notStarted: true },
+        };
+      }
       const plainFile = params.plainFile !== undefined && params.plainFile.trim() !== "" ? resolve(cwd, params.plainFile.trim()) : undefined;
       if (plainFile !== undefined && !existsSync(plainFile)) {
         return { content: [{ type: "text" as const, text: `There is no ${params.plainFile} here. Nothing was started.` }], details: { notStarted: true } };
@@ -2261,7 +2291,7 @@ function registerJobTools(pi: ExtensionAPI, jobs: JobRegistry, cwd: string) {
   // start changed here, as it runs.
   registerTurriConfig(pi, {
     cwd,
-    rules: () => loadRules(join(PACKAGE_ROOT, "genome", "rules")).map((rule) => rule.name),
+    rules: ruleNames,
     chatSpec: () => modelSpec(projectModels(readProjectConfig(cwd)).harness),
     live: {
       chatModel: async (spec, ctx) => {

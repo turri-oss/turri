@@ -50,7 +50,7 @@ describe("/turri-config's settings", () => {
       const name = Object.entries({
         module: "module", "harness-model": "harnessModel", "coding-model": "codingModel", "judge-model": "judgeModel",
         review: "review", "mutation-testing": "mutationTesting", "allow-to-stop-jobs": "allowToStopJobs", "release-after-pulse": "releaseAfterPulse", sentinel: "sentinel", "test-advisor": "testAdvisor",
-        "test-dir": "testDir", "base-folder": "baseFolder", "unittests-script": "unittestsScript", "conformance-tests-script": "conformanceTestsScript", "prepare-environment-script": "prepareEnvironmentScript",
+        "conformance-tests": "conformanceTests", "test-dir": "testDir", "base-folder": "baseFolder", "unittests-script": "unittestsScript", "conformance-tests-script": "conformanceTestsScript", "prepare-environment-script": "prepareEnvironmentScript",
         "testing-scripts-run-on": "testingScriptsRunOn", "parallel-jobs": "parallelJobs", "max-specs-per-pulse": "maxSpecsPerPulse",
         "max-lines-per-pulse": "maxLinesPerPulse", "turn-limit": "turnLimit", "compact-at": "compactAt", "rules-off": "rulesOff",
         "agent-env": "agentEnv", toolchains: "toolchains", "ledger-keep": "ledgerKeep", debug: "debug", "cache-keep": "cacheKeep",
@@ -94,7 +94,7 @@ describe("/turri-config's settings", () => {
     expect(parseValue(settingOf("sentinel")!, "false")).toEqual({ value: false });
     expect(parseValue(settingOf("testing-scripts-run-on")!, "copy")).toEqual({ value: "copy" });
     expect(parseValue(settingOf("parallel-jobs")!, "0")).toMatchObject({ error: expect.stringContaining("at least 1") });
-    expect(settingOf("conformance-tests")).toBeUndefined();
+    expect(parseValue(settingOf("conformance-tests")!, "true")).toEqual({ value: true });
     expect(settingOf("conformance-budget")).toBeUndefined();
     expect(parseValue(settingOf("harness-model")!, "opus")).toMatchObject({ error: expect.stringContaining("provider/id") });
     expect(parseValue(settingOf("harness-model")!, "anthropic/claude-opus-5-5:loud")).toMatchObject({ error: expect.stringContaining("thinks") });

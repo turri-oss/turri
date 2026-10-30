@@ -15,7 +15,7 @@ let events: LedgerEntry[];
 let unlisten: () => void;
 beforeEach(() => {
   dir = realpathSync(mkdtempSync(join(tmpdir(), "turri-evaluate-tests-")));
-  writeFileSync(join(dir, "config.turri.yaml"), "module: core.plain\n");
+  writeFileSync(join(dir, "config.turri.yaml"), "conformance-tests: true\nmodule: core.plain\n");
   writeFileSync(
     join(dir, "core.plain"),
     "***implementation reqs***\n\n- :Implementation: is Python.\n\n***functional specs***\n\n# add-task\nAdd a task to the list.\n\n# clear-tasks\nRemove every task.\n",
@@ -109,7 +109,7 @@ describe("evaluate_tests", () => {
   });
 
   it("works with test-advisor: false, which turns off only what a change starts", async () => {
-    writeFileSync(join(dir, "config.turri.yaml"), "module: core.plain\ntest-advisor: false\n");
+    writeFileSync(join(dir, "config.turri.yaml"), "conformance-tests: true\nmodule: core.plain\ntest-advisor: false\n");
     let calls = 0;
     const advisor = createTestAdvisor({ advise: async () => ((calls += 1), yes) });
     await call(evaluateTestsTool({ cwd: dir, advisor: () => advisor }), { funcIds: ["core:clear-tasks"] });
@@ -126,7 +126,7 @@ describe("evaluate_tests", () => {
     expect(first.asked[0]!.reason).toBe("the coding agent failed three times to implement it");
     // turri quits mid-way, and starts again with the setting off: what the chat asked for is still picked up, its reason with it.
     before.stop();
-    writeFileSync(join(dir, "config.turri.yaml"), "module: core.plain\ntest-advisor: false\n");
+    writeFileSync(join(dir, "config.turri.yaml"), "conformance-tests: true\nmodule: core.plain\ntest-advisor: false\n");
     const asked: AdvisorSubject[] = [];
     const after = createTestAdvisor({ advise: async (subject) => (asked.push(subject), yes) });
     after.resume(dir);

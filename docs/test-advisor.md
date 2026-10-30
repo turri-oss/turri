@@ -4,6 +4,8 @@ Which functional specs need explicit testing scenarios is not obvious, and not e
 
 ## When it runs
 
+**Only with conformance tests on.** The advisor is there to say which functional specs need scenarios, and scenarios are only tested with `conformance-tests: true` ([config](config.md#conformance-tests)): off - as it is unset - the advisor is off too, by itself and when asked: the chat has no `evaluate_tests`, and a host's `evaluateTests` throws, saying how they are turned on.
+
 **Two ways in.** By itself, for every new or changed functional spec without scenarios, as below - what `test-advisor: false` turns off. And when the chat asks, with `evaluate_tests`, whatever the setting - see [asking for an evaluation](#asking-for-an-evaluation).
 
 **Only in the chat and a host.** Never in a headless command - `turri regenerate`, `conform`, `change-plain` and the rest - and never in [pi](https://pi.dev)'s print, json and rpc modes (`turri -p`), which end when the answer is printed. That is decided where the session starts: the terminal's chat and a host's session have one, nothing else does.

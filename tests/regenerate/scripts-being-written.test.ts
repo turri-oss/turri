@@ -18,7 +18,7 @@ beforeEach(() => {
   dir = realpathSync(mkdtempSync(join(tmpdir(), "turri-scripts-being-written-")));
   cwd = process.cwd();
   process.chdir(dir);
-  writeFileSync(join(dir, "config.turri.yaml"), "module: app.plain\n");
+  writeFileSync(join(dir, "config.turri.yaml"), "conformance-tests: true\nmodule: app.plain\n");
   writePlain(dir, "app.plain", "***implementation reqs***\n\n- :Implementation: is Python.\n\n***functional specs***\n\n# add-task\nAdd a task to the list.\n");
 });
 afterEach(() => {
