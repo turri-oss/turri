@@ -1419,7 +1419,7 @@ function conformTool(options: {
       "conformance and acceptance scenarios, at least one test each, by the spec's test reqs, runs them with the whole suite " +
       "the module inherits, and, where one fails, fixes the test or the code, whichever is wrong. What they are written for is " +
       "recorded apart from the code. The work loop starts these pulses by itself for every functional spec with scenarios whose " +
-      "tests are behind, once the module's code is built; conform starts them now, or for the functional specs named. A " +
+      "tests are behind, once the module's code is built; conform starts them now, or for the functional specs named - those alone: the module's others stay behind until conform names none, or the module is regenerated. A " +
       "functional spec with no scenarios - no test plain file - is refused: there is nothing to test until scenarios " +
       "are written. So is one the spec does not have, and a module with scenarios that skipped a step of adding tests - " +
       "no test reqs, or no conformance testing script for its stack: the refusal names the next step.",

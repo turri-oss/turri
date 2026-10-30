@@ -28,6 +28,7 @@ import {
   writeCodeRecord,
   writeTestsRecord,
   hasScenarios,
+  identityOf,
   testedFuncIds,
 } from "./records.ts";
 import { describeSpecDiffConformance, renderSpecDiffConformance } from "./conform.ts";
@@ -179,6 +180,12 @@ interface ModuleState {
   };
   /** The conformance tests a job a functional spec, as the person asked when they asked for them - not one job for all. */
   conformanceSeparately?: boolean;
+  /**
+   * The functional specs conform named, when it named some (by identity, records.ts `identityOf`): the conformance track
+   * writes their tests alone, the others' left as they are - behind, as drift says - until the module is asked for again
+   * or conform names none. Each functional spec as it read then: one whose text or scenarios change after joins them.
+   */
+  conformanceOnly?: { specs: Set<string>; read: Map<string, string> };
   /** The track being planned into jobs now, nothing running: what is next is shown while it is. */
   planning?: Track;
   /** When the planning now going on began: what the live panel counts from. */
@@ -222,6 +229,8 @@ export interface DriftReport {
   renames?: string[];
   /** How its base folder stands against what its codebase started from, when they do not agree (base-folder.ts). */
   baseFolder?: string;
+  /** conform named these functional specs, as `module:func-id`: the conformance tests are written for them alone until the module is asked for again. */
+  conformanceOnly?: string[];
 }
 
 /** What is left to regenerate, as the conversation and the command line read it. */
@@ -241,7 +250,14 @@ export function describeDrift(reports: DriftReport[]): string {
       if (report.code === null) lines.push("  code: regenerated from the spec as it is - no drift");
       else if (report.code !== undefined) lines.push(`  code: drifted from the spec - to regenerate: ${cases(report.code)}`);
       if (report.conformance === null) lines.push("  conformance tests: written for what is built - no drift");
-      else if (report.conformance !== undefined) lines.push("  conformance tests: to write or change - written once the code is built, or now with conform", ...conformanceLines(report.module, report.conformance));
+      else if (report.conformance !== undefined) {
+        lines.push(
+          report.conformanceOnly !== undefined
+            ? `  conformance tests: to write or change - conform asked for ${report.conformanceOnly.join(", ")} alone: the others wait for conform with no names, or the module asked for again`
+            : "  conformance tests: to write or change - written once the code is built, or now with conform",
+          ...conformanceLines(report.module, report.conformance),
+        );
+      }
       else lines.push("  conformance tests: none written here");
       for (const rename of report.renames ?? []) lines.push(`  renames ${rename} - the records and the tests' labels only, nothing regenerated`);
       if (report.baseFolder !== undefined) lines.push(`  ${report.baseFolder}`);
@@ -621,9 +637,10 @@ export function createWorkLoop(options: {
    * functional spec's tests would not count them: one whose code is behind the spec would be planned out, its tests
    * taken out again once they landed.
    */
-  const conformanceOf = (state: ModuleState, spec: SpecSnapshot, from?: MarshalledPlainSource): MarshalledPlainSource => {
+  const conformanceOf = (state: ModuleState, spec: SpecSnapshot, from?: MarshalledPlainSource, narrowed = true): MarshalledPlainSource => {
     const tests = from ?? readRecord(testsDirOf(state));
-    const target = conformanceTarget(readRecord(tipEntry(state).buildDir), tests, spec.tree);
+    const whole = conformanceTarget(readRecord(tipEntry(state).buildDir), tests, spec.tree);
+    const target = narrowed ? onlyNamed(state, whole, tests, spec.tree) : whole;
     // No functional spec to test, and none tested: nothing to write - the reqs alone are no conformance job.
     const specsIn = (tree: MarshalledPlainSource | null) =>
       ((tree?.[FUNCTIONAL_REQUIREMENTS] as unknown[] | undefined) ?? []).length + ((tree?.[REQUIRED_FUNCTIONAL_SPECS] as unknown[] | undefined) ?? []).length;
@@ -689,9 +706,51 @@ export function createWorkLoop(options: {
     return state.base.base;
   };
 
-  /** The work of a track, from where it is built from to what it is to be. */
-  const workOf = (track: Track, from: MarshalledPlainSource, state: ModuleState, spec: SpecSnapshot) =>
-    track === "code" ? codeWork(from, spec.tree) : changesBetween(serializeTree(from), serializeTree(conformanceOf(state, spec, from)));
+  /**
+   * What the conformance tests are to be written for, as conform narrowed it to the functional specs it named: every other
+   * functional spec as the tests are written for it now - its tests neither written, changed nor taken out. One whose text
+   * or scenarios changed since joins those named: a change to it is work again.
+   */
+  const onlyNamed = (state: ModuleState, target: MarshalledPlainSource, tests: MarshalledPlainSource | null, tree: MarshalledPlainSource): MarshalledPlainSource => {
+    const only = state.conformanceOnly;
+    if (only === undefined) return target;
+    for (const section of [FUNCTIONAL_REQUIREMENTS, REQUIRED_FUNCTIONAL_SPECS]) {
+      for (const item of (tree[section] as Array<{ id?: string; module?: string }> | undefined) ?? []) {
+        const key = identityOf(item);
+        if (!only.specs.has(key) && only.read.get(key) !== JSON.stringify(item)) only.specs.add(key);
+      }
+    }
+    const narrowed: MarshalledPlainSource = { ...target };
+    for (const section of [FUNCTIONAL_REQUIREMENTS, REQUIRED_FUNCTIONAL_SPECS]) {
+      const tested = new Map((((tests?.[section] as Array<{ id?: string; module?: string }> | undefined) ?? [])).map((item) => [identityOf(item), item]));
+      const wanted = ((target[section] as Array<{ id?: string; module?: string }> | undefined) ?? []).flatMap((item) => {
+        if (only.specs.has(identityOf(item))) return [item];
+        // Not named: as its tests are written for it now, or - none written - not at all.
+        const kept = tested.get(identityOf(item));
+        return kept !== undefined ? [kept] : [];
+      });
+      // Taken out of the target and not named: its tests are kept, as they are.
+      const inTarget = new Set(wanted.map(identityOf));
+      for (const [key, item] of tested) if (!only.specs.has(key) && !inTarget.has(key)) wanted.push(item);
+      if (wanted.length > 0) narrowed[section] = wanted;
+      else delete narrowed[section];
+    }
+    return narrowed;
+  };
+
+  /** The functional specs conform named - its own module's func-ids - and every functional spec as it reads now, to tell a change to one after. */
+  const namedOnly = (state: ModuleState, funcIds: string[]): NonNullable<ModuleState["conformanceOnly"]> => {
+    const tree = chainSpec(state.chain).tree;
+    const read = new Map<string, string>();
+    for (const section of [FUNCTIONAL_REQUIREMENTS, REQUIRED_FUNCTIONAL_SPECS]) {
+      for (const item of (tree[section] as Array<{ id?: string; module?: string }> | undefined) ?? []) read.set(identityOf(item), JSON.stringify(item));
+    }
+    return { specs: new Set(funcIds.map((id) => identityOf({ id }))), read };
+  };
+
+  /** The work of a track, from where it is built from to what it is to be - for the conformance tests, as conform narrowed them unless `narrowed` is false. */
+  const workOf = (track: Track, from: MarshalledPlainSource, state: ModuleState, spec: SpecSnapshot, narrowed = true) =>
+    track === "code" ? codeWork(from, spec.tree) : changesBetween(serializeTree(from), serializeTree(conformanceOf(state, spec, from, narrowed)));
 
   /** The codebases brought up in this look: one left behind is never waited for. */
   let looking = new Set<ModuleState>();
@@ -1471,6 +1530,8 @@ export function createWorkLoop(options: {
         for (const state of states) {
           state.halted = undefined;
           if (specChange !== true) state.held = undefined;
+          // Asked for again: its conformance tests are written for every functional spec with scenarios, not only those conform named.
+          if (specChange !== true) state.conformanceOnly = undefined;
         }
         await tick();
         return [...new Set(states)].map(statusOf);
@@ -1555,8 +1616,11 @@ export function createWorkLoop(options: {
                 const tests =
                   renamed !== undefined && renamed.renames.length > 0
                     ? changesBetween(serializeTree(tested), serializeTree(conformanceTarget(renamed.code, tested, spec.tree)))
-                    : workOf("conformance", tested, state, spec);
+                    : workOf("conformance", tested, state, spec, false);
                 report.conformance = tests.length === 0 ? null : casesOf(tested, tests, { module: tip.moduleName });
+                // Narrowed by conform to the functional specs it named: the others wait, and why is said.
+                const only = state.conformanceOnly;
+                if (only !== undefined && tests.length > 0) report.conformanceOnly = [...only.specs].map((key) => (key.startsWith(":") ? `${tip.moduleName}${key}` : key));
               }
               if (state.running !== undefined) report.running = { jobId: state.running.jobId, title: state.running.planned.title };
               const halted = state.held?.why ?? state.halted?.why ?? state.conformanceHalted?.why;
@@ -1642,6 +1706,9 @@ export function createWorkLoop(options: {
         const separately = request.separately === true;
         if ((state.conformanceSeparately === true) !== separately) state.conformancePlan = undefined;
         state.conformanceSeparately = separately;
+        // Named: their tests alone - the others left as they are until the module is asked for again, or conform names none.
+        state.conformanceOnly = asks !== undefined ? namedOnly(state, asks) : undefined;
+        state.conformancePlan = undefined;
         state.conformanceHalted = undefined;
         state.halted = undefined;
         state.held = undefined;
@@ -1651,7 +1718,13 @@ export function createWorkLoop(options: {
         const status = statusOf(state);
         const writing = status.running !== undefined || status.planned.some((job) => job.track === "conformance");
         if (state !== tip || writing) return status;
-        return { ...status, conformanceNote: `the conformance tests of ${status.module} are written for every functional spec with scenarios, as built: there is nothing to write` };
+        return {
+          ...status,
+          conformanceNote:
+            asks !== undefined
+              ? `the conformance tests of ${namesOf(status.module, asks)} are written for ${asks.length === 1 ? "it" : "them"} as built: there is nothing to write`
+              : `the conformance tests of ${status.module} are written for every functional spec with scenarios, as built: there is nothing to write`,
+        };
       });
     },
     async startOver(plainFile, request = {}) {

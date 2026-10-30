@@ -670,7 +670,34 @@ describe("the work loop", () => {
       const [status] = await loop.conformance("app.plain", { funcIds: ["app:say-goodbye"] });
       await loop.drain();
       expect(tests.ran).toHaveLength(1);
-      expect(status!.conformanceNote).toBe("the conformance tests of app are written for every functional spec with scenarios, as built: there is nothing to write");
+      expect(status!.conformanceNote).toBe("the conformance tests of app:say-goodbye are written for it as built: there is nothing to write");
+    });
+
+    it("are written for the functional specs conform names alone - the others left behind, as drift says, until the module is asked for again", async () => {
+      writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye.", "Say thanks."]));
+      const code = runner();
+      const tests = conformanceRunner();
+      const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run: code.run, runConformance: tests.runConformance });
+      await loop.bringUp("app.plain");
+      await loop.drain();
+      // Built with no scenarios; then every functional spec is given some, and one is asked for.
+      for (const funcId of ["say-hello", "say-goodbye", "say-thanks"]) scenariosIn(funcId);
+      await loop.conformance("app.plain", { funcIds: ["app:say-hello"] });
+      await loop.drain();
+      expect(tests.ran.map((job) => job.add)).toEqual([["say-hello"]]);
+      const drift = describeDrift(loop.drift("app.plain"));
+      expect(drift).toContain("conform asked for app:say-hello alone: the others wait for conform with no names, or the module asked for again");
+      expect(drift).toContain("app:say-goodbye");
+      // A change to the scenarios of one not named: work again, and it joins them - the other still waits.
+      scenariosIn("say-thanks", "app", "# works\nIt works, and says thanks.");
+      await loop.bringUp("app.plain", { specChange: true });
+      await loop.drain();
+      expect(tests.ran.map((job) => job.add)).toEqual([["say-hello"], ["say-thanks"]]);
+      // Asked for with no names: the rest.
+      await loop.conformance("app.plain");
+      await loop.drain();
+      expect(tests.ran.map((job) => job.add)).toEqual([["say-hello"], ["say-thanks"], ["say-goodbye"]]);
+      expect(describeDrift(loop.drift("app.plain"))).toContain("conformance tests: written for what is built - no drift");
     });
 
     it("write none in a module whose functional specs have no scenarios", async () => {
