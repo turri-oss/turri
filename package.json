@@ -39,8 +39,8 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "^1.2.0",
-    "@earendil-works/pi-tui": "^1.2.0",
+    "@earendil-works/pi-coding-agent": "1.4.0",
+    "@earendil-works/pi-tui": "1.4.0",
     "@langchain/langgraph": "1.4.15",
     "gray-matter": "^4.0.3",
     "js-yaml": "^5.4.2",
