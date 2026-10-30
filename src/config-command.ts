@@ -1,5 +1,6 @@
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { join } from "node:path";
 import { applyBedrockRegion } from "./bedrock-region.ts";
 import { CONFIG_FILE, LEGACY_CONFIG_FILE, THINKING_LEVELS, usesLegacyConfig } from "./config.ts";
 import {
@@ -16,6 +17,8 @@ import {
   writeSetting,
   type Setting,
 } from "./config-edit.ts";
+import { PACKAGE_ROOT } from "./environment.ts";
+import { loadRules } from "./rules.ts";
 
 /**
  * `/turri-config`: every setting of the project's config.turri.yaml from the chat - `/turri-config` alone lists them,
@@ -50,13 +53,42 @@ const TYPE_ANOTHER = "type another…";
 const DONE = "done";
 const ROLES_ENTRY = "models.<role> - each agent role's own model, thinking and turn limit…";
 
-/** The models pi can reach here, signed in: provider/id. */
-function reachable(ctx: ExtensionContext | undefined): string[] {
+/** The models pi can reach here, signed in: provider/id - from a chat's context, the model registry the chats use. */
+export function reachable(ctx: ExtensionContext | undefined): string[] {
   try {
     return (ctx?.modelRegistry.getAvailable() ?? []).map((model) => `${model.provider}/${model.id}`).sort();
   } catch {
     return [];
   }
+}
+
+/** How many values the terminal's autocomplete shows for a setting: a host reads them whole (`settingCandidates`). */
+const COMPLETIONS_SHOWN = 40;
+
+/**
+ * Every value /turri-config offers for a setting after what is typed, in its order - "unset" left out, and uncapped: what
+ * its completions show, the first of them, and what a host's settings list shows (host-session.ts `settingChoices`).
+ * A model setting's are every model pi can reach, signed in - `models` - and after a colon, that model's thinking levels.
+ */
+export function settingCandidates(setting: Setting, typed: string, where: { cwd: string; models: () => string[] }): string[] {
+  const candidates =
+    setting.kind === "boolean"
+      ? ["true", "false"]
+      : setting.kind === "model"
+        ? typed.includes(":")
+          ? THINKING_LEVELS.map((level) => `${typed.slice(0, typed.lastIndexOf(":"))}:${level}`)
+          : where.models()
+        : setting.kind === "path"
+          ? pathOptions(where.cwd, setting.key)
+          : setting.key === "agent-env.files"
+            ? dotenvFiles(where.cwd)
+            : (setting.options ?? []);
+  return candidates.filter((candidate) => candidate.startsWith(typed));
+}
+
+/** The ***plain rules there are, by name - what rules-off takes, and its values. */
+export function ruleNames(): string[] {
+  return loadRules(join(PACKAGE_ROOT, "genome", "rules")).map((rule) => rule.name);
 }
 
 /** A setting's line in the list: its key, what it is now - or what it is unset - and what it does. */
@@ -216,19 +248,7 @@ export function registerTurriConfig(pi: ExtensionAPI, options: TurriConfigOption
       const setting = settingOf(prefix.slice(0, space), options.rules());
       if (setting === undefined) return null;
       const typed = prefix.slice(space + 1).trimStart();
-      const candidates =
-        setting.kind === "boolean"
-          ? ["true", "false"]
-          : setting.kind === "model"
-            ? typed.includes(":")
-              ? THINKING_LEVELS.map((level) => `${typed.slice(0, typed.lastIndexOf(":"))}:${level}`)
-              : reachable(seen)
-            : setting.kind === "path"
-              ? pathOptions(cwd, setting.key)
-              : setting.key === "agent-env.files"
-                ? dotenvFiles(cwd)
-                : (setting.options ?? []);
-      const items = [...candidates, "unset"].filter((candidate) => candidate.startsWith(typed)).slice(0, 40);
+      const items = [...settingCandidates(setting, typed, { cwd, models: () => reachable(seen) }), ...("unset".startsWith(typed) ? ["unset"] : [])].slice(0, COMPLETIONS_SHOWN);
       return items.length === 0 ? null : items.map((candidate) => ({ value: `${setting.key} ${candidate}`, label: candidate }));
     },
     handler: async (args, ctx) => {
