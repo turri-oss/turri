@@ -100,7 +100,7 @@ export function createSpecDiffTools(options: {
       const result = applySpecDiff(params.diff, cwd);
       // A change that breaks a spec is not written at all, so nothing is ever built from a file that cannot be parsed:
       // each module it touched is parsed with its test plain files - an import module as the modules that import it
-      // read it, a test plain file as its module - as validate parses them. A module with no functional specs yet is
+      // read it, a test plain file as its module - as parse reads them. A module with no functional specs yet is
       // not broken.
       const failed = checkTouchedPlain([params.plain_file, ...touched].map((file) => resolve(cwd, file))).filter((check) => !check.ok);
       if (failed.length > 0) {

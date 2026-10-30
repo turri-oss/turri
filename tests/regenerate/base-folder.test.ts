@@ -136,7 +136,7 @@ describe("a base folder", () => {
     expect(baseFolderDrift(codeOf("app"), join(dir, "app.plain"))).toBeUndefined();
   });
 
-  it("not there stops the first pulse before it starts - and validate, doctor and drift say so beforehand", async () => {
+  it("not there stops the first pulse before it starts - and parse, doctor and drift say so beforehand", async () => {
     writeFileSync(join(dir, "config.turri.yaml"), "module: app.plain\nbase-folder: nowhere\n");
     expect(() => seedFromBaseFolder(codeOf("app"), join(dir, "app.plain"), "app")).toThrow(MissingBaseFolderError);
     expect(checkPlainFile(join(dir, "app.plain")).warnings).toEqual(["its base folder nowhere (base-folder:) is not there - its codebase's first pulse stops until it is"]);

@@ -44,7 +44,7 @@ const AT_COMMAND = String.raw`(?:^|[\s;&|()\x60$])`;
 
 /**
  * What a shell command would run of turri or pi itself, if anything: the subcommand,
- * or "pi" for another pi. `turri validate`, `drift` and `lineage` are not in it - they start no
+ * or "pi" for another pi. `turri parse`, `drift` and `lineage` are not in it - they start no
  * agent - and neither are setup and doctor.
  */
 export function selfInvocation(command: string): string | undefined {

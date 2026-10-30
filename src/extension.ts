@@ -36,7 +36,7 @@ import { askedForCommandLine, refusal, selfInvocation, TOOLS_NOT_CLI } from "./s
 import { NEW_PROJECT } from "./new-project.ts";
 import { describeChoices, describeResolution, type ModelChoices, modelFor, type RenderWork, resolveModel } from "./regenerate/engine.ts";
 import { checkPlainFile, formatCheckResults } from "./plain/check.ts";
-import { checkPlainTool } from "./validate-tool.ts";
+import { checkPlainTool } from "./parse-tool.ts";
 import { changedFiles, projectFiles } from "./plain-files.ts";
 import { whyFailed } from "./regenerate/diagnose-job.ts";
 import { createWorkLoop, describeModules, isUpToDate, previewJobs, type WorkLoop } from "./regenerate/loop.ts";
@@ -1087,7 +1087,7 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
         // Asked per job as it is queued, so a model chosen mid-interview applies from then on.
         renderQueue: workLoopFor(jobs, cwd, ctx),
         // The person answers the skill's agent while it runs, so it can take "render these with ..." too.
-        // validate too: a skill validates what it wrote with the same check the conversation has.
+        // parse too: a skill parses what it wrote with the same check the conversation has.
         sharedTools: [setRenderModelTool(pi, ctx), checkPlainTool(cwd), ...createWebTools()],
         // The conversation's own regenerate, drift, halt and conform, on its loop: a skill waits for nothing, and regenerates on the model chosen.
         loopTools: [
@@ -2674,7 +2674,7 @@ function jobLines(all: Job[]): string {
 
 
 /**
- * Static validation of a ***plain specification.
+ * The ***plain parsed - its syntax and structure - regenerating nothing.
  *
  * This is the check that used to mean a renderer dry-run. It runs this repo's own parser,
  * so it needs no external tool, no API key and no credits - and it is the only honest way

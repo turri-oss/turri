@@ -17,7 +17,7 @@ import {
 } from "./spec.ts";
 
 /**
- * Static validation of ***plain, using this repo's own parser - `turri validate`, the chat's `validate`, and the check
+ * Static validation of ***plain, using this repo's own parser - `turri parse`, the chat's `parse`, and the check
  * `change_plain` and `turri change-plain` run on what a change touched.
  *
  * It parses each module with its test plain files, resolves its imports and required modules, and reports every error
@@ -235,7 +235,7 @@ export function checkPlainTargets(target: string, templateDirs: string[] = []): 
  * The check of what a ***plain change touched, shared by `change_plain` and `turri change-plain`: each module it
  * touched, an import module as the modules that import it read it, and each test plain file as its module - by its
  * folder - is parsed with its test plain files; a test plain file the change put where it does not belong is refused
- * as `validate` refuses it. A file the change deleted is checked through the module it belonged to.
+ * as `parse` refuses it. A file the change deleted is checked through the module it belonged to.
  */
 export function checkTouchedPlain(paths: string[]): CheckResult[] {
   const modules = new Set<string>();

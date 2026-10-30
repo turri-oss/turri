@@ -33,7 +33,7 @@
     "mutation": "node scripts/mutation.mjs",
     "conform": "tsx src/conform-cli.ts",
     "regenerate": "tsx src/regenerate-cli.ts",
-    "validate": "tsx src/validate-cli.ts",
+    "parse": "tsx src/parse-cli.ts",
     "doctor": "node bin/turri.mjs doctor",
     "build": "node scripts/build.mjs",
     "prepack": "npm run build"

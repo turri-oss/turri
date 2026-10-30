@@ -31,8 +31,8 @@ describe("a shell command that runs turri again", () => {
   });
 
   it("leaves everything else alone", () => {
-    expect(selfInvocation("turri validate app.plain")).toBeUndefined();
-    expect(selfInvocation("turri validate app.plain")).toBeUndefined();
+    expect(selfInvocation("turri parse app.plain")).toBeUndefined();
+    expect(selfInvocation("turri parse app.plain")).toBeUndefined();
     expect(selfInvocation("turri drift app.plain")).toBeUndefined();
     expect(selfInvocation("turri doctor")).toBeUndefined();
     expect(selfInvocation("turri --help")).toBeUndefined();

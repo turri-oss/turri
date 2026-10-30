@@ -256,7 +256,7 @@ export function sentinelBrief(
 // Its tools.
 
 /** The tools the sentinel's agent may call: what reads, its notices and its guidance - and what a host gives it. */
-export const SENTINEL_TOOLS = ["read", "ls", "grep", "find", "bash", "read_output", "ledger", "pulses", "diagnose", "validate", "doctor", "web_search", "web_fetch", "notify_person", "conclude", "keep_guidance"];
+export const SENTINEL_TOOLS = ["read", "ls", "grep", "find", "bash", "read_output", "ledger", "pulses", "diagnose", "parse", "doctor", "web_search", "web_fetch", "notify_person", "conclude", "keep_guidance"];
 
 /**
  * Its file tools and shell: the whole project to read and nothing to write - the shell behind the command check, the OS

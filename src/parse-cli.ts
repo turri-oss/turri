@@ -1,11 +1,11 @@
 import { checkPlainTargets, formatCheckResults } from "./plain/check.ts";
 import { c } from "./module-report.ts";
 
-const USAGE = `usage: turri validate <file.plain | directory> [options]
+const USAGE = `usage: turri parse <file.plain | directory> [options]
 
-Validates ***plain statically: parses each module with its test plain files, resolves its imports
-and required modules, and reports every error without regenerating anything - and every test plain file outside its module's
-folder. A functional spec with no test plain file is not tested, as one whose file is empty. A module whose
+Parses ***plain - its syntax and structure, never its code or tests: each module with its test plain files,
+its imports and required modules, every error reported without regenerating anything - and every test plain file
+outside its module's folder. A functional spec with no test plain file is not tested. A module whose
 functional specs have scenarios but which has no test reqs, or no conformance testing script for its
 stack, is a warning: its conformance tests are not written until it has them. A test plain file or
 test folder is refused: name its module.

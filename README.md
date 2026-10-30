@@ -175,7 +175,7 @@ The last one holds for the rest of the session; the model can be chosen separate
 Without a conversation, the same work is on the command line:
 
 ```bash
-turri validate app.plain    # validate ***plain - no model, no API key
+turri parse app.plain    # parse ***plain, its syntax and structure - no model, no API key
 turri drift app.plain       # what is left to regenerate - starts nothing
 turri regenerate app.plain      # regenerate the code from ***plain: planned into jobs, run until it is done
 turri regenerate app.plain app:add-task    # regenerate one functional spec again, changed or not
@@ -199,7 +199,7 @@ Start at the [documentation index](docs/README.md), or go straight to a page:
 | [Regenerating](docs/regenerating.md) | what each build does and in which order: functionalities, modules, regeneration, changes to \*\*\*plain, conformance and acceptance tests, working notes, what the code is built from |
 | [The sandbox](docs/sandbox.md) | what agents can reach, the walls every command passes, time limits, the web tools |
 | [Skills and gates](docs/skills-and-gates.md) | the gate syntax, what the harness enforces, judges, rules |
-| [The \*\*\*plain parser](docs/parser.md) | the TypeScript port, `turri validate`, fidelity to the reference parser |
+| [The \*\*\*plain parser](docs/parser.md) | the TypeScript port, `turri parse`, fidelity to the reference parser |
 | [Theming](docs/theming.md) | the two brand themes |
 | [Development](docs/development.md) | tests, layout, known edges |
 

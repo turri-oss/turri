@@ -13,7 +13,7 @@ import { findTestScripts, projectRootFor } from "./test-scripts.ts";
  * for it; then, in order: its test reqs - the stack's conformance template, or its own - the conformance testing script
  * for its stack, and the scenarios in its test plain files. A module whose functional specs have scenarios but which
  * skipped one of the first two has its conformance pulses refused - by the work loop and by `conform` alike - and
- * `validate` and the map say what is missing. A module with no scenarios skipped nothing: it is not tested.
+ * `parse` and the map say what is missing. A module with no scenarios skipped nothing: it is not tested.
  */
 
 export interface TestingGap {

@@ -47,7 +47,7 @@ Two functional specs that contradict each other stop a pulse in a way only you c
 
 ## What it may do
 
-Nothing that changes the project. Its file tools - `read`, `ls`, `grep`, `find` - read the whole project, its \*\*\*plain among them, and write nothing; its shell runs [behind the walls](sandbox.md) every agent's does - the command check, the OS sandbox where one is up, the audit - with the project read only and the network open, its home and temporary folder its own. It has `ledger`, `pulses`, `diagnose`, `validate`, `doctor` and the web, `notify_person` for its notices, `conclude` for when it is done with a pulse, `keep_guidance`, and what a host gives it. Whatever else it calls is refused: it never regenerates, steers, releases or changes \*\*\*plain, and never asks you a question - a notice is how it reaches you. What it found to do is yours to accept.
+Nothing that changes the project. Its file tools - `read`, `ls`, `grep`, `find` - read the whole project, its \*\*\*plain among them, and write nothing; its shell runs [behind the walls](sandbox.md) every agent's does - the command check, the OS sandbox where one is up, the audit - with the project read only and the network open, its home and temporary folder its own. It has `ledger`, `pulses`, `diagnose`, `parse`, `doctor` and the web, `notify_person` for its notices, `conclude` for when it is done with a pulse, `keep_guidance`, and what a host gives it. Whatever else it calls is refused: it never regenerates, steers, releases or changes \*\*\*plain, and never asks you a question - a notice is how it reaches you. What it found to do is yours to accept.
 
 ## Talking to it
 

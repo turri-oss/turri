@@ -165,7 +165,7 @@ For each new module:
 
 Read each new `.plain` file in full and present the final structure to the user for approval. If the user requests changes, apply them and re-verify.
 
-Validate each new module with `turri validate <module>.plain` (or the `validate` tool) before going on: a module that does not parse cannot be regenerated.
+Parse each new module with `turri parse <module>.plain` (or the `parse` tool) before going on: a module that does not parse cannot be regenerated.
 
 ## Phase 5 — Regenerate the Chain from Scratch
 
@@ -193,7 +193,7 @@ If a concept defined in module A is referenced by a functional spec in module B 
 This is a refactoring, not a rewrite. Functional specs must be copied verbatim. If one needs rewording to work in its new module context, that is a sign the split boundary is wrong — adjust the grouping instead.
 
 ### Losing test plain files
-A test plain file binds to its functional spec by `module:` and `func_id:`, and lives in its module's folder. When a functional spec moves to a new module, its test plain file moves to `tests/<new module>/` with `module:` changed; otherwise `turri validate` reports a file bound to no functional spec, and a functional spec with no test plain file.
+A test plain file binds to its functional spec by `module:` and `func_id:`, and lives in its module's folder. When a functional spec moves to a new module, its test plain file moves to `tests/<new module>/` with `module:` changed; otherwise `turri parse` reports a file bound to no functional spec, and a functional spec with no test plain file.
 
 ### Regenerating only what changed
 After a split the existing code was built for a module layout that no longer exists. Regenerating incrementally either stops at a codebase that has to be started over or builds on code laid out for the old modules. Regenerate the whole chain from scratch.
@@ -213,6 +213,6 @@ After a split the existing code was built for a module layout that no longer exi
 - [ ] Original module removed or updated
 - [ ] Downstream modules (if any) updated to require the chain tip, plus any earlier chain modules whose exported concepts they reference
 - [ ] User approved the final result
-- [ ] Every new module validates
+- [ ] Every new module parses
 - [ ] The tip of the chain regenerated from scratch with its whole chain, then any module that requires it
 - [ ] User told about the original module's leftover codebase, if there is one

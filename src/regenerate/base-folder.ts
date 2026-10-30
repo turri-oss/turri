@@ -178,7 +178,7 @@ export function inCodebaseOf(file: string, buildDir: string, plainFile: string):
   return !at.startsWith("../") && at !== ".." && base.files.includes(at) ? at : undefined;
 }
 
-/** A base folder named for a module and not there: what `validate` and `doctor` say of it. None when it is there, or none is named. */
+/** A base folder named for a module and not there: what `parse` and `doctor` say of it. None when it is there, or none is named. */
 export function missingBaseFolder(plainFile: string): string | undefined {
   const base = baseFolderOf(plainFile);
   if (base === undefined || (existsSync(base.path) && statSync(base.path).isDirectory())) return undefined;

@@ -21,7 +21,7 @@ Every functional spec in `***functional specs***` and every scenario in a test p
 ## Uniqueness
 - A func-id is unique in its module; two modules may use the same func-id
 - A scenario-id is unique among its functional spec's scenarios, once every test plain file bound to it is merged; two functional specs may use the same scenario-id
-- Before adding an id, search the module (or the functional spec's test plain files) for the same heading; a duplicate is an error `turri validate` reports
+- Before adding an id, search the module (or the functional spec's test plain files) for the same heading; a duplicate is an error `turri parse` reports
 
 ## Stability
 - An id is an identity, not a label: a functional spec keeps its func-id for as long as it exists, even when its text changes

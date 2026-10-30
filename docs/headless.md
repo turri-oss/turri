@@ -18,7 +18,7 @@ Check \*\*\*plain parses, without spending anything:
 
 ```bash
 cd ~/my-project                  # the directory that holds the spec
-turri validate app.plain
+turri parse app.plain
 ```
 
 ## Run it

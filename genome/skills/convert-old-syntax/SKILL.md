@@ -7,12 +7,12 @@ description: >-
   when turri says a module is in the old ***plain syntax, or the person asks to
   convert one. One run converts one module, the lowest of the chain first;
   it never regenerates.
-allowed-tools: [read, ls, grep, find, change_plain, validate]
+allowed-tools: [read, ls, grep, find, change_plain, parse]
 metadata:
   phases:
     ids: "a func-id for each functional spec and a scenario-id for each acceptance test, proposed and confirmed"
     rewrite: "the module and its test plain files, in one ***plain diff, word for word"
-    check: "validate, and which module is next"
+    check: "parse, and which module is next"
   gates:
     - after: rewrite
       review:
@@ -34,7 +34,7 @@ Moves one module from the old ***plain syntax to the new one: each functional sp
 
 **Which module.** Convert one module in this run. When the person named one, start at the lowest module of its `requires` chain still in the old syntax - the first, from the bottom of the chain, whose functional specs are `- ` bullets - which may be the one they named. Read the modules of the chain as text to tell: a module in the old syntax has `- ` bullets right under `***functional specs***`, or `***acceptance tests***` nested in it, and no `# <func-id>` heading. Skip import modules, which have no functional specs, and the standard library's templates (`stdlib/...`): there is nothing in them to convert. When every module of the chain is in the new syntax already, change nothing: say so, and that the run is done.
 
-**Read the module as text,** with `read` - the parser refuses the old syntax, so `validate` cannot read it yet. Change nothing in this step.
+**Read the module as text,** with `read` - the parser refuses the old syntax, so `parse` cannot read it yet. Change nothing in this step.
 
 **Propose the ids:**
 - A func-id for each functional spec - each top-level `- ` bullet under `***functional specs***`: short kebab-case from what it means (`add-task`), lowercase letters, digits and hyphens only, unique in the module (`semantic-ids.md`)
@@ -57,12 +57,12 @@ The record for the review: the module as it was before the change, word for word
 
 ### check
 
-Run `validate` on the module and show what it says in your reply.
+Run `parse` on the module and show what it says in your reply.
 
-When it reports an error the conversion made, show it to the person with `ask_user`, with the fix, and write the fix with one `change_plain`; then run `validate` again. An error the module had before the conversion stays for the person.
+When it reports an error the conversion made, show it to the person with `ask_user`, with the fix, and write the fix with one `change_plain`; then run `parse` again. An error the module had before the conversion stays for the person.
 
 End with the result:
 - the module converted, its functional specs and scenarios counted, and the files written
-- what `validate` said
+- what `parse` said
 - the next module of the chain still in the old syntax, for the chat to convert with this skill again - or that the chain is done
 - that nothing was regenerated: once the whole chain is converted, its code in `plain_modules/` was built when functional specs were numbered, and the chain has to be regenerated from scratch - only with the person's go

@@ -78,7 +78,7 @@ const COMMANDS: Record<string, { module: string; blurb: string; args?: string[] 
   drift: { module: "./drift-cli.ts", blurb: "what is left to regenerate: how far the code has drifted from its spec" },
   conform: { module: "./conform-cli.ts", blurb: "write and run a module's conformance tests" },
   "change-plain": { module: "./change-plain-cli.ts", blurb: "apply a change to ***plain, given as a git diff, and regenerate it" },
-  validate: { module: "./validate-cli.ts", blurb: "validate a ***plain spec, regenerating nothing" },
+  parse: { module: "./parse-cli.ts", blurb: "parse ***plain - its syntax and structure, never its code or tests - regenerating nothing" },
   lineage: { module: "./lineage-cli.ts", blurb: "a module's lineage: what was regenerated into it, and when" },
   ledger: { module: "./ledger-cli.ts", blurb: "what turri did here: the last runs and their pulses, or one pulse, from the ledger" },
   release: { module: "./release-cli.ts", blurb: "release what is regenerated to dist/<module> and activate it on this machine" },
@@ -152,7 +152,7 @@ if (command === "-v" || command === "--version") {
 // The AWS region the project's Bedrock models need, set before any model is called - here, and in the pi the chat starts,
 // which inherits it - unless the person set one (bedrock-region.ts). The models named on the command line count too. A
 // command that calls no model is left alone.
-if (!["validate", "drift", "lineage", "ledger", "init-config"].includes(command ?? "")) {
+if (!["parse", "drift", "lineage", "ledger", "init-config"].includes(command ?? "")) {
   const { applyBedrockRegion } = await import("./bedrock-region.ts");
   const named = argv.flatMap((arg, at) =>
     ["--harness-model", "--coding-model", "--model"].includes(arg) ? [argv[at + 1] ?? ""] : arg.startsWith("--harness-model=") || arg.startsWith("--coding-model=") || arg.startsWith("--model=") ? [arg.slice(arg.indexOf("=") + 1)] : [],
@@ -194,7 +194,7 @@ process.argv = [
 // A headless run is stopped by a signal - SIGTERM, SIGHUP, Ctrl-C - whatever else listens for it: it exits, and what
 // its agents left running goes with it (shell.ts kills every process group on exit). Left to the libraries' own
 // handlers, one ran on for minutes after it was told to stop, building in the same codebase as the run after it.
-if (!["validate", "check", "drift", "lineage", "ledger"].includes(command)) {
+if (!["parse", "drift", "lineage", "ledger"].includes(command)) {
   for (const [signal, code] of [["SIGTERM", 143], ["SIGHUP", 129], ["SIGINT", 130]] as const) {
     process.on(signal, () => {
       console.error(`\nstopped (${signal})`);

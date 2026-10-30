@@ -38,7 +38,7 @@ The bullet, section, or `.plain` file to resolve.
 7. **Write each fact into its owning section** by that section's rule — `definitions.md`, `impl-reqs.md`, `test-reqs.md`, and for a test scenario its functional spec's test plain file, by *Writing scenarios* in `test-plain-files.md`. A fact moving *into* `***functional specs***` goes through `func-specs.md` (*Adding a functional spec*): its complexity and conflict checks run before it is written in.
 8. **Remove each fact from where it no longer belongs.** If a bullet is left stating nothing observable, delete the bullet; do not leave a stub. Deleting the last bullet of a section deletes the section.
 9. **Verify nothing was lost and nothing was duplicated.** Walk every fact from the original text and confirm it appears in exactly one section. A fact that now reads as obvious in its new home is still a cut decision — make it deliberately, per `concise-specs.md`.
-10. **Run `validate`** on the module. Moving facts changes what is regenerated; do not finish while it reports errors.
+10. **Run `parse`** on the module. Moving facts changes what is regenerated; do not finish while it reports errors.
 11. **Read the file again** to confirm canonical section order (`***definitions***` → `***implementation reqs***` → `***test reqs***` → `***functional specs***`), correct syntax, and that every referenced concept is still defined before use.
 
 ## Error Handling

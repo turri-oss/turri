@@ -184,7 +184,7 @@ describe("a skill's tools", () => {
 
   it("convert-old-syntax rewrites a module through change_plain alone, its rewrite judged before it is kept", () => {
     const skill = loadSkill("genome/skills/convert-old-syntax");
-    expect(skill.allowedTools).toEqual(["read", "ls", "grep", "find", "change_plain", "validate"]);
+    expect(skill.allowedTools).toEqual(["read", "ls", "grep", "find", "change_plain", "parse"]);
     expect(skill.steps.map((step) => step.name)).toEqual(["ids", "rewrite", "check"]);
     const gate = skill.steps.find((step) => step.name === "rewrite")!.gate!;
     expect(gate.review.judgeTools).toEqual(["read", "ls", "grep", "find"]);

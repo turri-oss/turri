@@ -6,7 +6,7 @@
 
 The port follows plain-parser [#15](https://github.com/plainlang/plain-parser/pull/15) ("explicit test scenarios") at **`e0c5f31`** (2026-10-27), its head when the port was last checked; #15 is not merged yet. #15 branches from `063c8e0` (2026-10-13), and the port was brought there first, from `bdfd1af` (2026-09-20), as a step of its own:
 
-- **`bdfd1af`..`063c8e0`:** lookup errors that say only what was not found (`692eaac`), exported concepts checked as each module is parsed (`0abc70d`), the concept graph sorted the way graphlib sorts it and a cycle report capped at `MAX_REPORTED_CYCLES` (`8741e03`, `6934220`), links resolved against the plain file's own folder (`0a1f044`), corrected error spacing and wording (`a275916`), Liquid syntax errors as \*\*\*plain syntax errors (`5d91970`), and the `requires` chain's exports and order (`269be5a`, `f59f51a`, `6917023`, `2cf5298`). The `check` and `parse` command line of `5b3b20c`..`063c8e0` has no counterpart: turri's is `turri validate`.
+- **`bdfd1af`..`063c8e0`:** lookup errors that say only what was not found (`692eaac`), exported concepts checked as each module is parsed (`0abc70d`), the concept graph sorted the way graphlib sorts it and a cycle report capped at `MAX_REPORTED_CYCLES` (`8741e03`, `6934220`), links resolved against the plain file's own folder (`0a1f044`), corrected error spacing and wording (`a275916`), Liquid syntax errors as \*\*\*plain syntax errors (`5d91970`), and the `requires` chain's exports and order (`269be5a`, `f59f51a`, `6917023`, `2cf5298`). The `check` and `parse` command line of `5b3b20c`..`063c8e0` has no counterpart: turri's is `turri parse`.
 - **#15, `37e0b35`..`f1ac046`:** a functional spec is a `# <func-id>` heading with a free-text body; func-ids and scenario-ids are semantic ids (`SEMANTIC_ID_PATTERN`); `- ` bullets and `***acceptance tests***` in a module are the previous syntax, and are errors; conformance and acceptance scenarios live in test plain files, bound to a functional spec by their `module:` and `func_id:`; and with `require_test_plain_files` every functional spec of the chain needs a test plain file, which may hold no scenario (`f1ac046`).
 - **#15, `e0c5f31`:** the parser has no default test directory - test plain files are read only from the directories it is given. Its command line's side of it, a usage error for a `conformance-tests-script` with no `test-dir`, has no counterpart in turri, whose `test-dir` is `tests` unless the config says otherwise (see [the config](config.md)); the parser here, like #15's, reads test plain files only when `ParseOptions.testDir` is given. Its fixture `cli/project/config.yaml` gains `test-dir: tests`.
 
@@ -60,9 +60,9 @@ Either section may be left out, but one that is there has at least one scenario:
 ## Checking \*\*\*plain
 
 ```bash
-turri validate <file.plain>        # one module
-turri validate .                   # every .plain module in a directory
-turri validate <file.plain> --json
+turri parse <file.plain>        # one module
+turri parse .                   # every .plain module in a directory
+turri parse <file.plain> --json
 ```
 
 It uses this repo's own parser, so it needs no external tool, no API key and no credits: it parses each module with its test plain files, resolves its imports and required modules, and reports every syntax, concept and structure error with the line it is on. A module that passes lists each functional spec with its test plain file and its scenarios - and, where they have scenarios but the module has no test reqs, or no conformance testing script for its stack, a `WARN` line naming the next step ([the steps of adding tests](regenerating.md#the-steps-of-adding-tests)): a warning, never a failure:
@@ -86,9 +86,9 @@ FAIL  tests/  2 test plain files outside a module's folder
         tests/todos/x.plain - no module todos; module: todo is in tests/todo/
 ```
 
-A test plain file, or a test folder, is never taken for a module: `validate` - and `regenerate`, `conform`, `glimpse`, `drift`, `release`, `/regenerate` and the commands - refuse one, naming its module (`\`tests/todo/add-task.plain\` is a test plain file of \`todo\`; name \`todo.plain\`, or \`todo:add-task\` for that one functional spec`).
+A test plain file, or a test folder, is never taken for a module: `parse` - and `regenerate`, `conform`, `glimpse`, `drift`, `release`, `/regenerate` and the commands - refuse one, naming its module (`\`tests/todo/add-task.plain\` is a test plain file of \`todo\`; name \`todo.plain\`, or \`todo:add-task\` for that one functional spec`).
 
-The exit code is 0 only when every file passed. In a conversation the same check is `validate`; `change_plain` and `turri change-plain` run it on what a change touched - each module, an import module as the modules that import it, a test plain file as its module - and a change that does not pass is rolled back, a test plain file written outside its module's folder with it.
+The exit code is 0 only when every file passed. In a conversation the same check is `parse`; `change_plain` and `turri change-plain` run it on what a change touched - each module, an import module as the modules that import it, a test plain file as its module - and a change that does not pass is rolled back, a test plain file written outside its module's folder with it.
 
 ## Two rules of inheritance
 
