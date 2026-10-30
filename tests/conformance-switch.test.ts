@@ -118,7 +118,12 @@ describe("what the chat is told of conformance tests", () => {
 
   it("is given a tool that turns them on, writing the config, and the chat's tools switched with it", async () => {
     let switched = 0;
-    const tool = turnOnConformanceTestsTool({ cwd: dir, turnedOn: () => (switched += 1) });
+    const tool = turnOnConformanceTestsTool({
+      turnOn: (plainFile) => {
+        switched += 1;
+        return turnOnConformanceTests(dir, plainFile);
+      },
+    });
     const result = (await tool.execute("id", {} as never, undefined, undefined, undefined as never)) as { content: Array<{ text: string }> };
     expect(result.content[0]!.text).toContain("Conformance tests are on for this project now - conformance-tests: true, written in config.turri.yaml.");
     expect(config()).toMatch(/^conformance-tests: true$/m);

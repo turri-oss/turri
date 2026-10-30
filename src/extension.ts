@@ -20,7 +20,7 @@ import { sandboxAvailable, sandboxSummary } from "./regenerate/os-sandbox.ts";
 import { findTestScripts, scriptKindOfSkill } from "./regenerate/test-scripts.ts";
 import { writingScript } from "./regenerate/scripts-being-written.ts";
 import { applyBedrockRegion } from "./bedrock-region.ts";
-import { conformanceBlock, conformanceTestsOnIn, CONFORMANCE_TOOLS, TURN_ON_TOOL, turnOnConformanceTestsTool } from "./conformance-switch.ts";
+import { conformanceBlock, conformanceTestsOnIn, CONFORMANCE_TOOLS, TURN_ON_TOOL, turnOnConformanceTests, turnOnConformanceTestsTool } from "./conformance-switch.ts";
 import { BACKGROUND_NOTE, doneLine, failedTask, ownChanges, runDetails, skillRunDelivery, startedText } from "./background-skills.ts";
 import { createAskUserTool } from "./tools.ts";
 import { asksFromScratch, asksWholeChain, driftTool, fromWorkingDir, haltTool, loopReply, MODEL_PARAM, regenerateTool, STACK_PARAM, stopJob, WAIT_PARAM, withCallStack, WORKING_DIR_PARAM } from "./loop-tools.ts";
@@ -593,6 +593,7 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
     jobsChanged: () => panel.refresh(),
     thinkingLevel: () => pi.getThinkingLevel(),
     context: contextNow,
+    conformanceSwitched: () => conformanceTools(),
   });
   pi.on("session_start", (_event, ctx) => {
     lastContext = ctx;
@@ -782,7 +783,7 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
       /* not bound to a session yet: the next turn sets them */
     }
   };
-  if (!isSentinel) pi.registerTool(turnOnConformanceTestsTool({ cwd, turnedOn: conformanceTools }));
+  if (!isSentinel) pi.registerTool(turnOnConformanceTestsTool({ turnOn: (plainFile) => turnOnConformance(session, plainFile) }));
   pi.on("session_start", () => conformanceTools());
   pi.on("before_agent_start", () => conformanceTools());
   // More chats beside this one, in the terminal: /chat, alt+n, alt+1…9 (chat-commands.ts).
@@ -1772,6 +1773,25 @@ function chatModelOf(ctx: ExtensionContext): string | undefined {
   }
 }
 let lastChatModel: string | undefined;
+
+/**
+ * Conformance tests turned on, for the session: `conformance-tests: true` written where the module's value comes from
+ * (conformance-switch.ts), and every open chat's tools switched to match - what the chat's turn_on_conformance_tests and a
+ * host's turnOnConformanceTests both do. `plainFile`, absolute or from the project, picks the module whose stack's file
+ * is written when that names the key. Returns the file written, from the project. Starts no conformance pulse.
+ */
+export function turnOnConformance(core: TurriCore, plainFile?: string): string {
+  const file = turnOnConformanceTests(core.cwd, plainFile !== undefined && plainFile.trim() !== "" ? resolve(core.cwd, plainFile) : undefined);
+  for (const chat of core.chats()) {
+    const live = core.session(chat.id);
+    try {
+      (live !== undefined ? core.chatOfSession(live) : undefined)?.instance?.conformanceSwitched?.();
+    } catch {
+      /* a chat let go: its next turn sets its tools */
+    }
+  }
+  return file;
+}
 
 /** The skills running in the background, by project and skill - one at a time each, whichever chat started it - with what stops them. */
 const backgroundSkillRuns = new Map<string, AbortController>();

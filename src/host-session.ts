@@ -5,7 +5,7 @@ import { interruptChat, type ChatInfo, type TurriHost } from "./chats.ts";
 import { evaluateTests, type EvaluateOutcome } from "./advisor-chat.ts";
 import { reachable, ruleNames, settingCandidates } from "./config-command.ts";
 import { settingOf } from "./config-edit.ts";
-import { createTurriCore, sessionAdvisor, sessionLoop } from "./extension.ts";
+import { createTurriCore, sessionAdvisor, sessionLoop, turnOnConformance } from "./extension.ts";
 import { stopDeployed } from "./regenerate/release.ts";
 import type { JobRegistry } from "./regenerate/jobs.ts";
 import type { WorkLoop } from "./regenerate/loop.ts";
@@ -86,6 +86,14 @@ export interface Turri {
    */
   settingChoices(key: string, typed?: string): string[];
   /**
+   * Conformance tests turned on, as the chat's turn_on_conformance_tests does: `conformance-tests: true` written where
+   * the module's value comes from - its stack's `config.turri.<stack>.yaml` when that sets the key, else
+   * `config.turri.yaml` - and every open chat's tools switched (conform and evaluate_tests in, turn_on_conformance_tests
+   * out), the test advisor starting at its next look. `plainFile`, absolute or from the project, picks the module; omitted,
+   * the project's. Returns the file written, from the project. Starts no conformance pulse: that is `conform`'s.
+   */
+  turnOnConformanceTests(plainFile?: string): string;
+  /**
    * A notice answered: one of its actions (by index or label) - the chat it is in started on it - the person's own words
    * about it, dismissed, or - `ignorable: true` - ignored for good: left as the build has it, the sentinel told not to
    * raise it again. `refused` for `ignore` on one that is not ignorable, `over` when it was answered or superseded
@@ -157,6 +165,7 @@ export async function createTurri(options: TurriOptions = {}): Promise<Turri> {
     decline: async (id) => core.decline(id),
     notices: () => core.notices(),
     evaluateTests: (funcIds, options) => evaluateTests(cwd, sessionAdvisor(core), funcIds, options),
+    turnOnConformanceTests: (plainFile) => turnOnConformance(core, plainFile),
     settingChoices: (key, typed = "") => {
       const setting = settingOf(key, ruleNames());
       if (setting === undefined) return [];

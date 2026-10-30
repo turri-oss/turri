@@ -84,8 +84,12 @@ export function conformanceBlock(on: boolean): string {
   ].join("\n");
 }
 
-/** turn_on_conformance_tests: the chat turns conformance testing on, the person having asked for it or agreed to it. */
-export function turnOnConformanceTestsTool(options: { cwd: string; turnedOn: () => void }): ToolDefinition {
+/**
+ * turn_on_conformance_tests: the chat turns conformance testing on, the person having asked for it or agreed to it.
+ * `turnOn` is the session's (extension.ts `turnOnConformance`): the setting written, every chat's tools switched - the
+ * file written, from the project.
+ */
+export function turnOnConformanceTestsTool(options: { turnOn: (plainFile?: string) => string }): ToolDefinition {
   return defineTool({
     name: TURN_ON_TOOL,
     label: "Turn on conformance tests",
@@ -99,8 +103,7 @@ export function turnOnConformanceTestsTool(options: { cwd: string; turnedOn: () 
       plain_file: Type.Optional(Type.String({ description: "The module the tests are for: its stack's config is written when that names the key. Omitted: config.turri.yaml." })),
     }),
     async execute(_id, params) {
-      const file = turnOnConformanceTests(options.cwd, params.plain_file !== undefined ? resolve(options.cwd, params.plain_file) : undefined);
-      options.turnedOn();
+      const file = options.turnOn(params.plain_file);
       const text =
         `Conformance tests are on for this project now - conformance-tests: true, written in ${file}. Say so to the person in a line. ` +
         "conform and evaluate_tests are your tools from your next turn, and the test advisor checks new functional specs. Go on " +

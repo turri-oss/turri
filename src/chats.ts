@@ -122,6 +122,8 @@ export interface ChatInstance {
   thinkingLevel(): string | undefined;
   /** The chat's context, as its tools get it - for its model and its providers. */
   context(): ExtensionContext | undefined;
+  /** Conformance tests turned on or off: the chat's tools switched to match - conform and evaluate_tests, or the tool that turns them on. */
+  conformanceSwitched?(): void;
 }
 
 /** A chat's extension, linked to its chat. */
