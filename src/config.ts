@@ -87,13 +87,25 @@ function legacyStackConfigFile(stack: string): string {
   return `config.${stack}.yaml`;
 }
 
+/**
+ * The names in a folder - read again only once the folder itself has changed: a name added, removed or renamed in it
+ * moves its modification time. Asked many times a look, for every module of every chain.
+ */
 function namesIn(root: string): string[] {
   try {
-    return readdirSync(root);
+    const at = statSync(root).mtimeMs;
+    const kept = keptNames.get(root);
+    if (kept !== undefined && kept.at === at) return [...kept.names];
+    const names = readdirSync(root);
+    keptNames.set(root, { at, names });
+    if (keptNames.size > 64) keptNames.delete(keptNames.keys().next().value!);
+    return [...names];
   } catch {
     return [];
   }
 }
+
+const keptNames = new Map<string, { at: number; names: string[] }>();
 
 /** The stacks in the old naming, `config.<stack>.yaml`. */
 function legacyStacks(root: string): string[] {
@@ -714,11 +726,32 @@ export function configForSpec(plainFile: string): ProjectConfig {
   return readProjectConfig(root, stackForModule(plainFile));
 }
 
-/** One config file, read, or nothing of it when it is not there or does not parse. */
+/**
+ * One config file, read, or nothing of it when it is not there or does not parse. Parsed again only once the file has
+ * changed - its size or its modification time - and each caller given its own copy.
+ */
 export function readConfigFile(path: string): ProjectConfig {
+  let stamp: string;
+  try {
+    const stat = statSync(path);
+    if (!stat.isFile()) return {};
+    stamp = `${stat.size}:${stat.mtimeMs}:${stat.ino}`;
+  } catch {
+    return {};
+  }
+  const kept = keptConfigs.get(path);
+  if (kept !== undefined && kept.stamp === stamp) return structuredClone(kept.config);
+  const config = readConfigFileNow(path);
+  keptConfigs.set(path, { stamp, config });
+  if (keptConfigs.size > 64) keptConfigs.delete(keptConfigs.keys().next().value!);
+  return structuredClone(config);
+}
+
+const keptConfigs = new Map<string, { stamp: string; config: ProjectConfig }>();
+
+function readConfigFileNow(path: string): ProjectConfig {
   let parsed: unknown;
   try {
-    if (!statSync(path).isFile()) return {};
     parsed = loadYaml(readFileSync(path, "utf8"));
   } catch {
     return {};

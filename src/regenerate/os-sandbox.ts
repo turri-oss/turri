@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
+import { spawnAsync } from "../spawn-async.ts";
 
 /**
  * The OS sandbox: the wall under an agent's command where the OS offers one - Seatbelt on macOS, bubblewrap on Linux
@@ -244,27 +245,68 @@ export function sandboxWith(env: NodeJS.ProcessEnv): Wall {
   return env === process.env ? sandboxAvailable() : probe(env);
 }
 
+/** Which wall would be up with `env`'s PATH, as `sandboxWith` finds - its probes run without holding the thread up. */
+export async function sandboxWithAsync(env: NodeJS.ProcessEnv = process.env): Promise<Wall> {
+  if (env === process.env && probed !== undefined) return probed;
+  const settled = noProbe();
+  let wall: Wall;
+  if (settled !== undefined) wall = settled;
+  else if (process.platform === "darwin") wall = seatbeltWall(await spawnAsync(SEATBELT_PROBE[0]!, SEATBELT_PROBE.slice(1), { timeout: 10_000 }));
+  else {
+    const mounted = await spawnAsync("bwrap", bubblewrapProbe("mount"), { timeout: 10_000, env });
+    wall = bubblewrapWall(mounted, needsBind(mounted) ? await spawnAsync("bwrap", bubblewrapProbe("bind"), { timeout: 10_000, env }) : undefined);
+  }
+  if (env === process.env) probed = wall;
+  return wall;
+}
+
 function probe(env: NodeJS.ProcessEnv = process.env): Wall {
-  if (process.platform === "darwin") {
-    if (!existsSync("/usr/bin/sandbox-exec")) return { kind: "none", why: "this macOS has no sandbox-exec (Seatbelt)" };
-    const run = spawnSync("/usr/bin/sandbox-exec", ["-p", "(version 1)(allow default)", "/usr/bin/true"], { encoding: "utf8", timeout: 10_000 });
-    return run.status === 0 ? { kind: "seatbelt" } : { kind: "none", why: `Seatbelt did not start: ${(run.stderr || String(run.error ?? "")).trim()}` };
-  }
-  if (process.platform === "linux") {
-    const tryProc = (proc: "mount" | "bind") =>
-      spawnSync("bwrap", ["--ro-bind", "/", "/", ...(proc === "mount" ? ["--proc", "/proc"] : ["--ro-bind", "/proc", "/proc"]), "--dev", "/dev", "--unshare-pid", "--", "true"], {
-        encoding: "utf8",
-        timeout: 10_000,
-        env,
-      });
-    const mounted = tryProc("mount");
-    if (mounted.status === 0) return { kind: "bubblewrap", proc: "mount" };
-    const output = `${mounted.stderr ?? ""}${mounted.error !== undefined ? String(mounted.error) : ""}`;
-    if (/Can't mount proc on (\/newroot)?\/proc/.test(output) && tryProc("bind").status === 0) return { kind: "bubblewrap", proc: "bind" };
-    return { kind: "none", ...whyBubblewrapFailed(output) };
-  }
+  const settled = noProbe();
+  if (settled !== undefined) return settled;
+  if (process.platform === "darwin") return seatbeltWall(spawnSync(SEATBELT_PROBE[0]!, SEATBELT_PROBE.slice(1), { encoding: "utf8", timeout: 10_000 }));
+  const tryProc = (proc: "mount" | "bind") => spawnSync("bwrap", bubblewrapProbe(proc), { encoding: "utf8", timeout: 10_000, env });
+  const mounted = tryProc("mount");
+  return bubblewrapWall(mounted, needsBind(mounted) ? tryProc("bind") : undefined);
+}
+
+/** A probe's run: its exit status, what it said, what kept it from starting. */
+interface ProbeRun {
+  status: number | null;
+  stderr?: string | null;
+  error?: unknown;
+}
+
+/** The wall where nothing need be run to tell: no Seatbelt to try, or a platform turri drives none on. */
+function noProbe(): Wall | undefined {
+  if (process.platform === "darwin") return existsSync("/usr/bin/sandbox-exec") ? undefined : { kind: "none", why: "this macOS has no sandbox-exec (Seatbelt)" };
+  if (process.platform === "linux") return undefined;
   if (process.platform === "win32") return { kind: "none", why: "Windows has no OS sandbox turri drives: the command check and the audit hold alone" };
   return { kind: "none", why: `${process.platform} has no OS sandbox turri drives` };
+}
+
+/** A sandbox that runs `true`, on macOS. */
+const SEATBELT_PROBE = ["/usr/bin/sandbox-exec", "-p", "(version 1)(allow default)", "/usr/bin/true"];
+
+function seatbeltWall(run: ProbeRun): Wall {
+  return run.status === 0 ? { kind: "seatbelt" } : { kind: "none", why: `Seatbelt did not start: ${(run.stderr || String(run.error ?? "")).trim()}` };
+}
+
+/** bubblewrap's arguments for a sandbox that runs `true`, its /proc mounted or bound. */
+function bubblewrapProbe(proc: "mount" | "bind"): string[] {
+  return ["--ro-bind", "/", "/", ...(proc === "mount" ? ["--proc", "/proc"] : ["--ro-bind", "/proc", "/proc"]), "--dev", "/dev", "--unshare-pid", "--", "true"];
+}
+
+const probeOutput = (run: ProbeRun) => `${run.stderr ?? ""}${run.error !== undefined ? String(run.error) : ""}`;
+
+/** Whether bubblewrap failed only to mount a /proc - tried again binding the host's. */
+function needsBind(mounted: ProbeRun): boolean {
+  return mounted.status !== 0 && /Can't mount proc on (\/newroot)?\/proc/.test(probeOutput(mounted));
+}
+
+function bubblewrapWall(mounted: ProbeRun, bound: ProbeRun | undefined): Wall {
+  if (mounted.status === 0) return { kind: "bubblewrap", proc: "mount" };
+  if (bound?.status === 0) return { kind: "bubblewrap", proc: "bind" };
+  return { kind: "none", ...whyBubblewrapFailed(probeOutput(mounted)) };
 }
 
 /** Whether `path` is one of the fence's roots or under one - for the tests and the audit. */

@@ -140,7 +140,7 @@ describe("a base folder", () => {
     writeFileSync(join(dir, "config.turri.yaml"), "module: app.plain\nbase-folder: nowhere\n");
     expect(() => seedFromBaseFolder(codeOf("app"), join(dir, "app.plain"), "app")).toThrow(MissingBaseFolderError);
     expect(checkPlainFile(join(dir, "app.plain")).warnings).toEqual(["its base folder nowhere (base-folder:) is not there - its codebase's first pulse stops until it is"]);
-    expect(checkBaseFolders(dir)).toEqual([expect.objectContaining({ level: "missing", name: "base folder nowhere" })]);
+    expect(await checkBaseFolders(dir)).toEqual([expect.objectContaining({ level: "missing", name: "base folder nowhere" })]);
     const { ran, run } = runner();
     const loop = createWorkLoop({ registry: createJobRegistry({ maxRunning: 1 }), cwd: dir, planner: false, run });
     expect(describeDrift(loop.drift("app.plain"))).toContain("its base folder nowhere is not there - its first pulse stops until it is");
@@ -183,8 +183,8 @@ describe("a base folder", () => {
     expect(loop.status().find((status) => status.module === "other")!.base).toBeUndefined();
   });
 
-  it("is said by doctor with its files when it is there", () => {
-    expect(checkBaseFolders(dir)).toEqual([{ level: "ok", name: "base folder existing", detail: "2 files to start a codebase from - named in config.turri.yaml" }]);
+  it("is said by doctor with its files when it is there", async () => {
+    expect(await checkBaseFolders(dir)).toEqual([{ level: "ok", name: "base folder existing", detail: "2 files to start a codebase from - named in config.turri.yaml" }]);
   });
 });
 

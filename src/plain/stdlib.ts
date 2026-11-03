@@ -1,8 +1,8 @@
-import { existsSync, realpathSync } from "node:fs";
+import { realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ModuleDoesNotExistError, PlainSyntaxError } from "./errors.ts";
-import { findIn, openFrom } from "./files.ts";
+import { findIn, isFile, openFrom } from "./files.ts";
 
 /**
  * The ***plain standard library's names. `stdlib/` is a reserved prefix: `stdlib/backend/python-fastapi`
@@ -42,7 +42,7 @@ export function readStdlibModule(moduleName: string, templateDirs: string[]): st
   const own = join(STDLIB_ROOT, file);
   for (const dir of templateDirs) {
     const local = join(dir, file);
-    if (existsSync(local) && !sameFile(local, own)) {
+    if (isFile(local) && !sameFile(local, own)) {
       throw new PlainSyntaxError(
         `Plain syntax error: '${name}' is a reserved name - modules under ${STDLIB_PREFIX} are turri's standard library - ` +
           `but ${local} is a module of that name. Rename it, or the folder it is in.`,

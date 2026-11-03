@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AGENT_ROLES, modelOnly, projectModels, readProjectConfig, ROLE_THINKING, roleModel, roleTurnLimitMs, skillModel } from "../src/config.ts";
+import { AGENT_ROLES, modelOnly, projectModels, readProjectConfig, ROLE_THINKING, roleModel, roleTurnLimitMs, skillModel, stacksOf } from "../src/config.ts";
 
 let root: string;
 beforeEach(() => {
@@ -341,5 +341,21 @@ describe("config.yaml, before turri had a file of its own", () => {
     expect(readFileSync(join(root, "config.turri.backend.yaml"), "utf8")).toBe("review: true\n");
     expect(readProjectConfig(root)).toEqual({ unittestsScript: "run_unittests_python.sh", review: false });
     expect(stacksOf(root)).toEqual(["backend"]);
+  });
+});
+
+describe("the config, read again and again", () => {
+  it("is read afresh once a file is edited or a stack's file added - and each caller is given its own copy", () => {
+    writeFileSync(join(root, "config.turri.yaml"), "coding-model: p/small\n");
+    const first = readProjectConfig(root);
+    expect(first.codingModel).toEqual({ model: "p/small" });
+    first.codingModel = { model: "changed/by-a-caller" };
+    expect(readProjectConfig(root).codingModel).toEqual({ model: "p/small" });
+    writeFileSync(join(root, "config.turri.yaml"), "coding-model: p/smallest\n");
+    expect(readProjectConfig(root).codingModel).toEqual({ model: "p/smallest" });
+    expect(stacksOf(root)).toEqual([]);
+    writeFileSync(join(root, "config.turri.web.yaml"), "coding-model: p/web\n");
+    expect(stacksOf(root)).toEqual(["web"]);
+    expect(readProjectConfig(root, "web").codingModel).toEqual({ model: "p/web" });
   });
 });

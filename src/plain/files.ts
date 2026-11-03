@@ -8,20 +8,80 @@ import { createEnvironment } from "./liquid.ts";
 
 export function openFrom(dirs: string[], fileName: string): string | null {
   const path = findIn(dirs, fileName);
-  return path === null ? null : readFileSync(path, "utf8");
+  if (path === null) return null;
+  const text = readFileSync(path, "utf8");
+  noted?.set(resolve(path), text);
+  return text;
 }
 
 /** The file `openFrom` reads: the first of the folders that has it. */
 export function findIn(dirs: string[], fileName: string): string | null {
   for (const dir of dirs) {
     const fullPath = join(dir, fileName);
-    try {
-      if (statSync(fullPath).isFile()) return fullPath;
-    } catch {
-      continue;
-    }
+    if (isFile(fullPath)) return fullPath;
   }
   return null;
+}
+
+/** Whether there is a file at `path` - looked for as `findIn` looks, and noted as it is. */
+export function isFile(path: string): boolean {
+  let found: boolean;
+  try {
+    found = statSync(path).isFile();
+  } catch {
+    found = false;
+  }
+  const at = resolve(path);
+  if (noted !== undefined && !noted.has(at)) noted.set(at, found ? FOUND : MISSING);
+  return found;
+}
+
+const FOUND = Symbol("found");
+const MISSING = Symbol("missing");
+
+/** What a parse read, while `noteReads` runs: each file it looked for - its text, there, or not there. */
+export type Reads = Map<string, string | typeof FOUND | typeof MISSING>;
+let noted: Reads | undefined;
+
+/** `run`, with every file it looked for and read through these helpers noted - an inner run's in the outer's too. */
+export function noteReads<T>(run: () => T): { value: T; reads: Reads } {
+  const outer = noted;
+  const mine: Reads = new Map();
+  noted = mine;
+  try {
+    return { value: run(), reads: mine };
+  } finally {
+    noted = outer;
+    if (outer !== undefined) addReads(outer, mine);
+  }
+}
+
+/** Reads made before - a kept result's - counted in the run noting now, as if made again. */
+export function addReads(into: Reads | undefined = noted, reads: Reads): void {
+  if (into === undefined) return;
+  for (const [path, what] of reads) if (!into.has(path) || typeof what === "string") into.set(path, what);
+}
+
+/** Whether each file noted is still as it was: the same text, still there, still not there. */
+export function readsHold(reads: Reads): boolean {
+  for (const [path, was] of reads) {
+    if (typeof was === "string") {
+      try {
+        if (readFileSync(path, "utf8") !== was) return false;
+      } catch {
+        return false;
+      }
+      continue;
+    }
+    let there: boolean;
+    try {
+      there = statSync(path).isFile();
+    } catch {
+      there = false;
+    }
+    if (there !== (was === FOUND)) return false;
+  }
+  return true;
 }
 
 /**

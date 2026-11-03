@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -141,7 +142,22 @@ export function diffTrees(before: string, after: string, context = 3): string {
 }
 
 /** git's diff of two texts, written to files of the names given. */
-function gitDiff(before: string, after: string, context: number, [from, to]: [string, string]): string {
+function gitDiff(before: string, after: string, context: number, names: [string, string]): string {
+  if (before === after) return "";
+  // The same texts, the same diff: a project looked at again - every codebase of every chain - runs git only for what changed.
+  const key = createHash("sha1").update(`${context}\0${names.join("\0")}\0${before.length}\0${before}\0${after}`).digest("hex");
+  const kept = keptDiffs.get(key);
+  if (kept !== undefined) return kept;
+  const diff = gitDiffNow(before, after, context, names);
+  keptDiffs.set(key, diff);
+  while (keptDiffs.size > KEPT_DIFFS) keptDiffs.delete(keptDiffs.keys().next().value!);
+  return diff;
+}
+
+const keptDiffs = new Map<string, string>();
+const KEPT_DIFFS = 200;
+
+function gitDiffNow(before: string, after: string, context: number, [from, to]: [string, string]): string {
   const dir = mkdtempSync(join(tmpdir(), "turri-spec-steps-"));
   try {
     // The names are paths - "plain/hubspot.plain" for a spec in a folder of the project: their folders first.

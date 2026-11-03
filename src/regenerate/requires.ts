@@ -1,6 +1,6 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import { IMPORT_DIRECTIVE, PLAIN_SOURCE_FILE_EXTENSION, plainFileParser, readPlainSourceMetadata, withParseCache, type ParseOptions } from "../plain/parser.ts";
+import { IMPORT_DIRECTIVE, PLAIN_SOURCE_FILE_EXTENSION, plainFileParser, readPlainSourceMetadata, REQUIRES_DIRECTIVE, withParseCache, type ParseOptions } from "../plain/parser.ts";
 import { getFrids, getInheritedFunctionalSpecs } from "../plain/spec.ts";
 import { buildDirUnder, modulesRoot, projectDirOf } from "./paths.ts";
 import { notesPath } from "./notes.ts";
@@ -85,6 +85,68 @@ export function resolveRequiresChain(
 
   visit(resolve(plainFile), []);
   return chain;
+}
+
+/** Every .plain file in a project's folder, sorted - the modules a host lists. */
+export function projectPlainFiles(projectDir: string): string[] {
+  const root = resolve(projectDir);
+  try {
+    return readdirSync(root, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith(PLAIN_SOURCE_FILE_EXTENSION))
+      .map((entry) => join(root, entry.name))
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * A project's .plain files in the order they are built: each after every module it requires, as its requires chain has
+ * them (`resolveRequiresChain`) - taken in the order given, by name without `files`, each brought in after what it
+ * requires. A module whose chain does not resolve - it does not parse, a module it requires is not there, a cycle - goes
+ * after what its front matter says it requires, as far as those are found. `files`, absolute or from the project: the
+ * ones to order, every other module of a chain left out; without it, every .plain file in the project's folder.
+ */
+export function requiresOrder(projectDir: string, options: { files?: string[] } = {}): string[] {
+  const root = resolve(projectDir);
+  const files = (options.files ?? projectPlainFiles(root)).map((file) => resolve(root, file));
+  const wanted = new Set(files);
+  const order: string[] = [];
+  const placed = new Set<string>();
+  const add = (file: string) => {
+    if (placed.has(file)) return;
+    placed.add(file);
+    if (wanted.has(file)) order.push(file);
+  };
+  const visiting = new Set<string>();
+  const place = (file: string) => {
+    if (placed.has(file) || visiting.has(file)) return;
+    visiting.add(file);
+    try {
+      for (const entry of resolveRequiresChain(file, [], undefined, { allowNoFunctionalities: true })) add(entry.plainFile);
+    } catch {
+      let requires: string[] = [];
+      try {
+        requires = ((readPlainSourceMetadata(readFileSync(file, "utf8")).metadata[REQUIRES_DIRECTIVE] as unknown[] | undefined) ?? []).filter((name): name is string => typeof name === "string");
+      } catch {
+        // Not read: nothing to put it after.
+      }
+      const dirs = resolveTemplateDirs(file);
+      for (const name of requires) {
+        try {
+          place(resolve(locateModule(name, dirs)));
+        } catch {
+          // Not there: nothing to put it after.
+        }
+      }
+      add(file);
+    }
+    visiting.delete(file);
+  };
+  withParseCache(() => {
+    for (const file of files) place(file);
+  });
+  return order;
 }
 
 /** The .plain files that import `plainFile` - read from beside it, and, kept in a `template/` folder, from the folder it is in. */

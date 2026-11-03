@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { spawnAsync } from "../spawn-async.ts";
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
@@ -59,14 +60,33 @@ const NOT_COPIED = new Set([".git", "node_modules", ".venv", "venv", "__pycache_
  * does not ignore - so no dependencies or build output; otherwise every file but those of the folders never copied.
  */
 export function baseFiles(folder: string): string[] {
-  const inGit = spawnSync("git", ["-C", folder, "rev-parse", "--is-inside-work-tree"], { encoding: "utf8" });
+  const inGit = spawnSync("git", ["-C", folder, ...IN_WORK_TREE], { encoding: "utf8" });
   if (inGit.status === 0 && inGit.stdout.trim() === "true") {
-    const listed = spawnSync("git", ["-C", folder, "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "."], { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
-    if (listed.status === 0) {
-      // A tracked file deleted in the work tree is listed, and not there to copy.
-      return [...new Set(listed.stdout.split("\0").filter((path) => path !== ""))].filter((path) => isFile(join(folder, path))).sort();
-    }
+    const listed = spawnSync("git", ["-C", folder, ...LISTED], { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
+    if (listed.status === 0) return gitListed(folder, listed.stdout);
   }
+  return walkedFiles(folder);
+}
+
+/** `baseFiles`, its git runs not holding the thread up - for doctor, on a host's thread. */
+export async function baseFilesAsync(folder: string): Promise<string[]> {
+  const inGit = await spawnAsync("git", ["-C", folder, ...IN_WORK_TREE]);
+  if (inGit.status === 0 && inGit.stdout.trim() === "true") {
+    const listed = await spawnAsync("git", ["-C", folder, ...LISTED]);
+    if (listed.status === 0) return gitListed(folder, listed.stdout);
+  }
+  return walkedFiles(folder);
+}
+
+const IN_WORK_TREE = ["rev-parse", "--is-inside-work-tree"];
+const LISTED = ["ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "."];
+
+/** What git listed, as files there: a tracked file deleted in the work tree is listed, and not there to copy. */
+function gitListed(folder: string, listed: string): string[] {
+  return [...new Set(listed.split("\0").filter((path) => path !== ""))].filter((path) => isFile(join(folder, path))).sort();
+}
+
+function walkedFiles(folder: string): string[] {
   const found: string[] = [];
   const walk = (dir: string) => {
     for (const entry of readdirSync(dir)) {

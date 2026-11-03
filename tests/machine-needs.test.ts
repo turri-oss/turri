@@ -21,12 +21,21 @@ describe("what a project's modules need of this machine", () => {
     expect(work).toHaveBeenCalledTimes(1);
   });
 
+  it("is not worked out until a turn asks - not when the chat starts, nor after a turn while nothing has asked", async () => {
+    const work = vi.fn(() => [{ module: "app", needs: [], missing: [] }]);
+    const machine = machineNeeds(dir, work);
+    machine.refreshSoon();
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(work).not.toHaveBeenCalled();
+    machine.now();
+    expect(work).toHaveBeenCalledTimes(1);
+  });
+
   it("is worked out again after a turn only when a spec changed, and the turn before is told what was known last", async () => {
     let calls = 0;
     const work = vi.fn(() => [{ module: `app ${++calls}`, needs: [], missing: [] }]);
     const machine = machineNeeds(dir, work);
-    machine.refreshSoon();
-    await vi.waitFor(() => expect(work).toHaveBeenCalledTimes(1));
+    expect(machine.now()[0]!.module).toBe("app 1");
     // Nothing changed: not again.
     machine.refreshSoon();
     await new Promise((resolve) => setTimeout(resolve, 60));

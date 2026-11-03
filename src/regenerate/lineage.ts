@@ -303,13 +303,50 @@ export function abandonWork(start: WorkStart | undefined, moduleName: string, wh
 export function committedText(dir: string, file: string): string | undefined {
   try {
     const moduleDir = moduleDirOf(dir);
-    if (!existsSync(join(moduleDir, HISTORY_DIR))) return undefined;
+    const gitDir = join(moduleDir, HISTORY_DIR);
+    if (!existsSync(gitDir)) return undefined;
     const path = [basename(dir), file].join("/");
+    const head = headCommit(gitDir);
+    if (head === null) return undefined;
+    // What a commit holds never changes: read once a commit. The panel asks for the records on every frame, and a git
+    // run each time - synchronous, on the thread that draws the screen - held the chat up for most of every second.
+    const key = head !== undefined ? `${gitDir}\0${head}\0${path}` : undefined;
+    if (key !== undefined && committedCache.has(key)) return committedCache.get(key) ?? undefined;
     const shown = git(moduleDir, ["show", `HEAD:${path}`]);
-    return shown.status === 0 ? shown.stdout : undefined;
+    const text = shown.status === 0 ? shown.stdout : undefined;
+    if (key !== undefined) {
+      committedCache.set(key, text ?? null);
+      if (committedCache.size > COMMITTED_CACHE_SIZE) committedCache.delete(committedCache.keys().next().value!);
+    }
+    return text;
   } catch {
     return undefined;
   }
+}
+
+/** `committedText`'s reads, by git dir, commit and path - null for a file the commit does not have. */
+const committedCache = new Map<string, string | null>();
+const COMMITTED_CACHE_SIZE = 256;
+
+/**
+ * The commit a history's HEAD is at, read from its files without running git: null when HEAD names a branch with no
+ * commit yet, undefined when the files say nothing this reads - git is asked then.
+ */
+function headCommit(gitDir: string): string | null | undefined {
+  const head = readFileSync(join(gitDir, "HEAD"), "utf8").trim();
+  if (/^[0-9a-f]{40,64}$/.test(head)) return head;
+  const ref = /^ref: (refs\/\S+)$/.exec(head)?.[1];
+  // A history on reftable keeps its refs in tables this does not read.
+  if (ref === undefined || existsSync(join(gitDir, "reftable"))) return undefined;
+  const loose = join(gitDir, ...ref.split("/"));
+  if (existsSync(loose)) {
+    const commit = readFileSync(loose, "utf8").trim();
+    return /^[0-9a-f]{40,64}$/.test(commit) ? commit : undefined;
+  }
+  const packed = join(gitDir, "packed-refs");
+  if (!existsSync(packed)) return null;
+  const line = readFileSync(packed, "utf8").split("\n").find((entry) => entry.endsWith(` ${ref}`));
+  return line !== undefined ? line.slice(0, line.indexOf(" ")) : null;
 }
 
 /**

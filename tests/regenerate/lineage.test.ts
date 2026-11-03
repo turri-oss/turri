@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { EnvironmentError } from "../../src/regenerate/environment-error.ts";
-import { abandonWork, diffSinceSnapshot, head, historyLog, historyShow, landWork, markWork, recordHistory, resetToLastCommit, startWork, workDiff, workSnapshot } from "../../src/regenerate/lineage.ts";
+import { abandonWork, committedText, diffSinceSnapshot, head, historyLog, historyShow, landWork, markWork, recordHistory, resetToLastCommit, startWork, workDiff, workSnapshot } from "../../src/regenerate/lineage.ts";
 import { copyRequiredCode } from "../../src/regenerate/requires.ts";
 
 let root: string;
@@ -63,6 +63,55 @@ describe("a module's history", () => {
     writeFileSync(join(code, "app.py"), "x\n");
     recordHistory(code, "render");
     expect(existsSync(join(root, ".gitignore"))).toBe(false);
+  });
+});
+
+describe("a file as the last commit has it", () => {
+  const moduleDir = () => join(root, "plain_modules", "app");
+  const git = (...args: string[]) => spawnSync("git", ["--git-dir", join(moduleDir(), ".plaingit"), "--work-tree", moduleDir(), ...args], { encoding: "utf8" });
+
+  it("follows each new commit, never what is only on disk", () => {
+    writeFileSync(join(code, "record.json"), "one\n");
+    recordHistory(code, "first");
+    expect(committedText(code, "record.json")).toBe("one\n");
+    writeFileSync(join(code, "record.json"), "two\n");
+    expect(committedText(code, "record.json")).toBe("one\n");
+    recordHistory(code, "second");
+    expect(committedText(code, "record.json")).toBe("two\n");
+  });
+
+  it("follows the history back to an earlier commit", () => {
+    writeFileSync(join(code, "record.json"), "one\n");
+    const first = recordHistory(code, "first")!;
+    writeFileSync(join(code, "record.json"), "two\n");
+    recordHistory(code, "second");
+    expect(committedText(code, "record.json")).toBe("two\n");
+    git("reset", "-q", "--hard", first);
+    expect(committedText(code, "record.json")).toBe("one\n");
+  });
+
+  it("reads refs git has packed", () => {
+    writeFileSync(join(code, "record.json"), "one\n");
+    recordHistory(code, "first");
+    git("pack-refs", "--all");
+    const branch = readFileSync(join(moduleDir(), ".plaingit", "HEAD"), "utf8").trim().replace(/^ref: /, "");
+    expect(existsSync(join(moduleDir(), ".plaingit", ...branch.split("/")))).toBe(false);
+    expect(committedText(code, "record.json")).toBe("one\n");
+    writeFileSync(join(code, "record.json"), "two\n");
+    recordHistory(code, "second");
+    expect(committedText(code, "record.json")).toBe("two\n");
+  });
+
+  it("is nothing for a file the commit does not hold, a history with no commit, or no history", () => {
+    expect(committedText(code, "record.json")).toBeUndefined();
+    git("init", "-q");
+    expect(committedText(code, "record.json")).toBeUndefined();
+    writeFileSync(join(code, "app.py"), "x\n");
+    recordHistory(code, "first");
+    expect(committedText(code, "record.json")).toBeUndefined();
+    writeFileSync(join(code, "record.json"), "one\n");
+    recordHistory(code, "second");
+    expect(committedText(code, "record.json")).toBe("one\n");
   });
 });
 

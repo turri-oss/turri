@@ -6,7 +6,7 @@ import { renderToMarkdown, type AnyNode } from "./markdown.ts";
 import {
   exportedDefinitionsOf,
   IMPORT_DIRECTIVE,
-  parsePlainFile,
+  sharedPlainFileParse,
   parsePlainSource,
   PLAIN_SOURCE_FILE_EXTENSION,
   readPlainSourceMetadata,
@@ -39,7 +39,8 @@ export interface ReadModule {
  * gives its own definitions read without its imports, and what of those it names is there.
  */
 export function readModule(moduleName: string, plainFile: string, templateDirs: string[]): ReadModule {
-  const parse = (name: string) => attempt(() => parsePlainFile(name, {}, templateDirs, [], []));
+  // Read, never changed: the parse kept for the file, not a copy of it.
+  const parse = (name: string) => attempt(() => sharedPlainFileParse(name, templateDirs));
   const definitions: ReadModule["definitions"] = [];
   const add = (result: PlainFileParseResult, nodes: AnyNode[], module: string) => {
     for (const node of nodes) definitions.push({ node, module: result.importedFrom.get(node) ?? module });

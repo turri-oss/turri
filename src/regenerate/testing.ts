@@ -220,6 +220,19 @@ export const NOT_CODE = new Set([
   BASE_RECORD_FILE,
 ]);
 
+/** Whether a codebase holds a file of its own - as `listFiles` counts them - stopping at the first. */
+export function hasFiles(root: string): boolean {
+  const look = (dir: string): boolean => {
+    for (const entry of readdirSync(dir)) {
+      if (NOT_CODE.has(entry)) continue;
+      const full = join(dir, entry);
+      if (!statSync(full).isDirectory() || look(full)) return true;
+    }
+    return false;
+  };
+  return existsSync(root) && look(root);
+}
+
 export function listFiles(root: string): string[] {
   const found: string[] = [];
   const walk = (dir: string) => {

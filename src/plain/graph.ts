@@ -10,7 +10,7 @@ import {
   IMPORT_DIRECTIVE,
   linksIn,
   modulePlainFile,
-  parsePlainFile,
+  sharedPlainFileParse,
   PLAIN_SOURCE_FILE_EXTENSION,
   plainFileParser,
   readPlainSourceMetadata,
@@ -258,7 +258,7 @@ function testPlainFileNodes(root: string, dirs: string[], items: PlainItemNode[]
 function parseError(node: PlainModuleNode, dirs: string[]): string | undefined {
   const imported = node.importedBy.length > 0 || isStdlibModule(node.module) || basename(dirname(node.file)) === "template";
   try {
-    if (imported) parsePlainFile(node.module, {}, dirs, [], []);
+    if (imported) sharedPlainFileParse(node.module, dirs);
     else plainFileParser(`${node.module}${PLAIN_SOURCE_FILE_EXTENSION}`, dirs, { allowNoFunctionalities: true });
     return undefined;
   } catch (error) {

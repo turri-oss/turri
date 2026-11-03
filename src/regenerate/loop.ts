@@ -44,7 +44,7 @@ import { agentChanges, changeDiffInFiles } from "./change-view.ts";
 import { createSteering, MAX_STEERS, markTold, steer, waitingSteer, type JobSteering } from "./steering.ts";
 import { projectDirOf } from "./paths.ts";
 import { changesBetween, parseTree, serializeTree, type SpecChange, type SpecStep } from "./spec-steps.ts";
-import { listFiles } from "./testing.ts";
+import { hasFiles, listFiles } from "./testing.ts";
 import { makeRenames, pureRenames, renameText } from "./renames.ts";
 import { casesOf, codeWork, stillWanted, whyNotWanted, type JobCases, type ScenarioCases, type TouchedSpec } from "./drift.ts";
 import { testingGap } from "./testing-steps.ts";
@@ -415,7 +415,7 @@ const modifiedAt = (path: string): string => {
 };
 
 /** Whether a module's codebase has been started: code in it, or a record. */
-const started = (entry: ChainEntry) => listFiles(entry.buildDir).length > 0 || readRecord(entry.buildDir) !== null;
+const started = (entry: ChainEntry) => readRecord(entry.buildDir) !== null || hasFiles(entry.buildDir);
 
 /** The spec a codebase is built from, as the .plain files have it now: its whole requires chain's. */
 export function chainSpec(chain: ChainEntry[]): SpecSnapshot {
@@ -486,74 +486,80 @@ export interface ModuleCompletion {
  * The modules above the delivered codebase have nothing completed. One entry per chain; planning nothing, calling no model.
  */
 export function functionalityCompletion(plainFile: string): Array<{ codebase: string; modules: ModuleCompletion[] }> {
-  return withParseCache(() =>
-    chainsFor(resolve(plainFile)).map((chain) => {
-      let delivered = -1;
-      chain.forEach((entry, index) => {
-        if (readRecord(entry.buildDir) !== null) delivered = index;
-      });
-      // Of each module's functional specs, those with scenarios: what "tested of specified" counts over.
-      let whole: MarshalledPlainSource | undefined;
+  return withParseCache(() => chainsFor(resolve(plainFile)).map((chain) => codebaseCompletion(chain)));
+}
+
+/**
+ * The functional specs of a chain, completed or not, in the codebase it delivers: its furthest-built module's - see
+ * `functionalityCompletion`. A module's own chain (`resolveRequiresChain`) gives what its own codebase holds.
+ */
+export function codebaseCompletion(chain: ChainEntry[]): { codebase: string; modules: ModuleCompletion[] } {
+  return withParseCache(() => {
+    let delivered = -1;
+    chain.forEach((entry, index) => {
+      if (readRecord(entry.buildDir) !== null) delivered = index;
+    });
+    // Of each module's functional specs, those with scenarios: what "tested of specified" counts over.
+    let whole: MarshalledPlainSource | undefined;
+    try {
+      whole = chainSpec(chain).tree;
+    } catch {
+      whole = undefined;
+    }
+    const ownItems = (tree: MarshalledPlainSource | undefined, module: string, own: boolean) =>
+      ((tree?.[own ? FUNCTIONAL_REQUIREMENTS : REQUIRED_FUNCTIONAL_SPECS] as Array<{ markdown: string; module?: string; id: string }> | undefined) ?? []).filter((item) => own || item.module === module);
+    const counts: ModuleCompletion[] = chain.map((entry, index) => ({
+      module: entry.moduleName,
+      specified: entry.funcIds.length,
+      withScenarios: ownItems(whole, entry.moduleName, index === chain.length - 1).filter(hasScenarios).length,
+      completed: 0,
+      conformanceTested: 0,
+      tested: [],
+      incomplete: [...entry.funcIds],
+    }));
+    if (delivered === -1) return { codebase: tipOf(chain).buildDir, modules: counts };
+    const codebase = chain.slice(0, delivered + 1);
+    const tip = tipOf(codebase);
+    const spec = chainSpec(codebase).tree;
+    const record = readRecord(tip.buildDir);
+    const changes = codeWork(record, spec);
+    // Its own: what the work loop would regenerate - new, changed, a concept it uses changed, or marked again.
+    const cases = casesOf(codeTree(record ?? {}), changes, { module: tip.moduleName });
+    const touched = new Set([...cases.add, ...cases.patch, ...cases.again].map((spec) => `${spec.module ?? tip.moduleName}:${spec.funcId}`));
+    // The modules' below it: an item the record does not have as the spec has it.
+    for (const change of changes) {
+      if (change.section !== REQUIRED_FUNCTIONAL_SPECS || change.after === undefined) continue;
       try {
-        whole = chainSpec(chain).tree;
+        const item = JSON.parse(change.after) as { module?: string; id?: string };
+        if (item.module !== undefined && item.id !== undefined) touched.add(`${item.module}:${item.id}`);
       } catch {
-        whole = undefined;
+        /* not an item */
       }
-      const ownItems = (tree: MarshalledPlainSource | undefined, module: string, own: boolean) =>
-        ((tree?.[own ? FUNCTIONAL_REQUIREMENTS : REQUIRED_FUNCTIONAL_SPECS] as Array<{ markdown: string; module?: string; id: string }> | undefined) ?? []).filter((item) => own || item.module === module);
-      const counts: ModuleCompletion[] = chain.map((entry, index) => ({
-        module: entry.moduleName,
-        specified: entry.funcIds.length,
-        withScenarios: ownItems(whole, entry.moduleName, index === chain.length - 1).filter(hasScenarios).length,
-        completed: 0,
-        conformanceTested: 0,
-        tested: [],
-        incomplete: [...entry.funcIds],
-      }));
-      if (delivered === -1) return { codebase: tipOf(chain).buildDir, modules: counts };
-      const codebase = chain.slice(0, delivered + 1);
-      const tip = tipOf(codebase);
-      const spec = chainSpec(codebase).tree;
-      const record = readRecord(tip.buildDir);
-      const changes = codeWork(record, spec);
-      // Its own: what the work loop would regenerate - new, changed, a concept it uses changed, or marked again.
-      const cases = casesOf(codeTree(record ?? {}), changes, { module: tip.moduleName });
-      const touched = new Set([...cases.add, ...cases.patch, ...cases.again].map((spec) => `${spec.module ?? tip.moduleName}:${spec.funcId}`));
-      // The modules' below it: an item the record does not have as the spec has it.
-      for (const change of changes) {
-        if (change.section !== REQUIRED_FUNCTIONAL_SPECS || change.after === undefined) continue;
-        try {
-          const item = JSON.parse(change.after) as { module?: string; id?: string };
-          if (item.module !== undefined && item.id !== undefined) touched.add(`${item.module}:${item.id}`);
-        } catch {
-          /* not an item */
-        }
-      }
-      // A functional spec as the tests are written for it: its text and its scenarios.
-      const reads = (item: Record<string, unknown> | undefined): string | undefined => {
-        if (item === undefined) return undefined;
-        const scenarios = (key: string) => ((item[key] as Array<{ id?: string; text?: string }> | undefined) ?? []).map((scenario) => [scenario.id, scenario.text]);
-        return JSON.stringify([String(item.markdown ?? "").trim(), scenarios(CONFORMANCE_TESTS), scenarios(ACCEPTANCE_TESTS)]);
-      };
-      const specText = (module: string, funcId: string): string | undefined =>
-        reads(ownItems(spec, module, module === tip.moduleName).find((item) => item.id === funcId) as Record<string, unknown> | undefined);
-      // What the conformance tests are written for, in the same codebase: its suite holds the chain's.
-      const testsRecord = readRecord(conformanceDirFor(tip.moduleName, modulesRoot(projectDirOf(tip.plainFile))));
-      codebase.forEach((entry, index) => {
-        const count = counts[index]!;
-        const completed = entry.funcIds.filter((funcId) => !touched.has(`${entry.moduleName}:${funcId}`));
-        // Tests marked to regenerate again were written against code since replaced: not conformance tested until rewritten.
-        const tested = ownItems(testsRecord ?? undefined, entry.moduleName, entry.moduleName === tip.moduleName).filter(
-          (item) => item.id !== undefined && !marksRegenerateAgain(item) && reads(item as Record<string, unknown>) === specText(entry.moduleName, item.id),
-        );
-        count.completed = completed.length;
-        count.tested = completed.filter((funcId) => tested.some((item) => item.id === funcId));
-        count.conformanceTested = count.tested.length;
-        count.incomplete = entry.funcIds.filter((funcId) => !completed.includes(funcId));
-      });
-      return { codebase: tip.buildDir, modules: counts };
-    }),
-  );
+    }
+    // A functional spec as the tests are written for it: its text and its scenarios.
+    const reads = (item: Record<string, unknown> | undefined): string | undefined => {
+      if (item === undefined) return undefined;
+      const scenarios = (key: string) => ((item[key] as Array<{ id?: string; text?: string }> | undefined) ?? []).map((scenario) => [scenario.id, scenario.text]);
+      return JSON.stringify([String(item.markdown ?? "").trim(), scenarios(CONFORMANCE_TESTS), scenarios(ACCEPTANCE_TESTS)]);
+    };
+    const specText = (module: string, funcId: string): string | undefined =>
+      reads(ownItems(spec, module, module === tip.moduleName).find((item) => item.id === funcId) as Record<string, unknown> | undefined);
+    // What the conformance tests are written for, in the same codebase: its suite holds the chain's.
+    const testsRecord = readRecord(conformanceDirFor(tip.moduleName, modulesRoot(projectDirOf(tip.plainFile))));
+    codebase.forEach((entry, index) => {
+      const count = counts[index]!;
+      const completed = entry.funcIds.filter((funcId) => !touched.has(`${entry.moduleName}:${funcId}`));
+      // Tests marked to regenerate again were written against code since replaced: not conformance tested until rewritten.
+      const tested = ownItems(testsRecord ?? undefined, entry.moduleName, entry.moduleName === tip.moduleName).filter(
+        (item) => item.id !== undefined && !marksRegenerateAgain(item) && reads(item as Record<string, unknown>) === specText(entry.moduleName, item.id),
+      );
+      count.completed = completed.length;
+      count.tested = completed.filter((funcId) => tested.some((item) => item.id === funcId));
+      count.conformanceTested = count.tested.length;
+      count.incomplete = entry.funcIds.filter((funcId) => !completed.includes(funcId));
+    });
+    return { codebase: tip.buildDir, modules: counts };
+  });
 }
 
 /** The modules of a chain to build: its furthest-built one, and those above it - or, none built, all of it. */

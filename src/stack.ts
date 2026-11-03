@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { spawnAsync, yieldToHost } from "./spawn-async.ts";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { plainFileParser, withParseCache } from "./plain/parser.ts";
@@ -72,6 +73,31 @@ export function projectImplementationReqs(project: string): Array<{ module: stri
   });
 }
 
+/**
+ * `projectImplementationReqs`, giving the host's thread back between modules: a host - doctor on its own thread - answers
+ * meanwhile. Each module is parsed as `plainFileParser` keeps it, so the chain below one parsed already is not again.
+ */
+export async function projectImplementationReqsAsync(project: string): Promise<Array<{ module: string; reqs: string[] }>> {
+  let files: string[];
+  try {
+    files = readdirSync(project).filter((name) => name.endsWith(".plain"));
+  } catch {
+    return [];
+  }
+  const modules: Array<{ module: string; reqs: string[] }> = [];
+  for (const name of files) {
+    await yieldToHost();
+    const path = join(project, name);
+    try {
+      const [module, tree] = plainFileParser(basename(path), resolveTemplateDirs(path), { allowNoFunctionalities: true });
+      modules.push({ module, reqs: sectionsOf(tree)["implementation reqs"] });
+    } catch {
+      // As projectImplementationReqs: nothing named here.
+    }
+  }
+  return modules;
+}
+
 /** Whether a command is on this machine's PATH. */
 const onPath = (command: string) => onThisMachine(command) !== undefined;
 
@@ -85,8 +111,24 @@ export function stackOnMachine(
   jdk: () => boolean = jdkHere,
 ): Array<{ module: string; needs: StackNeed[]; missing: StackNeed[] }> {
   let found: boolean | undefined;
-  const here = toolchainCheck(has, () => (found ??= jdk()));
-  return projectImplementationReqs(project).map(({ module, reqs }) => {
+  return needsAgainst(projectImplementationReqs(project), toolchainCheck(has, () => (found ??= jdk())));
+}
+
+/** `stackOnMachine`, never holding the host's thread up: the modules parsed one a turn, a JDK looked for without blocking. */
+export async function stackOnMachineAsync(
+  project: string,
+  has: (command: string) => boolean = onPath,
+  jdk: () => boolean | Promise<boolean> = jdkHereAsync,
+): Promise<Array<{ module: string; needs: StackNeed[]; missing: StackNeed[] }>> {
+  const modules = await projectImplementationReqsAsync(project);
+  // Asked only when a module needs Java and java is on the PATH - as stackOnMachine asks it, at most once.
+  let found = false;
+  if (modules.some(({ reqs }) => stackOf(reqs.join("\n")).some((need) => need.commands.includes("java"))) && has("java")) found = await jdk();
+  return needsAgainst(modules, toolchainCheck(has, () => found));
+}
+
+function needsAgainst(modules: Array<{ module: string; reqs: string[] }>, here: (command: string) => boolean): Array<{ module: string; needs: StackNeed[]; missing: StackNeed[] }> {
+  return modules.map(({ module, reqs }) => {
     const needs = stackOf(reqs.join("\n"));
     return { module, needs, missing: needs.filter((need) => !need.commands.some(here)) };
   });
@@ -104,6 +146,11 @@ export const STDLIB_LANGUAGES: Array<{ language: string; commands: string[] }> =
   { language: "Rust", commands: ["cargo"] },
   { language: "Java", commands: ["java"] },
 ];
+
+/** `jdkHere`, without holding the thread up. */
+async function jdkHereAsync(): Promise<boolean> {
+  return process.platform !== "darwin" || (await spawnAsync("/usr/libexec/java_home", [])).status === 0;
+}
 
 /** Whether this machine has a JDK behind `java`: anywhere but macOS, java found says so; on macOS, `java_home` finding one. */
 function jdkHere(): boolean {

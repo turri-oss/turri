@@ -16,7 +16,7 @@ import {
   PlainSyntaxError,
   UnsupportedBase64Content,
 } from "./errors.ts";
-import { findIn, findLargeBase64Blob, getLoadedTemplates, openFrom } from "./files.ts";
+import { addReads, findIn, findLargeBase64Blob, getLoadedTemplates, noteReads, openFrom, readsHold, type Reads } from "./files.ts";
 import { renderPlainSource } from "./liquid.ts";
 import { isStdlibModule, readStdlibModule, stdlibModuleFile } from "./stdlib.ts";
 import {
@@ -768,6 +768,57 @@ export function parsePlainFile(
   importedModules: string[],
   modulesTrace: string[],
 ): PlainFileParseResult {
+  // A file parsed on its own - not an import inside another's parse, whose result hangs on what was imported before it -
+  // is parsed once while nothing it read has changed: every module below a module in its chain parses each of them
+  // again, and a project of long chains asked the same files thousands of times.
+  const own = importedModules.length === 0 && modulesTrace.length === 0 && Object.keys(codeVariables).length === 0;
+  if (!own) return parsePlainFileNow(moduleName, codeVariables, templateDirs, importedModules, modulesTrace);
+  // A copy: the caller builds on what it is given.
+  const copy = structuredClone(keptParse(moduleName, templateDirs));
+  Object.assign(codeVariables, copy.codeVariables);
+  return copy.result;
+}
+
+/** Files parsed on their own, with what each read - by working folder, template folders and module. Oldest out first. */
+const keptFiles = new Map<string, { reads: Reads; parsed: KeptFile }>();
+const KEPT_FILES = 500;
+interface KeptFile {
+  result: PlainFileParseResult;
+  codeVariables: Record<string, Record<string, string>>;
+}
+
+/**
+ * A module's file parsed on its own - as `parsePlainFile(moduleName, {}, templateDirs, [], [])` parses it - shared with
+ * every caller, not a copy: for what only reads it. What builds on a parse asks `parsePlainFile` for its own copy.
+ */
+export function sharedPlainFileParse(moduleName: string, templateDirs: string[]): PlainFileParseResult {
+  return keptParse(moduleName, templateDirs).result;
+}
+
+/** A file parsed on its own, as kept while what it read holds - not to be changed: copy what is built on. */
+function keptParse(moduleName: string, templateDirs: string[]): KeptFile {
+  const key = `${process.cwd()}\0${templateDirs.join("\0")}\0${moduleName}`;
+  const kept = keptFiles.get(key);
+  if (kept !== undefined && readsHold(kept.reads)) {
+    addReads(undefined, kept.reads);
+    return kept.parsed;
+  }
+  const codeVariables: Record<string, Record<string, string>> = {};
+  const { value: result, reads } = noteReads(() => parsePlainFileNow(moduleName, codeVariables, templateDirs, [], []));
+  const parsed = { result, codeVariables };
+  keptFiles.delete(key);
+  keptFiles.set(key, { reads, parsed });
+  while (keptFiles.size > KEPT_FILES) keptFiles.delete(keptFiles.keys().next().value!);
+  return parsed;
+}
+
+function parsePlainFileNow(
+  moduleName: string,
+  codeVariables: Record<string, Record<string, string>>,
+  templateDirs: string[],
+  importedModules: string[],
+  modulesTrace: string[],
+): PlainFileParseResult {
   const plainSourceText = readModulePlainSource(moduleName, templateDirs);
   return parsePlainSource(
     plainSourceText,
@@ -805,7 +856,9 @@ export function processRequiredModules(
       continue;
     }
 
-    const result = parsePlainFile(moduleName, {}, templateDirs, [], []);
+    // Only what it requires and what it exports are read: the kept parse, not a copy - but for what it exports, which the
+    // module requiring it takes into its own definitions.
+    const { result } = keptParse(moduleName, templateDirs);
 
     if (result.requiredModules.length === 0) {
       if (allRequiredModules.length > 0) {
@@ -818,7 +871,7 @@ export function processRequiredModules(
       processRequiredModules(result.requiredModules, templateDirs, allRequiredModules, [...modulesTrace, moduleName], exports);
     }
 
-    const own = exportedDefinitionsOf(result);
+    const own = structuredClone(exportedDefinitionsOf(result));
     exports.set(moduleName, own);
     exportedDefinitions.push(...own);
 
@@ -972,9 +1025,9 @@ export function parseModuleChain(
  *
  * Walking a requires chain parses each module in it, and each parse gathers what it inherits
  * by parsing the modules below - so looking across a project of long chains asks for the
- * same files thousands of times. Inside `run` they are parsed once. Outside it nothing is
- * kept, so an edit made between two calls is always seen: the cache is for one question
- * about the specs, not for the life of the process.
+ * same files thousands of times. Inside `run` they are parsed once. Between calls only
+ * parses that still hold are kept - a top-level parse by its fingerprint, a file parsed on
+ * its own by every file it read - so an edit made between two calls is always seen.
  */
 export function withParseCache<T>(run: () => T): T {
   if (activeCache !== undefined) return run();
