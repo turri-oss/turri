@@ -233,9 +233,12 @@ describe("turri init-config", () => {
     expect(vendorOf("3")).toBe("google");
     expect(vendorOf("4")).toBe("amazon-bedrock");
     expect(vendorOf("bedrock")).toBe("amazon-bedrock");
-    expect(vendorOf("5")).toBe("other");
+    expect(vendorOf("5")).toBe("claude-code");
+    expect(vendorOf("claude")).toBe("claude-code");
+    expect(vendorOf("Claude subscription")).toBe("claude-code");
+    expect(vendorOf("6")).toBe("other");
     expect(vendorOf("other")).toBe("other");
-    expect(vendorOf("6")).toBeUndefined();
+    expect(vendorOf("7")).toBeUndefined();
     expect(vendorOf("mistral")).toBeUndefined();
   });
 
@@ -257,6 +260,20 @@ describe("turri init-config", () => {
     expect(mix).toContain("ANTHROPIC_API_KEY");
     expect(mix).toContain("GEMINI_API_KEY");
     expect(mix).toContain("Another provider");
+  });
+
+  it("writes a Claude subscription's models through Claude Code, and says to install its pi extension and sign in to Claude Code - no key", async () => {
+    const { message } = await initConfig(dir, { vendor: "claude-code" });
+    expect(projectModels(readProjectConfig(dir))).toMatchObject({ harness: { model: "claude-code/claude-opus-5-5" }, coding: { model: "claude-code/claude-sonnet-5" } });
+    expect(message).toContain("with your Claude subscription's models, through Claude Code");
+    expect(message).toContain("pi install https://github.com/earendil-works/pi-claude-code");
+    expect(message).toContain("claude auth login");
+    expect(message).not.toContain("export ");
+    expect(message).not.toContain("/login.");
+    // Named without its extension installed: the catalogue has no claude-code, and how to install it is said.
+    const named = await initConfig(join(dir, "named"), { models: { harness: "claude-code/claude-opus-5-5", coding: "claude-code/claude-sonnet-5" }, catalogue: { models: () => [] } });
+    expect(named.written).toBe(false);
+    expect(named.message).toContain("comes with a pi extension that is not installed: pi install https://github.com/earendil-works/pi-claude-code");
   });
 
   it("takes the vendor from --vendor without asking - in the current folder, or the one named, either way round", async () => {

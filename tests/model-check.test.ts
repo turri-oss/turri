@@ -8,14 +8,17 @@ import { checkModels, fixFor, modelsInUse, type ModelAccess } from "../src/model
 import { checkProjectModels } from "../src/setup.ts";
 
 /** A provider stand-in: the models it knows, and what each answers - an error, or nothing when it answers. */
-function provider(known: Record<string, string[]>, answers: Record<string, string | undefined> = {}): ModelAccess & { asked: string[] } {
+function provider(known: Record<string, string[]>, answers: Record<string, string | undefined> = {}): ModelAccess & { asked: string[]; thinking: Array<string | undefined> } {
   const asked: string[] = [];
+  const thinking: Array<string | undefined> = [];
   return {
     asked,
+    thinking,
     find: (name, id) => (known[name]?.includes(id) ? `${name}/${id}` : undefined),
     known: (name) => known[name] ?? [],
-    async ask(model) {
+    async ask(model, level) {
       asked.push(String(model));
+      thinking.push(level);
       return answers[String(model)];
     },
   };
@@ -31,15 +34,15 @@ afterEach(() => {
 });
 
 describe("the models a config uses", () => {
-  it("are the two models, judge-model when set, and every role models: gives a model - each once, with what names it", () => {
+  it("are the two models, judge-model when set, and every role models: gives a model - each once, with what names it and how hard the first thinks", () => {
     writeFileSync(
       join(dir, "config.turri.yaml"),
       "harness-model: anthropic/claude-opus-5-5:medium\ncoding-model: anthropic/claude-haiku-5-5:low\nmodels:\n  planner: anthropic/claude-opus-5-5\n  judge: openai/gpt-6.1-sol\n  reviewer: { thinking: medium }\n",
     );
     expect(modelsInUse(readProjectConfig(dir))).toEqual([
-      { spec: "anthropic/claude-opus-5-5", usedBy: ["harness-model", "models.planner"] },
+      { spec: "anthropic/claude-opus-5-5", usedBy: ["harness-model", "models.planner"], thinking: "medium" },
       // The reviewer names only how it thinks: it runs on the coding model, already there.
-      { spec: "anthropic/claude-haiku-5-5", usedBy: ["coding-model"] },
+      { spec: "anthropic/claude-haiku-5-5", usedBy: ["coding-model"], thinking: "low" },
       { spec: "openai/gpt-6.1-sol", usedBy: ["models.judge"] },
     ]);
   });
@@ -51,6 +54,18 @@ describe("checking the models answer", () => {
     const [verdict] = await checkModels([{ spec: "amazon-bedrock/global.openai.gpt-6-astra", usedBy: ["harness-model"] }], access);
     expect(verdict).toMatchObject({ ok: true, spec: "amazon-bedrock/global.openai.gpt-6-astra" });
     expect(access.asked).toEqual(["amazon-bedrock/global.openai.gpt-6-astra"]);
+  });
+
+  it("asks each thinking as the config says - low when it says nothing - as the agents run it: some refuse a request with no thinking, Claude Code's Opus and Sonnet among them", async () => {
+    const access = provider({ "claude-code": ["claude-opus-5-5", "claude-sonnet-5"] });
+    await checkModels(
+      [
+        { spec: "claude-code/claude-opus-5-5", usedBy: ["harness-model"], thinking: "medium" },
+        { spec: "claude-code/claude-sonnet-5", usedBy: ["coding-model"] },
+      ],
+      access,
+    );
+    expect(access.thinking).toEqual(["medium", "low"]);
   });
 
   it("says what the provider said, and to check the credentials pi reads for it, when it refuses them", async () => {
@@ -79,6 +94,16 @@ describe("checking the models answer", () => {
       access,
     );
     expect(verdicts.map((verdict) => verdict.ok === false && verdict.problem)).toEqual(["pi knows no provider nobody", "not provider/model-id"]);
+  });
+
+  it("says to install the pi extension a provider comes with, when it is not there - a Claude subscription through Claude Code", async () => {
+    const [verdict] = await checkModels([{ spec: "claude-code/claude-sonnet-5", usedBy: ["coding-model"] }], provider({}));
+    expect(verdict).toMatchObject({
+      ok: false,
+      problem: "claude-code - Claude subscription (Claude Code) - is not there",
+      fix: expect.stringContaining("pi install https://github.com/earendil-works/pi-claude-code"),
+    });
+    expect(verdict!.ok === false && verdict!.fix).toContain("claude auth login");
   });
 
   it("tells Bedrock's missing model access, a region and a busy provider apart from a credential", () => {

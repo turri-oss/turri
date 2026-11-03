@@ -136,8 +136,6 @@ It works mid-interview as well: the skill's agent has the same tool. Pulses alre
 
 Names are resolved strictly, because [pi](https://pi.dev)'s own matching guesses and says nothing ("gpt-5" can land on a Bedrock model you have no key for). An exact `provider/model-id` is taken as it is. A looser name is taken when it fits exactly one model you have credentials for, or is exactly one model's id in other words ("gpt 5.5" is `openai/gpt-5.5`, not `gpt-5.5-pro`). Anything else comes back as a short list and the agent asks you which one; a model whose provider has no credentials is never picked.
 
-A provider a [pi](https://pi.dev) extension registers - your company's own LLM gateway, say - works for every agent the conversation starts, not only for the conversation. Those agents load no extensions (they would load a second copy of turri), so each is given the providers the conversation's extensions registered, as they are when it starts. An unattended run - `turri regenerate`, `render` and the rest, outside the chat - has no conversation to take them from: there, only the providers in [pi](https://pi.dev)'s own configuration (`~/.pi/agent/models.json` and `auth.json`) are there, so a gateway those runs use has to be set up in `models.json`.
-
 To change [pi](https://pi.dev)'s own default, in `~/.pi/agent/settings.json`:
 
 ```json
@@ -145,6 +143,10 @@ To change [pi](https://pi.dev)'s own default, in `~/.pi/agent/settings.json`:
 ```
 
 A provider failure - no credits, bad key, rate limit - is raised with the provider's own message, rather than surfacing as an agent that said nothing. One that passes - overloaded, rate limited, unreachable, timed out - is waited out first, after [pi](https://pi.dev)'s own retries: six more tries, the wait doubled each time from 15 seconds up to five minutes (15s, 30s, 1m, 2m, 4m, 5m, a tenth either way so parallel jobs do not all come back at once), the agent carrying on where it was. Each wait - [pi](https://pi.dev)'s own retries too - is shown as it happens - a notification in the chat and the job panel's status, an orange line in a headless run - and listed in the run report's `turn_incidents`. So is a provider stalling: a request to the model that nothing has come back on for two minutes (`TURRI_PROVIDER_STALL`, in seconds; 0 never), said once for each silence while the turn goes on waiting. A turn turri stops itself - its time up, the agent going round in a circle - is the work's normal course and is not said, only listed.
+
+### Models from a pi extension
+
+A provider a [pi](https://pi.dev) extension registers - a Claude subscription through Claude Code ([pi-claude-code](https://github.com/earendil-works/pi-claude-code), `claude-code/...`, see [a Claude subscription](claude-subscription.md)), your company's own LLM gateway - works everywhere turri needs a model. Install the extension as pi installs any (`pi install <source>`), and name its models in `config.turri.yaml` as any. In the chat, pi loads it, and every agent the conversation starts is given the providers the conversation's extensions registered, as they are when it starts - the agents themselves load no extensions, which would load a second copy of turri. A run with no conversation - `turri regenerate`, `turri change-plain`, `turri release` and the rest - loads the installed extensions itself, once, as pi loads them, and keeps only the providers they register; so do `turri doctor` and `turri init-config`, which check a model against them. An older turri that installed itself into every pi is among them, and is loaded as nothing.
 
 ## Module history
 

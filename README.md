@@ -19,6 +19,7 @@
 
 ```bash
 npm install -g @turri-dev/cli # puts `turri` on your PATH
+turri --version              # the version you installed? if not, see docs/installation.md#an-older-turri-runs
 turri doctor              # checks the machine
 ```
 
@@ -30,7 +31,7 @@ Then start it in your project, signed in to your model providers:
 
 ```bash
 cd ~/my-project
-turri init-config              # asks which vendor you use: Anthropic, OpenAI, Google, Amazon Bedrock, or other
+turri init-config              # asks which vendor you use: Anthropic, OpenAI, Google, Amazon Bedrock, a Claude subscription, or other
 export ANTHROPIC_API_KEY=...   # the key it names - or skip it, and type /login in turri once it has started
 turri
 ```
@@ -42,7 +43,7 @@ harness-model: anthropic/claude-opus-5-5:medium  # you talk to it
 coding-model: anthropic/claude-haiku-5-5:low     # it writes the code
 ```
 
-To skip the question, name the vendor - `anthropic`, `openai`, `google`, `amazon-bedrock` (with `--maker` and `--region`) or `other`:
+To skip the question, name the vendor - `anthropic`, `openai`, `google`, `amazon-bedrock` (with `--maker` and `--region`), `claude-code` - your Claude Pro or Max subscription, through Claude Code ([how](docs/claude-subscription.md)) - or `other`:
 
 ```bash
 turri init-config --vendor anthropic

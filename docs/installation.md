@@ -6,8 +6,11 @@ The agents' commands run on this machine, with its toolchains - see [the sandbox
 
 ```bash
 npm install -g @turri-dev/cli   # puts `turri` on your PATH
+turri --version        # the version just installed? - see below if not
 turri doctor           # checks the machine: what turri needs, and what is missing
 ```
+
+`turri --version` should say the version you just installed. If it says an older one - or the chat has commands this version does not, such as `/brood` - see [an older turri runs](#an-older-turri-runs).
 
 Then, in the project that holds your \*\*\*plain:
 
@@ -18,6 +21,39 @@ turri               # pi, with turri's tools, skills and themes loaded
 ```
 
 The package is `@turri-dev/cli` - npm keeps the name `turri` back, as too like another package's - and the command it puts on your PATH is `turri`. `npm install -g @turri-dev/cli@next` gets the latest prerelease instead, built from the last commit on `main`. Installed again - `@latest` or `@next` - it replaces the one there. `turri --version` says which turri runs, and the [pi](https://pi.dev) under it: `turri 0.1.6 (pi 1.3.0)`, and from a clone its commit too.
+
+## An older turri runs
+
+The install worked, and a bare `turri` still runs an older turri: another one comes before it on your PATH - installed under another Node version (nvm, fnm, volta and the like give each its own global folder), or an old `npm link` of a clone. The shell takes the first it finds.
+
+1. **See every turri there is.** `turri --version` lists each on your PATH, with its version, which one runs, and which is hidden - from turri 0.2.1 on. With an older turri in front, ask the shell:
+
+   ```bash
+   which -a turri            # every turri on your PATH - the first is the one that runs
+   ls -l $(which -a turri)   # where each really is: a Node version's folder, or a clone
+   ```
+
+   On Windows: `Get-Command turri -All` in PowerShell, or `where turri` in cmd - the first again the one that runs.
+
+2. **Run the new one now, before cleaning up:**
+
+   ```bash
+   "$(npm prefix -g)/bin/turri"     # the turri npm just installed, by its path
+   npx @turri-dev/cli@latest        # or the newest, whatever is on the PATH
+   ```
+
+3. **Take the old one off the PATH,** with the npm that put it there:
+
+   ```bash
+   nvm exec 22 npm uninstall -g @turri-dev/cli   # one under another Node version of nvm - its version from the path
+   npm unlink -g @turri-dev/cli                   # an old npm link of a clone
+   ```
+
+   or delete the file `which -a turri` printed first. Then `hash -r`, or open a new terminal: the shell remembers where it last found `turri`. On Windows, nvm for Windows switches with `nvm use <version>` before the `npm uninstall`; then open a new terminal.
+
+4. **Check:** `turri --version` says the version you installed, and lists one turri on your PATH. `turri doctor` checks it too.
+
+From 0.2.1 on, turri says so itself: its banner warns, as it starts, when a newer turri is out, or installed and hidden behind it - and `turri --version` and `turri doctor` say which turri is where, and what to run.
 
 ## From a clone
 
@@ -47,7 +83,8 @@ It checks, in order, and says exactly what to run for anything missing:
 | bash | every command an agent runs, and every testing script, runs with it | on Windows, Git for Windows; elsewhere, the system's package manager |
 | the OS sandbox | the wall under the command check and the audit | macOS has Seatbelt; on Linux, `apt install bubblewrap`. Where it does not start it says why and how to give it one - user namespaces off (Docker: a user that is not root, `--security-opt seccomp=unconfined`), AppArmor in the way (Docker: `--security-opt apparmor=unconfined`; Ubuntu 24.04: `sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`), Docker's masked `/proc` (`--security-opt systempaths=unconfined`, or nothing: turri binds the container's `/proc` instead). Without one, the check and the audit hold alone |
 | a model provider | the agents need a model | run `pi` and `/login`, or set an API key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, ...) |
-| `turri` on PATH | so it runs from any project | `npm install -g @turri-dev/cli`, or `npm link` in a clone |
+| turri version | the newest turri npm has - asked as doctor runs; a turri from a clone is not compared | `npm install -g @turri-dev/cli@latest` |
+| `turri` on PATH | so it runs from any project - and every turri on the PATH, with its version: an older one in front of a newer one is a problem, the newer one hidden behind it | `npm install -g @turri-dev/cli`, or `npm link` in a clone - and, for an older one in front, the command that takes it off, by where it is (another Node version of nvm, a linked clone, an npm prefix) |
 | turri and `pi` apart | `turri` starts [pi](https://pi.dev) with turri; a plain `pi` stays [pi](https://pi.dev) | an older `turri setup` wrote a file that loads turri into every `pi` - `doctor` offers to remove it |
 
 In a project - a folder with `config.turri.yaml` (or the old `config.yaml`) or `plain_modules` - it checks what the project needs of this machine too:
@@ -61,7 +98,7 @@ In a project - a folder with `config.turri.yaml` (or the old `config.yaml`) or `
 
 Removing that file is the one thing `doctor` changes, and it asks first; `turri doctor --yes` says yes. Run without a terminal - piped, or in CI - it asks nothing and changes nothing. Run it again whenever something breaks; `turri doctor --no-models` leaves out the models' requests. In the chat, ask for a self check: the `doctor` tool runs the same checks, the models only when you ask. A host - a desktop app - runs the same checks through `doctor` and shows them itself (see [doctor in a host](hosting.md#doctor-in-a-host)).
 
-The chat is told every turn which wall is up and what the project's modules need of this machine that it lacks. What they need is worked out from all the project's \*\*\*plain - seconds, on a project of long requires chains - so it is worked out once the chat is up and again after a turn in which \*\*\*plain changed, never while your message waits: a turn is told what was known last.
+The chat is told every turn which wall is up and what the project's modules need of this machine that it lacks. What they need is worked out from all the project's \*\*\*plain - seconds, on a project of long requires chains - so it is worked out when the first turn asks - not as the chat opens - and again after a turn in which \*\*\*plain changed, never while your message waits: a turn is told what was known last.
 
 ## turri and `pi`
 

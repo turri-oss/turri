@@ -10,6 +10,7 @@ import {
   SessionManager,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
+import { installedProviders, runtimeWithProviders } from "./installed-providers.ts";
 import { loadRules, renderRulesBlock } from "./rules.ts";
 import { debugMode, inheritModel, stackOf, readProjectConfig, ROLE_THINKING, roleModel, roleTurnLimitMs, splitModelSpec, type AgentRole, type ProjectConfig } from "./config.ts";
 import { maskToolResults } from "./regenerate/masking.ts";
@@ -82,31 +83,18 @@ export function inheritProviders(source: () => ModelRegistry | undefined): void 
   providerSource = source;
 }
 
-/** A model runtime for a sub-agent: pi's configuration, with the providers the conversation's extensions registered. */
+/**
+ * A model runtime for a sub-agent: pi's configuration, with the providers the conversation's extensions registered - or,
+ * with no conversation to take them from (a command run headless), those the person's installed pi extensions register.
+ */
 async function subAgentModelRuntime(): Promise<ModelRuntime> {
-  const agentDir = getAgentDir();
-  const runtime = await ModelRuntime.create({ authPath: join(agentDir, "auth.json"), modelsPath: join(agentDir, "models.json") });
   let source: ModelRegistry | undefined;
   try {
     source = providerSource?.();
   } catch {
-    // The conversation it came from is gone: pi's own configuration is what there is.
+    // The conversation it came from is gone: the installed ones, then.
   }
-  if (source === undefined) return runtime;
-  const registry = new ModelRegistry(runtime);
-  for (const id of source.getRegisteredProviderIds()) {
-    const native = source.getRegisteredNativeProvider(id);
-    const config = source.getRegisteredProviderConfig(id);
-    try {
-      if (native !== undefined) registry.registerProvider(native);
-      else if (config !== undefined) registry.registerProvider(id, config);
-    } catch {
-      // One provider that will not register leaves the others, and pi's own, usable.
-    }
-  }
-  // Its models are listed as the registrations land; the agent's model is looked up right after.
-  await runtime.refresh({ allowNetwork: false });
-  return runtime;
+  return runtimeWithProviders(source ?? (await installedProviders()));
 }
 
 const RULES_DIR = join(dirname(dirname(fileURLToPath(import.meta.url))), "genome", "rules");

@@ -7,6 +7,7 @@ import { adoptLegacyConfig, CONFIG_FILE, CONFIG_KEYS, LEGACY_CONFIG_FILE, ROLE_T
 import { withTopLevelValue } from "./config-edit.ts";
 import { brand } from "./brand.ts";
 import { closestModels, piModelCatalogue, type CatalogueModel, type ModelCatalogue } from "./model-check.ts";
+import { EXTENSION_PROVIDERS } from "./installed-providers.ts";
 
 /**
  * `turri init-config`: a project's first config.turri.yaml - the two models, a strong one to talk to and a smaller one to
@@ -26,7 +27,7 @@ import { closestModels, piModelCatalogue, type CatalogueModel, type ModelCatalog
  */
 
 /** A vendor whose models the quick start config is filled in with. */
-export type Vendor = "anthropic" | "openai" | "google" | "amazon-bedrock" | "other";
+export type Vendor = "anthropic" | "openai" | "google" | "amazon-bedrock" | "claude-code" | "other";
 
 /** Whose models Amazon Bedrock serves: the maker a model's id names after its geography - anthropic, openai, xai, meta... */
 export type BedrockMaker = string;
@@ -229,6 +230,14 @@ export const VENDORS: Record<Vendor, VendorPreset> = {
     label: "Amazon Bedrock",
     ...bedrockModels({ maker: "anthropic", region: BEDROCK_DEFAULT.region }),
     keys: [{ vendor: "AWS", variable: "AWS_PROFILE" }],
+  },
+  // A Claude Pro or Max subscription, through Claude Code: its pi extension's provider (installed-providers.ts), no key.
+  "claude-code": {
+    label: "Claude subscription",
+    harness: "claude-code/claude-opus-5-5",
+    coding: "claude-code/claude-sonnet-5",
+    strong: "claude-code/claude-opus-5-5",
+    keys: [],
   },
   // A mix - the strongest to talk to, a cheap one to code - and the starting point for any other provider pi supports.
   other: {
@@ -455,6 +464,7 @@ export function vendorOf(answer: string): Vendor | undefined {
   const names = Object.keys(VENDORS) as Vendor[];
   const byNumber = /^\d+$/.test(typed) ? names[Number(typed) - 1] : undefined;
   if (typed === "bedrock" || typed === "aws") return "amazon-bedrock";
+  if (typed === "claude" || typed === "subscription" || typed === "claude code") return "claude-code";
   return byNumber ?? names.find((name) => name === typed || VENDORS[name].label.toLowerCase() === typed);
 }
 
@@ -492,6 +502,17 @@ function shellProfile(): string {
 function signInText(vendor: Vendor, bedrock?: BedrockChoice, models?: ModelSet): string[] {
   // Models given on another vendor's terms - other's, a provider of their own: the keys of the providers they name.
   const providers = models !== undefined && vendor === "other" ? [...new Set([models.harness, models.coding].map((model) => model.split("/")[0]!))] : [];
+  // A provider a pi extension brings - a Claude subscription through Claude Code: no key, its extension and its own sign-in.
+  const extensions = (vendor === "other" ? providers : [vendor]).flatMap((provider) => (EXTENSION_PROVIDERS[provider] !== undefined ? [EXTENSION_PROVIDERS[provider]!] : []));
+  if (extensions.length > 0 && (vendor !== "other" || extensions.length === providers.length)) {
+    return extensions.flatMap((extension) => [
+      brand.bold(`Set up ${extension.label}`),
+      `  ${brand.accent(extension.install)}   ${brand.muted("its pi extension: turri finds what pi has installed")}`,
+      `  ${brand.muted(extension.signIn)}`,
+      "",
+      brand.muted("turri doctor --models checks it answers."),
+    ]);
+  }
   const keys =
     providers.length > 0
       ? providers.flatMap((provider) => (provider in VENDORS && provider !== "other" && provider !== "amazon-bedrock" ? VENDORS[provider as Vendor].keys : [{ vendor: makerLabel(provider), variable: "" }]))
@@ -542,6 +563,7 @@ function whose(vendor: Vendor, models: ModelSet, given: boolean): string {
     const makers = [...new Set(places.map((place) => `${makerLabel(place.maker)}'s`))];
     return `${and(makers)} models on Amazon Bedrock (${[...new Set(places.map((place) => place.geography))].join(", ")})`;
   }
+  if (vendor === "claude-code") return "your Claude subscription's models, through Claude Code";
   if (vendor !== "other") return `${VENDORS[vendor].label}'s models`;
   if (!given) return "a mix of models";
   return `${and([...new Set(pair.map((model) => `${makerLabel(model.split("/")[0]!)}'s`))])} models`;
@@ -559,7 +581,12 @@ function notInCatalogue(spec: string, catalogue: ModelCatalogue): string | undef
   const model = known.find((entry) => entry.id === id);
   if (model === undefined) {
     if (THINKING.test(id) && known.some((entry) => entry.id === id.replace(THINKING, ""))) return `${spec} names a thinking level: give the model alone, ${spec.replace(THINKING, "")} - turri writes how hard each thinks.`;
-    if (known.length === 0) return `${spec} is not in pi's model catalogue: pi knows no provider ${provider}.`;
+    if (known.length === 0) {
+      const extension = EXTENSION_PROVIDERS[provider];
+      return extension !== undefined
+        ? `${spec} is not in pi's model catalogue: ${provider} - ${extension.label} - comes with a pi extension that is not installed: ${extension.install}`
+        : `${spec} is not in pi's model catalogue: pi knows no provider ${provider}.`;
+    }
     const close = closestModels(id, known.filter((entry) => entry.type === "chat").map((entry) => entry.id));
     return `${spec} is not in pi's model catalogue${close.length > 0 ? ` - did you mean ${close.map((other) => `${provider}/${other}`).join(", ")}?` : "."}`;
   }
@@ -766,6 +793,8 @@ async function askVendor(given: { vendor?: Vendor; maker?: BedrockMaker; region?
           const what =
             name === "amazon-bedrock"
               ? "Anthropic's, OpenAI's, xAI's, Meta's... models on AWS"
+              : name === "claude-code"
+                ? `your Claude Pro or Max, through Claude Code - ${harness.split("/")[1]} to talk to, ${coding.split("/")[1]} to code`
               : `${name === "other" ? "a mix - " : ""}${harness.split("/")[1]} to talk to, ${coding.split("/")[1]} to code`;
           return [label, what];
         }),
