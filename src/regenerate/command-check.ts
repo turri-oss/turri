@@ -33,7 +33,7 @@ export interface CommandFence {
   platform?: "posix" | "win32";
 }
 
-export type CheckRule = "path" | "record" | "credential" | "install" | "kill";
+export type CheckRule = "path" | "record" | "credential" | "install" | "system" | "kill";
 
 export type CheckResult = { ok: true } | { ok: false; rule: CheckRule; reason: string };
 
@@ -153,6 +153,69 @@ function installIn(segment: string): string | undefined {
   if (program === "installer" || program === "msiexec" || (program === "hdiutil" && has("attach"))) return `${program} runs an installer`;
   if (INSTALLER_FILE.test(program) || ((program === "sh" || program === "bash" || program === "open") && args.some((arg) => INSTALLER_FILE.test(arg)))) return "it runs an installer";
   return undefined;
+}
+
+/** The files a shell reads as it starts, and the system's own configuration: what changes the person's environment. */
+const PROFILE_FILE = /(^|[\/])\.(bashrc|bash_profile|bash_login|profile|zshrc|zprofile|zshenv|zlogin|kshrc|cshrc|tcshrc)$|(^|[\/])\.config[\/]fish[\/]|^\/etc\//;
+
+/** Why one simple command changes a setting of the machine's, or nothing when it does not. */
+function systemSettingIn(segment: string): string | undefined {
+  const found = programOf(segment);
+  if (found === undefined) return undefined;
+  const { program, args } = found;
+  const has = (...wanted: string[]) => wanted.some((word) => args.includes(word));
+  if (program === "defaults" && has("write", "delete", "import", "rename")) return "defaults writes the machine's settings";
+  if (program === "launchctl" && args.some((arg) => !["list", "print", "print-disabled", "blame", "help", "version"].includes(arg) && !arg.startsWith("-"))) return "launchctl changes the machine's services";
+  if (program === "systemctl" && args.some((arg) => ["enable", "disable", "start", "stop", "restart", "reload", "mask", "unmask", "set-default", "set-property", "edit", "daemon-reload"].includes(arg))) return "systemctl changes the machine's services";
+  if (program === "sysctl" && (has("-w") || args.some((arg) => /^[\w.]+=/.test(arg)))) return "sysctl changes the kernel's settings";
+  if (["scutil", "networksetup", "pmset", "nvram", "csrutil", "spctl", "systemsetup", "update-alternatives", "chsh", "dscl", "visudo", "usermod", "useradd", "passwd", "timedatectl", "hostnamectl"].includes(program) && args.length > 0) {
+    const reads = ["--get", "-get", "-getcomputername", "status", "-g", "--list", "--display", "--query", "show", "-read", "-list"];
+    if (!args.some((arg) => reads.includes(arg) || arg.startsWith("-get"))) return `${program} changes the machine's settings`;
+  }
+  if (program === "xcode-select" && has("--switch", "-s", "--reset", "-r", "--install")) return "xcode-select changes the machine's developer tools";
+  if (program === "git" && has("config") && has("--global", "--system")) return "git config --global changes the person's git settings";
+  if ((program === "npm" || program === "pnpm" || program === "yarn") && has("config") && has("set", "delete", "edit")) return `${program} config changes the person's ${program} settings`;
+  if ((program === "pip" || program === "pip3") && has("config") && has("set", "unset", "edit")) return "pip config changes the person's pip settings";
+  if (program === "mise" && has("settings", "trust")) return "mise changes the person's mise settings";
+  return undefined;
+}
+
+/**
+ * Why a command line changes the machine - installs software outside the project, or changes a setting of the
+ * machine's or the person's environment - or nothing when it does not. The project's own dependencies, installed into
+ * the project (npm install, a venv, mvn, cargo), change nothing of the machine's. turri changes the machine nowhere: not
+ * an agent, not the chat, not a release - what the machine lacks is the person's to install, in their own words.
+ */
+export function machineChange(command: string): string | undefined {
+  if (PIPED_DOWNLOAD.test(command) || RUN_DOWNLOAD.test(command)) return "it runs a script downloaded from the web";
+  for (const segment of segments(command)) {
+    const why = installIn(segment) ?? systemSettingIn(segment);
+    if (why !== undefined) return why;
+  }
+  for (const part of command.split(/&&|\|\||[;\n]/)) {
+    const profile = writeTargets(part).find((target) => PROFILE_FILE.test(target.replace(/^~|^\$HOME|^\$\{HOME\}/, "")));
+    if (profile !== undefined) return `it writes ${profile}, which sets the person's environment`;
+  }
+  return undefined;
+}
+
+/** The .plain file a command line writes - a ***plain module or a test plain file - or nothing when it writes none. */
+export function writesPlain(command: string): string | undefined {
+  for (const part of command.split(/&&|\|\||[;\n]/)) {
+    const found = writeTargets(part).find((target) => target.replace(/["']/g, "").endsWith(".plain"));
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+/** What turri says when a command would change the machine: what it does instead. */
+export function machineChangeReason(why: string): string {
+  return (
+    `turri changes nothing of this machine's - ${why}. Nothing is installed by turri, and no setting of the machine's or the ` +
+    "person's environment is changed: that is theirs to do. Find out what is there instead - off the PATH, another name for " +
+    "the same tool (python for python3), a version manager's folder - and use it, or give the person the exact command to " +
+    "run themselves, and go on once they say it is done."
+  );
 }
 
 /** Downloads run as programs: a script piped to a shell, or run from a download. */
@@ -287,6 +350,8 @@ export function checkCommand(command: string, fence: CommandFence): CheckResult 
   for (const segment of segments(command)) {
     const why = installIn(segment);
     if (why !== undefined) return refusal("install", installReason(why));
+    const setting = systemSettingIn(segment);
+    if (setting !== undefined) return refusal("system", machineChangeReason(setting));
     const found = programOf(segment);
     if (found !== undefined && (["pkill", "killall", "taskkill"].includes(found.program) || (found.program === "fuser" && found.args.some((arg) => /^-\w*k/.test(arg))))) {
       return refusal("kill", killReason());

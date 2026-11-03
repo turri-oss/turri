@@ -59,10 +59,12 @@ export type LedgerEvent =
   // What the sentinel - or turri itself - put to the person, and how it ended: answered, dismissed, superseded.
   | { kind: "notice.put"; notice: string; severity: string; module?: string }
   | { kind: "notice.over"; notice: string; state: string }
-  // The sentinel on a pulse, in a conversation of its own - in place of its check of `replaced`, a pulse of the same module.
-  | { kind: "sentinel.checking"; module?: string; replaced?: string }
-  // The sentinel done with a pulse: whether what it checked holds.
-  | { kind: "sentinel.concluded"; verdict: string; module?: string }
+  // A host asked the sentinel to check functional specs of a module, in its release: the check's id.
+  | { kind: "sentinel.asked"; check: string; module: string; funcIds: string[] }
+  // The sentinel on a pulse - or a host's check - in a conversation of its own; in place of its check of `replaced`, a pulse of the same module.
+  | { kind: "sentinel.checking"; module?: string; replaced?: string; check?: string }
+  // The sentinel done with a pulse or a check: whether what it checked holds - `unchecked`, a check that never ran.
+  | { kind: "sentinel.concluded"; verdict: string; module?: string; check?: string }
   | { kind: "chat.closed" }
   // A pulse, from queued to its end.
   | { kind: "job.queued"; jobKind: string; summary: string; pulse?: number; title?: string; model?: string; stack?: string; cases?: PulseCases; waitingOn: string[]; follows?: string }

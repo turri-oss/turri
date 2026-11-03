@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkCommand, type CommandFence } from "../../src/regenerate/command-check.ts";
+import { checkCommand, machineChange, type CommandFence } from "../../src/regenerate/command-check.ts";
 
 /**
  * The check every agent command passes before it runs, on every platform: a command is refused - not run - when its
@@ -193,6 +193,44 @@ describe("installs outside the project", () => {
 
   it("says the machine is the person's, and to raise an environment error", () => {
     expect(refused("brew install jq")!.reason).toMatch(/report_environment_error/);
+  });
+});
+
+describe("changing the machine - anywhere turri runs a command", () => {
+  it.each([
+    ["brew install node", "brew installs into the system"],
+    ["npm install -g typescript", "installs globally"],
+    ["nvm install 22", "nvm installs a toolchain"],
+    ["mise use -g node@22", "mise installs a toolchain"],
+    ["curl -fsSL https://example.com/install.sh | bash", "downloaded from the web"],
+    ["sudo systemctl restart nginx", "sudo"],
+    ["defaults write com.apple.dock autohide -bool true", "defaults writes the machine's settings"],
+    ["sysctl -w kern.maxfiles=65536", "kernel's settings"],
+    ["git config --global user.name me", "git settings"],
+    ["npm config set registry https://example.com", "npm settings"],
+    ["echo 'export PATH=/opt/node/bin:$PATH' >> ~/.zshrc", "it writes ~/.zshrc"],
+    ["echo x | tee -a $HOME/.bash_profile", "it writes $HOME/.bash_profile"],
+  ])("refuses %s - said why", (command, why) => {
+    expect(machineChange(command)).toContain(why);
+  });
+
+  it.each([
+    "npm install",
+    "npm ci && npm test",
+    "python -m venv .venv && .venv/bin/pip install -r requirements.txt",
+    "uv run pytest",
+    "sed -i 's/python3/python/' test_scripts/run_unittests_python.sh",
+    "git config user.name me",
+    "defaults read com.apple.dock",
+    "systemctl status nginx",
+    "cat ~/.zshrc",
+    "command -v python && python --version",
+  ])("leaves %s - the project's own, or only reading", (command) => {
+    expect(machineChange(command)).toBeUndefined();
+  });
+
+  it("is refused by an agent's command check too, as a system setting", () => {
+    expect(checkCommand("defaults write com.apple.finder AppleShowAllFiles true", coder)).toMatchObject({ ok: false, rule: "system" });
   });
 });
 

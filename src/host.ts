@@ -8,8 +8,9 @@
 // The session and its chats.
 export { createTurri, type Turri, type TurriOptions } from "./host-session.ts";
 export { MAX_CHATS, type ChatInfo, type ChatStatus, type TurriHost } from "./chats.ts";
-// The sentinel's notices: what it puts to the person, and how they answer.
-export { SENTINEL, SENTINEL_START, type Conclusion, type Notice, type NoticeAction, type NoticeAnswer, type NoticeSeverity, type NoticeState } from "./notice.ts";
+// The sentinel's notices: what it puts to the person, and how they answer - and the checks a host asks of it.
+export { SENTINEL, SENTINEL_START, type Conclusion, type Notice, type NoticeAction, type NoticeAnswer, type NoticeSeverity, type NoticeState, type SentinelCheck } from "./notice.ts";
+export type { CheckRequest } from "./sentinel-check.ts";
 export type { AskUserIO } from "./ask.ts";
 /** pi itself, as turri is built against it: a host's own extensions and UI are made with this one, not another copy. */
 export * as pi from "@earendil-works/pi-coding-agent";
@@ -49,6 +50,8 @@ export {
 } from "./init-config.ts";
 // pi's model catalogue, read without a request: what initConfig checks the models given against, and what a host offers.
 export { piModelCatalogue, type CatalogueModel, type ModelCatalogue } from "./model-check.ts";
+export { EXTENSION_PROVIDERS, installedModelRuntime } from "./installed-providers.ts";
+export { machineChange, machineChangeReason } from "./regenerate/command-check.ts";
 
 // Whether this machine, and a project on it, is ready for turri - as `turri doctor` checks it, printing nothing.
 export { doctor, type Check, type DoctorOptions, type Level } from "./setup.ts";
@@ -69,6 +72,8 @@ export { isStack, STDLIB_KINDS, stdlibTemplates, type StdlibKind, type StdlibTem
 
 // The work: what is built, what is left, and the jobs that build it.
 export { createWorkLoop, describeModules, functionalityCompletion, promptOf, type DriftReport, type ModuleStatus, type WorkLoop } from "./regenerate/loop.ts";
+export { projectStanding, type ModuleStanding, type StandingOptions } from "./regenerate/standing.ts";
+export { requiresOrder } from "./regenerate/requires.ts";
 export { createJobRegistry, defaultParallelJobs, type Job, type JobRegistry, type PulseCases, type PulseSpec } from "./regenerate/jobs.ts";
 export { describeTurnIncident, onModelEvent, type TranscriptEntry } from "./regenerate/activity.ts";
 export { sweepOrphanedGroups } from "./regenerate/shell.ts";

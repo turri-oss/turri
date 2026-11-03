@@ -12,6 +12,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { createDeployTools, DEPLOY_TOOLS, type DeployState } from "./release-tools.ts";
 import { hostDirOf, shortPath } from "./regenerate/release.ts";
+import { machineChange, machineChangeReason } from "./regenerate/command-check.ts";
 import { projectDirOf } from "./regenerate/paths.ts";
 import { ask, BEGIN, createExecutor } from "./pi.ts";
 
@@ -24,12 +25,20 @@ import { ask, BEGIN, createExecutor } from "./pi.ts";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyTool = ToolDefinition<any, any, any>;
 
-/** The person's own shell, in the deployed folder: it installs and runs what the release needs. */
-function hostBash(dir: string): AnyTool {
+/**
+ * The person's own shell, in the deployed folder: it installs what the release needs into the project, and runs it. It
+ * changes nothing of the machine's - no toolchain installed, no system setting changed: a command that would is refused.
+ */
+export function releaseShell(dir: string): AnyTool {
   const bash: AnyTool = createBashToolDefinition(dir);
   return {
     ...bash,
-    description: `${bash.description}\n\nIt runs on the person's own machine, in ${shortPath(dir)}. Never start a server here: activate does.`,
+    description: `${bash.description}\n\nIt runs on the person's own machine, in ${shortPath(dir)}. Never start a server here: activate does. It installs nothing on the machine and changes none of its settings: what the machine lacks, the person installs.`,
+    async execute(toolCallId, params, signal, onUpdate, ctx) {
+      const changes = machineChange(String((params as { command?: unknown }).command ?? ""));
+      if (changes !== undefined) throw new Error(machineChangeReason(changes));
+      return bash.execute(toolCallId, params, signal, onUpdate, ctx);
+    },
   };
 }
 
@@ -91,6 +100,8 @@ export interface ReleaseAgentInput {
   guidance?: string;
   /** Released as a pulse's last stage: what the pulse landed. The setting has said to release it; the guidance says how. */
   afterPulse?: { moduleName: string; subject: string };
+  /** Released for the sentinel to check functional specs of the module in: asked for, so released; the guidance says how. */
+  forCheck?: { moduleName: string };
   onDelta?: (delta: string) => void;
 }
 
@@ -114,7 +125,7 @@ export async function runReleaseAgent(input: ReleaseAgentInput): Promise<string>
   const executor = await createExecutor({
     // Its sessions are kept in the project, not in the folder it deploys.
     cwd: projectDirOf(plainFile),
-    customTools: [...fileTools, hostBash(dir), ...tools],
+    customTools: [...fileTools, releaseShell(dir), ...tools],
     tools: [...fileTools.map((tool) => tool.name), "bash", ...DEPLOY_TOOLS],
     ...(input.model !== undefined ? { model: input.model } : {}),
     role: "release",
@@ -125,16 +136,18 @@ export async function runReleaseAgent(input: ReleaseAgentInput): Promise<string>
     task: [
       input.afterPulse !== undefined
         ? `A pulse of module ${input.afterPulse.moduleName} just landed: ${input.afterPulse.subject}. Release it now, before the module's next pulse starts: the project releases after every pulse.`
-        : `Release ${shortPath(plainFile)} for the person to try, with the release tool, then do what it says.`,
+        : input.forCheck !== undefined
+          ? `The person asked turri's sentinel to check functional specs of module ${input.forCheck.moduleName} in its release, and what runs of it is not its last commit. Release its last commit now, for the sentinel to test.`
+          : `Release ${shortPath(plainFile)} for the person to try, with the release tool, then do what it says.`,
       "",
       "First ask yourself: is there guidance for how this project releases it - what the person said below, the project's",
       "notes and skills below, or anything else you find? If there is, call release with it as guidance, in full: the code is",
       "put in dist/<module>, and the guidance takes it on from there. If there is none, call release without guidance: the",
       "code is put in dist/<module> and started from there, as best it can be.",
-      ...(input.afterPulse !== undefined
+      ...(input.afterPulse !== undefined || input.forCheck !== undefined
         ? [
             "",
-            "Release it whether or not the guidance speaks of releasing after a build - the project's setting has said to. What",
+            `Release it whether or not the guidance speaks of releasing ${input.afterPulse !== undefined ? "after a build - the project's setting has said to" : "for a check - the person asked for it"}. What`,
             "the guidance says is how. When release says it is already released, leave it at that.",
           ]
         : []),

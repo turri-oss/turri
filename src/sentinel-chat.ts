@@ -2,7 +2,7 @@ import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-w
 import { Box, Text } from "@earendil-works/pi-tui";
 import type { ChatLink, TurriCore } from "./chats.ts";
 import { projectModels, readProjectConfig, roleModel } from "./config.ts";
-import { concludedNote, concludeTool, keepGuidanceTool, notifyTool, sentinelFileTools, type Conclusion, type Notice } from "./sentinel.ts";
+import { concludedNote, concludeTool, keepGuidanceTool, notifyTool, resumeTool, sentinelFileTools, type Conclusion, type Notice } from "./sentinel.ts";
 
 /**
  * The sentinel in a chat: its tools in place of the chat's - the project to read, its shell behind the walls, notices,
@@ -22,7 +22,7 @@ const STEER = "Say what to do instead…";
 const DISMISS = "Dismiss";
 
 /** The sentinel's tools and model, built into its chat. */
-export function registerSentinel(pi: ExtensionAPI, session: TurriCore, cwd: string, hostTools: ToolDefinition[], allowed: Set<string>): void {
+export function registerSentinel(pi: ExtensionAPI, session: TurriCore, cwd: string, hostTools: ToolDefinition[], allowed: Set<string>, resume: (plainFile: string) => Promise<string>): void {
   // pi's own file tools and shell, replaced by fenced ones of the same names: the whole project to read, nothing to write.
   for (const tool of sentinelFileTools(cwd)) pi.registerTool(tool);
   pi.registerTool(
@@ -34,6 +34,7 @@ export function registerSentinel(pi: ExtensionAPI, session: TurriCore, cwd: stri
   );
   pi.registerTool(concludeTool((conclusion) => session.concluded(conclusion)));
   pi.registerTool(keepGuidanceTool(cwd));
+  pi.registerTool(resumeTool(resume));
   for (const tool of hostTools) pi.registerTool(tool);
 
   // Only its tools are offered to its model; what it calls besides is refused (extension.ts, tool_call).
@@ -99,10 +100,16 @@ export function noticeDialogs(
   pi.registerEntryRenderer(CONCLUDED_ENTRY, (entry, _options, theme) => {
     const data = entry.data as Conclusion | undefined;
     if (data === undefined) return undefined;
-    const about = data.module !== undefined ? `${data.module}${data.pulse !== undefined ? ` · pulse ${data.pulse}` : ""}` : data.job;
-    const mark = data.verdict === "holds" ? theme.fg("success", "✓") : theme.fg("error", "✗");
+    const about =
+      data.check !== undefined
+        ? `${data.module !== undefined ? `${data.module} · ` : ""}check ${data.check}`
+        : data.module !== undefined
+          ? `${data.module}${data.pulse !== undefined ? ` · pulse ${data.pulse}` : ""}`
+          : (data.job ?? "");
+    const mark = data.verdict === "holds" ? theme.fg("success", "✓") : data.verdict === "unchecked" ? theme.fg("muted", "·") : theme.fg("error", "✗");
+    const said = data.verdict === "holds" ? "checked, it holds" : data.verdict === "unchecked" ? "not checked" : "found something wrong";
     const box = new Box(1, 0);
-    box.addChild(new Text(`${mark} ${theme.fg("muted", `sentinel · ${about} · ${data.verdict === "holds" ? "checked, it holds" : "found something wrong"}`)}\n  ${theme.fg("text", data.summary)}`, 0, 0));
+    box.addChild(new Text(`${mark} ${theme.fg("muted", `sentinel · ${about} · ${said}`)}\n  ${theme.fg("text", data.summary)}`, 0, 0));
     return box;
   });
   pi.registerEntryRenderer(NOTICE_OVER_ENTRY, (entry, _options, theme) => {
@@ -177,8 +184,8 @@ export function noticeDialogs(
       } catch {
         /* the host still hears of it */
       }
-      // A host answers it itself: its card, its buttons.
-      if (session.host.onNotice !== undefined) return;
+      // A host answers it itself: its card, its buttons. A note of a fix the sentinel made asks nothing: its card alone.
+      if (session.host.onNotice !== undefined || notice.kind === "fixed") return;
       waiting.push(notice);
       void ask();
     },
@@ -188,9 +195,16 @@ export function noticeDialogs(
       } catch {
         /* the agent is still told */
       }
+      // A host that shows the person the conclusion itself: the chat knows of it - in order, with no turn of its own.
+      const shown = session.host.pulseEndsShown === true;
       void pi.sendMessage(
-        { customType: "turri_sentinel_concluded", content: concludedNote(conclusion), display: false, details: { jobId: conclusion.job, verdict: conclusion.verdict } },
-        { triggerTurn: true, deliverAs: "followUp" },
+        {
+          customType: "turri_sentinel_concluded",
+          content: concludedNote(conclusion, { shown }),
+          display: false,
+          details: { ...(conclusion.job !== undefined ? { jobId: conclusion.job } : {}), ...(conclusion.check !== undefined ? { checkId: conclusion.check } : {}), verdict: conclusion.verdict },
+        },
+        shown ? { triggerTurn: false } : { triggerTurn: true, deliverAs: "followUp" },
       );
     },
     over(notice) {

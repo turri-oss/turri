@@ -10,6 +10,7 @@ import { stopDeployed } from "./regenerate/release.ts";
 import type { JobRegistry } from "./regenerate/jobs.ts";
 import type { WorkLoop } from "./regenerate/loop.ts";
 import type { Notice, NoticeAnswer } from "./notice.ts";
+import { prepareCheck, type CheckRequest } from "./sentinel-check.ts";
 
 /**
  * turri's session for a host that runs its chats itself - a desktop app, an editor: the chats, each a pi session with
@@ -71,6 +72,15 @@ export interface Turri {
    * hears each as it is put (`onNotice`) and as it ends (`onNoticeOver`).
    */
   notices(): Notice[];
+  /**
+   * The sentinel asked to check functional specs in a module's release - `funcIds` each `module:func-id`, of the module or
+   * of any module its requires chain builds on (a bare func-id is the module's own) - in the module's release, as it tests a release after a pulse: the module's own codebase's last
+   * commit, which holds every module its chain builds on, released first unless that is what runs. Queued behind the
+   * sentinel's work, in a conversation of its own. Returns the check's id - its notices and its conclusion carry it - or
+   * why it was refused: the sentinel off or not started this session, a module not there or that does not parse, a
+   * module outside its chain, a func-id a module does not have, one not built in its codebase as its ***plain has it now.
+   */
+  check(request: CheckRequest): { check: string } | { refused: string };
   /**
    * The test advisor asked to evaluate functional specs, as the chat's `evaluate_tests` does - for a host's own way in,
    * a button on a functional spec: `module:func-id`s, or func-ids of `plainFile`'s module, even a text judged already and
@@ -164,6 +174,7 @@ export async function createTurri(options: TurriOptions = {}): Promise<Turri> {
     },
     decline: async (id) => core.decline(id),
     notices: () => core.notices(),
+    check: (request) => core.check(() => prepareCheck(cwd, request)),
     evaluateTests: (funcIds, options) => evaluateTests(cwd, sessionAdvisor(core), funcIds, options),
     turnOnConformanceTests: (plainFile) => turnOnConformance(core, plainFile),
     settingChoices: (key, typed = "") => {

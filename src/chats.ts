@@ -10,7 +10,7 @@ import { record } from "./regenerate/ledger.ts";
 import type { Job, JobRegistry } from "./regenerate/jobs.ts";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AdvisorVerdict } from "./regenerate/advisor-runs.ts";
-import { newNotice, noticeTask, SENTINEL, sentinelStartChoice, wentWrong, type ChatRole, type Conclusion, type Notice, type NoticeAnswer, type NoticeInput } from "./notice.ts";
+import { newNotice, noticeTask, SENTINEL, sentinelStartChoice, wentWrong, type ChatRole, type Conclusion, type Notice, type NoticeAnswer, type NoticeInput, type SentinelCheck } from "./notice.ts";
 
 /**
  * The chats of a turri session.
@@ -80,6 +80,13 @@ export interface TurriHost {
   onChatSession?(chat: string, session: AgentSession): void;
   /** The sentinel is done with a pulse - told to the chat it names, whose agent says so. */
   onConcluded?(conclusion: Conclusion & { chat: string }): void;
+  /**
+   * The host shows the person each pulse that lands and each of the sentinel's conclusions itself - its own
+   * notifications, from onJobChange and onConcluded. With the sentinel on, the chat the person is in is then told of both
+   * without a turn of its own: its agent knows what landed and what the sentinel found when the person asks, and does
+   * not say it again in the conversation. Unset, it says both, as in the terminal.
+   */
+  pulseEndsShown?: boolean;
   /** What the sentinel puts to the person - and, `kind: "sentinel-start"`, whether to start it: the host draws it in the chat it names, and answers it with `answer`. */
   onNotice?(notice: Notice): void;
   /** A notice is over - answered, dismissed, or superseded by a newer one about its module: the host takes its card down. */
@@ -103,6 +110,12 @@ export interface ChatInstance {
   landed(job: Job, options?: { tell?: boolean }): void;
   /** The sentinel's: a pulse ended - its agent, in a conversation of its own for this pulse, told of it. */
   brief(job: Job, context: { asked?: string; focused?: string }): Promise<void>;
+  /**
+   * The sentinel's: functional specs a host asked it to check - the module released first, unless what runs is its last
+   * commit, then its agent told, in a conversation of its own for the check. Why not, when the release failed: then its
+   * agent is told nothing.
+   */
+  briefCheck(check: SentinelCheck, context: { focused?: string }): Promise<string | undefined>;
   /** A notice put in the chat: drawn, and - in the terminal - put to the person once the chat is idle. */
   notice(notice: Notice): void;
   /** A notice is over: its dialog closed, if it is open. */
@@ -216,8 +229,14 @@ export interface TurriCore {
   sentinelOn(): boolean;
   /** A notice put to the person, in the chat they look at - the sentinel's, or turri's own. Undefined: no chat to put it in. */
   notice(input: NoticeInput): Notice | undefined;
-  /** The sentinel done with a pulse: told to the chat the person looks at. Undefined: no chat to tell. */
+  /** The sentinel done with a pulse or a check: told to the chat the person looks at. Undefined: no chat to tell. */
   concluded(conclusion: Conclusion): string | undefined;
+  /**
+   * A host's check for the sentinel: refused with the sentinel off; else `prepare` finds its module and functional specs
+   * good (sentinel-check.ts), and it is queued with the pulses - under `sentinel: ask`, held while the person is asked
+   * whether to start it.
+   */
+  check(prepare: () => SentinelCheck | { refused: string }): { check: string } | { refused: string };
   /** The test advisor's verdict, for the chat the person looks at - held until there is one. Undefined: no chat to hand it to yet. */
   advised(verdict: AdvisorVerdict): string | undefined;
   /** The notices put to the person and not yet answered. */
@@ -248,8 +267,8 @@ export interface CoreOptions {
   dialogs?: (chat: string) => AskUserIO | undefined;
   /** Whether the project wants a sentinel - read as each pulse finishes: on, off, or ask the person first. Unset: none. */
   sentinel?: () => SentinelSetting;
-  /** Under `sentinel: ask`: what the person is asked before the sentinel first opens, about the pulse that would open it. */
-  sentinelStart?: (job: Job) => NoticeInput;
+  /** Under `sentinel: ask`: what the person is asked before the sentinel first opens, about the pulse - or the check - that would open it. */
+  sentinelStart?: (about: Job | SentinelCheck) => NoticeInput;
   /** The person chose for the project, asked whether to start the sentinel: `sentinel:` written. */
   setSentinel?: (on: boolean) => void;
   /** The person ignored a notice for good: kept in the sentinel's guidance, for every conversation after. */
@@ -300,6 +319,9 @@ function titleOf(session: AgentSession | undefined): string | undefined {
 
 const TITLE_CHARS = 32;
 
+/** What the sentinel is given: a pulse that finished, or functional specs a host asked it to check. */
+type SentinelWork = { pulse: Job } | { check: SentinelCheck };
+
 export function createChats(options: CoreOptions): TurriCore {
   const { cwd, host, jobs } = options;
   const chats: ChatState[] = [];
@@ -313,11 +335,13 @@ export function createChats(options: CoreOptions): TurriCore {
   let notices: Array<[string, "info" | "warning" | "error"]> = [];
   /** What the sentinel put to the person, and turri itself, this session: open until answered or superseded. */
   const open: Notice[] = [];
-  /** The pulse the sentinel's conversation is on, from its brief until its agent is done: a newer one of the same module replaces a check of one that went well. */
-  let checking: { job: Job; wrong: boolean } | undefined;
-  /** Pulses that finished while the sentinel was at work: each checked in turn, in a conversation of its own. */
-  const waiting: Job[] = [];
-  /** What the sentinel is given is given one pulse at a time: its conversations made, and its pulses put to them, in order. */
+  /** The work the sentinel's conversation is on, from its brief until its agent is done: a newer pulse of the same module replaces a check of one that went well. */
+  let checking: { work: SentinelWork; wrong: boolean } | undefined;
+  /** Pulses that finished, and checks asked for, while the sentinel was at work: each taken in turn, in a conversation of its own. */
+  const waiting: SentinelWork[] = [];
+  /** The checks hosts asked for this session, by id: what a notice or a conclusion about one is about. */
+  const checks = new Map<string, SentinelCheck>();
+  /** What the sentinel is given is given one at a time: its conversations made, and its pulses and checks put to them, in order. */
   let sentinelWork: Promise<unknown> = Promise.resolve();
   /**
    * Under `sentinel: ask`, whether the person said to start the sentinel this session: asked - the notice `asking` open,
@@ -325,7 +349,7 @@ export function createChats(options: CoreOptions): TurriCore {
    */
   let consent: "unasked" | "asking" | "given" | "declined" = "unasked";
   let asking: Notice | undefined;
-  const held: Job[] = [];
+  const held: SentinelWork[] = [];
   /** The test advisor's verdicts that came with no chat of the person's to hand them to: handed on as one comes up. */
   const unplaced: AdvisorVerdict[] = [];
   const run: RunRecord = { run: randomUUID().slice(0, 8), pid: process.pid, started: new Date().toISOString(), chats: [] };
@@ -410,7 +434,7 @@ export function createChats(options: CoreOptions): TurriCore {
         // Done with its pulse - or with what the person said to it: the next pulse waiting, in a conversation of its own.
         if (chat.role === SENTINEL && (event as { willRetry?: boolean }).willRetry !== true) {
           checking = undefined;
-          toSentinel(() => nextPulse(chat));
+          toSentinel(() => nextWork(chat));
         }
       } else if (event.type === "session_info_changed") {
         persist();
@@ -492,7 +516,8 @@ export function createChats(options: CoreOptions): TurriCore {
       // Closed, the sentinel is let go with what it had to check: the next pulse that finishes opens it again.
       if (chat.role === SENTINEL) {
         checking = undefined;
-        waiting.length = 0;
+        // A check a host asked for ends all the same: it is told it was not done.
+        for (const work of waiting.splice(0)) if ("check" in work) unchecked(work.check, "the sentinel was closed before it got to it");
       }
       // The question whether to start the sentinel was in it: put again in the chat the person looks at now.
       if (asking?.chat === id) askAgain();
@@ -596,7 +621,7 @@ export function createChats(options: CoreOptions): TurriCore {
       if (consent === "asking" && setting() !== "ask") settleStart(setting() === true ? "given" : "declined", "superseded");
       if (core.sentinelOn()) {
         if (consent === "asking" || (setting() === "ask" && consent === "unasked" && sentinelChat() === undefined && askToStart(job))) {
-          held.push(job);
+          held.push({ pulse: job });
           changed();
           return;
         }
@@ -604,6 +629,26 @@ export function createChats(options: CoreOptions): TurriCore {
         return;
       }
       toAsker(job);
+    },
+
+    check(prepare) {
+      if (driver === undefined) return { refused: "There is nowhere to open the sentinel in this session." };
+      // The question was settled in config.turri.yaml while it was open: what it held goes as the file now says.
+      if (consent === "asking" && setting() !== "ask") settleStart(setting() === true ? "given" : "declined", "superseded");
+      const now = setting();
+      if (now === false) return { refused: "The sentinel is off for this project (sentinel: false): nothing checks the functional specs. Turn it on with sentinel: true in config.turri.yaml." };
+      if (!wantsSentinel()) return { refused: "The sentinel was not started this session - the person said not now when asked: nothing checks the functional specs until turri starts again, or sentinel: true is set." };
+      const check = prepare();
+      if ("refused" in check) return check;
+      checks.set(check.id, check);
+      record({ kind: "sentinel.asked", check: check.id, module: check.module, funcIds: check.funcIds }, { project: cwd });
+      if (consent === "asking" || (now === "ask" && consent === "unasked" && sentinelChat() === undefined && askToStart(check))) {
+        held.push({ check });
+        changed();
+        return { check: check.id };
+      }
+      sentinelChecks(check);
+      return { check: check.id };
     },
 
     jobsChanged() {
@@ -617,16 +662,19 @@ export function createChats(options: CoreOptions): TurriCore {
     },
 
     notice(input) {
+      // A check's notice is about its module.
+      const about = input.check !== undefined ? checks.get(input.check) : undefined;
+      if (about !== undefined && input.module === undefined) input = { ...input, module: about.module };
       const asked = chats.find((chat) => chat.id === (input.job !== undefined ? jobs.get(input.job)?.chat : undefined));
       const target = personFacing(asked);
       if (target === undefined) return undefined;
-      // One notice open a module: a newer one makes the older one's call to action stale.
-      if (input.module !== undefined) {
+      // One notice open a module: a newer one makes the older one's call to action stale. A note of a fix asks nothing.
+      if (input.module !== undefined && input.kind !== "fixed") {
         for (const older of open.filter((notice) => notice.state === "open" && notice.module === input.module)) over(older, "superseded");
       }
       // Only the sentinel's own may be ignored: never the question whether to start it.
       const { ignorable, ...rest } = input;
-      const notice = newNotice(ignorable === true && input.kind !== "sentinel-start" ? input : rest, target.id);
+      const notice = newNotice(ignorable === true && input.kind === undefined ? input : rest, target.id);
       open.push(notice);
       if (target.id !== shownId) target.unread = true;
       inChat(target.scope, () => record({ kind: "notice.put", notice: notice.id, severity: notice.severity, ...(notice.module !== undefined ? { module: notice.module } : {}) }, { project: cwd }));
@@ -647,14 +695,20 @@ export function createChats(options: CoreOptions): TurriCore {
     notices: () => open.filter((notice) => notice.state === "open"),
 
     concluded(conclusion) {
-      const job = jobs.get(conclusion.job);
+      const job = conclusion.job !== undefined ? jobs.get(conclusion.job) : undefined;
+      const check = conclusion.check !== undefined ? checks.get(conclusion.check) : undefined;
       const target = personFacing(chats.find((chat) => chat.id === job?.chat));
       if (target === undefined) return undefined;
-      const module = conclusion.module ?? job?.module;
+      const module = conclusion.module ?? job?.module ?? check?.module;
       const pulse = conclusion.pulse ?? job?.pulse;
       const told = { ...conclusion, ...(module !== undefined ? { module } : {}), ...(pulse !== undefined ? { pulse } : {}) };
       if (target.id !== shownId) target.unread = true;
-      inChat(target.scope, () => record({ kind: "sentinel.concluded", verdict: told.verdict, ...(module !== undefined ? { module } : {}) }, { project: cwd, job: told.job }));
+      inChat(target.scope, () =>
+        record(
+          { kind: "sentinel.concluded", verdict: told.verdict, ...(module !== undefined ? { module } : {}), ...(told.check !== undefined ? { check: told.check } : {}) },
+          { project: cwd, ...(told.job !== undefined ? { job: told.job } : {}) },
+        ),
+      );
       try {
         target.instance?.concluded(told);
       } catch {
@@ -773,10 +827,10 @@ export function createChats(options: CoreOptions): TurriCore {
    * Under `sentinel: ask`, the first pulse that would open the sentinel this session: the person asked whether to start it,
    * in the chat they look at. False when there is nothing to ask with, or no chat to ask in: the sentinel opens as asked.
    */
-  function askToStart(job: Job): boolean {
+  function askToStart(about: Job | SentinelCheck): boolean {
     let input: NoticeInput | undefined;
     try {
-      input = options.sentinelStart?.(job);
+      input = options.sentinelStart?.(about);
     } catch {
       input = undefined;
     }
@@ -793,7 +847,8 @@ export function createChats(options: CoreOptions): TurriCore {
     over(question, "superseded");
     asking = undefined;
     consent = "unasked";
-    if (!askToStart(held[0]!)) settleStart("declined", "superseded");
+    const first = held[0]!;
+    if (!askToStart("pulse" in first ? first.pulse : first.check)) settleStart("declined", "superseded");
   }
 
   /** The person answered whether to start the sentinel: written to the project, when they chose for it, and what was held let go. */
@@ -820,9 +875,12 @@ export function createChats(options: CoreOptions): TurriCore {
     const question = asking;
     asking = undefined;
     if (question !== undefined && question.state === "open") over(question, state);
-    for (const job of held.splice(0)) {
-      if (core.sentinelOn()) sentinelFinished(job);
-      else toAsker(job);
+    for (const work of held.splice(0)) {
+      if ("check" in work) {
+        if (core.sentinelOn()) sentinelChecks(work.check);
+        else unchecked(work.check, "the person did not start the sentinel");
+      } else if (core.sentinelOn()) sentinelFinished(work.pulse);
+      else toAsker(work.pulse);
     }
     changed();
   }
@@ -846,21 +904,40 @@ export function createChats(options: CoreOptions): TurriCore {
     }
     changed();
     toSentinel(async () => {
-      let sentinel = sentinelChat();
-      if (sentinel === undefined) {
-        try {
-          await core.open({ hidden: true, role: SENTINEL });
-          sentinel = sentinelChat();
-        } catch (error) {
-          // No room for it, or nowhere to open it: the pulse is told as it is without one.
-          core.notify(`The sentinel could not be opened: ${error instanceof Error ? error.message : String(error)}`, "warning");
-          (asked ?? where)?.instance?.announce(job);
-          return;
-        }
-      }
-      if (sentinel?.instance === undefined) return;
-      await takePulse(sentinel, job);
+      // No room for it, or nowhere to open it: the pulse is told as it is without one.
+      const sentinel = await openSentinel(() => (asked ?? where)?.instance?.announce(job));
+      if (sentinel !== undefined) await takeWork(sentinel, { pulse: job });
     });
+  }
+
+  /** A check a host asked for, for the sentinel - opened in the background when it is not open - in its turn. */
+  function sentinelChecks(check: SentinelCheck): void {
+    toSentinel(async () => {
+      const sentinel = await openSentinel((why) => unchecked(check, `the sentinel could not be opened: ${why}`));
+      if (sentinel !== undefined) await takeWork(sentinel, { check });
+    });
+  }
+
+  /** The sentinel's chat, opened hidden when it is not open - none, and `failed` told why, when it cannot be. */
+  async function openSentinel(failed: (why: string) => void): Promise<ChatState | undefined> {
+    let sentinel = sentinelChat();
+    if (sentinel === undefined) {
+      try {
+        await core.open({ hidden: true, role: SENTINEL });
+        sentinel = sentinelChat();
+      } catch (error) {
+        const why = error instanceof Error ? error.message : String(error);
+        core.notify(`The sentinel could not be opened: ${why}`, "warning");
+        failed(why);
+        return undefined;
+      }
+    }
+    return sentinel?.instance !== undefined ? sentinel : undefined;
+  }
+
+  /** A check that will not be done, told as a conclusion of turri's own - the host waits for one. */
+  function unchecked(check: SentinelCheck, why: string): void {
+    core.concluded({ check: check.id, module: check.module, verdict: "unchecked", summary: `Not checked: ${why}.` });
   }
 
   /** The sentinel's work, after what it was given before. */
@@ -874,24 +951,58 @@ export function createChats(options: CoreOptions): TurriCore {
   const sentinelBusy = (sentinel: ChatState) => sentinel.session?.isStreaming === true;
 
   /**
-   * A finished pulse, for the sentinel: checked now when it is free. Busy, a newer pulse of a module replaces a check of
-   * the module's last pulse that went well - and a pulse of it that went well and waits - and one that went wrong is
-   * looked into to its end; the rest wait their turn.
+   * A finished pulse or a host's check, for the sentinel: taken now when it is free. Busy, a newer pulse of a module
+   * replaces a check of the module's last pulse that went well - and a pulse of it that went well and waits - and one that
+   * went wrong is looked into to its end; the rest, checks among them, wait their turn.
    */
-  function takePulse(sentinel: ChatState, job: Job): Promise<void> | void {
-    if (!sentinelBusy(sentinel)) return check(sentinel, job);
-    const sameModule = (other: Job) => job.module !== undefined && other.module === job.module;
-    if (checking !== undefined && !checking.wrong && sameModule(checking.job)) return check(sentinel, job, checking.job);
-    const older = waiting.findIndex((other) => sameModule(other) && !wentWrong(other));
-    if (older !== -1) waiting.splice(older, 1, job);
-    else waiting.push(job);
+  function takeWork(sentinel: ChatState, work: SentinelWork): Promise<void> | void {
+    if (!sentinelBusy(sentinel)) return begin(sentinel, work);
+    if (!("pulse" in work)) {
+      waiting.push(work);
+      return;
+    }
+    const job = work.pulse;
+    const sameModule = (other: SentinelWork) => job.module !== undefined && "pulse" in other && other.pulse.module === job.module;
+    if (checking !== undefined && !checking.wrong && sameModule(checking.work) && "pulse" in checking.work) return check(sentinel, job, checking.work.pulse);
+    const older = waiting.findIndex((other) => sameModule(other) && "pulse" in other && !wentWrong(other.pulse));
+    if (older !== -1) waiting.splice(older, 1, work);
+    else waiting.push(work);
   }
 
-  /** The sentinel free again: the next pulse that waits, checked. */
-  function nextPulse(sentinel: ChatState): Promise<void> | void {
+  /** The sentinel free again: the next pulse or check that waits, taken. */
+  function nextWork(sentinel: ChatState): Promise<void> | void {
     if (!chats.includes(sentinel) || sentinelBusy(sentinel)) return;
-    const job = waiting.shift();
-    if (job !== undefined) return check(sentinel, job);
+    const work = waiting.shift();
+    if (work !== undefined) return begin(sentinel, work);
+  }
+
+  function begin(sentinel: ChatState, work: SentinelWork): Promise<void> {
+    return "pulse" in work ? check(sentinel, work.pulse) : checkSpecs(sentinel, work.check);
+  }
+
+  /**
+   * The sentinel on a host's check, from scratch, as on a pulse: a conversation of its own, the module released first
+   * unless what runs is its last commit. A release that fails ends the check - a conclusion of its own - and the next
+   * waiting is taken.
+   */
+  async function checkSpecs(sentinel: ChatState, check: SentinelCheck): Promise<void> {
+    checking = { work: { check }, wrong: false };
+    inChat(sentinel.scope, () => record({ kind: "sentinel.checking", module: check.module, check: check.id }, { project: cwd }));
+    const session = sentinel.session;
+    if (session !== undefined && (session.messages.length > 0 || session.isStreaming)) await freshConversation(sentinel);
+    if (sentinel.id !== shownId) sentinel.unread = true;
+    const where = personFacing();
+    let why: string | undefined;
+    try {
+      why = await sentinel.instance!.briefCheck(check, where !== undefined ? { focused: titleFor(where) } : {});
+    } catch (error) {
+      why = error instanceof Error ? error.message : String(error);
+    }
+    changed();
+    if (why === undefined) return;
+    checking = undefined;
+    core.concluded({ check: check.id, module: check.module, verdict: "wrong", summary: `Not tested: ${check.module} could not be released - ${why}` });
+    await nextWork(sentinel);
   }
 
   /**
@@ -899,7 +1010,7 @@ export function createChats(options: CoreOptions): TurriCore {
    * pulse's brief, nothing of the pulses before it - in place of the one it had, stopped when it was on `replacing`.
    */
   async function check(sentinel: ChatState, job: Job, replacing?: Job): Promise<void> {
-    checking = { job, wrong: wentWrong(job) };
+    checking = { work: { pulse: job }, wrong: wentWrong(job) };
     const module = job.module;
     inChat(sentinel.scope, () =>
       record({ kind: "sentinel.checking", ...(module !== undefined ? { module } : {}), ...(replacing !== undefined ? { replaced: replacing.id } : {}) }, { project: cwd, job: job.id }),

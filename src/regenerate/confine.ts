@@ -54,6 +54,11 @@ export interface Confinement {
   reportsEnvironment?: boolean;
   /** Whose home and temporary folder its shell has, by the module folder they are kept for - its workdir's module when not given. */
   shellHome?: string;
+  /**
+   * The project's testing scripts are its to fix, where `write` reaches them - the sentinel's. Every other agent's file
+   * tools refuse them: the harness runs them, and an agent's copy of one is its own version of what the harness runs.
+   */
+  fixesScripts?: boolean;
 }
 
 export class ConfinementError extends Error {
@@ -115,10 +120,10 @@ function refuseNotes(path: string): void {
  * the codebase is an agent running its own version of what the harness runs, or building from a
  * spec it was never meant to hold.
  */
-function refuseHarnessFiles(path: string): void {
+function refuseHarnessFiles(path: string, fixesScripts = false): void {
   const name = basename(path);
   if (isCredentialFile(path)) throw new ConfinementError(credentialRefusal(path));
-  if (path.split(sep).includes("test_scripts") || /^(run_unittests|run_unit_tests|run_conformance_tests|prepare_environment)[^/]*\.sh$/.test(name)) {
+  if (!fixesScripts && (path.split(sep).includes("test_scripts") || /^(run_unittests|run_unit_tests|run_conformance_tests|prepare_environment)[^/]*\.sh$/.test(name))) {
     throw new ConfinementError(
       `${name} is a copy of the project's testing scripts, and those are not written here. They are not in your ` +
         "workspace, and are never copied, recreated or run by you: call run_unit_tests and run_conformance_tests, " +
@@ -146,7 +151,7 @@ function refuseKeptOutput(raw: string, path: string, cwd: string): void {
   throw new ConfinementError(`${id} is an output turri kept, not a file in your folder: call read_output with that id.`);
 }
 
-function check(raw: string | undefined, cwd: string, roots: string[], verb: "read" | "write"): void {
+function check(raw: string | undefined, cwd: string, roots: string[], verb: "read" | "write", fixesScripts = false): void {
   if (raw === undefined) return;
   const path = absolutize(raw, cwd);
   if (verb === "read") refuseKeptOutput(raw, path, cwd);
@@ -154,7 +159,7 @@ function check(raw: string | undefined, cwd: string, roots: string[], verb: "rea
   refuseRecord(path);
   if (verb === "write") {
     refuseNotes(path);
-    refuseHarnessFiles(path);
+    refuseHarnessFiles(path, fixesScripts);
   }
 }
 
@@ -203,13 +208,13 @@ function guard(def: AnyTool, inspect: (params: any) => void): AnyTool {
  * They agree in every ordinary case, and when they do not - a `~` spelt oddly, a filename
  * normalised to another form on disk - this is the one that is true.
  */
-function guardedOps(roots: string[], verb: "read" | "write") {
+function guardedOps(roots: string[], verb: "read" | "write", fixesScripts = false) {
   return (path: string) => {
     if (!insideAny(path, roots)) refuse(path, roots, verb);
     refuseRecord(path);
     if (verb === "write") {
       refuseNotes(path);
-      refuseHarnessFiles(path);
+      refuseHarnessFiles(path, fixesScripts);
     }
   };
 }
@@ -317,7 +322,7 @@ export function confinedTools(c: Confinement): ConfinedTools {
   const write = (c.write ?? [workdir]).map((dir) => resolve(dir));
 
   const readOps = guardedOps(read, "read");
-  const writeOps = guardedOps(write, "write");
+  const writeOps = guardedOps(write, "write", c.fixesScripts === true);
 
   const tools: AnyTool[] = [
     guard(
@@ -340,7 +345,7 @@ export function confinedTools(c: Confinement): ConfinedTools {
           },
         },
       }),
-      (p) => check(p.path, workdir, write, "write"),
+      (p) => check(p.path, workdir, write, "write", c.fixesScripts === true),
     ),
     guard(
       createEditToolDefinition(workdir, {
@@ -350,7 +355,7 @@ export function confinedTools(c: Confinement): ConfinedTools {
           access: async (path) => writeOps(path),
         },
       }),
-      (p) => check(p.path, workdir, write, "write"),
+      (p) => check(p.path, workdir, write, "write", c.fixesScripts === true),
     ),
     withoutRecord(guard(createLsToolDefinition(workdir), (p) => check(p.path, workdir, read, "read"))),
     withoutRecord(

@@ -49,15 +49,17 @@ describe("what the chat is told it is", () => {
 });
 
 describe("what the chat is told to do when a pulse stops on its environment", () => {
-  it("heals it before regenerating it again - the sandbox's by config, a missing tool found or installed with the person's yes - and never makes up a credential", () => {
+  it("heals it before regenerating it again - the sandbox's by config, a missing tool found or the script fixed to use it, never installed - and never makes up a credential", () => {
     expect(JOB_FINISHED_REACTION).toContain("stops the same way again until that is fixed: never regenerate it before");
     expect(JOB_FINISHED_REACTION).toContain("Add the folder its report\n  names to `toolchains:` in config.turri.yaml");
     // A refused write is no folder to add: never toolchains:, never resumed before the fix.
     expect(JOB_FINISHED_REACTION).toContain("kept the agents from writing a file");
     expect(JOB_FINISHED_REACTION).toContain("never add it there, and never resume before the fix");
-    expect(JOB_FINISHED_REACTION).toContain("whether it is installed somewhere off the PATH");
-    expect(JOB_FINISHED_REACTION).toContain("ask the person with ask_user");
-    expect(JOB_FINISHED_REACTION).toContain("check that the command is found now");
+    expect(JOB_FINISHED_REACTION).toContain("you install nothing,\n  and change no setting of the machine's or the person's shell - never, even when asked");
+    expect(JOB_FINISHED_REACTION).toContain("python\n  where the testing script runs python3");
+    expect(JOB_FINISHED_REACTION).toContain("the testing script calling\n  it the way this machine has it is the fix");
+    expect(JOB_FINISHED_REACTION).toContain("tell the\n  person exactly what to run themselves");
+    expect(JOB_FINISHED_REACTION).not.toContain("ask_user");
     expect(JOB_FINISHED_REACTION).toContain("needs turri restarted");
     expect(JOB_FINISHED_REACTION).toContain("never make one up");
   });

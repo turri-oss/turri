@@ -200,7 +200,8 @@ describe("the deploy tools", () => {
     expect(text).toContain("Deployed app to");
     expect(text).toContain("outside the sandbox");
     // It installs what it needs itself: nothing is put to the person.
-    expect(text).toContain("Install what it needs yourself");
+    expect(text).toContain("Install what it needs into the project yourself");
+    expect(text).toContain("you install nothing on the machine and change none of its settings");
     expect(text).toContain("Do not ask the person");
     expect(text).not.toContain("propose_setup");
   });
@@ -223,7 +224,8 @@ describe("the deploy tools", () => {
     expect(readFileSync(join(dir, "dist", "app", "app.py"), "utf8")).toBe("print('hello')\n");
     expect(state.current).toMatchObject({ way: "guided", dir: join(dir, "dist", "app"), hostDir: dir });
     // The host's scripts are the agent's to run, in its own shell.
-    expect(text).toContain("Run the project's scripts and install what it needs yourself");
+    expect(text).toContain("Run the project's scripts and install what it needs into the project yourself");
+    expect(text).toContain("A toolchain or system tool the machine lacks you never install");
     expect(text).not.toContain("propose_setup");
   });
 

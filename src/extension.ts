@@ -20,6 +20,7 @@ import { sandboxAvailable, sandboxSummary } from "./regenerate/os-sandbox.ts";
 import { findTestScripts, scriptKindOfSkill } from "./regenerate/test-scripts.ts";
 import { writingScript } from "./regenerate/scripts-being-written.ts";
 import { applyBedrockRegion } from "./bedrock-region.ts";
+import { bannerWarnings } from "./turri-versions.ts";
 import { conformanceBlock, conformanceTestsOnIn, CONFORMANCE_TOOLS, TURN_ON_TOOL, turnOnConformanceTests, turnOnConformanceTestsTool } from "./conformance-switch.ts";
 import { BACKGROUND_NOTE, doneLine, failedTask, ownChanges, runDetails, skillRunDelivery, startedText } from "./background-skills.ts";
 import { createAskUserTool } from "./tools.ts";
@@ -30,7 +31,8 @@ import { unqueue } from "./chat-waiting.ts";
 import type { Reporter } from "./graph.ts";
 import { loadSkill, skillStatus, type Skill } from "./skill.ts";
 import { runningDeployed, stopDeployed } from "./regenerate/release.ts";
-import { createDeployState, createDeployTools, type DeployState } from "./release-tools.ts";
+import { createDeployState, createDeployTools, currentRelease, type DeployState } from "./release-tools.ts";
+import { checkedSpecs } from "./sentinel-check.ts";
 import { runReleaseAgent } from "./release-agent.ts";
 import { createSteeringStore, EVERY_MODULE, moduleNameOf, queueSectionOf, steeringFor } from "./regenerate/steer.ts";
 import { askedForCommandLine, refusal, selfInvocation, TOOLS_NOT_CLI } from "./self-invocation.ts";
@@ -65,6 +67,8 @@ import { doctorTool } from "./doctor-tool.ts";
 import { ledgerTool } from "./ledger-tools.ts";
 import { describeSpecConflict } from "./regenerate/stop-report.ts";
 import { inheritProviders, inheritThinkingLevel } from "./pi.ts";
+import { LOADING_PROVIDERS } from "./installed-providers.ts";
+import { machineChange, machineChangeReason, writesPlain } from "./regenerate/command-check.ts";
 import { beginCapture, captureConsole, describeCaptured, dropNoise } from "./quiet.ts";
 import { loadRules, renderRulesBlock } from "./rules.ts";
 import { registerTurriConfig, ruleNames } from "./config-command.ts";
@@ -78,7 +82,7 @@ import { supersededByTurri } from "./chat-skills.ts";
 import { conversationIdentity } from "./identity.ts";
 import { setSurface, surfaceOf } from "./surface.ts";
 import { createChats, scopedToChat, type ChatLink, type TurriCore, type TurriHost } from "./chats.ts";
-import { ignoredGuidance, keepGuidance, landedNote, pulseEndsBlock, SENTINEL, SENTINEL_TOOLS, sentinelBrief, sentinelPrompt, sentinelSetting, sentinelStartNotice, specConflictNotice } from "./sentinel.ts";
+import { ignoredGuidance, keepGuidance, landedNote, pulseEndsBlock, SENTINEL, SENTINEL_TOOLS, sentinelBrief, sentinelCheckBrief, sentinelPrompt, sentinelSetting, sentinelStartNotice, specConflictNotice, type SentinelCheck } from "./sentinel.ts";
 import { noticeDialogs, registerSentinel } from "./sentinel-chat.ts";
 import { currentChat } from "./chat-scope.ts";
 import { registerChats } from "./chat-commands.ts";
@@ -469,7 +473,9 @@ export function processSession(make: () => TurriCore = () => createTurriCore()):
   return (global[SESSION] ??= make());
 }
 
-const extension: ExtensionFactory = (pi) => processSession().extension(pi);
+// Loaded as nothing while the person's pi extensions are loaded only for their providers (installed-providers.ts): an older
+// turri installed into every pi is among them, and would start a session of its own.
+const extension: ExtensionFactory = (pi) => (process.env[LOADING_PROVIDERS] === "1" ? undefined : processSession().extension(pi));
 export default extension;
 
 /**
@@ -496,7 +502,9 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
   const isSentinel = link.role === SENTINEL;
   const hostSentinelTools = isSentinel ? (host.sentinel?.tools ?? []) : [];
   const sentinelAllowed = new Set([...SENTINEL_TOOLS, ...hostSentinelTools.map((tool) => tool.name)]);
-  if (isSentinel) registerSentinel(pi, session, cwd, hostSentinelTools, sentinelAllowed);
+  // Its resume: the module brought up again on the session's work loop, as regenerate brings it up.
+  const resumeModule = async (plainFile: string) => describeModules(await sessionLoop(session).bringUp(resolve(cwd, plainFile)));
+  if (isSentinel) registerSentinel(pi, session, cwd, hostSentinelTools, sentinelAllowed, resumeModule);
   const dialogs = link.dialogs ?? host.dialogs;
   // turri's own skills, and the project's - .turri/skills, .agents/skills (skills.ts).
   const discoveredSkills = discoverSkills(PACKAGE_ROOT, cwd);
@@ -564,6 +572,40 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
     });
     void pi.sendMessage({ customType: "turri_sentinel_pulse", content, display: false, details: { jobId: job.id, status: job.status } }, { triggerTurn: true });
   };
+  // The sentinel's: functional specs a host asked it to check. The module is released first - as release-after-pulse
+  // releases it - unless what runs is its own codebase's last commit; then told, in a conversation of its own for the
+  // check, its hidden first message `turri_sentinel_check`. Why not, when the release failed: its agent is told nothing.
+  const briefCheck = async (check: SentinelCheck, context: { focused?: string }): Promise<string | undefined> => {
+    const state = deployStates.get(jobs) ?? createDeployState();
+    let releasedNow = false;
+    if (currentRelease(state, check.plainFile, check.module) === undefined) {
+      // Behind, never made, or what it started died: released afresh - the release tool would say it shipped that already.
+      state.released.delete(check.module);
+      let said: string;
+      try {
+        const ctx = contextNow();
+        const model = ctx !== undefined ? releaseModel(ctx, check.plainFile) : undefined;
+        said = await runReleaseAgent({ plainFile: check.plainFile, cwd, state, inModule: check.module, forCheck: { moduleName: check.module }, ...(model !== undefined ? { model } : {}) });
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error);
+      }
+      if (currentRelease(state, check.plainFile, check.module) === undefined) return said.trim() || "its last commit was not released";
+      releasedNow = true;
+    }
+    const commit = state.released.get(check.module)?.commit;
+    const content = sentinelCheckBrief(check, {
+      specs: checkedSpecs(check),
+      released: runningDeployed(check.module),
+      releasedNow,
+      ...(commit !== undefined ? { commit } : {}),
+      ...(context.focused !== undefined ? { focused: context.focused } : {}),
+    });
+    void pi.sendMessage(
+      { customType: "turri_sentinel_check", content, display: false, details: { checkId: check.id, module: check.module, funcIds: check.funcIds } },
+      { triggerTurn: true },
+    );
+    return undefined;
+  };
   // A pulse ended, with the sentinel on: said in the chat. One that landed is told to its agent too, to tell the person
   // it landed and what the sentinel does with it - and nothing more: the pulse is the sentinel's. ***plain that
   // contradicts itself is put to the person at once, by turri itself, as the chat would have been started on it.
@@ -571,9 +613,11 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
     announceJob(pi, job);
     if (job.specConflict !== undefined) session.notice(specConflictNotice(job, specConflictTask(job.specConflict)));
     if (options.tell !== true) return;
+    // A host that shows the person the pulse's end itself: the chat knows of it - in order, with no turn of its own.
+    const shown = host.pulseEndsShown === true;
     void pi.sendMessage(
-      { customType: "turri_job_landed", content: landedNote(job, runningDeployed(job.module)), display: false, details: { jobId: job.id, status: job.status } },
-      { triggerTurn: true, deliverAs: "followUp" },
+      { customType: "turri_job_landed", content: landedNote(job, runningDeployed(job.module), { shown }), display: false, details: { jobId: job.id, status: job.status } },
+      shown ? { triggerTurn: false } : { triggerTurn: true, deliverAs: "followUp" },
     );
   };
   const notices = noticeDialogs(pi, session, link, contextNow);
@@ -583,6 +627,7 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
     announce,
     landed,
     brief,
+    briefCheck,
     notice: notices.put,
     noticeOver: notices.over,
     concluded: notices.concluded,
@@ -619,10 +664,9 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
   // pi's skills that turri has already - its own and the project's, run with cultivate, and any about ***plain from
   // another tool - are left out of the list the conversation is offered (chat-skills.ts); the person is told once.
   const turriRuns = new Set(discoveredSkills.skills.map((skill) => skill.name));
-  // What the modules need of this machine: worked out once the chat is up, and after a turn when a spec changed - never
-  // while a message waits to be sent.
+  // What the modules need of this machine: worked out when a turn first asks, and after a turn when a spec changed - never
+  // as the session starts, which a host would wait on, and never while a message waits to be sent once it is known.
   const machine = machineNeeds(cwd);
-  pi.on("session_start", () => machine.refreshSoon());
   pi.on("agent_settled", () => machine.refreshSoon());
   pi.on("before_agent_start", (event, ctx) => {
     const offered = event.systemPromptOptions.skills;
@@ -674,9 +718,18 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
   pi.on("tool_call", (event) => {
     // The sentinel reads, and puts what it finds to the person: whatever else it calls is refused.
     if (isSentinel && !sentinelAllowed.has(event.toolName)) {
-      return { block: true, reason: `The sentinel changes nothing: ${event.toolName} is not one of its tools. Put what needs doing to the person with notify_person.` };
+      return { block: true, reason: `${event.toolName} is not one of the sentinel's tools: it fixes the project's testing scripts and their config, and nothing else. Put what needs doing to the person with notify_person.` };
     }
     const command = (event.input as { command?: unknown }).command;
+    // turri changes nothing of the machine's - no install, no system setting - asked or not, through any tool that runs a
+    // command: its own bash, and a host's - a terminal in its window. The person does that.
+    if (typeof command === "string") {
+      const changes = machineChange(command);
+      if (changes !== undefined) return { block: true, reason: machineChangeReason(changes) };
+      // The sentinel's write and edit reach its tooling alone: a host's command does not write ***plain for it.
+      const plain = isSentinel ? writesPlain(command) : undefined;
+      if (plain !== undefined) return { block: true, reason: `${plain} is ***plain: the sentinel never changes it - put what it needs to the person with notify_person.` };
+    }
     if (event.toolName === "bash" && typeof command === "string") {
       const what = selfInvocation(command);
       if (what !== undefined && !askedForCommandLine(lastUserMessage)) return { block: true, reason: refusal(what, surfaceOf(jobs)) };
@@ -1591,8 +1644,9 @@ export function machineBlock(cwd: string, modules: ReturnType<typeof stackOnMach
 
 /**
  * What the project's modules need of this machine, kept between turns - working it out parses every spec, seconds on a
- * project of long requires chains, and a message is never kept waiting for it. Worked out once the chat is up, and again
- * when a turn has settled and a spec changed since: a turn is told what was known last, at most a turn behind.
+ * project of long requires chains. Worked out when the first turn asks - not as the session starts: a host's thread
+ * would be held up opening a chat no one may write in - and again, once known, when a turn has settled and a spec
+ * changed since: a turn is told what was known last, at most a turn behind.
  */
 export function machineNeeds(cwd: string, work: (cwd: string) => ReturnType<typeof stackOnMachine> = stackOnMachine) {
   let known: { stamp: string; modules: ReturnType<typeof stackOnMachine> } | undefined;
@@ -1619,8 +1673,9 @@ export function machineNeeds(cwd: string, work: (cwd: string) => ReturnType<type
       if (known === undefined) refresh();
       return known!.modules;
     },
-    /** Worked out again, if a spec changed - once the chat has drawn what it is drawing. */
+    /** Worked out again, if it is known and a spec changed - once the chat has drawn what it is drawing. */
     refreshSoon(): void {
+      if (known === undefined) return;
       setTimeout(() => {
         try {
           refresh();
@@ -1763,6 +1818,11 @@ function conversationModel(ctx: ExtensionContext, override?: string): string | u
  * The chat's model, read now - it can change while a skill runs - or, from a context that has
  * gone stale since, the model it had when it was last readable.
  */
+/** The model a release runs on - a pulse's last stage, and a check's: the one that regenerated the module. A release follows steps, and a small model thinking little does that well. */
+function releaseModel(ctx: ExtensionContext, plainFile: string): string | undefined {
+  return modelFor(chosenModels, "spec_changes", projectModel(ctx, plainFile) ?? chatModelOf(ctx));
+}
+
 function chatModelOf(ctx: ExtensionContext): string | undefined {
   try {
     const now = conversationModel(ctx);
@@ -2006,7 +2066,7 @@ function workLoopFor(jobs: JobRegistry, cwd: string, ctx: ExtensionContext): Wor
       // Under release-after-pulse, a pulse releases what it landed itself, before the next starts - on the model that
       // regenerated it: a release follows steps, and a small model thinking little does that well.
       release: ({ plainFile, moduleName, title, onDelta }) => {
-        const model = modelFor(chosenModels, "spec_changes", projectModel(from.ctx, plainFile) ?? chatModelOf(from.ctx));
+        const model = releaseModel(from.ctx, plainFile);
         return runReleaseAgent({
           plainFile,
           cwd,
@@ -2374,15 +2434,15 @@ export const JOB_FINISHED_REACTION = [
   "  `toolchains:` does not - never add it there, and never resume before the fix. Do what the report says if it is the",
   "  project's to change - a tool told to use `$HOME` in the build's own files - say so, and resume; otherwise tell the",
   "  person, in a line or two, what the report says and that \"resume\" picks it up once it is done.",
-  "- the machine lacks a toolchain or a tool - a JDK, Maven, Gradle, Go, uv, Node, a system library: first find out, in your",
-  "  shell, whether it is installed somewhere off the PATH (`command -v`, Homebrew's opt folders, /Library/Java/",
-  "  JavaVirtualMachines, a version manager the person uses - mise, asdf, sdkman, nvm). Then ask the person with ask_user",
-  "  to let you put it in place the way this machine installs things - the exact command, `brew install openjdk@21`,",
-  "  `mise use -g java@21`, `sdk install maven` - and on yes run it in your shell, check that the command is found now as",
-  "  the testing script would find it (`command -v`, then the doctor tool, which looks on turri's own PATH), and resume. A tool installed where the PATH turri",
-  "  was started with does not reach needs turri restarted: say so, with the line for the shell profile. On no, or when it",
-  "  needs what you cannot do - sudo with a password, a licence, a download behind a login - tell the person exactly what",
-  "  to do, and that \"resume\" picks it up once it is in.",
+  "- the machine lacks a toolchain or a tool - a JDK, Maven, Gradle, Go, uv, Node, a system library: you install nothing,",
+  "  and change no setting of the machine's or the person's shell - never, even when asked: your shell refuses it. First",
+  "  find out, in your shell, whether it is there after all: off the PATH (`command -v`, Homebrew's opt folders,",
+  "  /Library/Java/JavaVirtualMachines, a version manager's folder - mise, asdf, sdkman, nvm), or under another name - python",
+  "  where the testing script runs python3, of the version the ***plain names. When it is there, the testing script calling",
+  "  it the way this machine has it is the fix: change the script, say so in a line, and resume. When it is not, tell the",
+  "  person exactly what to run themselves - `brew install openjdk@21`, `mise use -g java@21` - and the line for their",
+  "  shell profile when the PATH needs it, and that \"resume\" picks it up once it is in. A tool the person installs where the",
+  "  PATH turri was started with does not reach needs turri restarted: say so.",
   "- a credential `agent-env:` names that is not there: never make one up - tell the person where it is read from.",
 ].join("\n");
 
@@ -2892,6 +2952,8 @@ function registerDeploy(pi: ExtensionAPI, cwd: string, jobs: JobRegistry, state:
 }
 
 const MILESTONE_ENTRY = "turri_milestone";
+/** A newer turri out, found once turri had started (turri-versions.ts). */
+const VERSION_ENTRY = "turri_version";
 const JOB_ENTRY = "turri_job";
 const JOBS_LIST_ENTRY = "turri_jobs";
 const HISTORY_ENTRY = "turri_history";
@@ -3143,6 +3205,8 @@ function registerBranding(pi: ExtensionAPI, skills: SkillCatalogue) {
           /** How many skills failed to load. */
           pending: number;
           sandbox?: ReturnType<typeof sandboxSummary>;
+          /** A newer turri out, or installed and hidden behind this one on the PATH: a line each (turri-versions.ts). */
+          versions?: string[];
         }
       | undefined;
     if (data === undefined) return undefined;
@@ -3150,6 +3214,8 @@ function registerBranding(pi: ExtensionAPI, skills: SkillCatalogue) {
     const lines = [
       `${brandPink(theme)("turri")}  ${theme.fg("muted", `v${data.version}`)}` +
         (data.commit !== undefined ? theme.fg("dim", `  from a clone, ${data.commit}${data.changed ? " with changes" : ""}`) : ""),
+      // A newer turri out, or one installed and hidden behind this one: said first, under the version it is about.
+      ...(data.versions ?? []).map((line) => theme.fg("warning", line)),
       `${theme.fg("text", "the first coding agent with the power of ")}${brandPink(theme)("regenerative software")}`,
       // Where the settings are changed, without leaving the chat.
       theme.fg("muted", "configure with /turri-config"),
@@ -3160,6 +3226,15 @@ function registerBranding(pi: ExtensionAPI, skills: SkillCatalogue) {
     // The jellyfish turri is named after, regenerating, in ink for the theme's background: a picture
     // where the terminal shows images, drawn in text where it does not.
     return new Banner(lines, (rule) => theme.fg("borderMuted", rule), jellyfishArt(theme.appearance, (theme.getColorMode?.() ?? "truecolor") === "truecolor"));
+  });
+
+  // A newer turri, found once turri had started: a line, as the banner would have said it.
+  pi.registerEntryRenderer(VERSION_ENTRY, (entry, _options, theme) => {
+    const data = entry.data as { text: string } | undefined;
+    if (data === undefined) return undefined;
+    const box = new Box(1, 0);
+    box.addChild(new Text(theme.fg("warning", data.text), 0, 0));
+    return box;
   });
 
   let bannered = false;
@@ -3173,12 +3248,23 @@ function registerBranding(pi: ExtensionAPI, skills: SkillCatalogue) {
     bannered = true;
     try {
       const identity = turriIdentity();
+      const versions = bannerWarnings();
+      // A newer turri npm says is out only now - the banner read what it said last time: said under the banner once it does.
+      void versions.later.then((line) => {
+        if (line === undefined) return;
+        try {
+          pi.appendEntry(VERSION_ENTRY, { text: line });
+        } catch {
+          /* the chat let go meanwhile: the next start's banner says it */
+        }
+      });
       pi.appendEntry(BANNER_ENTRY, {
         version: identity.version ?? "0.0.0",
         commit: identity.git_commit?.slice(0, 7),
         changed: identity.git_dirty === true,
         pending: skills.pending.length,
         sandbox: sandboxSummary(),
+        versions: versions.lines,
       });
     } catch {
       // Branding is the least important thing here; never let it stop a session starting.

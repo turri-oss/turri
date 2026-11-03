@@ -50,6 +50,8 @@ export interface Deployment {
   unfinished: boolean;
   /** The module the spec's code lives in had nothing committed yet: the nearest one below it that had, instead. */
   instead?: string;
+  /** When the release tool shipped it: what it started since is this release's. */
+  at?: number;
 }
 
 function git(moduleDir: string, args: string[]) {

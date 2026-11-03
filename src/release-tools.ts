@@ -8,6 +8,7 @@ import {
   describeDeployment,
   exportModule,
   hostDirOf,
+  listDeployed,
   shortPath,
   startDeployed,
   stopDeployed,
@@ -39,14 +40,32 @@ export function createDeployState(): DeployState {
   return { released: new Map(), guidance: new Map() };
 }
 
+/**
+ * A module's release as it stands, when it is current: its own codebase's last commit is what the last release shipped,
+ * and nothing that release started has ended. Undefined when it is behind, was never made, or what it started died -
+ * then it is released again.
+ */
+export function currentRelease(state: DeployState, plainFile: string, moduleName: string): Deployment | undefined {
+  let target: ReturnType<typeof deployTarget>;
+  try {
+    target = deployTarget(plainFile, moduleName);
+  } catch {
+    return undefined;
+  }
+  const last = state.released.get(moduleName);
+  if (target.entry.moduleName !== moduleName || last === undefined || !target.commit.startsWith(last.commit)) return undefined;
+  const started = listDeployed().filter((item) => item.moduleName === moduleName && (last.at === undefined || item.startedAt >= last.at));
+  return started.some((item) => item.exited !== undefined) ? undefined : last;
+}
+
 /** What the agent is to do once the code is in dist - in the deploy tool's answer, and the CLI agent's prompt. */
 export function deployGuide(dir: string): string {
   const where = shortPath(dir);
   return [
     `What to do now, to have the person try it - it runs on this machine, outside the sandbox, from ${where}:`,
     `1. Find out how it runs: its README, its manifests (package.json, pyproject.toml, requirements.txt, go.mod, Cargo.toml, pom.xml, build.gradle, docker-compose.yml) and entry points, in ${where}.`,
-    "2. Check the toolchains it needs are on this machine (`command -v node`, `python3 --version`, `go version`, ...). One missing: install it with this machine's package manager (brew on macOS, apt or dnf on Linux), then go on.",
-    "3. Install what it needs yourself, in your shell - dependencies into a virtual environment or node_modules, a build that fetches packages, an image pull. Do not ask the person: do it, and fix what fails.",
+    "2. Check the toolchains it needs are on this machine (`command -v node`, `python3 --version`, `go version`, ...) - under another name too: python where python3 is not, of the version it needs. One missing: you install nothing on the machine and change none of its settings - stop, and tell the person exactly what to install, the command they run themselves (`brew install node`), and that releasing again picks it up.",
+    "3. Install what it needs into the project yourself, in your shell - dependencies into a virtual environment or node_modules, a build that fetches packages, an image pull. Do not ask the person: do it, and fix what fails - within the project: never a global install, never a system setting.",
     "4. Start anything that keeps running - a backend, a frontend's dev server - with activate, with the URL it serves at: never in the shell with & or nohup. An app with a backend and a frontend: start both, the backend first.",
     "5. Then tell the person, briefly. Something that serves: only where to open it - the frontend's URL, and the API's in one line when there is one. A CLI or a library: a few commands to paste, run from the folder, with what they print. A port that is taken: say which and by what, and do not move the app to another.",
     `Do not change the code in ${where} - it is a copy of what was built, and a fix belongs in the spec. A config file it needs made from its example (a .env from .env.example) is fine.`,
@@ -69,7 +88,7 @@ export function guidedGuide(deployment: Deployment, guidance: string): string {
     `What to do now - on this machine, outside the sandbox, from ${host}:`,
     `1. The code to release is in ${dist}: the last commit that landed whole. Take it from there, never from ${built}, where a pulse may be writing. Where the guidance's own tooling reads ${built}, point it at ${dist} if it can take another source; if it cannot, do by hand, from ${dist}, what it does.`,
     `2. Read what the guidance leaves open - the scripts, files and commands it names, in ${host} - then do what it says, in its order. Where it says to change the host - a registration, an import, a config entry - change it. Never change ${built} or ${dist}: a fix to the code belongs in the spec.`,
-    "3. Run the project's scripts and install what it needs yourself, in your shell. Do not ask the person: do it, and fix what fails.",
+    "3. Run the project's scripts and install what it needs into the project yourself, in your shell. Do not ask the person: do it, and fix what fails. A toolchain or system tool the machine lacks you never install, nor change a setting of the machine's: tell the person the command they run themselves.",
     "4. Start what keeps running - a start script, a dev server - with activate, with the URL it serves at - never in the shell with & or nohup.",
     `5. Then tell the person briefly: what was done, what you changed in ${host} if anything, and where to open it or how to try it. Where the guidance does not fit what you find, say so, and do not guess past it.`,
   ].join("\n");
@@ -153,7 +172,7 @@ export function createDeployTools(options: {
       const exported = exportModule(plainFile, params.in_module);
       const deployment: Deployment = guidance === undefined ? exported : { ...exported, way: "guided", hostDir: hostDirOf(plainFile, options.cwd) };
       state.current = deployment;
-      state.released.set(deployment.moduleName, deployment);
+      state.released.set(deployment.moduleName, { ...deployment, at: Date.now() });
       if (guidance !== undefined) state.guidance.set(deployment.moduleName, guidance);
       return text(
         [

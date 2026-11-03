@@ -25,9 +25,11 @@ export interface NoticeAction {
 export interface NoticeInput {
   /**
    * `sentinel-start`: not something wrong but a question turri puts before the sentinel first opens in a session - its
-   * actions start it, or not, and are turri's to carry out, not the chat's agent's (SENTINEL_START). None: the sentinel's.
+   * actions start it, or not, and are turri's to carry out, not the chat's agent's (SENTINEL_START). `fixed`: the
+   * sentinel says what it fixed itself in the project's tooling - a testing script, its config - with nothing to answer:
+   * a note, never put as a question, and never superseding a notice about its module. None: the sentinel's.
    */
-  kind?: "sentinel-start";
+  kind?: "sentinel-start" | "fixed";
   severity: NoticeSeverity;
   /** What is wrong, in a line. */
   summary: string;
@@ -39,6 +41,8 @@ export interface NoticeInput {
   job?: string;
   /** Its number among its module's pulses. */
   pulse?: number;
+  /** The check it is about, when a host asked the sentinel to check functional specs (`SentinelCheck`): its id. */
+  check?: string;
   /**
    * The person may leave it as the build has it, for good (`{ ignore: true }`): a gap in the ***plain the build settled
    * with an assumption - never something broken, a pulse that went wrong, a release that did not come up, nor the
@@ -122,12 +126,33 @@ export function wentWrong(job: Job): boolean {
   return job.status !== "succeeded" || (job.details as { passed?: unknown } | undefined)?.passed === false;
 }
 
-/** The sentinel done with a pulse: whether what it checked holds, and what it checked and found, in a line or two. */
+/**
+ * The sentinel done with a pulse - or a check a host asked for: whether what it checked holds, and what it checked and
+ * found, in a line or two. `unchecked`: a check that never ran - the person did not start the sentinel, or it could not
+ * be opened - turri's own word, never the sentinel's.
+ */
 export interface Conclusion {
-  /** The pulse: its job id. */
-  job: string;
-  verdict: "holds" | "wrong";
+  /** The pulse: its job id. Undefined for a check. */
+  job?: string;
+  /** The check: its id (`SentinelCheck`). Undefined for a pulse. */
+  check?: string;
+  verdict: "holds" | "wrong" | "unchecked";
   summary: string;
   module?: string;
   pulse?: number;
+}
+
+/**
+ * Functional specs of a module a host asked the sentinel to check, in the module's release: its last commit, released,
+ * and every module its requires chain builds on with it. Queued with the pulses, in a conversation of its own.
+ */
+export interface SentinelCheck {
+  id: string;
+  /** The module released and tested, by name. */
+  module: string;
+  plainFile: string;
+  /** The functional specs to test, each `module:func-id` - of the module, or of a module its requires chain builds on. */
+  funcIds: string[];
+  /** When it was asked for. */
+  at: string;
 }

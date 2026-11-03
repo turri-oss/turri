@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentSession, ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { inChat } from "../src/chat-scope.ts";
 import { createChats, MAX_CHATS, type ChatLink, type TurriCore, type TurriHost } from "../src/chats.ts";
 import { createJobRegistry, type Job } from "../src/regenerate/jobs.ts";
-import { describeNotice, noticeTask, SENTINEL, SENTINEL_TOOLS, sentinelBrief, sentinelFileTools, type Notice } from "../src/sentinel.ts";
+import { describeNotice, noticeTask, SENTINEL, SENTINEL_TOOLS, sentinelBrief, sentinelCheckBrief, sentinelFileTools, type Notice, type SentinelCheck } from "../src/sentinel.ts";
 
 /**
  * A pi session as the session follows it: its events sent by the test, whether its agent is at work, what it was told,
@@ -53,10 +53,11 @@ interface Told {
   over: Array<{ id: string; state: string }>;
   acted: string[];
   concluded: string[];
+  checks: Array<{ check: string; focused?: string }>;
 }
 
 /** A session with the sentinel on, its chats living nowhere but here: each chat's extension says what it is told. */
-function session(options: { sentinel?: boolean | "ask"; host?: TurriHost; ignored?: (notice: Notice) => void } = {}) {
+function session(options: { sentinel?: boolean | "ask"; host?: TurriHost; ignored?: (notice: Notice) => void; release?: (check: SentinelCheck) => string | undefined } = {}) {
   const told = new Map<string, Told>();
   const links: ChatLink[] = [];
   /** Each chat's session now - and every session each chat had, in order. */
@@ -66,7 +67,7 @@ function session(options: { sentinel?: boolean | "ask"; host?: TurriHost; ignore
   let core: TurriCore;
   const jobs = createJobRegistry({ onFinish: (job) => core.jobFinished(job) });
   const of = (id: string): Told => {
-    if (!told.has(id)) told.set(id, { announced: [], landed: [], briefs: [], notices: [], over: [], acted: [], concluded: [] });
+    if (!told.has(id)) told.set(id, { announced: [], landed: [], briefs: [], notices: [], over: [], acted: [], concluded: [], checks: [] });
     return told.get(id)!;
   };
   core = createChats({
@@ -75,7 +76,13 @@ function session(options: { sentinel?: boolean | "ask"; host?: TurriHost; ignore
     jobs,
     sentinel: () => options.sentinel ?? true,
     ...(options.ignored !== undefined ? { ignored: options.ignored } : {}),
-    sentinelStart: (job) => ({ severity: "info", summary: `${job.summary} finished - start the sentinel?`, evidence: [], actions: [{ label: "Start the sentinel", task: "" }, { label: "Not this session", task: "" }], job: job.id }),
+    sentinelStart: (about) => ({
+      severity: "info",
+      summary: "kind" in about ? `${about.summary} finished - start the sentinel?` : `checking ${about.module} needs the sentinel - start it?`,
+      evidence: [],
+      actions: [{ label: "Start the sentinel", task: "" }, { label: "Not this session", task: "" }],
+      ...("kind" in about ? { job: about.id } : { check: about.id }),
+    }),
     extension: (_pi, link) => {
       links.push(link);
       link.live({
@@ -88,10 +95,20 @@ function session(options: { sentinel?: boolean | "ask"; host?: TurriHost; ignore
           made.messages.push({ role: "custom", customType: "turri_sentinel_pulse", details: { jobId: job.id } });
           made.state.isStreaming = true;
         },
+        // Released, or not: the check's message its first, as the brief's - or why the release failed, and nothing told.
+        briefCheck: async (check, context) => {
+          const why = options.release?.(check);
+          if (why !== undefined) return why;
+          of(link.id).checks.push({ check: check.id, ...context });
+          const made = sessions.get(link.id)!;
+          made.messages.push({ role: "custom", customType: "turri_sentinel_check", details: { checkId: check.id } });
+          made.state.isStreaming = true;
+          return undefined;
+        },
         notice: (notice) => of(link.id).notices.push(notice),
         noticeOver: (notice) => of(link.id).over.push({ id: notice.id, state: notice.state }),
         act: (task) => of(link.id).acted.push(task),
-        concluded: (conclusion) => of(link.id).concluded.push(`${conclusion.module} ${conclusion.verdict}: ${conclusion.summary}`),
+        concluded: (conclusion) => of(link.id).concluded.push(`${conclusion.check !== undefined ? `check ${conclusion.check} ` : ""}${conclusion.module} ${conclusion.verdict}: ${conclusion.summary}`),
         jobsChanged: () => {},
         thinkingLevel: () => undefined,
         context: () => undefined,
@@ -480,6 +497,16 @@ describe("a notice", () => {
     expect(kept).toEqual([gap.id]);
   });
 
+  it("of a fix the sentinel made is a note: it supersedes no notice about its module, and asks nothing", async () => {
+    const { core, told } = session();
+    const mine = await core.open();
+    const problem = core.notice({ severity: "error", summary: "GET / answers 500", evidence: [], actions: [{ label: "Regenerate", task: "regenerate app.plain" }], module: "app" })!;
+    const fixed = core.notice({ kind: "fixed", severity: "info", summary: "the unit testing script runs python, not python3", evidence: ["- python3 -m pytest", "+ python -m pytest"], actions: [], module: "app" })!;
+    expect(core.notices().map((notice) => notice.id)).toEqual([problem.id, fixed.id]);
+    expect(told(mine.id).notices.map((notice) => notice.kind)).toEqual([undefined, "fixed"]);
+    expect(told(mine.id).over).toEqual([]);
+  });
+
   it("says what is wrong, what shows it and what can be done, for an agent", () => {
     const notice = { severity: "warning" as const, summary: "the page loads slowly", evidence: ["GET / took 9s"], actions: [{ label: "Add a cache", task: "…" }] };
     expect(describeNotice(notice)).toBe("! the page loads slowly\n  GET / took 9s\nWhat can be done:\n  1. Add a cache");
@@ -515,7 +542,8 @@ describe("what the sentinel is told of a pulse", () => {
     const text = sentinelBrief(failed, { project: process.cwd(), released: [], releaseAfterPulse: true, reaction: "heal it, then resume" });
     expect(text).toContain("failed");
     expect(text).toContain("the unit tests failed");
-    expect(text).toContain("It went wrong: find out why, and notify the person.");
+    expect(text).toContain("It went wrong: find out why. A testing script, or where the config says the scripts are, is yours to fix");
+    expect(text).toContain("install is never anyone's but the person's");
     expect(text).toContain("heal it, then resume");
   });
 });
@@ -532,12 +560,187 @@ describe("what the person's chat is told of a pulse that landed", () => {
 });
 
 describe("the sentinel's tools", () => {
-  it("read the project and write nothing: no write, no edit - only what reads, its shell among them", () => {
+  it("read the whole project, and write and edit its tooling alone - never ***plain, and none that regenerates, steers or releases", () => {
     const names = sentinelFileTools(mkdtempSync(join(tmpdir(), "turri-sentinel-tools-"))).map((tool) => tool.name);
-    expect(names).not.toContain("write");
-    expect(names).not.toContain("edit");
-    expect(names).toEqual(expect.arrayContaining(["read", "ls", "grep", "find", "bash"]));
+    expect(names).toEqual(expect.arrayContaining(["read", "ls", "grep", "find", "bash", "write", "edit"]));
     for (const name of names) expect(SENTINEL_TOOLS, name).toContain(name);
-    for (const name of ["change_plain", "regenerate", "steer", "release", "activate", "write", "edit"]) expect(SENTINEL_TOOLS).not.toContain(name);
+    expect(SENTINEL_TOOLS).toContain("resume");
+    for (const name of ["change_plain", "regenerate", "steer", "release", "activate", "conform"]) expect(SENTINEL_TOOLS).not.toContain(name);
+  });
+
+  it("fix a testing script and where the config says the scripts are - and put back any other change to the config, and refuse ***plain", async () => {
+    const project = mkdtempSync(join(tmpdir(), "turri-sentinel-fix-"));
+    mkdirSync(join(project, "test_scripts"));
+    writeFileSync(join(project, "test_scripts", "run_unittests_python.sh"), "#!/bin/bash\npython3 -m pytest\n");
+    writeFileSync(join(project, "run_conformance_tests_python.sh"), "#!/bin/bash\npython3 -m pytest tests\n");
+    writeFileSync(join(project, "config.turri.yaml"), "harness-model: anthropic/claude-opus-5-5\nunittests-script: test_scripts/run_unittests_python.sh\n");
+    writeFileSync(join(project, "app.plain"), "***functional specs***\n\n# hello\nSay hello.\n");
+    const tool = (name: string) => sentinelFileTools(project).find((each) => each.name === name) as unknown as { execute: (...args: unknown[]) => Promise<unknown> };
+    const edit = (path: string, oldText: string, newText: string) => tool("edit").execute("call", { path, edits: [{ oldText, newText }] }, undefined, undefined, {});
+
+    await edit("test_scripts/run_unittests_python.sh", "python3 -m pytest", "python -m pytest");
+    expect(readFileSync(join(project, "test_scripts", "run_unittests_python.sh"), "utf8")).toContain("python -m pytest");
+    await edit("run_conformance_tests_python.sh", "python3", "python");
+    await edit("config.turri.yaml", "unittests-script: test_scripts/run_unittests_python.sh", "unittests-script: test_scripts/run_unittests_python.sh\ntoolchains: [/opt/python]");
+    expect(readFileSync(join(project, "config.turri.yaml"), "utf8")).toContain("toolchains: [/opt/python]");
+
+    // Another setting: put back, and said why.
+    const config = readFileSync(join(project, "config.turri.yaml"), "utf8");
+    await expect(edit("config.turri.yaml", "anthropic/claude-opus-5-5", "anthropic/claude-haiku-5-5")).rejects.toThrow(/changes only unittests-script, .* not harness-model/);
+    expect(readFileSync(join(project, "config.turri.yaml"), "utf8")).toBe(config);
+    // The ***plain is the person's.
+    await expect(edit("app.plain", "Say hello.", "Say hi.")).rejects.toThrow(/outside this agent's write directory/);
+    await expect(tool("write").execute("call", { path: "notes.md", content: "x" }, undefined, undefined, {})).rejects.toThrow(/outside this agent's write directory/);
+    expect(readFileSync(join(project, "app.plain"), "utf8")).toContain("Say hello.");
+  });
+});
+
+describe("a check a host asks of the sentinel", () => {
+  /** A check of app's functional specs, as sentinel-check.ts makes one once it finds them good. */
+  const asked = (id: string, funcIds = ["add-task"]): SentinelCheck => ({ id, module: "app", plainFile: "/project/app.plain", funcIds, at: "" });
+
+  it("waits its turn behind the pulse the sentinel is on, then is taken in a conversation of its own", async () => {
+    const { core, jobs, told, sentinel, finish, history } = session();
+    const mine = await core.open();
+    jobs.start(pulse("app pulse 1", "app"));
+    await settled();
+    expect(core.check(() => asked("c1"))).toEqual({ check: "c1" });
+    await settled();
+    expect(told(sentinel()!.id).checks).toEqual([]);
+    await finish();
+    expect(told(sentinel()!.id).checks).toEqual([{ check: "c1", focused: "new chat" }]);
+    // A new session for it, the pulse's stopped and let go.
+    const [first, second] = history.get(sentinel()!.id)!;
+    expect(second!.messages).toEqual([{ role: "custom", customType: "turri_sentinel_check", details: { checkId: "c1" } }]);
+    expect(first!.state.disposed).toBe(true);
+    // A pulse that finishes while it is checked waits for it: a check is not replaced by a pulse of its module.
+    jobs.start(pulse("app pulse 2", "app"));
+    await settled();
+    expect(told(sentinel()!.id).briefs.map((brief) => brief.job)).toEqual(["app pulse 1"]);
+    await finish();
+    expect(told(sentinel()!.id).briefs.map((brief) => brief.job)).toEqual(["app pulse 1", "app pulse 2"]);
+    expect(told(mine.id).concluded).toEqual([]);
+  });
+
+  it("is concluded - the check's id in place of a pulse's - when the sentinel says so, to the chat the person looks at and the host", async () => {
+    const heard: Array<{ check?: string; job?: string; module?: string; verdict: string }> = [];
+    const { core, told } = session({ host: { onConcluded: ({ check, job, module, verdict }) => heard.push({ check, job, module, verdict }) } });
+    const mine = await core.open();
+    core.check(() => asked("c1"));
+    await settled();
+    expect(core.concluded({ check: "c1", verdict: "holds", summary: "adding a task lists it" })).toBe(mine.id);
+    expect(told(mine.id).concluded).toEqual(["check c1 app holds: adding a task lists it"]);
+    expect(heard).toEqual([{ check: "c1", job: undefined, module: "app", verdict: "holds" }]);
+  });
+
+  it("puts a notice about it under its module", async () => {
+    const { core, told } = session();
+    const mine = await core.open();
+    core.check(() => asked("c1"));
+    await settled();
+    core.notice({ severity: "error", summary: "adding a task loses it", evidence: [], actions: [], check: "c1" });
+    expect(told(mine.id).notices).toMatchObject([{ module: "app", check: "c1" }]);
+  });
+
+  it("ends as wrong, said as a conclusion, when its release fails - the sentinel told nothing, and the next work taken", async () => {
+    const { core, told, sentinel } = session({ release: (check) => (check.id === "c1" ? "port 5173 is taken by another app" : undefined) });
+    const mine = await core.open();
+    core.check(() => asked("c1"));
+    core.check(() => asked("c2"));
+    await settled();
+    expect(told(mine.id).concluded).toEqual(["check c1 app wrong: Not tested: app could not be released - port 5173 is taken by another app"]);
+    expect(told(sentinel()!.id).checks.map((check) => check.check)).toEqual(["c2"]);
+  });
+
+  it("is refused while the sentinel is off - what is asked not even looked at - and refused as the host's prepare says", async () => {
+    let prepared = 0;
+    const off = session({ sentinel: false });
+    await off.core.open();
+    expect(off.core.check(() => (prepared++, asked("c1")))).toEqual({ refused: expect.stringContaining("sentinel: false") });
+    expect(prepared).toBe(0);
+    const on = session();
+    await on.core.open();
+    expect(on.core.check(() => ({ refused: "app has no functional spec nope." }))).toEqual({ refused: "app has no functional spec nope." });
+    await settled();
+    expect(on.sentinel()).toBeUndefined();
+  });
+
+  it("asks first under sentinel: ask - checked once the person starts it, ended as unchecked when they say not now", async () => {
+    const started = session({ sentinel: "ask" });
+    const mine = await started.core.open();
+    expect(started.core.check(() => asked("c1"))).toEqual({ check: "c1" });
+    await settled();
+    expect(started.told(mine.id).notices.map((notice) => [notice.kind, notice.check])).toEqual([["sentinel-start", "c1"]]);
+    expect(started.sentinel()).toBeUndefined();
+    started.core.answer(started.told(mine.id).notices[0]!.id, { action: 0 });
+    await settled();
+    expect(started.told(started.sentinel()!.id).checks.map((check) => check.check)).toEqual(["c1"]);
+
+    const declined = session({ sentinel: "ask" });
+    const theirs = await declined.core.open();
+    declined.core.check(() => asked("c1"));
+    await settled();
+    declined.core.answer(declined.told(theirs.id).notices[0]!.id, { action: "Not this session" });
+    await settled();
+    expect(declined.told(theirs.id).concluded).toEqual(["check c1 app unchecked: Not checked: the person did not start the sentinel."]);
+    // Not now holds for the session: the next is refused.
+    expect(declined.core.check(() => asked("c2"))).toEqual({ refused: expect.stringContaining("not started this session") });
+  });
+
+  it("ends as unchecked when the sentinel is closed before it gets to it", async () => {
+    const { core, jobs, told, sentinel } = session();
+    const mine = await core.open();
+    jobs.start(pulse("app pulse 1", "app"));
+    await settled();
+    core.check(() => asked("c1"));
+    await settled();
+    await core.close(sentinel()!.id);
+    expect(told(mine.id).concluded).toEqual(["check c1 app unchecked: Not checked: the sentinel was closed before it got to it."]);
+  });
+});
+
+describe("what the sentinel is told of a check", () => {
+  it("names its functional specs - what each says and its scenarios - to test those alone, in what runs, and to conclude for the check", () => {
+    const brief = sentinelCheckBrief(
+      { id: "c1", module: "app", plainFile: "/p/app.plain", funcIds: ["app:add-task", "base:login"], at: "" },
+      {
+        specs: [
+          { funcId: "app:add-task", text: "Adding a :Task: lists it.", conformance: [{ id: "lists-it", text: "Add one; it is listed." }], acceptance: [] },
+          { funcId: "base:login", text: "A :User: logs in.", conformance: [], acceptance: [{ id: "logs-in", text: "Log in;\nthe home page shows." }] },
+        ],
+        released: [{ name: "web", moduleName: "app", command: "npm run dev", dir: "/p/dist/app", url: "http://localhost:5173", log: "/p/web.log", pid: 1, startedAt: 0 }],
+        commit: "abc1234",
+        releasedNow: true,
+        focused: "my chat",
+      },
+    );
+    expect(brief).toContain("Check c1: the person asked you to check 2 functional specs of app, in its release.");
+    expect(brief).toContain("its last commit, abc1234");
+    expect(brief).toContain("It was released for this check. What runs now:\n  web: http://localhost:5173 - in /p/dist/app, its output in /p/web.log");
+    expect(brief).toContain("only these, not its others");
+    expect(brief).toContain("# app:add-task\nAdding a :Task: lists it.\nConformance scenarios:\n- lists-it: Add one; it is listed.");
+    expect(brief).toContain("# base:login\nA :User: logs in.\nAcceptance scenarios:\n- logs-in: Log in; the home page shows.");
+    expect(brief).toContain("call conclude for check c1");
+  });
+});
+
+describe("the sentinel's resume", () => {
+  it("brings the module it names up again - after a fix of its own - and says what was started", async () => {
+    const { resumeTool } = await import("../src/sentinel.ts");
+    const asked: string[] = [];
+    const tool = resumeTool(async (plainFile) => (asked.push(plainFile), "app: 1 pulse planned")) as unknown as { execute: (...args: unknown[]) => Promise<{ content: Array<{ text: string }> }> };
+    const result = await tool.execute("call", { plain_file: "app.plain" }, undefined, undefined, {});
+    expect(asked).toEqual(["app.plain"]);
+    expect(result.content[0]!.text).toBe("app: 1 pulse planned");
+  });
+});
+
+describe("the release agent's shell", () => {
+  it("installs what the release needs into the project, and refuses what would change the machine", async () => {
+    const { releaseShell } = await import("../src/release-agent.ts");
+    const shell = releaseShell(mkdtempSync(join(tmpdir(), "turri-release-shell-"))) as unknown as { execute: (...args: unknown[]) => Promise<unknown>; description: string };
+    await expect(shell.execute("call", { command: "brew install node" }, undefined, undefined, {})).rejects.toThrow(/turri changes nothing of this machine's - brew installs into the system/);
+    await expect(shell.execute("call", { command: "npm install -g serve" }, undefined, undefined, {})).rejects.toThrow(/installs globally/);
+    expect(shell.description).toContain("It installs nothing on the machine and changes none of its settings");
   });
 });

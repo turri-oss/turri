@@ -63,6 +63,7 @@ Before an agent's command runs, its text is checked (`src/regenerate/command-che
 - names a path outside the role's roots - absolute, a `..` that climbs out of the agent's folder (after the `cd`s before it), or inside a quoted string (`python3 -c "..."`). `~`, `$HOME` and `$TMPDIR` are the module's own and allowed, as are the package caches, the machine's system folders and the toolchains, and the devices (`/dev/null`). A path is checked when it names something on disk - under a top folder such as `/Users`, `/home`, `/etc` or `/tmp`, one of the fence's, or one that exists - so an API route in a curl or a JSON body is not one, and nor is `/` alone, a slash in code (`case '/':`), though writing to `/` is refused;
 - names the code record, `.turri.json`;
 - writes a credential file (`.env` and its variants; a template is fine) - by redirect, `tee`, `cp`, `mv` or an edit in place;
+- changes a setting of the machine's or the person's environment: `defaults write`, `launchctl`, `systemctl enable`, `sysctl -w`, `git config --global`, `npm config set`, a line written to a shell profile (`~/.zshrc`) or `/etc`. The same rule (`machineChange`) holds in every shell turri runs, not only the agents': the chat's and the release agent's refuse an install or a system setting too, asked or not - turri changes nothing of the machine's;
 - installs software outside the project: `sudo`, the system's package managers installing (`brew`, `apt`, `dnf`, `apk`, `pacman`, `choco`, `winget`, ...), toolchain managers installing (`nvm`, `sdk`, `rustup`, `pyenv`, `asdf`, ...), global installs (`npm -g`, `yarn global`, `pip --user`, `pipx`, `gem install`), a script downloaded and run (`curl ... | sh`), an installer (`.pkg`, `.msi`, `.dmg`, `.run`). The project's own dependencies - `npm install`, pip into its venv, `mvn`, `cargo`, `go mod` - are building the code, and pass;
 - kills what its pulse did not start: `pkill`, `killall`, `taskkill`, `fuser -k`, or `kill` aimed at a port or name lookup. `kill $!` and `kill %1` pass.
 
@@ -99,7 +100,7 @@ DuckDuckGo is used without a key through its Lite page, which is not an official
 
 ## Outside the sandbox: deploy
 
-What `deploy` starts runs on your machine unfenced: you asked to try the software, with your toolchains, in your browser. It runs from `dist/<module>`, a copy of the last commit outside `plain_modules`, so no regenerating agent reaches it. Nothing is installed there without your say-so - every command that would install or download is put to you first, and the chat's shell refuses the rest. See [deploy](deploy.md).
+What `deploy` starts runs on your machine unfenced: you asked to try the software, with your toolchains, in your browser. It runs from `dist/<module>`, a copy of the last commit outside `plain_modules`, so no regenerating agent reaches it. Nothing is installed on the machine for it: its dependencies go into the project, and a toolchain or system setting it lacks is yours to install - the release agent's shell refuses it, and tells you the command. See [deploy](deploy.md).
 
 ## What turri keeps beside the code
 
