@@ -68,13 +68,6 @@ export function themesInstalledGlobally(): boolean {
   return names.length > 0 && names.every((name) => existsSync(join(AGENT_DIR, "themes", name)));
 }
 
-/** Where `turri` on the PATH points, if it is on the PATH at all. */
-export function turriOnPath(): string | undefined {
-  const which = spawnSync(process.platform === "win32" ? "where" : "which", ["turri"], { encoding: "utf8" });
-  const found = which.status === 0 ? which.stdout.trim().split("\n")[0] : undefined;
-  return found === "" ? undefined : found;
-}
-
 /** The version of the pi turri runs on, as Node finds it - undefined when it is not installed. */
 export function piVersion(): string | undefined {
   try {

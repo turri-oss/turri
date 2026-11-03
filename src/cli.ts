@@ -143,9 +143,11 @@ if (command === "-h" || command === "--help") {
   process.exit(0);
 }
 
-// turri's version, not pi's alone: pi's --version would answer for it.
+// turri's version, not pi's alone: pi's --version would answer for it - and where this turri is, the newest on npm,
+// every turri on the PATH, and what to do when the one that runs is not the newest (turri-versions.ts).
 if (command === "-v" || command === "--version") {
-  console.log(versionLine());
+  const { describeVersion } = await import("./turri-versions.ts");
+  console.log(await describeVersion(versionLine()));
   process.exit(0);
 }
 

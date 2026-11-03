@@ -3,6 +3,8 @@ process.env.TURRI_PROVIDER_RETRY_DELAY ??= "0";
 // Nor does a test that loads the conversation or a headless run write a ledger into the folder it runs from: the
 // ledger's own tests start it themselves.
 process.env.TURRI_LEDGER ??= "off";
+// No test asks npm for the newest turri: the banner, --version and doctor leave it out.
+process.env.TURRI_UPDATE_CHECK ??= "off";
 import { afterAll } from "vitest";
 import { killAllGroups } from "../src/regenerate/shell.ts";
 

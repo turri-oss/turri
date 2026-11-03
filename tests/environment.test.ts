@@ -41,10 +41,13 @@ describe("turri --version", () => {
     expect(versionLine({ version: "0.1.1", git_commit: "336dd6e0f1a2b3c4", git_dirty: false }, null)).toBe("turri 0.1.1, from a clone, 336dd6e");
   });
 
-  it("is answered by turri, not passed to pi - with -v too", () => {
+  it("is answered by turri, not passed to pi - with -v too - its version line first, then where this turri is and every turri on the PATH", () => {
     expect(piVersion()).toMatch(/^\d+\.\d+\.\d+/);
     for (const flag of ["--version", "-v"]) {
-      expect(execFileSync(process.execPath, ["bin/turri.mjs", flag], { encoding: "utf8" }).trim()).toMatch(new RegExp(`^turri \\S+.*\\(pi ${piVersion()!.replace(/\./g, "\\.")}\\)$`));
+      const lines = execFileSync(process.execPath, ["bin/turri.mjs", flag], { encoding: "utf8" }).trim().split("\n");
+      expect(lines[0]).toMatch(new RegExp(`^turri \\S+.*\\(pi ${piVersion()!.replace(/\./g, "\\.")}\\)$`));
+      expect(lines[1]).toMatch(/^ {2}this turri: +\//);
+      expect(lines.some((line) => line.startsWith("  turri on PATH"))).toBe(true);
     }
   });
 });
