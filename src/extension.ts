@@ -1339,7 +1339,7 @@ function registerRegenerate(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
       // began, not a chat that stays empty until the first pulse starts. The plan is said under it once it is made.
       say(
         scratch
-          ? `Deleting ${module}'s code${chain ? " and its whole chain's" : ""}, then planning all of it again…`
+          ? `Deleting ${module}'s code${chain ? " and its whole chain's" : ""} and then starting regeneration…`
           : again.length > 0
             ? `Planning ${again.join(", ")} again…`
             : `Planning ${module}'s pulses…`,
