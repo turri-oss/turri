@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupProblems, planChunks, placeProblems, shortTitle, titleProblems, MAX_LINES_PER_JOB, type ChunkAgents, type GroupAnswer, type PlaceAnswer, type TitleAnswer, type TitleGroup } from "../../src/regenerate/chunk-plan.ts";
+import { groupProblems, planChunks, placeProblems, shortTitle, titlePrompt, titleProblems, MAX_LINES_PER_JOB, type ChunkAgents, type GroupAnswer, type PlaceAnswer, type TitleAnswer, type TitleGroup } from "../../src/regenerate/chunk-plan.ts";
 import { checkDraft, netChanges, stepsOf, type PlanInput } from "../../src/regenerate/chunk-plan.ts";
 
 const item = (markdown: string) => ({ markdown });
@@ -407,6 +407,13 @@ describe("the checks a plan is held to", () => {
     expect(groupProblems(specs, groups("x".repeat(71))).join("\n")).toContain("too long for a title");
   });
 
+  it("refuse a group titled by the act of regenerating rather than what it builds", () => {
+    const groups = (title: string) => ({ groups: [{ specs: [1, 2], title }, { specs: [3, 4], title: "b" }] });
+    expect(groupProblems(specs, groups("regenerate")).join("\n")).toContain("names the act of regenerating");
+    expect(groupProblems(specs, groups("Regenerate scenery")).join("\n")).toContain("names the act of regenerating");
+    expect(groupProblems(specs, groups("Regeneration name-entry screen"))).toEqual([]);
+  });
+
   it("take three functional specs in a job, and want every group to have one and a title", () => {
     expect(groupProblems(specs, { groups: [{ specs: [1, 2, 3], title: "a" }, { specs: [4], title: "b" }] })).toEqual([]);
     expect(groupProblems(specs, { groups: [{ specs: [1, 2, 3, 4], title: "a" }, { specs: [], title: "empty" }] }).join("\n")).toContain('"empty" has no functional spec.');
@@ -542,6 +549,90 @@ describe("titling the pulses no agent titled", () => {
     expect(titles([1, " "], [2, "b"]).join("\n")).toContain("Group 1 needs a title.");
     expect(titles([1, "one two three four five six seven eight nine ten eleven"], [2, "b"]).join("\n")).toContain("at most 10 words and 70 characters");
     expect(titles([1, "x".repeat(71)], [2, "b"]).join("\n")).toContain("too long for a title");
+  });
+});
+
+describe("titling a pulse that makes the whole of an edit", () => {
+  const BUILT = ["A visitor follows a short link to its URL.", "A :User: lists their links.", "A :User: deletes a link."];
+  const LINK_IDS = ["follow-link", "list-links", "delete-link"];
+  /** A module's tree: its functional specs by func-id, so a reworded one is the same functional spec. */
+  const built = (specs: string[], impl = ["- Links are kept for 7 days."]) =>
+    ({ definitions: ["- :User: is a person with an account."].map(item), "implementation reqs": impl.map(item), "functional specs": specs.map((markdown, index) => fspec(markdown, LINK_IDS[index])) }) as never;
+  const reworded = ["A visitor follows a short link to its URL, or gets 410 when it expired.", "A :User: lists their links, newest first.", "A :User: deletes a link."];
+
+  /** Stand-in agents whose only step is the title: answered as given, and what it was asked kept. */
+  function titler(answer: (groups: TitleGroup[]) => TitleAnswer | undefined) {
+    const asked: Array<{ groups: TitleGroup[]; track: string }> = [];
+    const given: ChunkAgents = {
+      group: async () => undefined,
+      place: async () => undefined,
+      title: async (groups, _check, track) => (asked.push({ groups, track }), answer(groups)),
+    };
+    return { asked, given };
+  }
+
+  it("titles an edit that only rewords functional specs already built by what the edit does, shown each before and after", async () => {
+    const from = input(built(BUILT), built(reworded));
+    const { asked, given } = titler(() => ({ titles: [{ group: 1, title: "Expired links answer 410 and lists go newest first" }] }));
+    const plan = await planChunks(from, given);
+    expect(checkDraft(from, plan)).toEqual([]);
+    expect(plan.map((job) => job.title)).toEqual(["Expired links answer 410 and lists go newest first"]);
+    expect(asked).toHaveLength(1);
+    expect(asked[0]!.groups[0]!.changes).toEqual([
+      { kind: "changed", what: "functional spec", text: reworded[0], before: BUILT[0] },
+      { kind: "changed", what: "functional spec", text: reworded[1], before: BUILT[1] },
+    ]);
+    const prompt = titlePrompt(asked[0]!.groups, "code");
+    expect(prompt).toContain(`<before>\n${BUILT[0]}\n</before>\n<now>\n${reworded[0]}\n</now>`);
+    expect(prompt).toContain("one edit to software already built");
+    expect(prompt).toContain('"regenerate", "Regenerate the scenery" and "Changes" are not titles');
+  });
+
+  it("titles an edit that only changes an implementation req by what it changes, not by its section", async () => {
+    const from = input(built(BUILT), built(BUILT, ["- Links are kept for 30 days."]));
+    const { asked, given } = titler(() => ({ titles: [{ group: 1, title: "Links are kept for 30 days" }] }));
+    expect((await planChunks(from, given)).map((job) => job.title)).toEqual(["Links are kept for 30 days"]);
+    expect(asked[0]!.groups[0]!.changes).toEqual([{ kind: "changed", what: "implementation req", text: "- Links are kept for 30 days.", before: "- Links are kept for 7 days." }]);
+    expect(titlePrompt(asked[0]!.groups, "code")).toContain("never by the section it is in");
+  });
+
+  it("titles the one pulse a plan falls back to when no plan of the work holds together", async () => {
+    // :X: renamed :Z: and redefined in one edit: after the change to what is built alone, :X: is undefined - so the work is one pulse.
+    const base = { definitions: ["- :X: is a thing."].map(item), "functional specs": [fspec("A :X: is listed.", "list-x")] } as never;
+    const current = { definitions: ["- :Z: is a thing.", "- :X: is a new kind of thing."].map(item), "functional specs": [fspec("A :X: is listed.", "list-x"), fspec("A :Z: is shown.", "show-z")] } as never;
+    const from = input(base, current);
+    const { asked, given } = titler(() => ({ titles: [{ group: 1, title: "Things are shown and redefined" }] }));
+    const plan = await planChunks(from, given);
+    expect(plan).toHaveLength(1);
+    expect(plan[0]!.changes).toHaveLength(3);
+    expect(plan[0]!.title).toBe("Things are shown and redefined");
+    expect(asked.at(-1)!.groups).toEqual([{ number: 1, specs: [], changes: expect.arrayContaining([expect.objectContaining({ kind: "added", what: "functional spec", text: "A :Z: is shown." })]) }]);
+    expect((await planChunks(from)).map((job) => job.title)).toEqual(["A :Z: is shown, and 2 more"]);
+  });
+
+  it("falls back to what the edit changes first and how many more - never the bare word - with no title step, or when it fails or does not hold", async () => {
+    const from = input(built(BUILT), built(reworded));
+    const fallback = "A visitor follows a short link to…, and 1 more";
+    expect((await planChunks(from)).map((job) => job.title)).toEqual([fallback]);
+    expect((await planChunks(from, agents())).map((job) => job.title)).toEqual([fallback]);
+    const notes: string[] = [];
+    expect((await planChunks(from, titler(() => undefined).given, notes)).map((job) => job.title)).toEqual([fallback]);
+    expect(notes).toEqual([`the title was not given - the pulse titled by what it changes first: "${fallback}"`]);
+    const bare = titler(() => ({ titles: [{ group: 1, title: "regenerate" }] }));
+    expect((await planChunks(from, bare.given)).map((job) => job.title)).toEqual([fallback]);
+    // An implementation req alone: its own first line.
+    expect((await planChunks(input(built(BUILT), built(BUILT, ["- Links are kept for 30 days."])))).map((job) => job.title)).toEqual(["Links are kept for 30 days."]);
+    for (const title of [fallback, "Links are kept for 30 days."]) {
+      expect(title.length).toBeLessThanOrEqual(70);
+      expect(title.split(/\s+/).length).toBeLessThanOrEqual(10);
+    }
+  });
+
+  it("refuses a title that names the act of regenerating", () => {
+    const groups = [{ number: 1, specs: [], changes: [] }];
+    expect(titleProblems(groups, { titles: [{ group: 1, title: "regenerate" }] }).join("\n")).toContain("names the act of regenerating");
+    expect(titleProblems(groups, { titles: [{ group: 1, title: "Regenerate scenery" }] }).join("\n")).toContain("names the act of regenerating");
+    expect(titleProblems(groups, { titles: [{ group: 1, title: "Regeneration name-entry screen" }] })).toEqual([]);
   });
 });
 

@@ -151,6 +151,19 @@ function fitsTitle(title: string): boolean {
   return title.trim().split(/\s+/).length <= TITLE_WORDS && title.trim().length <= TITLE_CHARS;
 }
 
+/** Whether a title names the act of regenerating - "regenerate", "Regenerate the scenery" - rather than the change. */
+function namesTheAct(title: string): boolean {
+  return /^regenerat(e|es|ed|ing)\b/i.test(title.trim());
+}
+
+/** What is wrong with one title, or nothing: empty, too long, or naming the act rather than the change. */
+function titleProblem(title: string, empty: string): string | undefined {
+  if (title.trim() === "") return empty;
+  if (!fitsTitle(title)) return `"${title}" is too long for a title: at most ${TITLE_WORDS} words and ${TITLE_CHARS} characters.`;
+  if (namesTheAct(title)) return `"${title}" names the act of regenerating: say what the pulse changes in the software.`;
+  return undefined;
+}
+
 /**
  * A title held to `TITLE_WORDS` and `TITLE_CHARS` - or less, for room beside it - cut at a word, with an ellipsis. Text
  * cut already is cut again without stacking a second: several first lines joined, each cut, end on one ellipsis.
@@ -224,10 +237,22 @@ export interface PlaceAnswer {
   notes?: string;
 }
 
-/** A group to title: the number the agent answers with, and its functional specs' text. */
+/**
+ * A group to title: the number the agent answers with, and its functional specs' text - or, for a pulse that makes the
+ * whole of an edit, `changes`: what the edit does to the ***plain the code is built from.
+ */
 export interface TitleGroup {
   number: number;
   specs: string[];
+  changes?: TitleChange[];
+}
+
+/** A change a pulse makes, as the title agent is shown it: what it is, how it changes, its text now - and before, changed. */
+export interface TitleChange {
+  kind: "changed" | "taken out" | "added";
+  what: string;
+  text: string;
+  before?: string;
 }
 
 export interface TitleAnswer {
@@ -238,7 +263,8 @@ export interface TitleAnswer {
  * The judgements, each asked again with what was wrong with its answer - the last answer given, whether it holds
  * or not: the plan checks it again. Injectable, so the plan is testable without a model. `title` titles the groups no
  * agent titled - the conformance tests', and a grouping that fell back - for what each pulse does, rather than its
- * first functional spec's first line; without it, they keep that.
+ * first functional spec's first line; without it, they keep that. It titles a pulse that makes the whole of an edit
+ * too, shown the edit's changes; without it, that pulse is titled by `editTitle`.
  */
 export interface ChunkAgents {
   group(specs: NewSpec[], check: (answer: GroupAnswer) => string[], steering?: Steering[], maxSpecs?: number, built?: BuiltChange[]): Promise<GroupAnswer | undefined>;
@@ -251,7 +277,11 @@ export interface ChunkAgents {
  * its scenarios, each under its scenario-id, where the tree has them: the conformance track's.
  */
 function textOf(change: SpecChange): string {
-  const line = change.after ?? change.before ?? "";
+  return textOfLine(change.after ?? change.before ?? "");
+}
+
+/** An item's text from its line in a tree: its markdown, and its scenarios, if any. */
+function textOfLine(line: string): string {
   try {
     type Scenario = { id?: string; text?: string };
     const item = JSON.parse(line) as { markdown?: string; [CONFORMANCE_TESTS]?: Scenario[]; [ACCEPTANCE_TESTS]?: Scenario[] };
@@ -331,13 +361,13 @@ function newSpecProblems(specs: NewSpec[], answer: GroupAnswer, maxSpecs: number
     for (let i = 1; i < group.specs.length; i += 1) {
       if (!nextTo(group.specs[i - 1]!, group.specs[i]!)) problems.push(`"${group.title}" groups ${group.specs.join(", ")}: only functional specs next to each other in the same module go together.`);
     }
-    if (group.title.trim() === "") problems.push("Every group needs a title.");
-    else if (!fitsTitle(group.title)) problems.push(`"${group.title}" is too long for a title: at most ${TITLE_WORDS} words and ${TITLE_CHARS} characters.`);
+    const wrong = titleProblem(group.title, "Every group needs a title.");
+    if (wrong !== undefined) problems.push(wrong);
   });
   return problems;
 }
 
-/** What is wrong with a titling: every group titled once, by its number, none empty, none too long. */
+/** What is wrong with a titling: every group titled once, by its number, none empty, none too long, none naming the act. */
 export function titleProblems(groups: TitleGroup[], answer: TitleAnswer): string[] {
   const problems: string[] = [];
   const numbers = groups.map((group) => group.number);
@@ -345,8 +375,8 @@ export function titleProblems(groups: TitleGroup[], answer: TitleAnswer): string
   for (const entry of answer.titles) {
     if (!numbers.includes(entry.group)) problems.push(`There is no group ${entry.group}.`);
     seen.set(entry.group, (seen.get(entry.group) ?? 0) + 1);
-    if (entry.title.trim() === "") problems.push(`Group ${entry.group} needs a title.`);
-    else if (!fitsTitle(entry.title)) problems.push(`"${entry.title}" is too long for a title: at most ${TITLE_WORDS} words and ${TITLE_CHARS} characters.`);
+    const wrong = titleProblem(entry.title, `Group ${entry.group} needs a title.`);
+    if (wrong !== undefined) problems.push(wrong);
   }
   for (const number of numbers) {
     const times = seen.get(number) ?? 0;
@@ -476,7 +506,36 @@ function draftOf(chunks: Chunk[], net: SpecChange[]): DraftJob[] {
 
 /** A spec's first line, as a group's title when no agent gave one. */
 function titleOf(change: SpecChange): string {
-  return shortTitle(textOf(change).split("\n")[0]!.replace(/^-\s*/, ""));
+  return shortTitle(firstLineOf(change));
+}
+
+function firstLineOf(change: SpecChange): string {
+  return textOf(change).split("\n")[0]!.replace(/^-\s*/, "");
+}
+
+const isFunctionalSpec = (change: SpecChange) => change.section === FUNCTIONAL_REQUIREMENTS || change.section === REQUIRED_FUNCTIONAL_SPECS;
+
+/**
+ * The title of a pulse that makes the whole of an edit, when no agent gave one: the first line of the first functional
+ * spec it changes - else of its first change - and how many more it makes. Never the bare word.
+ */
+export function editTitle(changes: SpecChange[]): string {
+  const [first, ...rest] = [...changes.filter(isFunctionalSpec), ...changes.filter((change) => !isFunctionalSpec(change))];
+  if (first === undefined) return "No change";
+  const line = first.kind === "remove" ? `Takes out: ${firstLineOf(first)}` : firstLineOf(first);
+  if (rest.length === 0) return shortTitle(line);
+  const more = `, and ${rest.length} more`;
+  return `${shortTitle(line, TITLE_CHARS - more.length, TITLE_WORDS - 3).replace(/[.,;:]+$/, "")}${more}`;
+}
+
+/** A change as the title agent is shown it: what it is, how it changes, its text now - and before, for a change. */
+function titleChangeOf(change: SpecChange): TitleChange {
+  return {
+    kind: change.kind === "change" ? "changed" : change.kind === "remove" ? "taken out" : "added",
+    what: WHAT[change.section] ?? change.section,
+    text: textOf(change),
+    ...(change.kind === "change" && change.before !== undefined ? { before: textOfLine(change.before) } : {}),
+  };
 }
 
 /**
@@ -631,9 +690,25 @@ async function cut(input: PlanInput, agents?: ChunkAgents, notes?: string[]): Pr
   const builtShown: BuiltChange[] = builtChanges.map((change, index) => builtChangeOf(change, index + 1, input.moduleName));
   /** Where each change to what is built goes: with the group holding a new functional spec - by that spec's number - or first. */
   const builtTo = new Map<SpecChange, number | "first">();
-  // Named as the person asks for it: "shorty.plain regenerate".
-  const whole: DraftJob[] = [{ title: "regenerate", reason: "the whole of the work, in one job", changes: net.map((change) => change.id) }];
-  if (specs.length === 0) return checkDraft(input, whole).length === 0 ? whole : [];
+  /**
+   * The whole of the work in one job - an edit that only changes what is built, or one no plan of holds together -
+   * titled by what the edit does: by the title agent, shown every change, else by what it changes first.
+   */
+  const wholeJob = async (): Promise<DraftJob[]> => {
+    const whole: DraftJob = { title: "", reason: "the whole of the work, in one job", changes: net.map((change) => change.id) };
+    if (checkDraft(input, [whole]).length > 0) return [];
+    const fallback = editTitle(net);
+    if (agents?.title === undefined) return [{ ...whole, title: fallback }];
+    reportStage("planning the queue: a title for the pulse");
+    const toTitle: TitleGroup[] = [{ number: 1, specs: [], changes: net.map(titleChangeOf) }];
+    const answer = (await agents.title(toTitle, (given) => titleProblems(toTitle, given), input.track === "conformance" ? "conformance" : "code").catch((error: unknown) => plannerFailed("title", error))) ?? undefined;
+    const problems = answer === undefined ? [] : titleProblems(toTitle, answer);
+    if (answer !== undefined && problems.length === 0) return [{ ...whole, title: answer.titles[0]!.title.trim() }];
+    record({ kind: "planner.fellBack", step: "title", why: answer === undefined ? "no title was given" : firstLine(problems.join(" "), 300) });
+    say(answer === undefined ? `the title was not given - the pulse titled by what it changes first: "${fallback}"` : `the title did not hold (${problems.join(" ")}) - the pulse titled by what it changes first: "${fallback}"`);
+    return [{ ...whole, title: fallback }];
+  };
+  if (specs.length === 0) return wholeJob();
 
   // 1. Which functional specs go together.
   reportStage(`planning the queue: which of the ${specs.length} functional spec${specs.length === 1 ? "" : "s"} to build go together`);
@@ -820,7 +895,7 @@ async function cut(input: PlanInput, agents?: ChunkAgents, notes?: string[]): Pr
   place();
   const simple = draftOf(chunks, net);
   if (checkDraft(input, simple).length === 0) return simple;
-  return checkDraft(input, whole).length === 0 ? whole : [];
+  return wholeJob();
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -923,8 +998,29 @@ export function titlePrompt(groups: TitleGroup[], track: "code" | "conformance")
       ? "Give each group a title that says what its pulse tests - the behaviour, not the spec's wording."
       : "Give each group a title that says what its pulse builds - the feature, not the spec's wording.",
     `At most ${TITLE_WORDS} words and ${TITLE_CHARS} characters: it heads the pulse where the person watches the work, and a longer one is cut short there.`,
+    ...(groups.some((group) => group.changes !== undefined)
+      ? [
+          "",
+          "A group of changes is one edit to software already built: its pulse makes the whole of it. Title it by what the",
+          "edit does to the software, briefly - \"Expired links answer 410 and the stats page goes\", \"Greeter greets by",
+          "name\". A definition or an implementation req changed is titled by what it changes in what is built - \"Links are",
+          "kept for 30 days\" - never by the section it is in.",
+        ]
+      : []),
+    "Name the change, never the act: \"regenerate\", \"Regenerate the scenery\" and \"Changes\" are not titles.",
     "",
-    ...groups.map((group) => [`<group number="${group.number}">`, ...group.specs.map((spec) => `<functional spec>\n${spec.trim()}\n</functional spec>`), "</group>"].join("\n")),
+    ...groups.map((group) =>
+      [
+        `<group number="${group.number}">`,
+        ...group.specs.map((spec) => `<functional spec>\n${spec.trim()}\n</functional spec>`),
+        ...(group.changes ?? []).map((change) =>
+          change.before !== undefined
+            ? `<change kind="${change.kind}" what="${change.what}">\n<before>\n${change.before.trim()}\n</before>\n<now>\n${change.text.trim()}\n</now>\n</change>`
+            : `<change kind="${change.kind}" what="${change.what}">\n${change.text.trim()}\n</change>`,
+        ),
+        "</group>",
+      ].join("\n"),
+    ),
     "",
     "Call submit_titles once, with a title for every group, by its number.",
   ].join("\n");
