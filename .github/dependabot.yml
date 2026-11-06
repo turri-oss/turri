@@ -1,6 +1,7 @@
 # The actions the workflows use, kept up to date - pinned by sha, with the version beside it. npm packages get security
-# updates only (the repository's setting): pi is pinned to an exact version, and moving to a new one is a change of its
-# own.
+# updates only: the repository's setting raises them, and the npm entry below only names their commits, opening no
+# version update of its own (open-pull-requests-limit: 0) - pi is pinned to an exact version, and moving to a new one is
+# a change of its own. Both prefixes make each update a Conventional Commit, as the commits check asks.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -9,3 +10,10 @@ updates:
       interval: monthly
     commit-message:
       prefix: ci
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 0
+    commit-message:
+      prefix: fix(deps)
