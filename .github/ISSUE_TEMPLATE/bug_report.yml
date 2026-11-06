@@ -1,0 +1,46 @@
+name: Bug report
+description: Something in turri does not work as it should
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you saw, and what you expected instead. The error helps, and so does the pulse's log from a run with `--debug`.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen
+      description: The steps, and the ***plain or project if you can share it.
+      placeholder: |
+        1. turri init-config --vendor anthropic
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: version
+    attributes:
+      label: turri --version
+      description: Paste what it prints.
+      render: text
+      placeholder: |
+        turri 0.2.2 (pi 1.4.0)
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: System
+      placeholder: macOS 26.1, Apple silicon / Ubuntu 24.04 / Windows 11, WSL
+    validations:
+      required: true
+  - type: input
+    id: models
+    attributes:
+      label: Provider and models
+      description: As config.turri.yaml names them - harness-model, coding-model, and any other you set.
+      placeholder: anthropic/claude-opus-5-5:medium, anthropic/claude-haiku-5-5:low
+    validations:
+      required: true

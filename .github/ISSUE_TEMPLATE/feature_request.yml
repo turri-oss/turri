@@ -1,0 +1,16 @@
+name: Idea
+description: Something turri could do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What you would like
+      description: What you are trying to do, and what is in the way now.
+    validations:
+      required: true
+  - type: textarea
+    id: how
+    attributes:
+      label: How it could work
+      description: Optional - a sketch, the ***plain it would take, how another tool does it.

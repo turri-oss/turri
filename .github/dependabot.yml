@@ -1,0 +1,11 @@
+# The actions the workflows use, kept up to date - pinned by sha, with the version beside it. npm packages get security
+# updates only (the repository's setting): pi is pinned to an exact version, and moving to a new one is a change of its
+# own.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: ci

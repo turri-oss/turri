@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: A security problem
+    url: https://github.com/turri-oss/turri/security/advisories/new
+    about: Report it privately, not as an issue.
+  - name: Something in turri desktop
+    url: https://github.com/turri-oss/turri-desktop/issues
+    about: The app's window, its views, its installer and updates - turri desktop's own issues.

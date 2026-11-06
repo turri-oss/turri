@@ -7,6 +7,8 @@ npm test            # the whole suite, about a minute
 
 The suite runs the projects' testing scripts on this machine, as turri does. The fixture scripts stage each run in a folder of their own, as test files running side by side would otherwise share one.
 
+`.github/workflows/test.yml` runs both on GitHub for every pull request and every push to `main`, and `.github/workflows/commits.yml` checks that each of a pull request's commits is a Conventional Commit, with no fixup and no merge commit - a pull request is rebased onto `main`, each commit as it is. A pull request from a fork runs them once the maintainer has approved its run - see [contributing](../CONTRIBUTING.md).
+
 ## Mutation testing
 
 `npm run mutation` runs [Stryker](https://stryker-mutator.io) over the core of regeneration - the parts in `stryker.config.mjs` - one part at a time, each part's report in `reports/mutation/<part>/`. A part with a report is skipped, so a run that is stopped goes on from the part it was in; `npm run mutation -- <part>` runs one again, and `npm run mutation -- --summary` sums up the reports there are. It takes hours: each part runs the suite once to find which tests reach which mutant (`vitest.stryker.config.ts`, the suite without the files that run real commands behind the sandbox), then each mutant against those tests. `scripts/mutation.mjs` sets two things in Stryker's vitest runner the suite needs - forked workers, and a test-name filter that matches vitest 5's names - again after every `npm install`.

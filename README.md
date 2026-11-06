@@ -203,6 +203,8 @@ Start at the [documentation index](docs/README.md), or go straight to a page:
 | [The \*\*\*plain parser](docs/parser.md) | the TypeScript port, `turri parse`, fidelity to the reference parser |
 | [Theming](docs/theming.md) | the two brand themes |
 | [Development](docs/development.md) | tests, layout, known edges |
+| [Contributing](CONTRIBUTING.md) | reporting a bug, making a change, the conventions a pull request follows |
+| [Security](SECURITY.md) | reporting a vulnerability, privately |
 
 ## License
 
