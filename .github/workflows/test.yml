@@ -1,0 +1,36 @@
+name: test
+
+# The typecheck and the whole suite, for each pull request and each push to main - the check a pull request must pass
+# before it is merged. The suite calls no model. A pull request from a fork runs here only once the maintainer has
+# approved its run, and with a read-only token: this is `pull_request`, never `pull_request_target`.
+#
+# publish.yml runs the same checks again before it publishes; it stays as it is, since npm's trusted publisher is bound
+# to its filename.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  # A new push to a pull request cancels the run of the one before; runs on main each finish.
+  group: test-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
