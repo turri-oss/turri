@@ -1,0 +1,47 @@
+name: commits
+
+# A pull request lands on main rebased, each of its commits as it is - so each must be a Conventional Commit, with no
+# fixup left and no merge commit among them (CONTRIBUTING.md). The commits' text reaches the script only through git,
+# never through an expression, so a subject cannot become a command.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  commits:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Each commit a Conventional Commit, no fixups, no merges
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          re='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([^)]+\))?!?: .+'
+          failed=0
+          for c in $(git rev-list --merges "$BASE..$HEAD"); do
+            echo "::error::$(git log -1 --format=%h "$c") is a merge commit - rebase onto main instead: git rebase origin/main, then git push --force-with-lease"
+            failed=1
+          done
+          for c in $(git rev-list --no-merges --reverse "$BASE..$HEAD"); do
+            s=$(git log -1 --format=%s "$c")
+            id=$(git log -1 --format=%h "$c")
+            shown="$id ${s//%/%25}"  # % escaped, as an annotation reads it
+            if [[ $s == fixup!* || $s == squash!* || $s == amend!* ]]; then
+              echo "::error::$shown - fold it into the commit it fixes: git rebase -i --autosquash origin/main, then git push --force-with-lease"
+              failed=1
+            elif ! [[ $s =~ $re ]]; then
+              echo "::error::$shown - not a Conventional Commit: <type>[(scope)][!]: <description>, the type one of feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert"
+              failed=1
+            else
+              echo "ok   $id $s"
+            fi
+          done
+          exit "$failed"
