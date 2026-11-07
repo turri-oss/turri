@@ -24,7 +24,7 @@ The package on npm is built: Node runs no `.ts` file inside a `node_modules`, so
 `.github/workflows/publish.yml` publishes `@turri-dev/cli`, after the typecheck and the suite pass:
 
 - every push or merge into `main` publishes a prerelease under the `next` dist-tag - the patch after the `latest` on npm, with the commit's sha: `0.1.2-next.<sha>`. `latest` is not touched; `npm install -g @turri-dev/cli@next` gets it.
-- a GitHub Release tagged `vX.Y.Z`, published by hand, publishes `X.Y.Z` as `latest` (or under `next`, if the release is marked a pre-release). The tag is the version: it is set in the runner and never committed, so `package.json`'s version on `main` is stale by design.
+- a GitHub Release tagged `vX.Y.Z`, published by hand, publishes `X.Y.Z` as `latest` (or under `next`, if the release is marked a pre-release). The tag is the version: it is set in the runner and never committed, so `package.json`'s version on `main` is stale by design. Once npm has a release on `latest`, it is posted to the Discord channel whose webhook is the repository secret `DISCORD_RELEASE_WEBHOOK` - its name, its notes and the command that updates; without the secret nothing is posted.
 
 The workflow signs in to npm with npm's trusted publishing (OIDC), not a token: the package's settings on npmjs.com trust `turri-oss/turri`, the workflow `publish.yml` and the environment `npm`. Renaming the workflow file breaks it.
 

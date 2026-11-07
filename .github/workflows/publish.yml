@@ -128,6 +128,62 @@ jobs:
           fi
 
   # ---------------------------------------------------------------------------
+  # A release on `latest` -> a post in the Discord channel, so users update.
+  #
+  # Only once npm has the version, so nobody is told to install what is not
+  # there yet, and never for a pre-release or a push to main. The webhook URL is
+  # the repository secret DISCORD_RELEASE_WEBHOOK (Discord: the channel's
+  # settings -> Integrations -> Webhooks); without it the job says so and passes.
+  # The release's notes reach the payload only through the environment and jq,
+  # never through an expression, so nothing in them can become a command.
+  announce:
+    name: Announce on Discord
+    needs: publish
+    if: ${{ github.event_name == 'release' && !github.event.release.prerelease }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+
+    steps:
+      - name: Post the release to Discord
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_RELEASE_WEBHOOK }}
+          NAME: ${{ github.event.release.name }}
+          TAG: ${{ github.event.release.tag_name }}
+          URL: ${{ github.event.release.html_url }}
+          NOTES: ${{ github.event.release.body }}
+        run: |
+          set -euo pipefail
+          if [ -z "$WEBHOOK" ]; then
+            echo "::notice::DISCORD_RELEASE_WEBHOOK is not set - no announcement posted"
+            exit 0
+          fi
+          # Discord holds an embed's description to 4096 characters: longer
+          # notes are cut and point to the release for the rest.
+          payload=$(jq -n \
+            --arg name "${NAME:-turri ${TAG#v}}" \
+            --arg url "$URL" \
+            --arg notes "$NOTES" \
+            --arg update "npm install -g $PACKAGE@latest" \
+            '{
+              username: "turri",
+              content: ("**" + $name + "** is out - update with `" + $update + "`"),
+              allowed_mentions: { parse: [] },
+              embeds: [{
+                title: $name,
+                url: $url,
+                color: 3447003,
+                description: (if ($notes | length) > 3900
+                  then ($notes[0:3900] + "\n\n... [the rest on GitHub](" + $url + ")")
+                  else $notes end)
+              }]
+            }')
+          curl --fail-with-body --silent --show-error --retry 3 \
+            -H "Content-Type: application/json" \
+            -d "$payload" "$WEBHOOK"
+          echo "announced $TAG on Discord"
+
+  # ---------------------------------------------------------------------------
   # Push or merge into main -> a prerelease on the `next` dist-tag.
   #
   # Runs in this file, not a file of its own, because npm's trusted publisher is
