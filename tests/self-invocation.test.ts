@@ -22,7 +22,7 @@ describe("a shell command that runs turri again", () => {
   });
 
   it("lets pi configure and describe itself, and catches it starting an agent", () => {
-    for (const ok of ["pi install npm:some-extension", "pi update", "pi list", "pi config", "pi auth status", "pi --version", "pi --list-models", "pi remove ./ext -l"]) {
+    for (const ok of ["pi install npm:some-extension", "pi update", "pi list", "pi config", "pi auth status", "pi --version", "pi --list-models", "pi remove ./ext -l", "turri install https://github.com/earendil-works/pi-claude-code", "turri update --extensions", "turri list", "turri remove ./ext -l"]) {
       expect(selfInvocation(ok)).toBeUndefined();
     }
     for (const agent of ["pi", 'pi "build the module"', "pi --mode rpc", "pi -c", "pi --model openai/gpt-5.5 -p hi", "pi update && pi -p go"]) {

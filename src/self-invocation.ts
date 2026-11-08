@@ -113,7 +113,7 @@ export const TOOLS_NOT_CLI = [
   "run your own command line (turri regenerate, glimpse, conform, change-plain, cultivate, release, turri itself; npm run",
   "regenerate and the like) or start another pi through bash:",
   "that is a separate headless run the user cannot see or stop. Only when the user explicitly asks for the",
-  "command line, run it. Configuring pi itself - pi install, update, list, config, auth, or its settings files -",
+  "command line, run it. Configuring pi itself - turri install, update, remove, list; pi install, update, list, config, auth; or its settings files -",
   "is fine; it starts no agent.",
   "</turri-tools>",
 ].join("\n");

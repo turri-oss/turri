@@ -266,14 +266,14 @@ describe("turri init-config", () => {
     const { message } = await initConfig(dir, { vendor: "claude-code" });
     expect(projectModels(readProjectConfig(dir))).toMatchObject({ harness: { model: "claude-code/claude-opus-5-5" }, coding: { model: "claude-code/claude-sonnet-5" } });
     expect(message).toContain("with your Claude subscription's models, through Claude Code");
-    expect(message).toContain("pi install https://github.com/earendil-works/pi-claude-code");
+    expect(message).toContain("turri install https://github.com/earendil-works/pi-claude-code");
     expect(message).toContain("claude auth login");
     expect(message).not.toContain("export ");
     expect(message).not.toContain("/login.");
     // Named without its extension installed: the catalogue has no claude-code, and how to install it is said.
     const named = await initConfig(join(dir, "named"), { models: { harness: "claude-code/claude-opus-5-5", coding: "claude-code/claude-sonnet-5" }, catalogue: { models: () => [] } });
     expect(named.written).toBe(false);
-    expect(named.message).toContain("comes with a pi extension that is not installed: pi install https://github.com/earendil-works/pi-claude-code");
+    expect(named.message).toContain("comes with a pi extension that is not installed: turri install https://github.com/earendil-works/pi-claude-code");
   });
 
   it("takes the vendor from --vendor without asking - in the current folder, or the one named, either way round", async () => {

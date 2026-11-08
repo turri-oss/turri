@@ -162,7 +162,7 @@ describe("doctor's Claude subscription check", () => {
 
   it("says what is missing, in the order it is needed: the extension, Claude Code, its sign-in, a subscription", async () => {
     const first = async (over: Parameters<typeof machine>[0]) => (await checkClaudeSubscription(project, env(), machine(over).probe))[0]!;
-    expect(await first({ installed: false })).toMatchObject({ level: "missing", fix: "pi install https://github.com/earendil-works/pi-claude-code" });
+    expect(await first({ installed: false })).toMatchObject({ level: "missing", fix: "turri install https://github.com/earendil-works/pi-claude-code" });
     expect(await first({ claude: undefined })).toMatchObject({ level: "missing", detail: expect.stringContaining("is not on the PATH"), fix: expect.stringContaining("npm install -g @anthropic-ai/claude-code") });
     expect(await first({ status: { loggedIn: false } })).toMatchObject({ level: "missing", detail: expect.stringContaining("is not signed in"), fix: expect.stringContaining("claude auth login") });
     expect(await first({ status: undefined })).toMatchObject({ level: "missing", detail: expect.stringContaining("is not signed in") });

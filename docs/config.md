@@ -28,7 +28,7 @@ Beside a `config.yaml` - another tool's, say - the new file takes from it the ke
 
 ### A Claude subscription
 
-`--vendor claude-code` runs every agent on your Claude Pro, Max or Team subscription instead of an API key, through Claude Code and [pi-claude-code](https://github.com/earendil-works/pi-claude-code), a [pi](https://pi.dev) extension: `claude-code/claude-opus-5-5` to talk to, `claude-code/claude-sonnet-5` to code. It needs the extension installed (`pi install https://github.com/earendil-works/pi-claude-code`) and Claude Code signed in (`claude auth login`), and none of `ANTHROPIC_API_KEY` and the like set; `turri doctor` checks all of it. Setting it up, its models, checking it yourself and what to know: [a Claude subscription](claude-subscription.md).
+`--vendor claude-code` runs every agent on your Claude Pro, Max or Team subscription instead of an API key, through Claude Code and [pi-claude-code](https://github.com/earendil-works/pi-claude-code), a [pi](https://pi.dev) extension: `claude-code/claude-opus-5-5` to talk to, `claude-code/claude-sonnet-5` to code. It needs the extension installed (`turri install https://github.com/earendil-works/pi-claude-code`) and Claude Code signed in (`claude auth login`), and none of `ANTHROPIC_API_KEY` and the like set; `turri doctor` checks all of it. Setting it up, its models, checking it yourself and what to know: [a Claude subscription](claude-subscription.md).
 
 ## Where it is read from
 

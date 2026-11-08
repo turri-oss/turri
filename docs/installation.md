@@ -22,6 +22,10 @@ turri               # pi, with turri's tools, skills and themes loaded
 
 The package is `@turri-dev/cli` - npm keeps the name `turri` back, as too like another package's - and the command it puts on your PATH is `turri`. `npm install -g @turri-dev/cli@next` gets the latest prerelease instead, built from the last commit on `main`. Installed again - `@latest` or `@next` - it replaces the one there. `turri --version` says which turri runs, and the [pi](https://pi.dev) under it: `turri 0.1.6 (pi 1.3.0)`, and from a clone its commit too.
 
+## pi packages
+
+turri installs no `pi` command of its own - npm puts only `turri` on your PATH - so [pi](https://pi.dev)'s package commands are turri's: `turri install <source>` installs a pi package - an extension, such as [pi-claude-code](https://github.com/earendil-works/pi-claude-code) for a [Claude subscription](claude-subscription.md) - for every turri (`-l` for this project only), `turri list` lists them, `turri update <source>` updates one and `turri update --extensions` all of them, and `turri remove <source>` takes one out. They are pi's own commands, run by the pi inside turri, and keep the packages in pi's folder, `~/.pi/agent`, where a `pi` you installed yourself finds them too. `turri update` never updates pi itself - pi is part of turri, and installing turri again updates both.
+
 ## An older turri runs
 
 The install worked, and a bare `turri` still runs an older turri: another one comes before it on your PATH - installed under another Node version (nvm, fnm, volta and the like give each its own global folder), or an old `npm link` of a clone. The shell takes the first it finds.

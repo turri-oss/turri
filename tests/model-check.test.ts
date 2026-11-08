@@ -101,7 +101,7 @@ describe("checking the models answer", () => {
     expect(verdict).toMatchObject({
       ok: false,
       problem: "claude-code - Claude subscription (Claude Code) - is not there",
-      fix: expect.stringContaining("pi install https://github.com/earendil-works/pi-claude-code"),
+      fix: expect.stringContaining("turri install https://github.com/earendil-works/pi-claude-code"),
     });
     expect(verdict!.ok === false && verdict!.fix).toContain("claude auth login");
   });

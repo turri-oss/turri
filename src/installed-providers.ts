@@ -22,7 +22,7 @@ export const LOADING_PROVIDERS = "TURRI_LOADING_PROVIDERS";
 export const EXTENSION_PROVIDERS: Record<string, { label: string; install: string; signIn: string }> = {
   "claude-code": {
     label: "Claude subscription (Claude Code)",
-    install: "pi install https://github.com/earendil-works/pi-claude-code",
+    install: "turri install https://github.com/earendil-works/pi-claude-code",
     signIn: "Claude Code installed (npm install -g @anthropic-ai/claude-code) and signed in to your Claude Pro or Max subscription: claude auth login",
   },
 };

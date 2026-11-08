@@ -21,13 +21,13 @@ turri does not depend on the extension: it finds it as pi does, once you have in
    claude auth login
    ```
 
-2. **The extension**, installed into pi - turri runs on pi, and reads what pi has installed:
+2. **The extension**, installed with turri - turri runs on [pi](https://pi.dev), and `turri install` is pi's own `install`, run by the pi inside turri: no `pi` of your own needed:
 
    ```bash
-   pi install https://github.com/earendil-works/pi-claude-code
+   turri install https://github.com/earendil-works/pi-claude-code
    ```
 
-   `pi list` shows it; `pi update` updates it; `pi remove https://github.com/earendil-works/pi-claude-code` takes it out.
+   `turri list` shows it; `turri update https://github.com/earendil-works/pi-claude-code` updates it; `turri remove https://github.com/earendil-works/pi-claude-code` takes it out. A `pi` you installed yourself sees the same packages, as they are kept in pi's own folder, `~/.pi/agent`.
 
 3. **Nothing in the environment that points Claude Code elsewhere.** The extension refuses to run while any of these is set - each sends Claude Code to an API key or another backend, not the subscription: `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_FOUNDRY_API_KEY`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, `CLAUDE_CODE_USE_FOUNDRY`. Unset them where turri starts - your shell's profile, say. A project that also uses `anthropic/...` models with a key cannot run both from one shell.
 
@@ -74,10 +74,10 @@ Each step says what you should see; the first one that does not is where it stop
 
    `"loggedIn": true`, and a `"subscriptionType"` - `pro`, `max` or `team`. None, and Claude Code is signed in with a Console API key instead: `claude auth logout`, then `claude auth login` with the subscription's account.
 
-2. **pi has the extension.**
+2. **The extension is installed.**
 
    ```bash
-   pi list
+   turri list
    ```
 
    lists `https://github.com/earendil-works/pi-claude-code`.
@@ -121,7 +121,7 @@ The desktop app runs turri's chats itself, and finds the extension as the termin
 
 | what you see | what to do |
 | --- | --- |
-| `claude-code/... need pi-claude-code, pi's extension for a Claude subscription, which is not installed` | `pi install https://github.com/earendil-works/pi-claude-code` |
+| `claude-code/... need pi-claude-code, pi's extension for a Claude subscription, which is not installed` | `turri install https://github.com/earendil-works/pi-claude-code` |
 | `claude-code - Claude subscription (Claude Code) - is not there` | the same: the extension is not installed, so pi has no `claude-code` provider |
 | `Claude Code (claude) is not on the PATH` | `npm install -g @anthropic-ai/claude-code`, or name it in `PI_CLAUDE_CODE_COMMAND` |
 | `Claude Code (...) is not signed in` | `claude auth login` |

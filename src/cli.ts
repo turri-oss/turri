@@ -91,6 +91,25 @@ const SETUP_COMMANDS: Record<string, string> = {
   doctor: "check what turri needs - in a project, what it needs of this machine, and that its models answer",
 };
 
+/**
+ * pi's package commands, run by pi itself: someone who installs turri has no `pi` on the PATH - npm links only turri's
+ * own command - and turri reads the packages pi installs (installed-providers.ts). `update` updates packages only: pi's
+ * own `update` with no source updates pi, and turri's pi is a pinned dependency (`updatesPi`).
+ */
+const PACKAGE_COMMANDS: Record<string, string> = {
+  install: "install a pi package for every turri, -l for this project only - pi-claude-code for a Claude subscription, say",
+  update: "update a pi package, or --extensions for all of them",
+  remove: "remove a pi package `turri install` put in",
+  list: "the pi packages installed, yours and this project's",
+};
+
+/** Whether `update <args>` would update pi itself, as pi reads it: no package named, `self` or `pi`, `--self` or `--all`. */
+function updatesPi(args: string[]): boolean {
+  if (args.some((arg) => arg === "--self" || arg === "--all" || arg === "self" || arg === "pi")) return true;
+  if (args.some((arg) => arg === "-h" || arg === "--help" || arg === "--extensions" || arg === "--extension" || arg === "--models")) return false;
+  return !args.some((arg) => !arg.startsWith("-"));
+}
+
 const USAGE = [
   "usage: turri [options]          open the conversation here: pi, with turri's tools and themes loaded",
   "       turri <command> [args]",
@@ -104,6 +123,7 @@ const USAGE = [
   ...Object.entries(COMMANDS).map(([name, { blurb }]) => `  ${name.padEnd(12)} ${blurb}`),
   "",
   ...Object.entries(SETUP_COMMANDS).map(([name, blurb]) => `  ${name.padEnd(12)} ${blurb}`),
+  ...Object.entries(PACKAGE_COMMANDS).map(([name, blurb]) => `  ${name.padEnd(12)} ${blurb}`),
   "",
   "Run `turri <command> --help` for that command's options.",
   "",
@@ -154,7 +174,7 @@ if (command === "-v" || command === "--version") {
 // The AWS region the project's Bedrock models need, set before any model is called - here, and in the pi the chat starts,
 // which inherits it - unless the person set one (bedrock-region.ts). The models named on the command line count too. A
 // command that calls no model is left alone.
-if (!["parse", "drift", "lineage", "ledger", "init-config"].includes(command ?? "")) {
+if (!["parse", "drift", "lineage", "ledger", "init-config", ...Object.keys(PACKAGE_COMMANDS)].includes(command ?? "")) {
   const { applyBedrockRegion } = await import("./bedrock-region.ts");
   const named = argv.flatMap((arg, at) =>
     ["--harness-model", "--coding-model", "--model"].includes(arg) ? [argv[at + 1] ?? ""] : arg.startsWith("--harness-model=") || arg.startsWith("--coding-model=") || arg.startsWith("--model=") ? [arg.slice(arg.indexOf("=") + 1)] : [],
@@ -174,6 +194,17 @@ if (command === "init-config") {
 if (command === "doctor") {
   const { main } = await import("./setup.ts");
   process.exit(await main(rest));
+}
+
+// pi's own main answers them, as `pi install` would - into the same ~/.pi/agent turri reads - and exits.
+if (Object.hasOwn(PACKAGE_COMMANDS, command)) {
+  if (command === "update" && updatesPi(rest)) {
+    console.error("turri update updates pi packages: name one (turri update <source>), or --extensions for all of them. pi is part of turri - npm install -g @turri-dev/cli@latest updates both.");
+    process.exit(1);
+  }
+  const { main } = await import("@earendil-works/pi-coding-agent");
+  await main(argv);
+  process.exit(process.exitCode ?? 0);
 }
 
 const entry = COMMANDS[command];
