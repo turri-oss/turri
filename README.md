@@ -7,7 +7,9 @@
   <a href="https://discord.com/invite/REJzFmVQfC"><img src="https://img.shields.io/badge/Discord-join%20the%20community-5865F2?logo=discord&logoColor=white" alt="Join the turri Discord"></a>
 </p>
 
-**turri** builds regenerative software: what lasts is the system's intent, and the code is derived from it - cheap to throw away and build again. You tell **turri** what the system should do; **turri** writes that down as durable intent, with the tests that say when it is met, and builds the code from it. From then on the durable intent is the source of truth: as it changes, the code is regenerated from it rather than patched in place, and never left to drift from it.
+**turri** is the first coding agent with the power of [regenerative software](https://chadfowler.com/regenerative-software/). It gives you back control over engineering while the agent handles the coding. Instead of maintaining code, you maintain the system's definition (specs, tests, and ADRs) structured using [\*\*\*plain](https://plainlang.org/). You describe what you want, **turri** captures it as a durable, reviewable system definition, and generates the code from it. As your intent evolves, **turri** regenerates the affected code rather than patching it prompt after prompt. The system definition remains the source of truth, and tests verify that the generated code conforms to it.
+
+Code is disposable, system definition is durable.
 
 **turri** is named after *Turritopsis dohrnii*, the immortal jellyfish that regenerates itself from its young form, again and again - as **turri** regenerates the code from the durable intent - see [the name](#the-name).
 
@@ -15,53 +17,53 @@
 
 ## Quick start
 
-**turri** is built on [pi](https://pi.dev), the coding agent, and runs wherever [pi](https://pi.dev) runs: macOS, Linux, WSL; native Windows best effort, with Git Bash. You need git, bash and [Node](https://nodejs.org/en/download) 22.19 or newer - a Linux distribution's own `nodejs` package is often older. The agents use this machine's toolchains, fenced by a command check and an audit everywhere, and an OS sandbox where the OS has one - Seatbelt on macOS, bubblewrap on Linux (`apt install bubblewrap`) - see [installation](docs/installation.md#installation).
+**turri** is built on [pi](https://pi.dev/) and runs on macOS, Linux, and WSL (native Windows via Git Bash is best effort). You'll need Git, Bash, and Node.js 22.19+.
+
+### Install
 
 ```bash
-npm install -g @turri-dev/cli # puts `turri` on your PATH
-turri --version              # the version you installed? if not, see docs/installation.md#an-older-turri-runs
-turri doctor              # checks the machine
+npm install -g @turri-dev/cli
+turri doctor
 ```
 
-To follow `main` as it moves, or work on turri itself, run it [from a clone](#from-a-clone) instead.
+`turri doctor` checks your environment and tells you how to fix any missing dependencies. See the [installation guide](docs/installation.md) for details.
 
-`doctor` checks for Node 22.19+, bash, the OS sandbox and a model provider for [pi](https://pi.dev); in a project, the toolchains its modules need, what its testing scripts run against this machine, and that each model `config.turri.yaml` names answers with your credentials. It changes nothing without asking: when a check fails - the OS sandbox does not start, say - it says why, and the command for you to run. Run it again whenever something breaks. What each check means: [installation](docs/installation.md).
+### Configure your models
 
-Then start it in your project, signed in to your model providers:
+**turri** uses a capable model to define the system and plan the work, and a smaller, cheaper model to write the code. It supports any model provider available through [pi](https://pi.dev/), and some subscriptions too.
 
 ```bash
-cd ~/my-project
-turri init-config              # asks which vendor you use: Anthropic, OpenAI, Google, Amazon Bedrock, a Claude subscription, or other
-export ANTHROPIC_API_KEY=...   # the key it names - or skip it, and type /login in turri once it has started
+mkdir my-project && cd my-project
+turri init-config
+```
+
+Choose your model provider, then sign in with `/login` once **turri** has started.
+
+### Build your first app
+
+```bash
 turri
 ```
 
-`turri init-config` asks which vendor's models you use and writes the project's `config.turri.yaml` with two of theirs - a capable one you talk to, which writes the durable intent and plans the work, and a smaller, cheaper one that writes the code. For Anthropic:
+Then simply describe what you want:
 
-```yaml
-harness-model: anthropic/claude-opus-5-5:medium  # you talk to it
-coding-model: anthropic/claude-haiku-5-5:low     # it writes the code
-```
+> Build a small API where users can register and sign in.
 
-To skip the question, name the vendor - `anthropic`, `openai`, `google`, `amazon-bedrock` (with `--maker` and `--region`), `claude-code` - your Claude Pro or Max subscription, through Claude Code ([how](docs/claude-subscription.md)) - or `other`:
+**turri** captures your intent in [\*\*\*plain](https://plainlang.org/), generates the code, and validates it against the system definition.
 
-```bash
-turri init-config --vendor anthropic
-```
+As your requirements evolve, just describe the changes. **turri** updates the system definition and regenerates the affected code.
 
-It then tells you which API key to set - or to type `/login` once **turri** is running instead. **turri** loads the `config.turri.yaml` in the folder you start it from. Below the two models, the file sets every other setting to its default - change any of them in the file, or from the chat with `/turri-config`. Any other model works too: [models](#models).
+### Other ways to run turri
 
-Once `turri` is running, say what you want - `a small API where people can register and sign in` - and **turri** starts the project and regenerates it at once.
+Prefer a graphical interface? Try [turri desktop](https://github.com/turri-oss/turri-desktop).
 
-No project of your own yet? Build one of [**the examples**](examples/README.md) with turri, step by step.
+You can also run **turri** [in Docker](docker/README.md), or [from a clone](#from-a-clone) to follow `main` or work on **turri** itself.
 
-Rather not install Node and the rest? **turri** also runs in Docker, from one image: [turri in Docker](docker/README.md).
-
-Choosing models: [models](#models); what to do next: [use](#use).
+For more, see [Using **turri**](docs/using.md) and [Examples](examples/README.md).
 
 ### From a clone
 
-In place of the npm package - for the latest of `main`, or to change turri itself:
+To run the local version of **turri** instead of the npm package:
 
 ```bash
 git clone git@github.com:turri-oss/turri.git && cd turri
@@ -70,47 +72,41 @@ npm link        # puts `turri` on your PATH, pointing at this clone
 turri doctor
 ```
 
-The clone runs its TypeScript sources directly, so there is nothing to build. When new commits land:
-
-```bash
-git pull
-npm install     # picks up any dependency that changed
-```
-
-A **turri** already running keeps the code it started with - start it again to run what you pulled. More in [installation](docs/installation.md#from-a-clone).
+The clone runs its TypeScript sources directly, so there is nothing to build. To pick up new commits, run `git pull` and `npm install`, then start **turri** again - a running one keeps the code it started with. More in the [installation guide](docs/installation.md#from-a-clone).
 
 ## Why
 
-Software has always been maintained: written once, then patched for as long as it lives and everything learnt while building it lived only in the code. Coding agents code in minutes what took a team weeks, and they get better at it with every model, so code is now cheap and a disposable asset. It no longer has to be maintained - it can be regenerated. What has to last instead is the intent: what the system should do, and the tests that say whether it does. Get that right and the code is replaceable. Get it wrong and no agent, however capable, can guess what you meant.
+Coding agents write in minutes what used to take teams weeks. But while coding got faster, our ability to understand and review code didn't. We increasingly become accountable for software we don't fully understand.
 
-Code that is patched, prompt after prompt, drifts: every misunderstanding stays in it, and the next change is made on top. When the software can always be regenerated from durable information instead, that understanding is written down - explicit, reviewable and tested - and it evolves with the software rather than against it.
+Software built with coding agents grows prompt after prompt, patch upon patch. Decisions and reasoning get lost in chat sessions, misunderstandings accumulate in the code, and each change builds on top of the last. Eventually, neither the developer nor the agent fully understands the system anymore.
 
-## How it differs from ye old coding agent
+Better models and more elaborate agent workflows don't solve the fundamental problem: code remains the source of truth, and humans are expected to understand and maintain something they can no longer meaningfully review.
 
-With a coding agent you work on code: you ask for a change, it edits the code, and you review the code it wrote.
+Regenerative software flips the traditional model of software development. Instead of maintaining code and trying to preserve the reasoning behind it, we maintain the system's definition and regenerate the code from it.
 
-With **turri** you work on the durable intent. You say what the software must do, and **turri** updates durable intent and can always regenerate the code from that. You don't review the code or keep it - you review and keep the intent: what the software must do, and what must hold as it changes. The code is a disposable artefact, rebuilt from it whenever it changes.
+With **turri**, you engineer the system's definition instead of maintaining its implementation. The agent writes the code, but you retain the understanding and control over what gets built.
 
-| | ye old coding agent | **turri** |
-| --- | --- | --- |
-| **What you maintain** | the code, patched prompt after prompt | the durable intent |
-| **What gets built, in what order** | whatever the agent decides, as it goes | the code is built from the durable intent step by step, in a fixed order, so no intent is skipped |
-| **Who writes the code** | the agent, and it decides everything else too | the agent - **turri** decides what it builds, the agent only how, line by line |
-| **How it works** | improvised, differently every time | a developer workflow baked in - build, unit test, review, conformance test, regression test, commit - the same every time |
-| **What counts as done** | the agent says so | every unit of intent is tested and validated by **turri** itself: all its tests pass, or the work goes back |
-| **Tests** | written and changed by the agent that writes the code | written from the durable intent, apart from the code; the agent writing the code cannot change them |
-| **When it gets stuck** | it keeps going, or quietly works around the problem | it stops and tells you which intent to clarify |
+**The goal isn't to write code faster. It's to understand your software again.**
 
-## How it works
+For the story behind **turri**, read [Why I built turri](https://turri.dev/blog/why-i-built-turri/).
 
-**turri** captures the durable intent in [\*\*\*plain](https://plainlang.org/docs/), a language for saying what software should do. \*\*\*plain breaks the intent down into functionalities - small units, each a single thing the software does - and **turri** regenerates the code from them piece by piece.
+## Code is disposable
 
-1. **Define.** You say what the software should do; **turri** writes it down as \*\*\*plain.
-2. **Review and refine.** You review \*\*\*plain and change it with **turri** until it says what you mean.
-3. **Regenerate.** Agents write the code; **turri** decides what they write and when, step by step, the same way every time.
-4. **Validate.** Agents write conformance tests from \*\*\*plain; **turri** runs them, and keeps the code only when it does what \*\*\*plain says.
+### 1. Define
 
-These are not phases, one after the other: you don't spend hours writing \*\*\*plain and then hours waiting for the code. You go round the loop in small steps, in conversation with **turri** - while you refine the next functionality, the one before it is already being regenerated and validated. A bug is fixed in \*\*\*plain; a new behaviour goes into \*\*\*plain; and the next regeneration carries it. Ask to try it at any time: **turri** puts what is built in `dist` and starts it on your machine - an app, and it tells you where to open your browser.
+Describe what you want to build or change. **turri** captures your intent as a structured system definition using [\*\*\*plain](https://plainlang.org/), including specifications, architectural decisions, and tests.
+
+### 2. Review
+
+Review the system definition before implementation begins. Make sure it describes what you actually want, without getting lost in implementation details.
+
+### 3. Regenerate
+
+**turri** generates code from the approved definition. When requirements change, it regenerates the affected parts of the implementation rather than accumulating patches on top of existing code.
+
+### 4. Prove
+
+**turri** verifies the generated implementation against independently defined tests. The coding agent cannot change the tests to make its implementation pass. If validation fails, **turri** iterates until the implementation conforms to the definition.
 
 ## The name
 
