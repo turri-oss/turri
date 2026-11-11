@@ -170,8 +170,10 @@ describe("an agent's walls, in its system prompt", () => {
     // What would otherwise cost it a command or two to find out.
     expect(fence.note).toContain("Temporary files go in `$TMPDIR`: `/tmp` is outside your walls.");
     expect(fence.note).toContain("`ps` may show nothing but what you started: check a server you started with `kill -0 $!`, its log, or a request to it.");
-    expect(fence.note).not.toMatch(/VM|every attempt fails|cheat/);
-    expect(fence.note).not.toContain(".turri");
+    // The folder's path is random (mkdtemp) and may spell anything - `qVMpbj` once did.
+    const prose = fence.note.replaceAll(code, "");
+    expect(prose).not.toMatch(/VM|every attempt fails|cheat/);
+    expect(prose).not.toContain(".turri");
   });
 
   it("tells the conformance agent it reads the code and writes only tests, in its shell too - and the code fixer the other way round", async () => {
