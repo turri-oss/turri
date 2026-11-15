@@ -10,6 +10,10 @@ name: publish
 #     touched by this path, so `npm install -g @turri-dev/cli` never gets a
 #     prerelease.
 #
+# Run by hand with a release's tag, it announces that release on Discord again -
+# one whose announcement did not go out - and does nothing else: no test, no
+# publish.
+#
 # Auth is OIDC (npm trusted publishing) - no NPM_TOKEN secret. The trusted
 # publisher is configured on npmjs.com against this repo and this exact
 # workflow filename (publish.yml), which is why the prerelease job lives here
@@ -20,6 +24,12 @@ on:
     types: [published]
   push:
     branches: [main]
+  # A published release announced again, by hand: the workflow as main has it.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "the release to announce: its tag, v0.2.3"
+        required: true
 
 # Least privilege by default: jobs get no GITHUB_TOKEN scopes unless they
 # opt in below.
@@ -35,6 +45,7 @@ env:
 jobs:
   test:
     name: Test
+    if: ${{ github.event_name != 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -136,10 +147,12 @@ jobs:
   # settings -> Integrations -> Webhooks); without it the job says so and passes.
   # The release's notes reach the payload only through the environment and jq,
   # never through an expression, so nothing in them can become a command.
+  # Run by hand, the release is read from GitHub - published, never a
+  # pre-release - and posted only once npm has its version.
   announce:
     name: Announce on Discord
     needs: publish
-    if: ${{ github.event_name == 'release' && !github.event.release.prerelease }}
+    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'release' && !github.event.release.prerelease && needs.publish.result == 'success')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
@@ -149,9 +162,10 @@ jobs:
         env:
           WEBHOOK: ${{ secrets.DISCORD_RELEASE_WEBHOOK }}
           NAME: ${{ github.event.release.name }}
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
           URL: ${{ github.event.release.html_url }}
           NOTES: ${{ github.event.release.body }}
+          REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
           if [ -z "$WEBHOOK" ]; then
@@ -164,6 +178,23 @@ jobs:
           if [[ "$WEBHOOK" != https://* ]]; then
             echo "::warning::DISCORD_RELEASE_WEBHOOK is not an https:// URL - no announcement posted"
             exit 0
+          fi
+          # Run by hand: the release read from GitHub's public API, with no token.
+          if [ -z "$URL" ]; then
+            release=$(curl --silent --show-error --fail --retry 3 -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$REPOSITORY/releases/tags/$TAG") \
+              || { echo "::error::no published release $TAG"; exit 1; }
+            if [ "$(printf '%s' "$release" | jq -r '.prerelease')" = true ]; then
+              echo "::notice::$TAG is a pre-release - no announcement posted"
+              exit 0
+            fi
+            NAME=$(printf '%s' "$release" | jq -r '.name // ""')
+            URL=$(printf '%s' "$release" | jq -r '.html_url')
+            NOTES=$(printf '%s' "$release" | jq -r '.body // ""')
+            if ! npm view "$PACKAGE@${TAG#v}" version >/dev/null 2>&1; then
+              echo "::error::$PACKAGE@${TAG#v} is not on npm - nobody is told to install it"
+              exit 1
+            fi
           fi
           # Discord holds an embed's description to 4096 characters: longer
           # notes are cut and point to the release for the rest.
