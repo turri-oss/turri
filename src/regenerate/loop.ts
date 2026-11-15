@@ -676,23 +676,6 @@ export function createWorkLoop(options: {
   };
 
   /**
-   * The functional specs conform is asked for, as the spec has them now - refused when one is not in the spec, or has no
-   * scenarios to test.
-   */
-  const askedSpecs = (moduleName: string, spec: MarshalledPlainSource, funcIds: string[]): void => {
-    const items = (spec[FUNCTIONAL_REQUIREMENTS] as Array<{ id: string }> | undefined) ?? [];
-    const unknown = funcIds.filter((funcId) => !items.some((item) => item.id === funcId));
-    if (unknown.length > 0) throw new Error(`${moduleName} has no functional spec ${namesOf(moduleName, unknown)}. Nothing was started.`);
-    const untested = funcIds.filter((funcId) => !hasScenarios(items.find((item) => item.id === funcId)));
-    if (untested.length > 0) {
-      throw new Error(
-        `${namesOf(moduleName, untested)} ${untested.length === 1 ? "has" : "have"} no scenarios - no test plain file - so there is nothing to test: ` +
-          "write the conformance or acceptance scenarios first, with change_plain, and their tests are written once the code is built. Nothing was started.",
-      );
-    }
-  };
-
-  /**
    * Whether a codebase lacks a testing script of this kind that is being written in the background now: it waits for it,
    * rather than fail for want of it, and is looked at again once the run ends.
    */
@@ -1664,20 +1647,8 @@ export function createWorkLoop(options: {
             "They are turned on in the chat - by asking for them - or with conformance-tests: true in config.turri.yaml. Nothing was started.",
         );
       }
-      const named = request.funcIds === undefined ? undefined : funcIdsNamed(self.moduleName, [...new Set(request.funcIds)]);
-      const ownSpec = chainSpec(own).tree;
-      const withScenarios = testedFuncIds(ownSpec);
-      // Refused before anything is touched: nothing to test, a functional spec not there, or one with no scenarios.
-      if (withScenarios.length === 0) {
-        throw new Error(
-          `No functional spec of ${self.moduleName} has scenarios - none has a test plain file - so there is nothing to test: ` +
-            "write the conformance or acceptance scenarios first, with change_plain, and their tests are written once the code is built. Nothing was started.",
-        );
-      }
-      if (named !== undefined && named.length > 0) askedSpecs(self.moduleName, ownSpec, named);
-      // A step of adding tests skipped - its test reqs, or the conformance testing script for its stack: refused, naming it.
-      const gap = testingGap({ moduleName: self.moduleName, plainFile: self.plainFile, tree: ownSpec, buildDir: self.buildDir });
-      if (gap !== undefined) throw new Error(`${gap.text} Nothing was started.`);
+      // Refused before anything is touched: a functional spec not there, nothing to test, or a step of adding tests skipped.
+      const { named, spec: ownSpec, withScenarios } = conformanceAskedIn(own, request.funcIds);
       const tested = new Set(((readRecord(conformanceDirFor(self.moduleName, modulesRoot(projectDirOf(self.plainFile))))?.[FUNCTIONAL_REQUIREMENTS] as Array<{ id?: string }> | undefined) ?? []).map((item) => item.id));
       const toWrite = (named !== undefined && named.length > 0 ? named : withScenarios).some((funcId) => !tested.has(funcId));
       let wentBack = false;
@@ -2065,6 +2036,55 @@ export function funcIdsNamed(module: string, names: string[]): string[] {
     if (named !== module) throw new Error(`${name} is not a functional spec of ${module}: name ${named}'s .plain file for it. Nothing was done.`);
     return funcId;
   });
+}
+
+/**
+ * What conform is asked for in a module, checked from its ***plain alone - quick, before anything is said or touched: the
+ * functional specs named, as func-ids, and the module's spec and those of its functional specs with scenarios. Throws,
+ * saying why nothing was started, when a functional spec named is not there or has no scenarios, when none has any, or
+ * when a step of adding tests is skipped - no test reqs, no conformance testing script. Conformance tests off are not
+ * checked: the conform tool is refused for that, and /conform turns them on.
+ */
+function conformanceAskedIn(own: ChainEntry[], funcIds: string[] | undefined): { named: string[] | undefined; spec: MarshalledPlainSource; withScenarios: string[] } {
+  const self = tipOf(own);
+  const named = funcIds === undefined ? undefined : funcIdsNamed(self.moduleName, [...new Set(funcIds)]);
+  const spec = chainSpec(own).tree;
+  const withScenarios = testedFuncIds(spec);
+  if (withScenarios.length === 0) {
+    throw new Error(
+      `No functional spec of ${self.moduleName} has scenarios - none has a test plain file - so there is nothing to test: ` +
+        "write the conformance or acceptance scenarios first, with change_plain, and their tests are written once the code is built. Nothing was started.",
+    );
+  }
+  if (named !== undefined && named.length > 0) {
+    const items = (spec[FUNCTIONAL_REQUIREMENTS] as Array<{ id: string }> | undefined) ?? [];
+    const unknown = named.filter((funcId) => !items.some((item) => item.id === funcId));
+    if (unknown.length > 0) throw new Error(`${self.moduleName} has no functional spec ${namesOf(self.moduleName, unknown)}. Nothing was started.`);
+    const untested = named.filter((funcId) => !hasScenarios(items.find((item) => item.id === funcId)));
+    if (untested.length > 0) {
+      throw new Error(
+        `${namesOf(self.moduleName, untested)} ${untested.length === 1 ? "has" : "have"} no scenarios - no test plain file - so there is nothing to test: ` +
+          "write the conformance or acceptance scenarios first, with change_plain, and their tests are written once the code is built. Nothing was started.",
+      );
+    }
+  }
+  // A step of adding tests skipped - its test reqs, or the conformance testing script for its stack: refused, naming it.
+  const gap = testingGap({ moduleName: self.moduleName, plainFile: self.plainFile, tree: spec, buildDir: self.buildDir });
+  if (gap !== undefined) throw new Error(`${gap.text} Nothing was started.`);
+  return { named, spec, withScenarios };
+}
+
+/**
+ * Why conform would start nothing for a module, from its ***plain alone (`conformanceAskedIn`): undefined when it would
+ * go on. What /conform checks before it says anything.
+ */
+export function conformanceRefusal(plainFile: string, funcIds?: string[]): string | undefined {
+  try {
+    conformanceAskedIn(resolveRequiresChain(resolve(plainFile), [], undefined, { allowNoFunctionalities: true }), funcIds);
+    return undefined;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
 }
 
 /** What a job does, in a few words: its cases, each functional spec by its func-id - with its module, a module below's. */

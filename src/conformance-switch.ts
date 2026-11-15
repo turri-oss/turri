@@ -78,7 +78,7 @@ export function conformanceBlock(on: boolean): string {
           "go on with what they asked: the test reqs, the conformance testing script, the scenarios.",
           "You may offer them yourself, once and in a line, never turning them on unasked: when a functional spec could go wrong",
           "silently, or the coding agent keeps failing at one - say what they would add, and ask. A yes, and you call the tool.",
-          "Asked how they are turned on: by asking you, or /turri-config conformance-tests true.",
+          "Asked how they are turned on: by asking you, /conform - which turns them on and tests what is built - or /turri-config conformance-tests true.",
         ].join("\n"),
     "</conformance-tests>",
   ].join("\n");

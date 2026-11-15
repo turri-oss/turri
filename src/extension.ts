@@ -21,7 +21,7 @@ import { findTestScripts, scriptKindOfSkill } from "./regenerate/test-scripts.ts
 import { writingScript } from "./regenerate/scripts-being-written.ts";
 import { applyBedrockRegion } from "./bedrock-region.ts";
 import { bannerWarnings } from "./turri-versions.ts";
-import { conformanceBlock, conformanceTestsOnIn, CONFORMANCE_TOOLS, TURN_ON_TOOL, turnOnConformanceTests, turnOnConformanceTestsTool } from "./conformance-switch.ts";
+import { conformanceBlock, conformanceTestsOn, conformanceTestsOnIn, CONFORMANCE_TOOLS, TURN_ON_TOOL, turnOnConformanceTests, turnOnConformanceTestsTool } from "./conformance-switch.ts";
 import { BACKGROUND_NOTE, doneLine, failedTask, ownChanges, runDetails, skillRunDelivery, startedText } from "./background-skills.ts";
 import { createAskUserTool } from "./tools.ts";
 import { asksFromScratch, asksWholeChain, driftTool, fromWorkingDir, haltTool, loopReply, MODEL_PARAM, regenerateTool, STACK_PARAM, stopJob, WAIT_PARAM, withCallStack, WORKING_DIR_PARAM } from "./loop-tools.ts";
@@ -42,7 +42,7 @@ import { checkPlainFile, formatCheckResults } from "./plain/check.ts";
 import { checkPlainTool } from "./parse-tool.ts";
 import { changedFiles, projectFiles } from "./plain-files.ts";
 import { whyFailed } from "./regenerate/diagnose-job.ts";
-import { createWorkLoop, describeModules, isUpToDate, previewJobs, type WorkLoop } from "./regenerate/loop.ts";
+import { conformanceRefusal, createWorkLoop, describeModules, isUpToDate, previewJobs, type WorkLoop } from "./regenerate/loop.ts";
 import { createTestAdvisor, type TestAdvisor } from "./regenerate/advisor-runs.ts";
 import { advisorDir } from "./regenerate/advisor-records.ts";
 import { bindAdvisor, evaluateTestsTool, TEST_ADVISOR_BLOCK, verdictDelivery } from "./advisor-chat.ts";
@@ -811,7 +811,7 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
   registerRegenerate(pi, cwd, jobs);
   registerDrift(pi, cwd, jobs);
   registerGlimpse(pi, cwd, jobs);
-  registerBind(pi, cwd, jobs);
+  registerBind(pi, cwd, jobs, (plainFile) => turnOnConformance(session, plainFile));
   registerRenderModels(pi);
   registerDeploy(pi, cwd, jobs, deployStates.get(jobs) ?? createDeployState());
   registerSteering(pi, cwd);
@@ -1291,38 +1291,12 @@ function registerRegenerate(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
       const command = `/regenerate ${args.trim()}`.trim();
       await echoCommand(pi, command);
       const say = (text: string, level: "info" | "warning" | "error") => shownAfterCommand(pi, ctx, command, text, level, true);
-      const all = args.trim().split(/\s+/).filter((word) => word !== "");
-      const [first = ""] = all;
-      const { named, rest } = moduleNamedFirst(cwd, all);
-      if (named === undefined && first.endsWith(".plain")) {
-        say(`There is no ${first} here.`, "error");
-        return;
-      }
+      const picked = await commandModule(cwd, ctx, args, say, { verb: "regenerate", outcome: "regenerated" });
+      if (picked === undefined) return;
+      const { plainFile } = picked;
       // Functional specs named first, each as module:func-id, as on the command line; what follows them is guidance.
-      const words = rest;
-      const again: string[] = [];
-      while (words.length > 0 && /^[^\s:]+:[a-z0-9-]+,?$/.test(words[0]!)) again.push(words.shift()!.replace(/,$/, ""));
+      const { funcIds: again, rest: words } = funcIdsNamedFirst(picked.rest);
       const guidance = words.join(" ").trim();
-      let plainFile = named;
-      if (plainFile === undefined) {
-        const modules = defaultMapFiles(cwd);
-        if (modules.length === 0) {
-          say("No .plain file to regenerate: name one - /regenerate app.plain - or set module: in config.turri.yaml.", "warning");
-          return;
-        }
-        if (modules.length === 1 || !ctx.hasUI) plainFile = modules[0]!;
-        else {
-          const label = (file: string) => relative(cwd, file) || basename(file);
-          const picked = await ctx.ui.select("Regenerate which module?", modules.map(label));
-          plainFile = modules.find((file) => label(file) === picked);
-          if (plainFile === undefined) return;
-        }
-      }
-      const check = checkPlainFile(plainFile);
-      if (!check.ok) {
-        say(`${relative(cwd, plainFile) || plainFile} does not parse, so nothing can be regenerated from it yet:\n${formatCheckResults([check])}`, "error");
-        return;
-      }
       // From scratch - started over, its code deleted - asked in the person's words: started at once, as asked.
       const scratch = asksFromScratch(guidance);
       // The whole chain with it - "from scratch, the whole chain" - every module it requires built again from the bottom.
@@ -1378,6 +1352,61 @@ function registerRegenerate(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
 
 
 /**
+ * The module a /regenerate or /conform is for, and the words after it: the one its first words name, else the one
+ * `module:` names, else the folder's top modules to pick from - checked to parse. Undefined, said why, when there is
+ * none to take, or the person picked none.
+ */
+async function commandModule(
+  cwd: string,
+  ctx: ExtensionContext,
+  args: string,
+  say: (text: string, level: "info" | "warning" | "error") => void,
+  words: { verb: "regenerate" | "conform"; outcome: string },
+): Promise<{ plainFile: string; rest: string[] } | undefined> {
+  const all = args.trim().split(/\s+/).filter((word) => word !== "");
+  const [first = ""] = all;
+  const { named, rest } = moduleNamedFirst(cwd, all);
+  if (named === undefined && first.endsWith(".plain")) {
+    say(`There is no ${first} here.`, "error");
+    return undefined;
+  }
+  let plainFile = named;
+  if (plainFile === undefined) {
+    const modules = defaultMapFiles(cwd);
+    if (modules.length === 0) {
+      say(`No .plain file to ${words.verb}: name one - /${words.verb} app.plain - or set module: in config.turri.yaml.`, "warning");
+      return undefined;
+    }
+    if (modules.length === 1 || !ctx.hasUI) plainFile = modules[0]!;
+    else {
+      const label = (file: string) => relative(cwd, file) || basename(file);
+      const picked = await ctx.ui.select(`${words.verb === "regenerate" ? "Regenerate" : "Conform"} which module?`, modules.map(label));
+      plainFile = modules.find((file) => label(file) === picked);
+      if (plainFile === undefined) return undefined;
+    }
+  }
+  const check = checkPlainFile(plainFile);
+  if (!check.ok) {
+    say(`${relative(cwd, plainFile) || plainFile} does not parse, so nothing can be ${words.outcome} from it yet:\n${formatCheckResults([check])}`, "error");
+    return undefined;
+  }
+  return { plainFile, rest };
+}
+
+/** The functional specs a command's words name first, each as module:func-id - a comma after one allowed - and the words after them. */
+export function funcIdsNamedFirst(words: string[]): { funcIds: string[]; rest: string[] } {
+  const rest = [...words];
+  const funcIds: string[] = [];
+  while (rest.length > 0 && /^[^\s:]+:[a-z0-9-]+,?$/.test(rest[0]!)) funcIds.push(rest.shift()!.replace(/,$/, ""));
+  return { funcIds, rest };
+}
+
+/** Whether a /conform's words after its functional specs ask for a pulse a functional spec - "one by one", "separately". */
+export function asksOneByOne(words: string): boolean {
+  return /\b(one[\s-]+(by|at)[\s-]+(one|a[\s-]+time)|separately|each[\s-]+(on[\s-]+its[\s-]+own|alone))\b/i.test(words);
+}
+
+/**
  * What a slash command showed the person: kept in the chat, where they read it, and put in the conversation as well -
  * unseen there - so that when they speak of it next ("fix it"), the agent knows what they saw. A command runs outside
  * the agent's turns, and a notification is gone in seconds and reaches no model. Given `react`, the agent is started on
@@ -1405,13 +1434,23 @@ export function shownAfterCommand(
 }
 
 /**
- * What the agent does once /regenerate has started pulses: a command's output alone leaves the chat silent, and the
- * person wondering whether to wait. It says what runs, and that they need not - and starts nothing itself.
+ * What the agent does once /regenerate or /conform has started pulses: a command's output alone leaves the chat silent,
+ * and the person wondering whether to wait. It says what runs, and that they need not - and starts nothing itself.
  */
 export const COMMAND_STARTED_REACTION =
-  "My pulses are regenerating from the person's /regenerate, in the background. Tell the person, in a line or two, what " +
+  "My pulses are running from the person's command, in the background. Tell the person, in a line or two, what " +
   "runs and what is planned - and that the two of us can go on with the ***plain, or anything else, meanwhile: they need " +
   "not wait for it. Start nothing for it: no regenerate, no check, no release - its end is told when it comes.";
+
+/**
+ * What the agent does when /conform started nothing: answers it at once - why, and what would let it start - and offers
+ * to do that, rather than leave the person with a refusal and a silent chat.
+ */
+export const CONFORM_REFUSED_REACTION =
+  "Nothing was started from the person's /conform, for the reason shown. Tell them now, in a line or two, why - in your " +
+  "words, not the message's - and what would let it start. Where it is something you can do - the scenarios, the test " +
+  "reqs, the conformance testing script, the ***plain fixed - offer to do it, and do it once they say yes; then /conform, " +
+  "or conform, runs their tests. Start nothing yet.";
 
 export const COMMAND_OUTCOME = "turri_command_outcome";
 
@@ -1471,7 +1510,7 @@ function registerDrift(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
   pi.registerTool(driftTool({ cwd, jobs, loop: (ctx) => workLoopFor(jobs, cwd, ctx) }));
 }
 
-function registerBind(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
+function registerBind(pi: ExtensionAPI, cwd: string, jobs: JobRegistry, turnOn: (plainFile: string) => string) {
   pi.registerTool(
     conformTool({
       cwd,
@@ -1480,6 +1519,80 @@ function registerBind(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
       wait: (ctx, asked) => shouldWait(ctx.mode, asked),
     }),
   );
+
+  // /conform: the same as the tool, from the person - a module's conformance tests written and run now, for the
+  // functional specs named or every one with scenarios, in one pulse unless asked for one a functional spec. Asking for
+  // them is asking for them on: off, they are turned on first. What would start nothing is found before anything is
+  // said, and the chat's agent answers it at once.
+  pi.registerCommand("conform", {
+    description: "Write and run a module's conformance tests now - the functional specs named, or every one with scenarios - in one pulse, or one a functional spec when asked; turned on first when they are off: /conform [module | file.plain] [module:func-id ...] [one by one]",
+    handler: async (args, ctx) => {
+      const command = `/conform ${args.trim()}`.trim();
+      await echoCommand(pi, command);
+      /** Nothing started: shown, and the agent told to answer it now. */
+      const refuse = (text: string) => shownAfterCommand(pi, ctx, command, text, "error", true, CONFORM_REFUSED_REACTION);
+      const picked = await commandModule(cwd, ctx, args, (text, level) => (level === "info" ? shownAfterCommand(pi, ctx, command, text, level, true) : refuse(text)), {
+        verb: "conform",
+        outcome: "conformance tested",
+      });
+      if (picked === undefined) return;
+      const { plainFile } = picked;
+      const { funcIds, rest } = funcIdsNamedFirst(picked.rest);
+      const words = rest.join(" ").trim();
+      const separately = asksOneByOne(words);
+      // Nothing but the functional specs and one by one: no planner reads guidance here, so other words are not dropped unsaid.
+      if (words !== "" && !separately) {
+        refuse(`/conform takes functional specs, each as module:func-id, and "one by one" - not "${words}". Nothing was started.`);
+        return;
+      }
+      // Off: turned on - written where the module's value comes from, every chat's tools switched - and said with what follows.
+      let turnedOn: string | undefined;
+      try {
+        if (!conformanceTestsOn(plainFile)) turnedOn = `Conformance tests are on now - conformance-tests: true, written in ${turnOn(plainFile)}.`;
+      } catch (error) {
+        refuse(`Conformance tests could not be turned on: ${error instanceof Error ? error.message : String(error)}. Nothing was started.`);
+        return;
+      }
+      const withTurnedOn = (text: string) => (turnedOn !== undefined ? `${turnedOn}\n${text}` : text);
+      // What would start nothing - no scenarios, a functional spec not there, a step of adding tests skipped - read from the
+      // ***plain alone, before anything is said.
+      let refusal: string | undefined;
+      try {
+        refusal = withCallStack(plainFile, undefined, () => conformanceRefusal(plainFile, funcIds.length > 0 ? funcIds : undefined));
+      } catch (error) {
+        refusal = error instanceof Error ? error.message : String(error);
+      }
+      if (refusal !== undefined) {
+        refuse(withTurnedOn(refusal));
+        return;
+      }
+      const module = basename(plainFile).replace(/\.plain$/, "");
+      const model = jobModel(ctx, "spec_changes", undefined, plainFile);
+      shownAfterCommand(pi, ctx, command, withTurnedOn(`Starting ${funcIds.length > 0 ? `the conformance tests of ${funcIds.join(", ")}` : `${module}'s conformance tests`}…`), "info", true);
+      await nextFrame();
+      // In the background, as /regenerate: a codebase built on the module may be stopped and deleted first.
+      void (async () => {
+        try {
+          const statuses = await withCallStack(plainFile, undefined, () =>
+            workLoopFor(jobs, cwd, ctx).conformance(plainFile, {
+              ...(funcIds.length > 0 ? { funcIds } : {}),
+              ...(model !== undefined ? { model } : {}),
+              ...(separately ? { separately: true } : {}),
+            }),
+          );
+          // Nothing to write: said in the loop's words - "up to date" alone speaks of the code, not its tests.
+          const upToDate = statuses.length > 0 && statuses.every(isUpToDate);
+          const note = statuses.find((status) => status.conformanceNote !== undefined)?.conformanceNote;
+          const text = upToDate ? `${(note ?? `the conformance tests of ${module} are written for it as built: there is nothing to write`).replace(/^./, (c) => c.toUpperCase())}.` : describeModules(statuses);
+          shownAfterCommand(pi, ctx, command, text, "info", true, upToDate ? undefined : COMMAND_STARTED_REACTION);
+        } catch (error) {
+          refuse(error instanceof Error ? error.message : String(error));
+        }
+      })().catch(() => {
+        // The chat let go meanwhile: there is nobody to say it to.
+      });
+    },
+  });
 }
 
 /**

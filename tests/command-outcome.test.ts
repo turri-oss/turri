@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { COMMAND_OUTCOME, COMMAND_STARTED_REACTION, echoCommand, moduleNamedFirst, shownAfterCommand } from "../src/extension.ts";
+import { asksOneByOne, COMMAND_OUTCOME, COMMAND_STARTED_REACTION, CONFORM_REFUSED_REACTION, echoCommand, funcIdsNamedFirst, moduleNamedFirst, shownAfterCommand } from "../src/extension.ts";
 
 function fakes(options: { appendFails?: boolean } = {}) {
   const notified: Array<{ text: string; level: string }> = [];
@@ -98,5 +98,40 @@ describe("the module a /regenerate names", () => {
   it("is none when no first words name one, every word left for what follows", () => {
     expect(moduleNamedFirst(root, ["models", "first"])).toEqual({ rest: ["models", "first"] });
     expect(moduleNamedFirst(root, [])).toEqual({ rest: [] });
+  });
+});
+
+describe("the functional specs a /regenerate or /conform names", () => {
+  it("are the module:func-ids typed first, a comma after one allowed, the words after them left", () => {
+    expect(funcIdsNamedFirst(["app:add-task,", "app:list-tasks", "one", "by", "one"])).toEqual({ funcIds: ["app:add-task", "app:list-tasks"], rest: ["one", "by", "one"] });
+  });
+
+  it("are none when the first word is not one, every word left", () => {
+    expect(funcIdsNamedFirst(["models", "first", "app:add-task"])).toEqual({ funcIds: [], rest: ["models", "first", "app:add-task"] });
+    expect(funcIdsNamedFirst([])).toEqual({ funcIds: [], rest: [] });
+  });
+});
+
+describe("a /conform asking for a pulse a functional spec", () => {
+  it("is heard in the ways people say it", () => {
+    for (const words of ["one by one", "one at a time", "separately", "each on its own", "One-by-one"]) expect(asksOneByOne(words)).toBe(true);
+  });
+
+  it("is not heard in other words", () => {
+    for (const words of ["", "all together", "in one pulse", "everyone"]) expect(asksOneByOne(words)).toBe(false);
+  });
+});
+
+describe("what the agent does when /conform started nothing", () => {
+  it("answers it at once - why, and an offer to do what would let it start - starting nothing unasked", () => {
+    expect(CONFORM_REFUSED_REACTION).toContain("Tell them now");
+    expect(CONFORM_REFUSED_REACTION).toContain("offer to do it, and do it once they say yes");
+    expect(CONFORM_REFUSED_REACTION).toContain("Start nothing yet");
+  });
+
+  it("starts a turn, as a follow-up, so the chat replies without the person typing", () => {
+    const { pi, ctx, sent } = fakes();
+    shownAfterCommand(pi, ctx, "/conform app.plain", "No functional spec of app has scenarios.", "error", true, CONFORM_REFUSED_REACTION);
+    expect(sent[0]!.options).toEqual({ triggerTurn: true, deliverAs: "followUp" });
   });
 });

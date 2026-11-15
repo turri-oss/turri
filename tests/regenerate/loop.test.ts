@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createJobRegistry } from "../../src/regenerate/jobs.ts";
 import type { JobCases } from "../../src/regenerate/drift.ts";
 import { moduleLanes } from "../../src/regenerate/lanes.ts";
-import { createWorkLoop, describeDrift, describeModules, skipsReview, UP_TO_DATE, type JobRunner } from "../../src/regenerate/loop.ts";
+import { conformanceRefusal, createWorkLoop, describeDrift, describeModules, skipsReview, UP_TO_DATE, type JobRunner } from "../../src/regenerate/loop.ts";
 import { codeTree, readRecord, writeCodeRecord, writeTestsRecord } from "../../src/regenerate/records.ts";
 import { recordHistory } from "../../src/regenerate/lineage.ts";
 import { copyRequiredCode } from "../../src/regenerate/requires.ts";
@@ -1053,6 +1053,18 @@ describe("the work loop", () => {
       await expect(loop.conformance("app.plain", { funcIds: ["app:say-hello", "app:say-thanks"] })).rejects.toThrow("app has no functional spec app:say-thanks. Nothing was started.");
       expect(code.ran).toEqual([]);
       expect(tests.ran).toEqual([]);
+    });
+
+    it("are refused from the ***plain alone, before any loop is asked, as conform refuses them", () => {
+      writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye."]));
+      const file = join(dir, "app.plain");
+      expect(conformanceRefusal(file)).toMatch(/^No functional spec of app has scenarios - none has a test plain file - so there is nothing to test/);
+      scenariosIn("say-hello");
+      expect(conformanceRefusal(file, ["app:say-goodbye"])).toMatch(/^app:say-goodbye has no scenarios - no test plain file.*Nothing was started\.$/);
+      expect(conformanceRefusal(file, ["app:say-thanks"])).toBe("app has no functional spec app:say-thanks. Nothing was started.");
+      expect(conformanceRefusal(file, ["say-hello"])).toMatch(/^Name the functional spec as app:say-hello/);
+      expect(conformanceRefusal(file)).toBeUndefined();
+      expect(conformanceRefusal(file, ["app:say-hello"])).toBeUndefined();
     });
 
     it("of functional specs with scenarios are listed last as planned once the code is built - and conform with nothing to write says so", async () => {
