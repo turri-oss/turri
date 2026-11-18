@@ -117,6 +117,17 @@ const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
  * exchange is therefore reported back, so the interview is visible while it happens and
  * survives in the tool's result afterwards.
  */
+/**
+ * What a question gets with nobody to answer it - print, json and rpc modes. What is the agent's to decide it decides; the
+ * person's own files it leaves as they are, as it would have without their yes - a testing script it finds wrong is said,
+ * not rewritten.
+ */
+export const NO_USER_ANSWER =
+  "No user is available to answer. Decide yourself what is yours to decide - the ***plain you were asked to write, a choice the " +
+  "***plain leaves open - and say in your report what you assumed. What you asked because it is the person's - their testing " +
+  "scripts, their config, any file of theirs you would replace or delete - leave as it is: say what you would change and why, " +
+  "and go on without it.";
+
 export function askUserVia(
   ctx: ExtensionContext,
   onExchange: (question: string, answer: string, said?: string) => void,
@@ -127,7 +138,7 @@ export function askUserVia(
 ): AskUser {
   return async (request) => {
     if (dialogs === undefined && !ctx.hasUI) {
-      return "No user is available to answer. Decide yourself, and say in your report what you assumed.";
+      return NO_USER_ANSWER;
     }
     // Declined - ctrl+c at it, the host's decline, or the turn that asked it stopped: the dialog open is closed, no other is
     // opened, and it comes back as DECLINED.

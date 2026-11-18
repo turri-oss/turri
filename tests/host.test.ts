@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { askUserVia, chatAskUserTool, createTurriCore, type TurriHost } from "../src/extension.ts";
+import { askUserVia, chatAskUserTool, createTurriCore, NO_USER_ANSWER, type TurriHost } from "../src/extension.ts";
 import { sideQuestionPrompt } from "../src/btw.ts";
 import { TURRI_IDENTITY } from "../src/identity.ts";
 import { stopJob } from "../src/loop-tools.ts";
@@ -69,6 +69,13 @@ describe("turri for a host that runs it itself", () => {
     expect(asked[0]).toMatchObject({ title: "Which CRM first?", context: "Both have an API." });
     expect(asked[0]!.options).toEqual(expect.arrayContaining(["HubSpot", "Salesforce"]));
     expect(kept).toEqual(["Which CRM first? Salesforce"]);
+  });
+
+  it("with nobody to answer - print mode - has the agent decide what is its own and leave the person's files as they are", async () => {
+    const answer = await askUserVia({ hasUI: false } as never, () => {})({ question: "Should I rewrite the unit testing script?", options: ["Yes", "No"] });
+    expect(answer).toBe(NO_USER_ANSWER);
+    expect(answer).toContain("Decide yourself what is yours to decide");
+    expect(answer).toContain("their testing scripts, their config, any file of theirs you would replace or delete - leave as it is");
   });
 
   it("asks the conversation's ask_user in the host's dialogs too", async () => {
