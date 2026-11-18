@@ -357,6 +357,8 @@ async function askOnce(session: AgentSession, text: string, onDelta?: (delta: st
       } else if (update.type === "thinking_start") {
         reportNow("thinking");
       } else if (update.type === "text_start") {
+        // Each message of the turn its own paragraph: the agent's words between tool calls never run into each other.
+        if (out !== "" && !/\s$/.test(out)) out += "\n\n";
         reportNow("writing");
       } else if (update.type === "toolcall_start") {
         callChars = 0;

@@ -229,6 +229,17 @@ describe("an agent's debug log", () => {
     expect(debugDirFor(root)).toBe(join(root, ".turri", "debug"));
   });
 
+  it("gives back each message of a turn as its own paragraph - the words between tool calls never run together", async () => {
+    const session = fakeSession([
+      update({ type: "text_start" }),
+      update({ type: "text_delta", delta: "I'll set the package up." }),
+      update({ type: "text_end" }),
+      update({ type: "text_start" }),
+      update({ type: "text_delta", delta: "All 16 tests pass." }),
+    ]);
+    expect(await ask(session as unknown as AgentSession, "Go.")).toBe("I'll set the package up.\n\nAll 16 tests pass.");
+  });
+
   it("leaves a session with no log alone", async () => {
     const session = fakeSession([update({ type: "text_start" }), update({ type: "text_delta", delta: "Hi." })]);
     expect(await ask(session as unknown as AgentSession, "Go.")).toBe("Hi.");
