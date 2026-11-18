@@ -191,7 +191,8 @@ export interface VersionFinding {
 export function versionFindings(options: { latest?: string; onPath?: TurriOnPath[]; self?: { version?: string; clone: boolean; root: string } } = {}): VersionFinding[] {
   const identity = options.self ?? (() => {
     const own = turriIdentity();
-    return { ...(own.version !== null ? { version: own.version } : {}), clone: own.git_commit !== null, root: PACKAGE_ROOT };
+    // An image built from a clone (docker/Dockerfile) has no .git, and is updated by building it again from a newer clone.
+    return { ...(own.version !== null ? { version: own.version } : {}), clone: own.git_commit !== null || process.env.TURRI_FROM_CLONE === "1", root: PACKAGE_ROOT };
   })();
   const onPath = options.onPath ?? turrisOnPath();
   const findings: VersionFinding[] = [];

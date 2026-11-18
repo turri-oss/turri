@@ -15,6 +15,8 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY . .
 RUN npm link
+# turri here is a clone's, without its .git: it never says to update it with npm - build the image again from a newer clone.
+ENV TURRI_FROM_CLONE=1
 
 RUN mkdir /work && chown node:node /work
 COPY docker/entrypoint.sh /usr/local/bin/turri-entrypoint

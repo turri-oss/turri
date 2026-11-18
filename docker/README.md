@@ -8,7 +8,7 @@ Everything **turri** needs - Node, git, bash, bubblewrap for the OS sandbox and 
 
 ## Build
 
-From the root of the clone, once - and again after you pull a newer **turri** or change the toolchains:
+From the root of the clone, once - and again after you pull a newer **turri** or change the toolchains (**turri** in the image never tells you to update it with npm: a newer one is a newer clone, built again):
 
 ```bash
 docker build -f docker/Dockerfile -t turri .
