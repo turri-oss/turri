@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { inChat } from "../src/chat-scope.ts";
 import { createChats, MAX_CHATS, type ChatLink, type TurriCore, type TurriHost } from "../src/chats.ts";
 import { createJobRegistry, type Job } from "../src/regenerate/jobs.ts";
-import { describeNotice, noticeTask, SENTINEL, SENTINEL_TOOLS, sentinelBrief, sentinelCheckBrief, sentinelFileTools, type Notice, type SentinelCheck } from "../src/sentinel.ts";
+import { describeNotice, noticeTask, SENTINEL, SENTINEL_TOOLS, sentinelBrief, sentinelCheckBrief, sentinelFileTools, sentinelPrompt, type Notice, type SentinelCheck } from "../src/sentinel.ts";
 
 /**
  * A pi session as the session follows it: its events sent by the test, whether its agent is at work, what it was told,
@@ -742,5 +742,15 @@ describe("the release agent's shell", () => {
     await expect(shell.execute("call", { command: "brew install node" }, undefined, undefined, {})).rejects.toThrow(/turri changes nothing of this machine's - brew installs into the system/);
     await expect(shell.execute("call", { command: "npm install -g serve" }, undefined, undefined, {})).rejects.toThrow(/installs globally/);
     expect(shell.description).toContain("It installs nothing on the machine and changes none of its settings");
+  });
+});
+
+describe("how the sentinel tests a release", () => {
+  it("tries, where the ***plain picks one way among several, an input on which the ways differ - not a tie that is also alphabetical", () => {
+    const prompt = sentinelPrompt(mkdtempSync(join(tmpdir(), "turri-sentinel-prompt-")));
+    expect(prompt).toContain("try an input on which the ways give");
+    expect(prompt).toContain('a tie whose first word is also first');
+    // Its shell writes $TMPDIR, not /tmp: told up front, not by a refused command.
+    expect(prompt).toContain("the files you try a release with go in $TMPDIR - /tmp is outside what it may write");
   });
 });
