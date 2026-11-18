@@ -1,8 +1,7 @@
 import { existsSync } from "node:fs";
 import { basename, join, relative, resolve } from "node:path";
-import { defineTool, type ExtensionAPI, type ExtensionContext, type ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Box, Text } from "@earendil-works/pi-tui";
-import { Type } from "typebox";
 import { chatBusy } from "./chat-idle.ts";
 import { conformanceTestsOnIn } from "./conformance-switch.ts";
 import type { ChatLink } from "./chats.ts";
@@ -20,7 +19,7 @@ import { refuseTestPlainFile } from "./test-plain-files.ts";
  * A finished verdict reaches the chat the person looks at once it is idle - never interrupting it: a yes is a message
  * that starts a turn, in which the chat tells the person and writes the scenarios, then regenerates, asking nothing; a
  * no is one line drawn by turri, starting no turn. What else the chat is told of the advisor - in its system prompt, in a
- * change's result - is here too, and its own way to it, evaluate_tests.
+ * change's result - is here too, and a host's own way to it, evaluateTests.
  */
 
 /** Why, in a few words, by the first question of a yes. */
@@ -170,18 +169,14 @@ export function verdictDelivery(pi: ExtensionAPI, link: ChatLink, context: () =>
 
 /**
  * The test advisor and the chat, in its system prompt while the session has the advisor and the project wants it: the
- * two ways an evaluation starts, what to say while it runs, what to do with its verdict, and when to ask for one.
+ * evaluation it starts, what to say while it runs, and what to do with its verdict.
  */
 export const TEST_ADVISOR_BLOCK = [
   "<test advisor>",
   "My test advisor decides whether a functional spec needs explicit testing scenarios - whether it could fail silently, be read two ways, or",
   "cost a lot when wrong - in the background. You are the only writer of the ***plain: it writes nothing, and you write what its yes calls for.",
-  "An evaluation starts two ways:",
-  "- By itself, for each new or changed functional spec that has no scenarios. A change's result names the ones it took up.",
-  "- When you call evaluate_tests - even for a text it judged already. Call it when the person asks whether a functional spec needs tests,",
-  "  and on your own, as another way of saying what one means: when pulses keep failing on a complicated functional spec, scenarios may pin",
-  "  down what it should do - say why in its reason. A functional spec with scenarios is not evaluated.",
-  "When a change's result or evaluate_tests says a functional spec is being evaluated, tell the person so in a line, and go on: nothing waits",
+  "It evaluates by itself each new or changed functional spec that has no scenarios, and a change's result names the ones it took up.",
+  "When a change's result says a functional spec is being evaluated, tell the person so in a line, and go on: nothing waits",
   "for it. Its verdict comes back to this chat once you are idle:",
   "- A yes is a message with its report: tell the person in a line, then write with the file tools what testing it needs - the test reqs,",
   "  the conformance testing script and its scenarios, in that order and only what is missing - and call regenerate, as the message says,",
@@ -214,7 +209,7 @@ export function advisingNote(loop: WorkLoop, plainFile: string): string {
   ].join("\n");
 }
 
-/** The functional specs evaluate_tests is given, each as the advisor is asked for it - or, not found, why. */
+/** The functional specs a host's evaluateTests is given, each as the advisor is asked for it - or, not found, why. */
 function namedSpecs(cwd: string, names: string[], plainFile: string | undefined): Array<{ name: string; asked?: EvaluateRequest; missing?: string }> {
   const named = plainFile ?? readProjectConfig(cwd).module;
   const base = named !== undefined ? resolve(cwd, named) : undefined;
@@ -255,13 +250,13 @@ export interface EvaluateOutcome {
 
 /**
  * The test advisor asked to evaluate functional specs - `module:func-id`s, or func-ids of `plainFile`'s module (else the
- * one the project's config names) - even a text it judged already, and whatever `test-advisor` says: `evaluate_tests`'s
- * and a host's `evaluateTests`. It returns at once.
+ * one the project's config names) - even a text it judged already, and whatever `test-advisor` says: a host's
+ * `evaluateTests`. It returns at once.
  */
 export function evaluateTests(cwd: string, advisor: TestAdvisor | undefined, funcIds: string[], options: { plainFile?: string; reason?: string } = {}): EvaluateOutcome {
   if (advisor === undefined) throw new Error("This session has no test advisor: it runs in the chat and a host only.");
   if (!conformanceTestsOnIn(cwd)) {
-    throw new Error("Conformance tests are off for this project (conformance-tests: false, or unset), and the test advisor with them. They are turned on in the chat - by asking for them - or with conformance-tests: true in config.turri.yaml.");
+    throw new Error("Conformance tests are off for this project (conformance-tests: false, or unset), and the test advisor with them. /conform turns them on, or conformance-tests: true in config.turri.yaml.");
   }
   if (funcIds.length === 0) throw new Error("Name the functional specs to evaluate, each as module:func-id.");
   const said: EvaluateOutcome = { started: [], already: [], scenarios: [], missing: [] };
@@ -277,44 +272,3 @@ export function evaluateTests(cwd: string, advisor: TestAdvisor | undefined, fun
   return said;
 }
 
-/**
- * evaluate_tests: the chat's own way to the test advisor - a functional spec evaluated in the background, whatever
- * `test-advisor` says, and even when its text was judged already. It returns at once; the verdict comes back to the chat
- * as the advisor's verdicts do. In the chat and a host only: the session has an advisor.
- */
-export function evaluateTestsTool(options: { cwd: string; advisor: () => TestAdvisor | undefined }): ToolDefinition {
-  return defineTool({
-    name: "evaluate_tests",
-    label: "Evaluate tests",
-    description:
-      "Have turri's test advisor evaluate, in the background, whether functional specs need explicit testing scenarios - even one it judged " +
-      "already, and whatever test-advisor says. It returns at once; the verdict comes back to this chat: a yes as a message to write the " +
-      "scenarios on, a no as a line. A functional spec that has scenarios is not evaluated.",
-    promptSnippet: "evaluate_tests: have the test advisor judge whether functional specs need testing scenarios, in the background",
-    promptGuidelines: [
-      "Call evaluate_tests when the person asks whether a functional spec needs tests (\"does add-task need tests?\"), rather than judging it yourself.",
-      "Call it on your own too, as another way of saying what a functional spec means: when pulses keep failing on a complicated functional spec, scenarios may pin down what it should do - say so in reason.",
-      "It returns at once: tell the person testing scenarios are being evaluated, and go on. On a yes, write the scenarios as the verdict's message says.",
-    ],
-    parameters: Type.Object({
-      funcIds: Type.Array(Type.String(), { description: "The functional specs, each as module:func-id (core:add-task) - or a func-id alone, of plain_file's module" }),
-      plain_file: Type.Optional(
-        Type.String({ description: "The .plain file a func-id alone is of, and whose chain the scenarios are tested in. Omitted: the module the project's config.turri.yaml names" }),
-      ),
-      reason: Type.Optional(Type.String({ description: "Why you ask, for the advisor to weigh: \"the coding agent failed three times to implement it\"" })),
-    }),
-    async execute(_id, params) {
-      const said = evaluateTests(options.cwd, options.advisor(), params.funcIds, { ...(params.plain_file !== undefined ? { plainFile: params.plain_file } : {}), ...(params.reason !== undefined ? { reason: params.reason } : {}) });
-      const list = (names: string[]) => names.join(", ");
-      const one = (names: string[], single: string, many: string) => (names.length === 1 ? single : many);
-      const text = [
-        ...(said.started.length > 0 ? [`Testing scenarios for ${list(said.started)} are being evaluated in the background; the verdict comes back to this chat.`] : []),
-        ...(said.already.length > 0 ? [`${list(said.already)} ${one(said.already, "is", "are")} being evaluated already; the verdict comes back to this chat.`] : []),
-        ...(said.scenarios.length > 0 ? [`${list(said.scenarios)} ${one(said.scenarios, "has", "have")} scenarios already, so ${one(said.scenarios, "it is", "they are")} not evaluated: tested as the scenarios say.`] : []),
-        ...(said.missing.length > 0 ? [`Not evaluated - ${said.missing.join("; ")}.`] : []),
-        ...(said.started.length + said.already.length > 0 ? ["Tell the person so in a line, and go on: there is nothing to wait for."] : []),
-      ].join("\n");
-      return { content: [{ type: "text" as const, text }], details: said };
-    },
-  }) as ToolDefinition;
-}

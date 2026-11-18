@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -6,6 +6,7 @@ import { askUserVia, chatAskUserTool, createTurriCore, type TurriHost } from "..
 import { sideQuestionPrompt } from "../src/btw.ts";
 import { TURRI_IDENTITY } from "../src/identity.ts";
 import { stopJob } from "../src/loop-tools.ts";
+import { CONFORMANCE_OFF_REFUSAL } from "../src/conformance-switch.ts";
 import { record, startLedger, stopLedger } from "../src/regenerate/ledger.ts";
 import { refusal, TOOLS_NOT_CLI } from "../src/self-invocation.ts";
 import { NEW_PROJECT } from "../src/new-project.ts";
@@ -284,6 +285,28 @@ describe("the pulses tool", () => {
       expect(fine).not.toContain("<diagnosis>");
       expect(fine).toContain("What the ledger recorded of it:");
       expect(fine).toContain("rounds: unit tests 3 of 20");
+    } finally {
+      process.chdir(before);
+    }
+  });
+});
+
+describe("the conform tool while conformance tests are off", () => {
+  it("is refused, sending the chat to the person with why - it never turns them on itself", async () => {
+    const before = process.cwd();
+    process.chdir(mkdtempSync(join(tmpdir(), "turri-conform-off-")));
+    try {
+      writeFileSync("app.plain", "***implementation reqs***\n\n- :Implementation: is Python.\n\n***functional specs***\n\n# say-hello\nSay hello.\n");
+      const tools = new Map<string, { execute: (...args: unknown[]) => Promise<{ content: Array<{ text: string }> }> }>();
+      const pi = new Proxy({}, {
+        get: (_target, key) =>
+          key === "registerTool" ? (tool: { name: string; execute: (...args: unknown[]) => Promise<{ content: Array<{ text: string }> }> }) => tools.set(tool.name, tool) : () => undefined,
+      }) as never;
+      createTurriCore().extension(pi);
+      expect(tools.has("turn_on_conformance_tests")).toBe(false);
+      const result = await tools.get("conform")!.execute("call", { plain_file: "app.plain" }, undefined, undefined, { hasUI: false });
+      expect(result.content[0]!.text).toBe(CONFORMANCE_OFF_REFUSAL);
+      expect(existsSync("config.turri.yaml")).toBe(false);
     } finally {
       process.chdir(before);
     }

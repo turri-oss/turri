@@ -30,7 +30,7 @@ export interface AdvisorSubject {
   context: string[];
   /** A module below's: the tip its scenarios are tested in - built on it, its own functional specs beside it. */
   testedIn?: { module: string; text: string };
-  /** Why the chat asked for the evaluation (evaluate_tests) - "the coding agent failed three times to implement it" - for the classifier, as context. */
+  /** Why a host asked for the evaluation (evaluateTests) - "the coding agent failed three times to implement it" - for the classifier, as context. */
   reason?: string;
 }
 

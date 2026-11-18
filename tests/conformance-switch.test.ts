@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { evaluateTests } from "../src/advisor-chat.ts";
-import { conformanceBlock, conformanceTestsOn, conformanceTestsOnIn, TURN_ON_TOOL, turnOnConformanceTests, turnOnConformanceTestsTool } from "../src/conformance-switch.ts";
+import { CONFORMANCE_OFF_REFUSAL, conformanceBlock, conformanceTestsOn, conformanceTestsOnIn, turnOnConformanceTests } from "../src/conformance-switch.ts";
 import { checkPlainFile } from "../src/plain/check.ts";
 import { createTestAdvisor } from "../src/regenerate/advisor-runs.ts";
 import { createJobRegistry } from "../src/regenerate/jobs.ts";
@@ -96,7 +96,7 @@ describe("conformance tests", () => {
 
   it("off, leave the scenarios written untested - parse says so, and warns of no step of adding them", () => {
     expect(checkPlainFile(join(dir, "app.plain")).warnings).toEqual([
-      "its scenarios are not tested - app:say-hello: conformance tests are off (conformance-tests: false, or unset). Asking for them in the chat turns them on, or conformance-tests: true in config.turri.yaml.",
+      "its scenarios are not tested - app:say-hello: conformance tests are off (conformance-tests: false, or unset). /conform in the chat turns them on, or conformance-tests: true in config.turri.yaml.",
     ]);
   });
 
@@ -107,26 +107,19 @@ describe("conformance tests", () => {
 });
 
 describe("what the chat is told of conformance tests", () => {
-  it("is what they are every turn - off, that they are and how they are turned on, and that it may offer them, never unasked", () => {
+  it("is what they are every turn - off, that they are, why, and that the person alone turns them on with /conform", () => {
     const off = conformanceBlock(false);
     expect(off).toContain("Conformance tests are black-box tests");
     expect(off).toContain("They are off here");
-    expect(off).toContain(`call ${TURN_ON_TOOL} - their asking is their yes`);
-    expect(off).toContain("You may offer them yourself, once and in a line, never turning them on unasked");
+    expect(off).toContain("They make each change take about twice as long");
+    expect(off).toContain("turning them on is theirs alone");
+    expect(off).toContain("They decide, and turn them on with /conform");
     expect(conformanceBlock(true)).toContain("They are on here (conformance-tests: true)");
   });
 
-  it("is given a tool that turns them on, writing the config, and the chat's tools switched with it", async () => {
-    let switched = 0;
-    const tool = turnOnConformanceTestsTool({
-      turnOn: (plainFile) => {
-        switched += 1;
-        return turnOnConformanceTests(dir, plainFile);
-      },
-    });
-    const result = (await tool.execute("id", {} as never, undefined, undefined, undefined as never)) as { content: Array<{ text: string }> };
-    expect(result.content[0]!.text).toContain("Conformance tests are on for this project now - conformance-tests: true, written in config.turri.yaml.");
-    expect(config()).toMatch(/^conformance-tests: true$/m);
-    expect(switched).toBe(1);
+  it("refuses the chat while they are off, sending it to the person with its reasons", () => {
+    expect(CONFORMANCE_OFF_REFUSAL).toContain("turning them on is the person's decision");
+    expect(CONFORMANCE_OFF_REFUSAL).toContain("Tell the person, in a line or two, why you want conformance tests here");
+    expect(CONFORMANCE_OFF_REFUSAL).toContain("turn them on with /conform");
   });
 });

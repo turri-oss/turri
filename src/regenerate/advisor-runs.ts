@@ -92,7 +92,7 @@ export interface TestAdvisor {
   /** The functional specs it is judging for now, or about to - `module:func-id`, a project's alone when named. */
   taking(project?: string): string[];
   /**
-   * The chat's own way in (evaluate_tests): a functional spec evaluated now - even a text already judged, and whatever
+   * A host's own way in (evaluateTests): a functional spec evaluated now - even a text already judged, and whatever
    * `test-advisor` says - its verdict handed on as any is. `already`: it is being evaluated now; `scenarios`: it has some,
    * and is not evaluated; `missing`: its module has no such functional spec.
    */

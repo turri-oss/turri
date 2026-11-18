@@ -4,9 +4,9 @@ Which functional specs need explicit testing scenarios is not obvious, and not e
 
 ## When it runs
 
-**Only with conformance tests on.** The advisor is there to say which functional specs need scenarios, and scenarios are only tested with `conformance-tests: true` ([config](config.md#conformance-tests)): off - as it is unset - the advisor is off too, by itself and when asked: the chat has no `evaluate_tests`, and a host's `evaluateTests` throws, saying how they are turned on.
+**Only with conformance tests on.** The advisor is there to say which functional specs need scenarios, and scenarios are only tested with `conformance-tests: true` ([config](config.md#conformance-tests)): off - as it is unset - the advisor is off too, by itself and when asked: a host's `evaluateTests` throws, saying how they are turned on.
 
-**Two ways in.** By itself, for every new or changed functional spec without scenarios, as below - what `test-advisor: false` turns off. And when the chat asks, with `evaluate_tests`, whatever the setting - see [asking for an evaluation](#asking-for-an-evaluation).
+**Two ways in.** By itself, for every new or changed functional spec without scenarios, as below - what `test-advisor: false` turns off. And when a host asks, with `evaluateTests`, whatever the setting - see [asking for an evaluation](#asking-for-an-evaluation).
 
 **Only in the chat and a host.** Never in a headless command - `turri regenerate`, `conform` and the rest - and never in [pi](https://pi.dev)'s print, json and rpc modes (`turri -p`), which end when the answer is printed. That is decided where the session starts: the terminal's chat and a host's session have one, nothing else does.
 
@@ -26,7 +26,7 @@ A failure - a model error, a call that never answered - is dropped quietly: the 
 
 ## What you see
 
-**Being evaluated.** `regenerate`'s result names the functional specs the advisor has just taken up, as `evaluate_tests` names the ones it was asked for, and the chat says in a line that testing scenarios are being evaluated for them, and goes on: there is nothing to wait for.
+**Being evaluated.** `regenerate`'s result names the functional specs the advisor has just taken up, and the chat says in a line that testing scenarios are being evaluated for them, and goes on: there is nothing to wait for.
 
 **A yes** comes back to the chat you are looking at as a message that starts a turn. It holds the report - the questions that were a yes with their evidence, and the inputs to cover - and the chat, asking you nothing, tells you in a line:
 
@@ -46,12 +46,7 @@ A host gets the verdicts in its chats the same way - see [hosting](hosting.md).
 
 ## Asking for an evaluation
 
-The chat has a tool of its own, `evaluate_tests`: the functional specs as `module:func-id`s - or func-ids, with `plain_file` - and an optional `reason`. It returns at once - "Testing scenarios for core:add-task are being evaluated in the background; the verdict comes back to this chat." - and the verdict comes back as any verdict does. The chat calls it:
-
-- when you ask whether something needs tests - "does add-task need tests?";
-- on its own, as another way of saying what a functional spec means: when pulses keep failing on a complicated one, say, scenarios may pin down what it should do.
-
-It evaluates even a text the advisor already judged. A functional spec being evaluated already is not started twice, and one that has scenarios is answered at once as such and not evaluated. It works whatever `test-advisor` says. The `reason` - "the coding agent failed three times to implement it" - reaches the classifier as context, never as evidence.
+A host asks for one itself, with `evaluateTests` (see [hosting](hosting.md)): the functional specs as `module:func-id`s - or func-ids, with `plainFile` - and an optional `reason`. It returns at once, and the verdict comes to the chat the person looks at as any verdict does. It evaluates even a text the advisor already judged. A functional spec being evaluated already is not started twice, and one that has scenarios is answered at once as such and not evaluated. It works whatever `test-advisor` says. The `reason` - "the coding agent failed three times to implement it" - reaches the classifier as context, never as evidence.
 
 ## How it decides
 
@@ -79,7 +74,7 @@ The **report** is what the advisor's file keeps: the questions that were a yes w
 
 ## The setting and its model
 
-`test-advisor: true | false` in `config.turri.yaml`, `true` when it is left out - `/turri-config` sets it. `false` turns off only the advisor's own start: `evaluate_tests` still works, and asked for scenarios, the chat writes them as it always has, whatever the setting says.
+`test-advisor: true | false` in `config.turri.yaml`, `true` when it is left out - `/turri-config` sets it. `false` turns off only the advisor's own start: a host's `evaluateTests` still works, and asked for scenarios, the chat writes them as it always has, whatever the setting says.
 
 Every call the advisor makes runs on `models.advisor` - see [models per role](config.md#models-per-role). Without one it runs on `default`'s model, else the coding model alone, thinking low.
 

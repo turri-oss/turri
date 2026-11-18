@@ -179,7 +179,7 @@ describe("the test advisor's verdicts in a host's chat", () => {
     expect(yes.told).toBe(1);
   });
 
-  it("lets a host ask the advisor itself, as evaluate_tests does, and says what came of each", async () => {
+  it("lets a host ask the advisor itself, and says what came of each", async () => {
     writeFileSync("core.plain", "***functional specs***\n\n# add-task\nAdd a task.\n");
     const turri = await createTurri();
     evaluated.length = 0;
@@ -261,11 +261,11 @@ describe("the test advisor's verdicts in a host's chat", () => {
     expect(early.told).toBe(1);
   });
 
-  it("gives a host's chat evaluate_tests, whatever test-advisor says", async () => {
-    writeFileSync("config.turri.yaml", "conformance-tests: true\nsentinel: false\ntest-advisor: false\n");
+  it("gives a host's chat no tool of its own to ask the advisor - a host asks it with evaluateTests", async () => {
+    writeFileSync("config.turri.yaml", "conformance-tests: true\nsentinel: false\n");
     const turri = await createTurri();
     await turri.openChat();
-    expect(sessions[0]!.tools).toContain("evaluate_tests");
+    expect(sessions[0]!.tools).not.toContain("evaluate_tests");
   });
 
   it("tells the chat's agent of the advisor, and that it alone writes scenarios, while the project wants the advisor", async () => {

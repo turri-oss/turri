@@ -21,7 +21,7 @@ import { findTestScripts, scriptKindOfSkill } from "./regenerate/test-scripts.ts
 import { writingScript } from "./regenerate/scripts-being-written.ts";
 import { applyBedrockRegion } from "./bedrock-region.ts";
 import { bannerWarnings } from "./turri-versions.ts";
-import { conformanceBlock, conformanceTestsOn, conformanceTestsOnIn, CONFORMANCE_TOOLS, TURN_ON_TOOL, turnOnConformanceTests, turnOnConformanceTestsTool } from "./conformance-switch.ts";
+import { CONFORMANCE_OFF_REFUSAL, conformanceBlock, conformanceTestsOn, conformanceTestsOnIn, turnOnConformanceTests } from "./conformance-switch.ts";
 import { BACKGROUND_NOTE, doneLine, failedTask, ownChanges, runDetails, skillRunDelivery, startedText } from "./background-skills.ts";
 import { createAskUserTool } from "./tools.ts";
 import { asksFromScratch, asksWholeChain, driftTool, fromWorkingDir, haltTool, loopReply, MODEL_PARAM, regenerateTool, STACK_PARAM, stopJob, WAIT_PARAM, withCallStack, WORKING_DIR_PARAM } from "./loop-tools.ts";
@@ -46,7 +46,7 @@ import { didNotLand } from "./regenerate/failure-reports.ts";
 import { conformanceRefusal, createWorkLoop, describeModules, isUpToDate, previewJobs, type WorkLoop } from "./regenerate/loop.ts";
 import { createTestAdvisor, type TestAdvisor } from "./regenerate/advisor-runs.ts";
 import { advisorDir } from "./regenerate/advisor-records.ts";
-import { bindAdvisor, evaluateTestsTool, TEST_ADVISOR_BLOCK, verdictDelivery } from "./advisor-chat.ts";
+import { bindAdvisor, TEST_ADVISOR_BLOCK, verdictDelivery } from "./advisor-chat.ts";
 import { brandNeon, brandPink, plainPaint } from "./regenerate/plain-palette.ts";
 import { halfBlocks, JELLYFISH_FRAME_MS, JELLYFISH_REST, JELLYFISH_SEQUENCE, JELLYFISH_TEXT_FRAMES } from "./jellyfish.ts";
 import { createJobPanel, didNotPass, keyPressed, PANEL_KEY, spinner } from "./regenerate/job-panel.ts";
@@ -636,7 +636,6 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
     jobsChanged: () => panel.refresh(),
     thinkingLevel: () => pi.getThinkingLevel(),
     context: contextNow,
-    conformanceSwitched: () => conformanceTools(),
   });
   pi.on("session_start", (_event, ctx) => {
     lastContext = ctx;
@@ -815,28 +814,6 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
   registerSteering(pi, cwd);
   registerSideQuestions(pi, cwd, jobs);
   registerStacks(pi, cwd);
-  // The chat's own way to the test advisor, while the session has one - whatever test-advisor says.
-  if (sessionAdvisor(session) !== undefined) pi.registerTool(evaluateTestsTool({ cwd, advisor: () => sessionAdvisor(session) }));
-  // Conformance tests on or off: conform and evaluate_tests are the chat's while they are on, the tool that turns them on
-  // while they are off - set as each turn starts, and at once when the chat turns them on. Not the sentinel's: it has its own.
-  const conformanceTools = () => {
-    if (isSentinel) return;
-    try {
-      const on = conformanceTestsOnIn(cwd);
-      const registered = new Set(pi.getAllTools().map((tool) => tool.name));
-      const active = pi.getActiveTools();
-      const wanted = [
-        ...active.filter((name) => !CONFORMANCE_TOOLS.includes(name) && name !== TURN_ON_TOOL),
-        ...(on ? CONFORMANCE_TOOLS : [TURN_ON_TOOL]).filter((name) => registered.has(name)),
-      ];
-      if (wanted.length !== active.length || wanted.some((name) => !active.includes(name))) pi.setActiveTools(wanted);
-    } catch {
-      /* not bound to a session yet: the next turn sets them */
-    }
-  };
-  if (!isSentinel) pi.registerTool(turnOnConformanceTestsTool({ turnOn: (plainFile) => turnOnConformance(session, plainFile) }));
-  pi.on("session_start", () => conformanceTools());
-  pi.on("before_agent_start", () => conformanceTools());
   // More chats beside this one, in the terminal: /chat, alt+n, alt+1…9 (chat-commands.ts).
   if (session.terminal) registerChats(pi, session);
 
@@ -999,7 +976,7 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
       // The conformance testing script is for conformance tests: none is written while they are off.
       if (scriptKindOfSkill(skill.name) === "conformance" && !conformanceTestsOnIn(cwd)) {
         return {
-          content: [{ type: "text" as const, text: `${skill.name} writes the conformance testing script, and conformance tests are off for this project (conformance-tests: false, or unset). Turn them on first - with ${TURN_ON_TOOL}, once the person asked for them or agreed - then run it. Nothing was started.` }],
+          content: [{ type: "text" as const, text: `${skill.name} writes the conformance testing script, for conformance tests. ${CONFORMANCE_OFF_REFUSAL}` }],
           details: { notStarted: true },
         };
       }
@@ -1608,7 +1585,9 @@ function conformTool(options: {
       "tests are behind, once the module's code is built; conform starts them now, or for the functional specs named - those alone: the module's others stay behind until conform names none, or the module is regenerated. A " +
       "functional spec with no scenarios - no test plain file - is refused: there is nothing to test until scenarios " +
       "are written. So is one the spec does not have, and a module with scenarios that skipped a step of adding tests - " +
-      "no test reqs, or no conformance testing script for its stack: the refusal names the next step.",
+      "no test reqs, or no conformance testing script for its stack: the refusal names the next step. While conformance tests " +
+      "are off it is refused too: they make each change take about twice as long, and turning them on is the person's - " +
+      "with /conform - never yours.",
     promptSnippet: "conform: write and run the conformance tests of functional specs with scenarios",
     promptGuidelines: [
       "What is tested is the scenarios: a functional spec's conformance and acceptance scenarios, in its test plain file, tests/<module>/<func-id>.plain. When the user asks for conformance tests, decide in a sentence or two which scenarios to write, write them with the file tools - a test plain file's ***conformance tests*** and ***acceptance tests***, each scenario a # <scenario-id> heading and its text - then call regenerate for the module. Every scenario written is tested once the code is built: the loop starts the conformance pulse by itself. Never edit config.turri.yaml for it, and never name a functionality in funcIds to get them.",
@@ -1632,6 +1611,8 @@ function conformTool(options: {
       const plainFile = resolve(params.base, params.plain_file);
       refuseTestPlainFile(plainFile);
       return withCallStack(plainFile, params.stack, async () => {
+        // Off: the person's to turn on, never the chat's - it is told to say why it wants them, and they decide.
+        if (!conformanceTestsOn(plainFile)) return { content: [{ type: "text" as const, text: CONFORMANCE_OFF_REFUSAL }], details: { refused: true } };
         const model = options.model(ctx, plainFile, params.model);
         const loop = options.loop(ctx);
         const statuses = await loop.conformance(plainFile, {
@@ -1938,20 +1919,12 @@ let lastChatModel: string | undefined;
 
 /**
  * Conformance tests turned on, for the session: `conformance-tests: true` written where the module's value comes from
- * (conformance-switch.ts), and every open chat's tools switched to match - what the chat's turn_on_conformance_tests and a
- * host's turnOnConformanceTests both do. `plainFile`, absolute or from the project, picks the module whose stack's file
+ * (conformance-switch.ts) - what /conform does when they are off, and a host's turnOnConformance. Every chat is told at
+ * its next turn. `plainFile`, absolute or from the project, picks the module whose stack's file
  * is written when that names the key. Returns the file written, from the project. Starts no conformance pulse.
  */
 export function turnOnConformance(core: TurriCore, plainFile?: string): string {
   const file = turnOnConformanceTests(core.cwd, plainFile !== undefined && plainFile.trim() !== "" ? resolve(core.cwd, plainFile) : undefined);
-  for (const chat of core.chats()) {
-    const live = core.session(chat.id);
-    try {
-      (live !== undefined ? core.chatOfSession(live) : undefined)?.instance?.conformanceSwitched?.();
-    } catch {
-      /* a chat let go: its next turn sets its tools */
-    }
-  }
   return file;
 }
 

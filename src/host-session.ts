@@ -82,7 +82,7 @@ export interface Turri {
    */
   check(request: CheckRequest): { check: string } | { refused: string };
   /**
-   * The test advisor asked to evaluate functional specs, as the chat's `evaluate_tests` does - for a host's own way in,
+   * The test advisor asked to evaluate functional specs - a host's own way in,
    * a button on a functional spec: `module:func-id`s, or func-ids of `plainFile`'s module, even a text judged already and
    * whatever `test-advisor` says, `reason` given to it as context. It returns at once; each verdict comes to the chat the
    * person looks at, as the advisor's verdicts do - a yes starting a turn that writes the scenarios, a no a line.
@@ -96,10 +96,10 @@ export interface Turri {
    */
   settingChoices(key: string, typed?: string): string[];
   /**
-   * Conformance tests turned on, as the chat's turn_on_conformance_tests does: `conformance-tests: true` written where
-   * the module's value comes from - its stack's `config.turri.<stack>.yaml` when that sets the key, else
-   * `config.turri.yaml` - and every open chat's tools switched (conform and evaluate_tests in, turn_on_conformance_tests
-   * out), the test advisor starting at its next look. `plainFile`, absolute or from the project, picks the module; omitted,
+   * Conformance tests turned on, as /conform does before it tests - the person's decision, a host's switch for it:
+   * `conformance-tests: true` written where the module's value comes from - its stack's `config.turri.<stack>.yaml` when
+   * that sets the key, else `config.turri.yaml` - the chats' conform no longer refused, the test advisor starting at its
+   * next look. `plainFile`, absolute or from the project, picks the module; omitted,
    * the project's. Returns the file written, from the project. Starts no conformance pulse: that is `conform`'s.
    */
   turnOnConformanceTests(plainFile?: string): string;

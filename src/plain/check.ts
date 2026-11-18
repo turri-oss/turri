@@ -115,7 +115,7 @@ function testingGapsOf(moduleName: string, path: string, tree: MarshalledPlainSo
   if (!conformanceTestsOn(path)) {
     const tested = testedFuncIds(tree);
     return tested.length > 0
-      ? [`its scenarios are not tested - ${tested.map((funcId) => `${moduleName}:${funcId}`).join(", ")}: conformance tests are off (conformance-tests: false, or unset). Asking for them in the chat turns them on, or conformance-tests: true in config.turri.yaml.`]
+      ? [`its scenarios are not tested - ${tested.map((funcId) => `${moduleName}:${funcId}`).join(", ")}: conformance tests are off (conformance-tests: false, or unset). /conform in the chat turns them on, or conformance-tests: true in config.turri.yaml.`]
       : [];
   }
   const tips = tipsAbove(moduleName, projectDir);

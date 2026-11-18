@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { evaluateTestsTool } from "../src/advisor-chat.ts";
+import { evaluateTests } from "../src/advisor-chat.ts";
 import { currentStopSignal, JobStoppedError } from "../src/regenerate/activity.ts";
 import { advisorEntry, putAdvisorEntry, textHash } from "../src/regenerate/advisor-records.ts";
 import { createTestAdvisor, type AdvisorVerdict } from "../src/regenerate/advisor-runs.ts";
@@ -49,25 +49,17 @@ function held() {
   return { asked, releases, advise };
 }
 
-/** What the tool says back. */
-async function call(tool: ReturnType<typeof evaluateTestsTool>, params: Record<string, unknown>): Promise<string> {
-  const result = (await tool.execute("id", params as never, undefined, undefined, undefined as never)) as { content: Array<{ text: string }> };
-  return result.content.map((part) => part.text).join("\n");
-}
-
-describe("evaluate_tests", () => {
+describe("a host's evaluateTests", () => {
   it("returns at once, and the verdict comes back as any verdict does", async () => {
     const { asked, releases, advise } = held();
     const verdicts: AdvisorVerdict[] = [];
     const advisor = createTestAdvisor({ advise, onVerdict: (verdict) => verdicts.push(verdict) });
-    const tool = evaluateTestsTool({ cwd: dir, advisor: () => advisor });
-    const said = await call(tool, { funcIds: ["core:clear-tasks"] });
-    expect(said).toContain("Testing scenarios for core:clear-tasks are being evaluated in the background; the verdict comes back to this chat.");
-    // Still being judged as the tool answered: asked again, it is not started twice.
+    expect(evaluateTests(dir, advisor, ["core:clear-tasks"]).started).toEqual(["core:clear-tasks"]);
+    // Still being judged as it answered: asked again, it is not started twice.
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(asked.map((subject) => subject.funcId)).toEqual(["clear-tasks"]);
     expect(advisorEntry(dir, "core", "clear-tasks")?.state).toBe("pending");
-    expect(await call(tool, { funcIds: ["clear-tasks"] })).toContain("core:clear-tasks is being evaluated already");
+    expect(evaluateTests(dir, advisor, ["clear-tasks"]).already).toEqual(["core:clear-tasks"]);
     releases[0]!();
     await advisor.idle();
     expect(verdicts.map((verdict) => `${verdict.module}:${verdict.funcId} ${verdict.report.verdict}`)).toEqual(["core:clear-tasks yes"]);
@@ -79,7 +71,7 @@ describe("evaluate_tests", () => {
     const subjects: AdvisorSubject[] = [];
     const verdicts: AdvisorVerdict[] = [];
     const advisor = createTestAdvisor({ advise: async (subject) => (subjects.push(subject), yes), onVerdict: (verdict) => verdicts.push(verdict) });
-    await call(evaluateTestsTool({ cwd: dir, advisor: () => advisor }), { funcIds: ["core:clear-tasks"] });
+    evaluateTests(dir, advisor, ["core:clear-tasks"]);
     await advisor.idle();
     expect(subjects[0]!.testedIn?.module).toBe("todo");
     expect(verdicts[0]!.tip).toBe(join(dir, "todo.plain"));
@@ -90,7 +82,7 @@ describe("evaluate_tests", () => {
     putAdvisorEntry(dir, "core", "core.plain", { funcId: "add-task", hash: textHash("Add a task to the list."), state: "no", tip: "core.plain" });
     let calls = 0;
     const advisor = createTestAdvisor({ advise: async () => ((calls += 1), yes) });
-    await call(evaluateTestsTool({ cwd: dir, advisor: () => advisor }), { funcIds: ["core:add-task"] });
+    evaluateTests(dir, advisor, ["core:add-task"]);
     await advisor.idle();
     expect(calls).toBe(1);
     expect(advisorEntry(dir, "core", "add-task")?.state).toBe("yes");
@@ -101,10 +93,10 @@ describe("evaluate_tests", () => {
     writeFileSync(join(dir, "tests", "core", "add-task.plain"), testPlainFile("core", "add-task", { conformance: ["# adds-one\nAdding Milk lists Milk."] }));
     let calls = 0;
     const advisor = createTestAdvisor({ advise: async () => ((calls += 1), yes) });
-    const said = await call(evaluateTestsTool({ cwd: dir, advisor: () => advisor }), { funcIds: ["core:add-task", "core:no-such-thing"] });
+    const said = evaluateTests(dir, advisor, ["core:add-task", "core:no-such-thing"]);
     await advisor.idle();
-    expect(said).toContain("core:add-task has scenarios already, so it is not evaluated");
-    expect(said).toContain("core:no-such-thing: its module has no such functional spec");
+    expect(said.scenarios).toEqual(["core:add-task"]);
+    expect(said.missing.join("\n")).toContain("core:no-such-thing: its module has no such functional spec");
     expect(calls).toBe(0);
   });
 
@@ -112,19 +104,19 @@ describe("evaluate_tests", () => {
     writeFileSync(join(dir, "config.turri.yaml"), "conformance-tests: true\nmodule: core.plain\ntest-advisor: false\n");
     let calls = 0;
     const advisor = createTestAdvisor({ advise: async () => ((calls += 1), yes) });
-    await call(evaluateTestsTool({ cwd: dir, advisor: () => advisor }), { funcIds: ["core:clear-tasks"] });
+    evaluateTests(dir, advisor, ["core:clear-tasks"]);
     await advisor.idle();
     expect(calls).toBe(1);
     expect(advisorEntry(dir, "core", "clear-tasks")?.state).toBe("yes");
   });
 
-  it("gives the classifier the chat's reason, and picks up what it asked for at the next start whatever the setting", async () => {
+  it("gives the classifier the host's reason, and picks up what it asked for at the next start whatever the setting", async () => {
     const first = held();
     const before = createTestAdvisor({ advise: first.advise });
-    await call(evaluateTestsTool({ cwd: dir, advisor: () => before }), { funcIds: ["core:clear-tasks"], reason: "the coding agent failed three times to implement it" });
+    evaluateTests(dir, before, ["core:clear-tasks"], { reason: "the coding agent failed three times to implement it" });
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(first.asked[0]!.reason).toBe("the coding agent failed three times to implement it");
-    // turri quits mid-way, and starts again with the setting off: what the chat asked for is still picked up, its reason with it.
+    // turri quits mid-way, and starts again with the setting off: what the host asked for is still picked up, its reason with it.
     before.stop();
     writeFileSync(join(dir, "config.turri.yaml"), "conformance-tests: true\nmodule: core.plain\ntest-advisor: false\n");
     const asked: AdvisorSubject[] = [];

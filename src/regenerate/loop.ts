@@ -1637,7 +1637,7 @@ export function createWorkLoop(options: {
       if (!conformanceTestsOn(self.plainFile)) {
         throw new Error(
           `Conformance tests are off for ${self.moduleName} (conformance-tests: false, or unset): nothing is conformance tested. ` +
-            "They are turned on in the chat - by asking for them - or with conformance-tests: true in config.turri.yaml. Nothing was started.",
+            "/conform in the chat turns them on, or conformance-tests: true in config.turri.yaml. Nothing was started.",
         );
       }
       // Refused before anything is touched: a functional spec not there, nothing to test, or a step of adding tests skipped.

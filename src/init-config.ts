@@ -342,7 +342,7 @@ export function quickStartConfig(vendor: Vendor = "other", bedrock?: BedrockChoi
     "",
     "# Whether functional specs are conformance tested: black-box tests of the built software against the scenarios of",
     "# their test plain files, run with the whole suite as more lands. false: none - no scenarios written or tested, the",
-    "# test advisor off. Asking for them in the chat turns them on, or true here.",
+    "# test advisor off. /conform in the chat turns them on, or true here.",
     "conformance-tests: false",
     "",
     "# Whether the code and its tests are reviewed once they pass - two reviews at most, the second weighed by the arbiter.",

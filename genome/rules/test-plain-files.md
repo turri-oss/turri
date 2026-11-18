@@ -67,7 +67,7 @@ Only scenarios that exist are kept in step: a change to a functional spec never 
 - A func-id renamed: `func_id:` is renamed in every test plain file bound to it, and the file with it
 
 ## Writing scenarios
-Nothing about testing exists until the person asks for it, or the test advisor's yes arrives: a module imports no conformance template, and its functional specs have no test plain files. The first time the person asks for tests in a module, or the advisor's yes arrives for one of its functional specs, do three things, in this order, each a visible change - only what is missing:
+Nothing about testing exists until the person asks for it, or the test advisor's yes arrives: a module imports no conformance template, and its functional specs have no test plain files. With conformance tests off, the person turns them on first, with `/conform` (see `turri-regeneration.md`). The first time the person asks for tests in a module, or the advisor's yes arrives for one of its functional specs, do three things, in this order, each a visible change - only what is missing:
 1. **Test reqs:** import the stack's conformance template, `stdlib/<kind>/conformance/<stack>` (see `stdlib.md`), or write the module's own `***test reqs***` when it has no stack from the standard library (see `test-reqs.md`)
 2. **The conformance testing script:** write it with `implement-conformance-testing-script`, if the project has none for the module's stack
 3. **The scenarios**, as below

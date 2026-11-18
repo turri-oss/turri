@@ -484,7 +484,7 @@ export interface ProjectConfig {
   /**
    * Whether the test advisor starts by itself: in the chat and a host, each new or changed functional spec with no
    * scenarios is classified in the background, and on a yes the chat writes its scenarios (docs/test-advisor.md). false
-   * turns off only that: the chat's evaluate_tests still works, and asked for scenarios, the chat writes them as before.
+   * turns off only that: a host's evaluateTests still works, and asked for scenarios, the chat writes them as before.
    * Unset: true.
    */
   testAdvisor?: boolean;
@@ -495,9 +495,9 @@ export interface ProjectConfig {
   testDir?: string;
   /**
    * Whether functional specs' scenarios are written and conformance tested (conformance-switch.ts). False: none - no
-   * conformance pulse, no conformance testing script, the test advisor and the chat's conform and evaluate_tests off; the
-   * test plain files there are kept, and not tested. The person asking for tests, or agreeing to the chat's offer, turns it
-   * on. Unset: false.
+   * conformance pulse, no conformance testing script, the test advisor off and the chat's conform refused; the test plain
+   * files there are kept, and not tested. They make each change take about twice as long, so only the person turns them
+   * on - /conform, or this key. Unset: false.
    */
   conformanceTests?: boolean;
   /**

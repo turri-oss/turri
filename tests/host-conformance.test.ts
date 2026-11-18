@@ -87,20 +87,20 @@ afterEach(() => {
 
 const offered = (chat: number) => ({
   conform: chats[chat]!.active.includes("conform"),
-  evaluate: chats[chat]!.active.includes("evaluate_tests"),
-  turnOn: chats[chat]!.active.includes("turn_on_conformance_tests"),
+  evaluate: chats[chat]!.registered.includes("evaluate_tests"),
+  turnOn: chats[chat]!.registered.includes("turn_on_conformance_tests"),
 });
 
 describe("a host turning conformance tests on", () => {
-  it("writes conformance-tests: true in config.turri.yaml, and switches every open chat's tools - no model call", async () => {
+  it("writes conformance-tests: true in config.turri.yaml - every chat has conform, on or off, and no tool that turns them on - no model call", async () => {
     const turri = await createTurri();
     await turri.openChat();
     await turri.openChat();
-    // Off, as it is unset: each chat has the tool that turns them on, not conform or evaluate_tests.
-    for (const chat of [0, 1]) expect(offered(chat)).toEqual({ conform: false, evaluate: false, turnOn: true });
+    // Off, as it is unset: conform is there, refused while off; nothing for the chat to turn them on with, or to ask the advisor.
+    for (const chat of [0, 1]) expect(offered(chat)).toEqual({ conform: true, evaluate: false, turnOn: false });
     expect(turri.turnOnConformanceTests()).toBe("config.turri.yaml");
     expect(readFileSync(join(dir, "config.turri.yaml"), "utf8")).toMatch(/^conformance-tests: true$/m);
-    for (const chat of [0, 1]) expect(offered(chat)).toEqual({ conform: true, evaluate: true, turnOn: false });
+    for (const chat of [0, 1]) expect(offered(chat)).toEqual({ conform: true, evaluate: false, turnOn: false });
     await turri.dispose();
   });
 
@@ -108,11 +108,10 @@ describe("a host turning conformance tests on", () => {
     writeFileSync(join(dir, "config.turri.app.yaml"), "conformance-tests: false\n");
     const turri = await createTurri();
     await turri.openChat();
-    expect(offered(0).turnOn).toBe(true);
     expect(turri.turnOnConformanceTests("app.plain")).toBe("config.turri.app.yaml");
     expect(readFileSync(join(dir, "config.turri.app.yaml"), "utf8")).toMatch(/^conformance-tests: true$/m);
     expect(readFileSync(join(dir, "config.turri.yaml"), "utf8")).not.toContain("conformance-tests");
-    expect(offered(0)).toEqual({ conform: true, evaluate: true, turnOn: false });
+    expect(offered(0)).toEqual({ conform: true, evaluate: false, turnOn: false });
     await turri.dispose();
   });
 });
