@@ -112,6 +112,9 @@ describe("what the chat is told of conformance tests", () => {
     // On, the chat decides which functional specs need scenarios, by the rules' criteria - nothing does it for it.
     expect(on).toContain("judge whether it needs scenarios, as the rules on test plain files say");
     expect(on).toContain("a visible ***plain change the person reviews like any other");
+    // And sets up what its scenarios need, unasked: on is the person's yes.
+    expect(on).toContain("write it first, in that order - the test reqs, then the script with");
+    expect(on).toContain("asking nothing: conformance tests on is the person's yes to them");
   });
 
   it("refuses the chat while they are off, sending it to the person with its reasons", () => {

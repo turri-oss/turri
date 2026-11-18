@@ -1389,7 +1389,9 @@ export const COMMAND_STARTED_REACTION =
 export const CONFORM_REFUSED_REACTION =
   "Nothing was started from the person's /conform, for the reason shown - and their /conform is their yes to conformance " +
   "tests here. Where what is missing is yours to write - the test reqs, the conformance testing script, the scenarios - " +
-  "write it now, in that order and only what is missing, asking nothing: the scenarios of the functional specs they named, " +
+  "write it now, in that order and only what is missing, asking nothing: the test reqs first; then the conformance testing " +
+  "script, started with its skill before anything else - it runs in the background, so the scenarios are written while it " +
+  "does; then the scenarios of the functional specs they named, " +
   "or, naming none, of each functional spec that needs them by the rules on test plain files. Then call regenerate for the " +
   "module: the work loop writes and runs their tests once the code is built. Say in a line or two what you wrote, and for " +
   "each functional spec why it needs scenarios - or, when none does, that and why. Where it is not yours to settle - a " +

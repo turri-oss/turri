@@ -127,6 +127,8 @@ describe("what the agent does when /conform started nothing", () => {
     expect(CONFORM_REFUSED_REACTION).toContain("their /conform is their yes to conformance tests here");
     expect(CONFORM_REFUSED_REACTION).toContain("write it now, in that order and only what is missing, asking nothing");
     expect(CONFORM_REFUSED_REACTION).toContain("of each functional spec that needs them by the rules on test plain files");
+    // The script's skill runs in the background: started before the scenarios, it is written while they are.
+    expect(CONFORM_REFUSED_REACTION).toContain("the test reqs first; then the conformance testing script, started with its skill before anything else");
     expect(CONFORM_REFUSED_REACTION).toContain("Then call regenerate for the module");
   });
 

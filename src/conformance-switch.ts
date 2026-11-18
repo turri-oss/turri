@@ -75,6 +75,9 @@ export function conformanceBlock(on: boolean): string {
           "They are on here (conformance-tests: true): functional specs with scenarios are conformance tested once their code is",
           "built. As you write or change a functional spec, judge whether it needs scenarios, as the rules on test plain files say,",
           "and write them when it does - in the same change, a visible ***plain change the person reviews like any other.",
+          "Scenarios are tested only once their module has test reqs and the project a conformance testing script: when you",
+          "write scenarios and one of those is missing, write it first, in that order - the test reqs, then the script with",
+          "implement-conformance-testing-script - asking nothing: conformance tests on is the person's yes to them.",
         ].join("\n")
       : [
           "They are off here (conformance-tests: false, or unset). They make each change take about twice as long, so the person",

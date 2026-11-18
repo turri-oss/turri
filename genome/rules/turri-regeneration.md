@@ -39,7 +39,7 @@ The other rules say what a spec means. This one says what turri does with a chan
 ## Conformance tests
 
 - Conformance tests are the person's choice: `conformance-tests:` in config.turri.yaml, off when unset, as they make each change take about twice as long. Off, no scenarios are tested and `conform` is refused - write no test plain file, test reqs or conformance testing script. When you think a module needs conformance tests, or the person asks for them, tell them in a line or two why; they decide, and turn them on with `/conform`
-- On, you decide which functional specs need scenarios: as you write or change one, judge it by the criteria in the rules on test plain files, and when it needs them, write them - with the test reqs and the conformance testing script first, when missing - as a visible ***plain change the person reviews like any other, then call `regenerate`. The work loop writes and runs their conformance tests once the code is built
+- On, you decide which functional specs need scenarios: as you write or change one, judge it by the criteria in the rules on test plain files, and when it needs them, write them - with the test reqs and the conformance testing script first, when missing, without asking: conformance tests on is the person's yes to all three - as a visible ***plain change the person reviews like any other, then call `regenerate`. The work loop writes and runs their conformance tests once the code is built
 
 ## What a coding agent sees
 
