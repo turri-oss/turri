@@ -9,6 +9,9 @@
  * command line, so the harness refuses it and names the tool to use instead.
  */
 
+import { createBashToolDefinition, type ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { machineChange, machineChangeReason } from "./regenerate/command-check.ts";
+
 /** The tool that does what a turri subcommand does, from inside the conversation. */
 const TOOL_FOR: Record<string, string> = {
   regenerate: "regenerate",
@@ -114,3 +117,35 @@ export const TOOLS_NOT_CLI = [
   "is fine; it starts no agent.",
   "</turri-tools>",
 ].join("\n");
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyTool = ToolDefinition<any, any, any>;
+
+/** What a skill's agent is told when its shell would run turri or another pi. */
+export function skillRefusal(what: string): string {
+  return (
+    `Not run: that starts ${what === "pi" ? "another agent" : `turri ${what}`} from the shell - a separate, headless run outside the person's session, ` +
+    "its pulses and /halt, writing the same codebases as the work loop. A skill starts no pulse: finish your own work, and say in what you " +
+    "hand back what should run next - the conversation runs it."
+  );
+}
+
+/**
+ * A skill's shell: pi's bash in the project, refusing what its agent never runs there - turri or another pi again
+ * (selfInvocation), and a change to the machine's toolchains or settings (machineChange). The conversation's own bash is
+ * held to the same by its tool_call guard; a skill runs in a session of its own, which that guard does not see.
+ */
+export function skillShell(cwd: string): AnyTool {
+  const bash: AnyTool = createBashToolDefinition(cwd);
+  return {
+    ...bash,
+    async execute(toolCallId, params, signal, onUpdate, ctx) {
+      const command = String((params as { command?: unknown }).command ?? "");
+      const what = selfInvocation(command);
+      if (what !== undefined) throw new Error(skillRefusal(what));
+      const changes = machineChange(command);
+      if (changes !== undefined) throw new Error(machineChangeReason(changes));
+      return bash.execute(toolCallId, params, signal, onUpdate, ctx);
+    },
+  };
+}
