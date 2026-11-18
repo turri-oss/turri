@@ -47,7 +47,7 @@ import { changesBetween, parseTree, serializeTree, type SpecChange, type SpecSte
 import { hasFiles, listFiles } from "./testing.ts";
 import { makeRenames, pureRenames, renameText } from "./renames.ts";
 import { casesOf, codeWork, stillWanted, whyNotWanted, type JobCases, type ScenarioCases, type TouchedSpec } from "./drift.ts";
-import { testingGap } from "./testing-steps.ts";
+import { stepsToScenarios, testingGap } from "./testing-steps.ts";
 import { baseFolderDrift, baseOfCodebase, seedFromBaseFolder } from "./base-folder.ts";
 import { BASE_RECORD_FILE } from "./paths.ts";
 import { onScriptRunEnded, scriptBeingWritten } from "./scripts-being-written.ts";
@@ -2043,10 +2043,12 @@ function conformanceAskedIn(own: ChainEntry[], funcIds: string[] | undefined): {
   const named = funcIds === undefined ? undefined : funcIdsNamed(self.moduleName, [...new Set(funcIds)]);
   const spec = chainSpec(own).tree;
   const withScenarios = testedFuncIds(spec);
+  // No scenarios: the steps still to take, from the first one missing - the test reqs and the script come before them.
+  const toScenarios = () => stepsToScenarios({ moduleName: self.moduleName, plainFile: self.plainFile, tree: spec, buildDir: self.buildDir });
   if (withScenarios.length === 0) {
     throw new Error(
-      `No functional spec of ${self.moduleName} has scenarios - none has a test plain file - so there is nothing to test: ` +
-        "write the conformance or acceptance scenarios first, then regenerate, and their tests are written once the code is built. Nothing was started.",
+      `No functional spec of ${self.moduleName} has scenarios - none has a test plain file - so there is nothing to test. ${toScenarios()} ` +
+        "Their tests are written once the code is built. Nothing was started.",
     );
   }
   if (named !== undefined && named.length > 0) {
@@ -2056,8 +2058,8 @@ function conformanceAskedIn(own: ChainEntry[], funcIds: string[] | undefined): {
     const untested = named.filter((funcId) => !hasScenarios(items.find((item) => item.id === funcId)));
     if (untested.length > 0) {
       throw new Error(
-        `${namesOf(self.moduleName, untested)} ${untested.length === 1 ? "has" : "have"} no scenarios - no test plain file - so there is nothing to test: ` +
-          "write the conformance or acceptance scenarios first, then regenerate, and their tests are written once the code is built. Nothing was started.",
+        `${namesOf(self.moduleName, untested)} ${untested.length === 1 ? "has" : "have"} no scenarios - no test plain file - so there is nothing to test. ${toScenarios()} ` +
+          "Their tests are written once the code is built. Nothing was started.",
       );
     }
   }

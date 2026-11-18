@@ -725,6 +725,18 @@ describe("the work loop", () => {
         "Next step: write the conformance testing script with the implement-conformance-testing-script skill.";
       const noScript = () => rmSync(join(dir, "test_scripts", "run_conformance_tests_python.sh"));
 
+      it("name every step still to take, in their order, for a module with nothing set up yet - the test reqs, the script, then the scenarios", () => {
+        noScript();
+        writePlain(dir, "app.plain", noTestReqs(["Say hello."]));
+        expect(conformanceRefusal(join(dir, "app.plain"))).toBe(
+          "No functional spec of app has scenarios - none has a test plain file - so there is nothing to test. " +
+            "Adding tests is three steps, in this order: the test reqs, the conformance testing script, the scenarios. " +
+            "Next step: write the module's own ***test reqs***; then write the conformance testing script with the implement-conformance-testing-script skill; " +
+            "then write the scenarios, each functional spec's in tests/app/<func-id>.plain, then regenerate. " +
+            "Their tests are written once the code is built. Nothing was started.",
+        );
+      });
+
       it("are refused for a module with scenarios but no test reqs - its code built, the step named, waiting on it until the ***plain has them", async () => {
         writePlain(dir, "app.plain", noTestReqs(["Say hello."]));
         scenariosIn("say-hello");
@@ -1049,9 +1061,9 @@ describe("the work loop", () => {
       const code = runner();
       const tests = conformanceRunner();
       const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run: code.run, runConformance: tests.runConformance });
-      await expect(loop.conformance("app.plain")).rejects.toThrow(/^No functional spec of app has scenarios - none has a test plain file - so there is nothing to test: write the conformance or acceptance scenarios first/);
+      await expect(loop.conformance("app.plain")).rejects.toThrow(/^No functional spec of app has scenarios - none has a test plain file - so there is nothing to test\. Next step: write the scenarios, each functional spec's in tests\/app\/<func-id>\.plain, then regenerate\./);
       scenariosIn("say-hello");
-      await expect(loop.conformance("app.plain", { funcIds: ["app:say-goodbye"] })).rejects.toThrow(/^app:say-goodbye has no scenarios - no test plain file - so there is nothing to test: write the conformance or acceptance scenarios first, then regenerate.*Nothing was started\.$/);
+      await expect(loop.conformance("app.plain", { funcIds: ["app:say-goodbye"] })).rejects.toThrow(/^app:say-goodbye has no scenarios - no test plain file - so there is nothing to test\. Next step: write the scenarios.*Nothing was started\.$/);
       await expect(loop.conformance("app.plain", { funcIds: ["app:say-hello", "app:say-thanks"] })).rejects.toThrow("app has no functional spec app:say-thanks. Nothing was started.");
       expect(code.ran).toEqual([]);
       expect(tests.ran).toEqual([]);

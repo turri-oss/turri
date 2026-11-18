@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { conformanceTestsOn } from "../conformance-switch.ts";
-import { stackForModule, stackPinned, withStack } from "../config.ts";
+import { stackForModule, stackPinned, testDirOf, withStack } from "../config.ts";
 import { IMPORT_DIRECTIVE, readPlainSourceMetadata } from "../plain/parser.ts";
 import { FUNCTIONAL_REQUIREMENTS, REQUIRED_FUNCTIONAL_SPECS, TEST_REQUIREMENTS, type MarshalledPlainSource } from "../plain/spec.ts";
 import { isStdlibModule, STDLIB_ROOT } from "../plain/stdlib.ts";
@@ -126,4 +126,23 @@ export function testingGap(input: { moduleName: string; plainFile: string; tree:
     };
   }
   return undefined;
+}
+
+/**
+ * The steps of adding tests a module still has to take before it has anything to test - in their order: its test reqs,
+ * the conformance testing script for its stack, the scenarios - from the first one missing. What is said when conform
+ * finds no scenarios: the whole way there, not the last step alone.
+ */
+export function stepsToScenarios(input: { moduleName: string; plainFile: string; tree: MarshalledPlainSource; buildDir?: string }): string {
+  const { moduleName, plainFile } = input;
+  const steps: string[] = [];
+  if (((input.tree[TEST_REQUIREMENTS] as unknown[] | undefined) ?? []).length === 0) {
+    const conformance = conformanceTemplateOf(plainFile);
+    steps.push(conformance !== undefined ? `import the stack's conformance template, ${conformance}` : "write the module's own ***test reqs***");
+  }
+  if (conformanceScriptOf(plainFile, input.buildDir).script === undefined) steps.push("write the conformance testing script with the implement-conformance-testing-script skill");
+  const testDir = relative(projectDirOf(resolve(plainFile)), testDirOf(plainFile)) || ".";
+  steps.push(`write the scenarios, each functional spec's in ${testDir}/${moduleName}/<func-id>.plain, then regenerate`);
+  const order = steps.length > 1 ? "Adding tests is three steps, in this order: the test reqs, the conformance testing script, the scenarios. " : "";
+  return `${order}Next step: ${steps.join("; then ")}.`;
 }
