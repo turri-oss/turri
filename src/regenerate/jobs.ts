@@ -73,6 +73,8 @@ export interface Job {
   startedAt: number;
   /** A row of the work loop's, not a pulse: its module's work being planned into pulses now, since then. */
   planning?: { since: number };
+  /** A row of the work loop's planned by a look ahead: it waits for regenerate, conform or /regenerate to start it. */
+  lookedAhead?: true;
   /** While queued: the jobs it is waiting for. */
   waitingOn: string[];
   finishedAt?: number;

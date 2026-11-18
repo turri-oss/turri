@@ -43,7 +43,7 @@ import { checkPlainTool } from "./parse-tool.ts";
 import { changedFiles, projectFiles } from "./plain-files.ts";
 import { whyFailed } from "./regenerate/diagnose-job.ts";
 import { didNotLand } from "./regenerate/failure-reports.ts";
-import { conformanceRefusal, createWorkLoop, describeModules, isUpToDate, previewJobs, type WorkLoop } from "./regenerate/loop.ts";
+import { conformanceRefusal, createWorkLoop, describeModules, isUpToDate, type ModuleStatus, type PlannedPulse, type WorkLoop } from "./regenerate/loop.ts";
 import { brandNeon, brandPink, plainPaint } from "./regenerate/plain-palette.ts";
 import { halfBlocks, JELLYFISH_FRAME_MS, JELLYFISH_REST, JELLYFISH_SEQUENCE, JELLYFISH_TEXT_FRAMES } from "./jellyfish.ts";
 import { createJobPanel, didNotPass, keyPressed, PANEL_KEY, spinner } from "./regenerate/job-panel.ts";
@@ -771,7 +771,6 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
   });
   registerRegenerate(pi, cwd, jobs);
   registerDrift(pi, cwd, jobs);
-  registerGlimpse(pi, cwd, jobs);
   registerBind(pi, cwd, jobs, (plainFile) => turnOnConformance(session, plainFile));
   registerRenderModels(pi);
   registerDeploy(pi, cwd, jobs, deployStates.get(jobs) ?? createDeployState());
@@ -1594,59 +1593,6 @@ function conformTool(options: {
   });
 }
 
-function registerGlimpse(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
-  pi.registerTool({
-    name: "glimpse",
-    label: "Glimpse the next pulse",
-    description:
-      "Plan the work of a module as regenerate would, and show the pulse each codebase would start next and the whole " +
-      "prompt its coding agent would get - starting nothing. A codebase with a pulse running is left out: what its next pulse " +
-      "is given depends on what the running one lands.",
-    promptSnippet: "glimpse: the next pulse of a module and its coding agent's whole prompt, starting nothing",
-    promptGuidelines: [
-      "Use glimpse when the user wants to see what a pulse will be told before it runs, or to check a plan before steering it with steer.",
-    ],
-    parameters: Type.Object({
-      plain_file: Type.String({ description: "Path to the .plain file" }),
-      working_dir: WORKING_DIR_PARAM,
-      stack: STACK_PARAM,
-    }),
-    async execute(_id, given, _signal, _onUpdate, ctx) {
-      const params = fromWorkingDir(cwd, given);
-      const plainFile = resolve(params.base, params.plain_file);
-      refuseTestPlainFile(plainFile);
-      return withCallStack(plainFile, params.stack, async () => {
-        const running = new Set(workLoopFor(jobs, cwd, ctx).status().filter((status) => status.running !== undefined).map((status) => status.module));
-        const planner = chatModelOf(ctx);
-        const model = modelFor(chosenModels, "spec_changes", projectModel(ctx, plainFile) ?? planner);
-        const { statuses, previews, busy } = await previewJobs({
-          plainFile,
-          cwd,
-          ...(model !== undefined ? { model } : {}),
-          ...(planner !== undefined ? { plannerModel: planner } : {}),
-          steering: (file) => steeringFor(file, cwd, steeringStore),
-          busy: (module) => running.has(module),
-        });
-        const text = [
-          describeModules(statuses),
-          ...busy.map((module) => `\n${module} has a pulse running: its next pulse is planned from what that one lands - preview it once it has.`),
-          ...previews.map((preview) =>
-            [
-              "",
-              `<next pulse module="${preview.module}" track="${preview.track}" title="${preview.title}">`,
-              preview.task ?? "A conformance pulse's prompt is built from what the code it tests holds once it is built: it is not shown before.",
-              "</next pulse>",
-            ].join("\n"),
-          ),
-          "",
-          "Nothing was started. Tell the user what the next pulse is and what it will be told - the parts they are likely to care about, not the whole prompt unless they ask.",
-        ].join("\n");
-        return { content: [{ type: "text" as const, text }], details: {} };
-      });
-    },
-  });
-}
-
 /** The config a spec is built with - its project's, with the chosen stack's over it - or, with no spec, the session folder's. */
 function configOf(plainFile?: string) {
   return plainFile !== undefined ? configForSpec(resolve(process.cwd(), plainFile)) : readProjectConfig(process.cwd(), stackOf(process.cwd()));
@@ -1774,7 +1720,7 @@ export function projectConfigBlock(root: string): string {
         stacks.length > 0 ? "project of stacks" : "project",
       ),
       ...(stacks.length > 0
-        ? ["", `Stacks: ${stacks.join(", ")} - chosen now: ${chosen ?? "none, so the project's file alone"}. Each module is built with the stack of its part, pinned to its pulses whatever is chosen after: a stack named after the module is its own - backend.plain is built with config.turri.backend.yaml - with nothing to choose. For a module whose stack has another name, pass it as stack to regenerate, conform and glimpse. Choose one for this chat with the stack tool only when the user asks.`]
+        ? ["", `Stacks: ${stacks.join(", ")} - chosen now: ${chosen ?? "none, so the project's file alone"}. Each module is built with the stack of its part, pinned to its pulses whatever is chosen after: a stack named after the module is its own - backend.plain is built with config.turri.backend.yaml - with nothing to choose. For a module whose stack has another name, pass it as stack to regenerate, conform and pulses. Choose one for this chat with the stack tool only when the user asks.`]
         : []),
       // A stack: its file over the project's, for everything built while it is chosen.
       ...stacks.flatMap((stack) => [
@@ -2208,24 +2154,51 @@ function registerJobTools(pi: ExtensionAPI, jobs: JobRegistry, cwd: string) {
     name: "pulses",
     label: "Pulses",
     description:
-      "What is regenerating: with no pulse, every pulse of this session - running, planned and finished - what activate started, " +
-      "and the last runs of earlier sessions, a line a pulse - how each ended, how long, what it cost; " +
-      "with a pulse's id, that pulse - whether it is still running and its latest output; once it has finished, its report and " +
-      "what the ledger recorded of it - its rounds and test runs (how many failed the same way), the verdicts, the healers, the " +
-      "model provider's trouble, what turri refused, what it committed. One that did not land says why besides, from its whole " +
-      "transcript: its diagnosis, the stages that went wrong, the last failing test run with its output, the last review that sent " +
-      "the work back, the tool calls that failed, and where the whole log is. A pulse of an earlier session is told from the " +
-      "ledger - what it recorded of it, as facts, and why it did not land, as kept when it ended.",
-    promptSnippet: "pulses: every pulse, or one - what is regenerating, how it is going, and why one did not land",
-    promptGuidelines: ["When a pulse failed or did not land, call pulses with its id before you explain it or change the spec: go by what happened, not by the report alone."],
+      "Pulses in every tense - earlier sessions', this session's, running now and what runs next. With no parameter: every pulse of " +
+      "this session - finished, running, and planned, those of a look ahead marked as waiting for regenerate - what activate started, " +
+      "and the last runs of earlier sessions, a line a pulse - how each ended, how long, what it cost. With job_id, one pulse: " +
+      "running, whether it still is and its latest output; finished, its report and what the ledger recorded of it - its rounds " +
+      "and test runs (how many failed the same way), the verdicts, the healers, the model provider's trouble, what turri refused, " +
+      "what it committed - and, one that did not land, why, from its whole transcript: its diagnosis, the stages that went wrong, " +
+      "the last failing test run with its output, the last review that sent the work back, the tool calls that failed, and where " +
+      "the whole log is; of an earlier session, told from the ledger; planned (planned-<module>-N), its cases and - the next pulse " +
+      "of its codebase - the whole prompt its coding agent will get, from the plan regenerate runs. With plain_file, a look " +
+      "ahead: that module's work planned as regenerate plans it, steering and all, and kept - nothing started, its pulses waiting " +
+      "for regenerate, which then runs this plan unless the ***plain or the steering changed - and what is planned listed. " +
+      "What is left to regenerate, without a plan, is drift's.",
+    promptSnippet: "pulses: every pulse or one - earlier, running or planned - why one did not land, and with plain_file what will run next and its prompt",
+    promptGuidelines: [
+      "When a pulse failed or did not land, call pulses with its id before you explain it or change the spec: go by what happened, not by the report alone.",
+      "Call pulses with plain_file when the user wants to see or check what will run before it does, then with a planned row's id for its prompt. To change the plan, use steer or change the ***plain, then look again.",
+    ],
     parameters: Type.Object({
-      job_id: Type.Optional(Type.String({ description: "The id returned when the pulse started. Omitted: every pulse" })),
-      wait: Type.Optional(
-        Type.Boolean({ description: "With a pulse: block until it finishes instead of reporting its current state" }),
+      job_id: Type.Optional(
+        Type.String({
+          description: "One pulse: the id returned when it started, an earlier session's, or a planned row's (planned-<module>-N). Omitted: every pulse",
+        }),
       ),
-      runs: Type.Optional(Type.Number({ description: `Without a pulse: how many runs of earlier sessions to list (default ${EARLIER_RUNS})` })),
+      plain_file: Type.Optional(
+        Type.String({ description: "A look ahead: the .plain file of the module to plan, starting nothing. Not with job_id. Omitted: no look ahead" }),
+      ),
+      working_dir: WORKING_DIR_PARAM,
+      stack: STACK_PARAM,
+      wait: Type.Optional(
+        Type.Boolean({ description: "With a pulse started: block until it finishes instead of reporting its current state (default false)" }),
+      ),
+      runs: Type.Optional(Type.Number({ description: `With no parameter: how many runs of earlier sessions to list (default ${EARLIER_RUNS})` })),
     }),
-    async execute(_id, params) {
+    async execute(_id, params, _signal, _onUpdate, ctx) {
+      if (params.plain_file !== undefined) {
+        if (params.job_id !== undefined) return { content: [{ type: "text" as const, text: "Pass job_id or plain_file, not both: plain_file looks ahead at a module, job_id tells one pulse." }], details: { status: "refused" } };
+        const given = fromWorkingDir(cwd, params);
+        const plainFile = resolve(given.base, given.plain_file!);
+        refuseTestPlainFile(plainFile);
+        return withCallStack(plainFile, params.stack, async () => {
+          const loop = workLoopFor(jobs, cwd, ctx);
+          const statuses = await loop.lookAhead(plainFile);
+          return { content: [{ type: "text" as const, text: describeLookAhead(loop, statuses) }], details: { status: "looked ahead" } };
+        });
+      }
       if (params.job_id === undefined) {
         const runs = params.runs !== undefined && Number.isFinite(params.runs) ? Math.max(1, Math.floor(params.runs)) : EARLIER_RUNS;
         return { content: [{ type: "text" as const, text: listJobs(jobs, cwd, runs) }], details: { status: "all" } };
@@ -2233,10 +2206,8 @@ function registerJobTools(pi: ExtensionAPI, jobs: JobRegistry, cwd: string) {
       const existing = jobs.get(params.job_id);
       const planned = shownJobs(jobs).find((job) => job.id === params.job_id && jobs.get(job.id) === undefined);
       if (planned !== undefined) {
-        return {
-          content: [{ type: "text" as const, text: `${planned.id} · ${pulseName(planned)}: ${planned.note ?? "planned, not started"}${planned.waitingOn.length > 0 ? ` It runs after ${planned.waitingOn.join(", ")}.` : ""}` }],
-          details: { status: "planned" },
-        };
+        const pulse = await workLoops.get(jobs)?.loop.plannedPulse(planned.id);
+        return { content: [{ type: "text" as const, text: describePlannedRow(planned, pulse) }], details: { status: "planned" } };
       }
       if (existing === undefined) {
         const past = describePastPulse(ledgerProjects(cwd), params.job_id);
@@ -2787,6 +2758,31 @@ function earlierRuns(jobs: JobRegistry, cwd: string, runs: number): string {
   }
 }
 
+/** A look ahead, for the chat: what is planned in each codebase, each row by its id, and what happens next. */
+function describeLookAhead(loop: WorkLoop, statuses: ModuleStatus[]): string {
+  const modules = new Set(statuses.map((status) => status.module));
+  const rows = loop.planned().filter((row) => row.module !== undefined && modules.has(row.module));
+  const listed = rows.length > 0 ? `\n\nThe planned pulses - pulses with a row's id tells its cases and, for the next pulse of a codebase, the whole prompt its coding agent will get:\n${rows.map((row) => `${row.id}  ${row.summary}`).join("\n")}` : "";
+  return (
+    `${describeModules(statuses)}${listed}\n\n` +
+    "Nothing was started. What is planned here waits for regenerate, conform or /regenerate, which runs this plan as it is - unless " +
+    "the ***plain or the steering changes first, when it is planned again. To change the plan, use steer or change the ***plain, then " +
+    "look again. Tell the user what will run and in what order - the parts they are likely to care about."
+  );
+}
+
+/** A planned row, for the chat: what it is, and its prompt when it is the next pulse of its codebase. */
+function describePlannedRow(row: Job, pulse: PlannedPulse | undefined): string {
+  const head = `${row.id} · ${pulseName(row)}: ${row.note ?? "planned, not started"}${row.waitingOn.length > 0 ? ` It runs after ${row.waitingOn.join(", ")}.` : ""}`;
+  if (pulse?.task !== undefined) {
+    return (
+      `${head}\n\nThe whole prompt its coding agent will get - built from the plan kept, the one regenerate runs:\n<prompt>\n${pulse.task}\n</prompt>\n\n` +
+      "Tell the user what the pulse is and what it will be told - the parts they are likely to care about, not the whole prompt unless they ask."
+    );
+  }
+  return pulse?.why !== undefined ? `${head}\n\nNo prompt shown: ${pulse.why}` : head;
+}
+
 function jobLines(all: Job[]): string {
   return all
     .map((job) => {
@@ -2796,7 +2792,8 @@ function jobLines(all: Job[]): string {
       const after = job.status === "queued" && job.waitingOn.length > 0 ? `  (after ${job.waitingOn.join(", ")})` : "";
       const spent = describeUsage(job.usage);
       const model = job.model ? `  · ${job.model}` : "";
-      return `${job.id}  ${(planned ? "planned" : job.status).padEnd(9)} ${time.padStart(7)}  ${pulseName(job)}${model}${after}${spent ? `  · ${spent}` : ""}`;
+      const held = job.lookedAhead === true ? "  · looked ahead: waits for regenerate" : "";
+      return `${job.id}  ${(planned ? "planned" : job.status).padEnd(9)} ${time.padStart(7)}  ${pulseName(job)}${model}${after}${held}${spent ? `  · ${spent}` : ""}`;
     })
     .join("\n");
 }

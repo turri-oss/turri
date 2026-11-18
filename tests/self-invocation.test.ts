@@ -4,14 +4,13 @@ import { askedForCommandLine, refusal, selfInvocation } from "../src/self-invoca
 describe("a shell command that runs turri again", () => {
   it("is caught in every form it is written", () => {
     expect(selfInvocation("turri regenerate app.plain --model openai/gpt-5.5")).toBe("regenerate");
-    expect(selfInvocation("cd ~/proj && turri glimpse app.plain")).toBe("glimpse");
+    expect(selfInvocation("cd ~/proj && turri regenerate app.plain --dry-run")).toBe("regenerate");
     expect(selfInvocation("nohup turri regenerate app.plain 3 > log 2>&1 &")).toBe("regenerate");
     expect(selfInvocation("npx turri conform app.plain 1")).toBe("conform");
     expect(selfInvocation("node bin/turri.mjs cultivate genome/skills/debug-specs")).toBe("cultivate");
     expect(selfInvocation("npm run regenerate -- app.plain")).toBe("regenerate");
     expect(selfInvocation("npx tsx src/regenerate-cli.ts app.plain 1")).toBe("regenerate");
     expect(selfInvocation("turri regenerate app.plain")).toBe("regenerate");
-    expect(selfInvocation("turri glimpse app.plain")).toBe("glimpse");
     expect(selfInvocation("turri conform app.plain 2")).toBe("conform");
     expect(selfInvocation("turri release app.plain")).toBe("release");
     expect(selfInvocation('pi -p "build it"')).toBe("pi");

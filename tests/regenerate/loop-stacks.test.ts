@@ -190,9 +190,9 @@ describe("a module of a project of stacks", () => {
 
   it("says the stack it is built with where it says what runs and what is planned", async () => {
     const { run } = runner();
-    const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run, dryRun: true });
+    const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run });
     chooseStack("backend");
-    const statuses = await loop.bringUp("backend.plain");
+    const statuses = await loop.lookAhead("backend.plain");
     expect(describeModules(statuses)).toContain("backend (backend.plain, stack backend):");
     chooseStack(undefined);
     expect(loop.status()[0]!.stack).toBe("backend");

@@ -22,7 +22,7 @@ import { tryItCommand } from "./regenerate/delivery.ts";
 import { describeDiagnosis, diagnoseFailure } from "./regenerate/diagnose.ts";
 import { createJobRegistry, pulseName, type Job } from "./regenerate/jobs.ts";
 import type { SpecGap } from "./regenerate/notes.ts";
-import { createWorkLoop, describeModules, functionalityCompletion, promptOf, type DriftReport, type ModuleStatus, type WorkLoop } from "./regenerate/loop.ts";
+import { createWorkLoop, describeModules, functionalityCompletion, type DriftReport, type ModuleStatus, type WorkLoop } from "./regenerate/loop.ts";
 import { MODULES_DIR, projectDirOf } from "./regenerate/paths.ts";
 import { exportModule } from "./regenerate/release.ts";
 import { listFiles } from "./regenerate/testing.ts";
@@ -33,8 +33,8 @@ import { configKeyOptions, optionValue } from "./cli-options.ts";
  * What every command that builds - `turri regenerate`, `conform` - does around its own
  * request of the work loop, as the chat does it: the project's models, a job that fails run once more and, failing again,
  * diagnosed, a line as each job starts and ends; then the loop run until nothing more can start, how each job ended,
- * and exit 1 when any failed or a module is not complete. With `dryRun`, the work is planned and the prompt of the first job each codebase would
- * start printed, and nothing runs.
+ * and exit 1 when any failed or a module is not complete. With `dryRun`, `ask` is a look ahead (`WorkLoop.lookAhead`): the work is
+ * planned, the prompt of the next pulse of each codebase printed from the plan kept, and nothing runs.
  */
 export async function runLoop(options: {
   plainFile: string;
@@ -44,6 +44,7 @@ export async function runLoop(options: {
   report?: string;
   /** The command, as the report gives it: its name and its arguments. */
   command?: string[];
+  /** Plan and print the next pulses, starting nothing - `ask` a look ahead. */
   dryRun?: boolean;
   /** Start over, unasked, a codebase that has to be on a module it now requires (`--start-over`). */
   startOver?: boolean;
@@ -138,7 +139,6 @@ async function runLoopReporting(
     cwd: process.cwd(),
     ...(model !== undefined ? { modelFor: () => model } : {}),
     ...(planner !== undefined ? { plannerModel: planner } : {}),
-    ...(options.dryRun === true ? { dryRun: true } : {}),
   });
   report?.attach({
     jobs: () => registry.list(),
@@ -182,13 +182,14 @@ async function runLoopReporting(
   }
 
   if (options.dryRun === true) {
-    for (const first of loop.firsts()) {
-      console.log(`\n${c.bold(`${first.module}: ${first.planned.title}`)}${first.planned.track === "conformance" ? c.dim(" (conformance)") : ""}`);
-      if (first.planned.track === "conformance") {
-        console.log(c.dim("A conformance job's prompt is built from what the code it tests holds once it is built: not shown before."));
-        continue;
-      }
-      console.log((await promptOf(first)) ?? "(no task)");
+    // The next pulse of each codebase, from the plan the look ahead kept - the one regenerate would start.
+    for (const status of planned) {
+      const first = status.planned[0];
+      if (first === undefined || first.afterCode === true || first.planning === true) continue;
+      const next = await loop.plannedPulse(`planned-${status.module}-1`);
+      if (next === undefined) continue;
+      console.log(`\n${c.bold(`${next.module}: ${next.title}`)}${next.track === "conformance" ? c.dim(" (conformance)") : ""}`);
+      console.log(next.task ?? c.dim(next.why ?? "(no task)"));
     }
     process.exit(0);
   }

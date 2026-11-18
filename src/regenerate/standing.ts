@@ -35,7 +35,7 @@ export interface StandingOptions {
 export function projectStanding(projectDir: string, options: StandingOptions = {}): ModuleStanding[] {
   const root = resolve(projectDir);
   const files = (options.files ?? projectPlainFiles(root)).map((file) => resolve(root, file));
-  const loop = options.loop ?? createWorkLoop({ registry: createJobRegistry(), cwd: root, dryRun: true });
+  const loop = options.loop ?? createWorkLoop({ registry: createJobRegistry(), cwd: root });
   return withParseCache(() =>
     files.map((plainFile): ModuleStanding => {
       const standing: ModuleStanding = { plainFile, module: basename(plainFile, PLAIN_SOURCE_FILE_EXTENSION) };

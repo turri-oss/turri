@@ -289,7 +289,7 @@ export function driftTool(options: LoopToolsOptions & { loop: (ctx: ExtensionCon
       "with nothing left, it says the module is fully regenerated. It plans nothing and starts nothing, and calls no model.",
     promptSnippet: "drift: what is left to regenerate in a module, code and conformance tests - starting nothing",
     promptGuidelines: [
-      "Use drift when the user asks what is left to build, whether a module is up to date with its spec, or what changed since it was last regenerated. To see the next pulse's prompt as well, use glimpse.",
+      "Use drift when the user asks what is left to build, whether a module is up to date with its spec, or what changed since it was last regenerated. To see how it is planned into pulses, and the next pulse's prompt, use pulses with plain_file.",
     ],
     parameters: Type.Object({
       plain_file: Type.Optional(Type.String({ description: "Path to the .plain file. Omitted: the module the project's config.turri.yaml names" })),

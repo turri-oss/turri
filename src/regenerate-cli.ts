@@ -17,7 +17,8 @@ build when none is given), coding-model (the agents that build) and harness-mode
 0 only when every module is complete: regenerated from the spec as it is, and its conformance tests written
 for every functional spec's scenarios.
 
-  --dry-run                plan the work and print the prompt of the first job, and run nothing (turri glimpse)
+  --dry-run                look ahead: plan the work as regenerate would and print the prompt of each codebase's
+                           next pulse, starting and writing nothing
   --start-over             start over, without asking, a codebase regenerated without a module it now requires -
                            with no terminal to ask and without it, the run stops there
   --from-scratch           delete the module's code and conformance tests (its lineage keeps them) and regenerate all of it
@@ -47,9 +48,14 @@ if (!named) {
   process.exit(1);
 }
 const scratch = options["from-scratch-chain"] !== undefined ? "chain" : options["from-scratch"] !== undefined ? "module" : undefined;
-// A dry run starts nothing, and from scratch deletes before it plans: the two do not go together.
-if (scratch !== undefined && options["dry-run"] !== undefined) {
+const dryRun = options["dry-run"] !== undefined;
+// A dry run writes nothing: from scratch deletes the code before it plans, and functional specs named are marked in the records first.
+if (scratch !== undefined && dryRun) {
   console.error(`--from-scratch${scratch === "chain" ? "-chain" : ""} deletes the code before anything is planned: it cannot be a dry run.`);
+  process.exit(1);
+}
+if (again.length > 0 && dryRun) {
+  console.error(`${again.join(", ")} would be marked to regenerate again in the code records before anything is planned: that cannot be a dry run.`);
   process.exit(1);
 }
 runLoop({
@@ -57,10 +63,13 @@ runLoop({
   ...(buildDir !== undefined ? { buildDir } : {}),
   ...(report !== undefined ? { report } : {}),
   command: ["regenerate", ...process.argv.slice(2)],
-  dryRun: options["dry-run"] !== undefined,
+  dryRun,
   startOver: options["start-over"] !== undefined,
+  // A dry run is a look ahead: planned as regenerate plans it, nothing started.
   ask: (loop) =>
-    again.length > 0
+    dryRun
+      ? loop.lookAhead(named)
+      : again.length > 0
       ? loop.regenerateAgain(named, again)
       : scratch !== undefined
         ? loop.fromScratch(named, { chain: scratch === "chain" })

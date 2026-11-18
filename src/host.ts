@@ -71,7 +71,7 @@ export { plainGraph, type PlainConceptNode, type PlainGraph, type PlainItemNode,
 export { isStack, STDLIB_KINDS, stdlibTemplates, type StdlibKind, type StdlibTemplate } from "./stdlib.ts";
 
 // The work: what is built, what is left, and the jobs that build it.
-export { createWorkLoop, describeModules, functionalityCompletion, promptOf, type DriftReport, type ModuleStatus, type WorkLoop } from "./regenerate/loop.ts";
+export { createWorkLoop, describeModules, functionalityCompletion, type DriftReport, type ModuleStatus, type PlannedPulse, type WorkLoop } from "./regenerate/loop.ts";
 export { projectStanding, type ModuleStanding, type StandingOptions } from "./regenerate/standing.ts";
 export { requiresOrder } from "./regenerate/requires.ts";
 export { createJobRegistry, defaultParallelJobs, type Job, type JobRegistry, type PulseCases, type PulseSpec } from "./regenerate/jobs.ts";

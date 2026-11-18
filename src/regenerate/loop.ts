@@ -9,7 +9,7 @@ import { llmChunkAgents, MAX_LINES_PER_JOB, MAX_SPECS_PER_JOB, planChunks, steps
 import { commitNotes, landWork, recordHistory, resetToLastCommit } from "./lineage.ts";
 import { firstLine, record } from "./ledger.ts";
 import { NOTES_FILE, recordPulse, type SpecGap } from "./notes.ts";
-import { createJobRegistry, formatDuration, type Job, type JobRegistry, type PulseCases } from "./jobs.ts";
+import { formatDuration, type Job, type JobRegistry, type PulseCases } from "./jobs.ts";
 import { moduleLanes } from "./lanes.ts";
 import type { Steering } from "./steer.ts";
 import {
@@ -200,6 +200,12 @@ interface ModuleState {
   halted?: { why: string; specKey: string; pulse?: { number: number; before: string; after: string }; cause?: string };
   /** Halted by the person (`WorkLoop.halt`): nothing runs here until it is asked for again - a spec change does not start it. */
   held?: { why: string };
+  /**
+   * Planned by a look ahead (`WorkLoop.lookAhead`) and held there - apart from the person's halt (`held`) and a pulse's
+   * (`halted`): its plans are kept, nothing starts and nothing is written here, and it is planned again only by the next
+   * look ahead, until regenerate, conform or /regenerate asks for it.
+   */
+  lookedAhead?: true;
   /** Its base folder as the status says it, and what it was read at - the two records' times: read again only when either moves. */
   base?: { at: string; base: ModuleStatus["base"] };
   /** How many pulses have started here this session: the next is numbered one more. */
@@ -286,6 +292,21 @@ export interface WorkLoop {
    */
   bringUp(plainFile: string, options?: { model?: string; guidance?: string }): Promise<ModuleStatus[]>;
   /**
+   * Plan a spec's module as `bringUp` would - the same codebases, its stack pinned, the steering and `guidance` given
+   * to the planner - and start nothing: the plans are kept, and its pulses held until regenerate, conform or /regenerate
+   * asks for the module. Then the first pulse of the kept plan starts as it is, planned again only when the ***plain,
+   * what it is built from or the steering changed since. A module the person halted stays halted, and a codebase whose
+   * chain has a pulse running goes on as it was, planning what follows it. Says what is planned.
+   */
+  lookAhead(plainFile: string, options?: { model?: string; guidance?: string }): Promise<ModuleStatus[]>;
+  /**
+   * A planned row (`planned-<module>-N`, as `planned` names it) as the loop keeps it: its cases and, for the next pulse
+   * of a codebase with nothing running, the whole prompt its coding agent will get - built from the kept plan, never
+   * planned again. Otherwise, or when the ***plain or the steering changed since the plan was made, `why` says why no
+   * prompt is shown. Undefined when no row has that id.
+   */
+  plannedPulse(rowId: string): Promise<PlannedPulse | undefined>;
+  /**
    * Regenerate functional specs of a module again, their spec changed or not - each named by its func-id: each is marked to regenerate again in
    * the record of every codebase it is built in - committed - and they are brought up to their spec, the marked ones
    * planned as any change is. Their code is there: the jobs that regenerate them are told to regenerate it again, not
@@ -341,8 +362,25 @@ export interface WorkLoop {
   mapPlan(): MapPlan;
   /** Resolves once nothing runs and nothing more can start. */
   drain(): Promise<void>;
-  /** In a dry run: the job each codebase would start, with the spec it would be given. */
-  firsts(): Array<{ module: string; plainFile: string; buildDir: string; spec: SpecSnapshot; planned: PlannedJob }>;
+}
+
+/** A planned pulse as `WorkLoop.plannedPulse` tells it. */
+export interface PlannedPulse {
+  /** The planned row's id. */
+  id: string;
+  module: string;
+  plainFile: string;
+  title: string;
+  track: Track;
+  cases: JobCases;
+  /** Its place among the codebase's planned pulses, from 1. */
+  index: number;
+  /** Planned by a look ahead: it waits for regenerate, conform or /regenerate to start it. */
+  lookedAhead: boolean;
+  /** The coding agent's task, whole: the next pulse of a codebase with nothing running, from the kept plan. */
+  task?: string;
+  /** Why no task is shown, when none is. */
+  why?: string;
 }
 
 /** A pulse as the regeneration places it: by the items its trees differ in. */
@@ -582,8 +620,6 @@ export function createWorkLoop(options: {
    * the module's next pulse starts on what is released. Its last reply goes in the pulse's report. Not given: nothing is.
    */
   release?: (input: { plainFile: string; moduleName: string; title: string; onDelta: (delta: string) => void }) => Promise<string>;
-  /** Plan, and keep the job each codebase would start (`firsts`) - but start none. */
-  dryRun?: boolean;
 }): WorkLoop {
   const modules = new Map<string, ModuleState>();
   const order: string[] = [];
@@ -847,21 +883,18 @@ export function createWorkLoop(options: {
     }
   };
 
-  /** A dry run's first jobs, by codebase: what each would start. */
-  const firsts = new Map<string, { spec: SpecSnapshot; planned: PlannedJob }>();
-
   const startJob = (state: ModuleState, spec: SpecSnapshot, from: MarshalledPlainSource, planned: PlannedJob) => {
     // Halted while it was being planned: the plan is made, nothing starts.
     if (state.held !== undefined) {
       state.why = state.held.why;
       return;
     }
-    const tip = tipEntry(state);
-    if (options.dryRun === true) {
-      firsts.set(tip.buildDir, { spec: planned.track === "conformance" ? spec : { ...spec, tree: planned.step.tree }, planned });
-      state.why = `would start: ${planned.title}`;
+    // Looked ahead: the plan is kept, and its first pulse waits for the module to be asked for.
+    if (state.lookedAhead === true) {
+      state.why = LOOKED_AHEAD;
       return;
     }
+    const tip = tipEntry(state);
     const conformance = planned.track === "conformance";
     // A code job can be steered while it regenerates: its target moves with the spec, inside what it regenerates.
     const steering = conformance ? undefined : createSteering(planned.step.tree, tip.moduleName);
@@ -1086,8 +1119,8 @@ export function createWorkLoop(options: {
    * nothing running there - so the code is taken to be built from them, rather than everything linking one built again.
    */
   const hashResources = (state: ModuleState, spec: SpecSnapshot) => {
-    // A dry run only reads.
-    if (options.dryRun === true) return;
+    // A look ahead only reads.
+    if (state.lookedAhead === true) return;
     const code = tipEntry(state).buildDir;
     for (const dir of [code, testsDirOf(state)]) {
       const record = readRecord(dir);
@@ -1116,11 +1149,15 @@ export function createWorkLoop(options: {
   };
   // A testing script written in the background, or not: what waited for it is looked at again - started, or failed for want of it.
   onScriptRunEnded(() => {
-    if (asked.size > 0 && options.dryRun !== true) void tick();
+    if (asked.size > 0 || ahead.size > 0) void tick();
   });
 
   /** The files asked for, each with how: what the loop brings up, worked out again each look. */
   const asked = new Map<string, { model?: string; guidance?: string }>();
+  /** The files looked ahead at and not asked for since: their codebases are looked at, their pulses held. */
+  const ahead = new Map<string, { model?: string; guidance?: string }>();
+  /** The codebases a look ahead is planning now: the only looks that plan a codebase held for one. */
+  const planningAhead = new Set<ModuleState>();
 
   /**
    * The modules asked for whose plan is not made yet - their code being deleted, what is left being worked out, the
@@ -1143,10 +1180,13 @@ export function createWorkLoop(options: {
     }
   };
 
-  /** The codebases the requests bring up now - where each module's code lives, and what is to be built on it. */
-  const active = (): Set<ModuleState> => {
+  /**
+   * The codebases the requests bring up now - where each module's code lives, and what is to be built on it - those
+   * asked for and, unless `requests` names others, those looked ahead at.
+   */
+  const active = (requests: Iterable<[string, { model?: string; guidance?: string }]> = [...asked, ...ahead]): Set<ModuleState> => {
     const states = new Set<ModuleState>();
-    for (const [file, request] of asked) {
+    for (const [file, request] of requests) {
       let chains: ChainEntry[][];
       try {
         chains = chainsFor(file);
@@ -1169,6 +1209,7 @@ export function createWorkLoop(options: {
     // A .plain file taken out of the project is asked for no more, and a codebase whose module's file is gone is
     // forgotten - nothing running there - rather than shown waiting for a plan it will never have.
     for (const file of [...asked.keys()]) if (!existsSync(file)) asked.delete(file);
+    for (const file of [...ahead.keys()]) if (!existsSync(file)) ahead.delete(file);
     for (const key of [...order]) {
       const state = modules.get(key)!;
       if (state.running === undefined && !existsSync(tipEntry(state).plainFile)) forget(state);
@@ -1298,8 +1339,10 @@ export function createWorkLoop(options: {
     // A func-id or a scenario-id renamed, and nothing else with it: turri renames it in the records and relabels the tests
     // itself, as one unit of work - no pulse, the code untouched. Failing, it is rolled back whole, and the codebase halts
     // rather than build the functional spec anew.
-    const renamed = options.dryRun === true || readRecord(tip.buildDir) === null ? undefined : pureRenames(readRecord(tip.buildDir), readRecord(testsDirOf(state)), spec.tree, tip.moduleName);
-    if (renamed !== undefined && renamed.renames.length > 0) {
+    // Looked ahead, they are not made - a look ahead writes nothing - and the code is planned from as they would leave it.
+    const renamed = readRecord(tip.buildDir) === null ? undefined : pureRenames(readRecord(tip.buildDir), readRecord(testsDirOf(state)), spec.tree, tip.moduleName);
+    const pending = state.lookedAhead === true && renamed !== undefined && renamed.renames.length > 0 && renamed.code !== null ? renamed.code : undefined;
+    if (renamed !== undefined && renamed.renames.length > 0 && state.lookedAhead !== true) {
       const made = makeRenames({ buildDir: tip.buildDir, testsDir: testsDirOf(state), moduleName: tip.moduleName, renamed, place: { project: projectRootOf(tip.buildDir), module: tip.moduleName } });
       if (!made) {
         state.halted = { why: `renaming ${renamed.renames.map(renameText).join(", ")} failed, and was rolled back - it is tried again once the spec changes, or the module is asked for again`, specKey };
@@ -1310,8 +1353,10 @@ export function createWorkLoop(options: {
     }
     // The module's code first, every job of it; then its conformance tests - once, for the module as built, with one
     // explorer and one run of the whole suite - and only then is anything built on it (waitingOn).
-    const from = builtOf(state);
+    const from = pending !== undefined ? codeTree(pending) : builtOf(state);
     const codeLeft = codeWork(from, spec.tree).length > 0;
+    // Held for a look ahead, a codebase is planned by a look ahead alone: a plan that no longer fits is dropped, not made again.
+    const mayPlan = state.lookedAhead !== true || planningAhead.has(state);
     if (state.conformanceHalted !== undefined && state.conformanceHalted.key !== conformanceKey(state)) state.conformanceHalted = undefined;
     if (!codeLeft && conformanceWanted(state, spec) && state.conformanceHalted === undefined) {
       const tested = testedOf(state);
@@ -1321,6 +1366,11 @@ export function createWorkLoop(options: {
         // Made again when the spec, the tests or the code it was planned against moved: what the tests are written for
         // follows the code, and a plan made before a code pulse landed would test it as it was.
         if (existing === undefined || existing.specKey !== specKey || existing.from !== testedKey || existing.codeKey !== codeKeyOf(state) || existing.jobs.length === 0) {
+          if (!mayPlan) {
+            state.conformancePlan = undefined;
+            state.why = LOOK_AGAIN;
+            return;
+          }
           state.conformancePlan = { specKey, from: testedKey, codeKey: codeKeyOf(state), jobs: (await planIdle(state, spec, tested, "conformance")).jobs };
         }
         const next = state.conformancePlan!.jobs[0];
@@ -1349,6 +1399,11 @@ export function createWorkLoop(options: {
     const fromKey = serializeTree(from);
     const steeringKey = steeringKeyOf(state);
     if (state.plan === undefined || state.plan.specKey !== specKey || state.plan.from !== fromKey || state.plan.steeringKey !== steeringKey || state.plan.jobs.length === 0) {
+      if (!mayPlan) {
+        state.plan = undefined;
+        state.why = LOOK_AGAIN;
+        return;
+      }
       const { jobs, notes } = await planIdle(state, spec, from, "code");
       state.plan = { specKey, from: fromKey, steeringKey, jobs, notes };
       if (jobs.length === 0) {
@@ -1365,6 +1420,17 @@ export function createWorkLoop(options: {
   };
 
   const statusOf = (state: ModuleState): ModuleStatus => describe(state).status;
+
+  /** A planned row's codebase and its place there, from its id - `planned-<module>-N`, the longest module name it starts with, as a name may hold a hyphen. */
+  const rowOf = (rowId: string): { state: ModuleState; index: number } | undefined => {
+    const state = order
+      .map((key) => modules.get(key)!)
+      .filter((candidate) => rowId.startsWith(`planned-${tipEntry(candidate).moduleName}-`))
+      .sort((a, b) => tipEntry(b).moduleName.length - tipEntry(a).moduleName.length)[0];
+    if (state === undefined) return undefined;
+    const rest = rowId.slice(`planned-${tipEntry(state).moduleName}-`.length);
+    return /^[1-9]\d*$/.test(rest) ? { state, index: Number(rest) } : undefined;
+  };
 
   /** The modules asked for that the loop holds nothing of yet - turri just opened, say: their code being planned all the same. */
   const preparingAlone = (): Array<ModuleStatus & { since: number }> => {
@@ -1488,22 +1554,80 @@ export function createWorkLoop(options: {
       // Asked for, it shows as being planned at once.
       return preparingFor(plainFile, async () => {
         const files = codebasesOf(resolve(options.cwd, plainFile));
-        for (const file of files) asked.set(file, { ...asked.get(file), ...given });
+        for (const file of files) {
+          asked.set(file, { ...ahead.get(file), ...asked.get(file), ...given });
+          ahead.delete(file);
+        }
         // Asked for, it is built with its stack - the one the call names, its own, or the one chosen now - pinned, whatever
         // is chosen later.
         const states = withParseCache(() =>
           files.flatMap((file) => chainsFor(file).flatMap((chain) => toBuild(chain).map((entry) => track(chain.slice(0, chain.indexOf(entry) + 1), file, given, true)))),
         );
-        // Asked again, a halted codebase is tried again - one the person halted too.
+        // Asked again, a halted codebase is tried again - one the person halted too. Looked ahead at, its kept plan starts.
         for (const state of states) {
           state.halted = undefined;
           state.held = undefined;
+          state.lookedAhead = undefined;
           // Asked for again: its conformance tests are written for every functional spec with scenarios, not only those conform named.
           state.conformanceOnly = undefined;
         }
         await tick();
         return [...new Set(states)].map(statusOf);
       });
+    },
+    async lookAhead(plainFile, given = {}) {
+      // Being planned, it shows so at once; what is planned is said once it is - not as being planned.
+      const states = await preparingFor(plainFile, async () => {
+        const files = codebasesOf(resolve(options.cwd, plainFile));
+        for (const file of files) if (!asked.has(file)) ahead.set(file, { ...ahead.get(file), ...given });
+        // Its stack pinned as an ask pins it: the plan is made, and its pulses run, with the stack regenerate would use.
+        const tracked = withParseCache(() =>
+          files.flatMap((file) => chainsFor(file).flatMap((chain) => toBuild(chain).map((entry) => track(chain.slice(0, chain.indexOf(entry) + 1), file, given, true)))),
+        );
+        // A chain with a pulse running is being built as asked, and goes on; every other codebase is held - one asked for
+        // earlier too, which would otherwise start the work the look ahead plans.
+        const building = (state: ModuleState) => state.chain.some((entry) => modules.get(entry.buildDir)?.running !== undefined);
+        for (const state of tracked) {
+          if (!building(state)) state.lookedAhead = true;
+          planningAhead.add(state);
+        }
+        try {
+          await tick();
+        } finally {
+          for (const state of tracked) planningAhead.delete(state);
+        }
+        return tracked;
+      });
+      return [...new Set(states)].map(statusOf);
+    },
+    async plannedPulse(rowId) {
+      const found = rowOf(rowId);
+      if (found === undefined) return undefined;
+      const { state, index } = found;
+      const { status, jobs } = describe(state);
+      const entry = status.planned[index - 1];
+      if (entry === undefined) return undefined;
+      const tip = tipEntry(state);
+      const pulse: PlannedPulse = { id: rowId, module: tip.moduleName, plainFile: tip.plainFile, title: entry.title, track: entry.track, cases: entry.cases, index, lookedAhead: state.lookedAhead === true };
+      const job = jobs[index - 1];
+      const why = (text: string): PlannedPulse => ({ ...pulse, why: text });
+      if (entry.planning === true) return why("It is being planned now: its prompt is built once the plan is made.");
+      if (entry.afterCode === true || job === undefined) return why("It is not planned yet: the conformance tests are planned into pulses once the module's code is built, and their prompt is built from that code.");
+      if (state.running !== undefined) return why(`Pulse ${state.running.jobId} is running in this codebase: what this pulse is given depends on what that one lands.`);
+      if (index > 1) return why(`It follows ${index - 1} planned pulse${index === 2 ? "" : "s"} here: its prompt depends on what ${index === 2 ? "that one lands" : "they land"}, and is built when it starts.`);
+      if (job.track === "conformance") return why("A conformance pulse's prompt is built from what the code it tests holds once it is built: it is not shown before.");
+      // The plan as kept, and only while it fits the ***plain and the steering as they are now - else regenerate would plan again.
+      let spec: SpecSnapshot;
+      try {
+        spec = chainSpec(state.chain);
+      } catch (error) {
+        return why(`Its ***plain does not parse now: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      if (state.plan === undefined || !state.plan.jobs.includes(job) || state.plan.specKey !== keyOf(spec) || state.plan.steeringKey !== steeringKeyOf(state)) {
+        return why("The ***plain or the steering changed since it was planned: regenerate would plan it again. Look ahead again to see the new plan.");
+      }
+      const task = await inStack(state, () => promptOf({ plainFile: tip.plainFile, spec: { ...spec, tree: job.step.tree }, planned: job }));
+      return task !== undefined ? { ...pulse, task } : why("It has no prompt to show.");
     },
     async regenerateAgain(plainFile, given, request = {}) {
       return preparingFor(plainFile, async () => {
@@ -1607,7 +1731,8 @@ export function createWorkLoop(options: {
     },
     async conformance(plainFile, request = {}) {
       const file = resolve(options.cwd, plainFile);
-      asked.set(file, { ...asked.get(file), ...(request.model !== undefined ? { model: request.model } : {}) });
+      asked.set(file, { ...ahead.get(file), ...asked.get(file), ...(request.model !== undefined ? { model: request.model } : {}) });
+      ahead.delete(file);
       const own = resolveRequiresChain(file, [], undefined, { allowNoFunctionalities: true });
       const self = tipOf(own);
       // What the person asks for comes first. Its tests are written in its own codebase, before anything is built on it:
@@ -1656,6 +1781,8 @@ export function createWorkLoop(options: {
       const asking = tracked.find((state) => tipEntry(state).buildDir === self.buildDir);
       const states = asking !== undefined ? tracked.filter((state) => own.some((entry) => entry.buildDir === tipEntry(state).buildDir)) : tracked;
       const tip = asking ?? states.at(-1);
+      // Asked for: what a look ahead held here goes on - the modules below with it, or the module waits for them for ever.
+      for (const state of tracked) state.lookedAhead = undefined;
       const asks = named !== undefined && named.length > 0 ? named : undefined;
       // Its tests are written already, and a codebase built on it holds its code: nothing to write, nothing touched.
       if (asking === undefined && asks !== undefined && tip !== undefined) {
@@ -1798,12 +1925,15 @@ export function createWorkLoop(options: {
         const status = statusOf(state);
         let before = status.running?.jobId;
         if (before !== undefined) lastOf.set(tip.moduleName, before);
+        // Looked ahead at: every row of it says it waits for the module to be asked for.
+        const held = state.lookedAhead === true && state.running === undefined;
         const row = (id: string, summary: string, note: string, waitingOn: string[], conformance = false): Job => ({
           id,
           kind: conformance ? "conformance" : "regenerate",
           summary,
           module: tip.moduleName,
-          note,
+          note: held ? `${LOOKED_AHEAD_NOTE} ${note}` : note,
+          ...(held ? { lookedAhead: true as const } : {}),
           ...(state.model !== undefined ? { model: state.model } : {}),
           status: "queued",
           sequence: sequence--,
@@ -1849,16 +1979,9 @@ export function createWorkLoop(options: {
         });
       })];
     },
-    firsts() {
-      return order.flatMap((key) => {
-        const first = firsts.get(key);
-        const tip = tipEntry(modules.get(key)!);
-        return first === undefined ? [] : [{ module: tip.moduleName, plainFile: tip.plainFile, buildDir: tip.buildDir, ...first }];
-      });
-    },
     mapPlan() {
       return {
-        files: [...asked.keys()],
+        files: [...asked.keys(), ...[...ahead.keys()].filter((file) => !asked.has(file))],
         codebases: order.map((key): MapCodebase => {
           const state = modules.get(key)!;
           const tip = tipEntry(state);
@@ -1921,6 +2044,13 @@ const OLD_RECORDS_WHY = (codebases: string[]): string =>
 
 /** Why nothing runs in a codebase whose code - and conformance tests, where they are wanted - is built from its spec as it is. */
 export const UP_TO_DATE = "built from the ***plain as it is";
+
+/** Why nothing starts in a codebase a look ahead planned: its pulses wait for the module to be asked for. */
+const LOOKED_AHEAD = "looked ahead - planned, and nothing starts until regenerate, conform or /regenerate asks for it";
+/** What a planned row of a codebase a look ahead planned says first. */
+const LOOKED_AHEAD_NOTE = "Planned by a look ahead: it waits for regenerate, conform or /regenerate to start it.";
+/** Why a codebase held for a look ahead has no plan: its ***plain or steering moved since, and only a look ahead plans it. */
+const LOOK_AGAIN = "looked ahead, and the ***plain or the steering changed since - look ahead again to plan it, or regenerate it";
 
 /** Why a codebase with work left has no plan: the planner found none. */
 /** Why a codebase waits for a testing script being written in the background. */
@@ -2075,70 +2205,22 @@ function casesText(cases: JobCases): string {
   return parts.length > 0 ? parts.join(", ") : "no functional spec - reqs or definitions only";
 }
 
-/** The codebases the loop looks after, as the person reads them: what runs, what is planned after it, and why nothing does. */
 /**
- * The coding agent's task for a dry run's first job, built as the render builds it - and all it did rolled back. Not for
- * a conformance job: its prompt is built from what the code holds once it is built.
+ * The coding agent's task for a planned code pulse, built as the pulse builds it - with `spec` the ***plain the pulse
+ * would be given - and all it did rolled back. Not for a conformance pulse: its prompt is built from what the code holds
+ * once it is built.
  */
-export async function promptOf(first: ReturnType<WorkLoop["firsts"]>[number]): Promise<string | undefined> {
-  if (first.planned.track !== "code") return undefined;
+async function promptOf(next: { plainFile: string; spec: SpecSnapshot; planned: PlannedJob }): Promise<string | undefined> {
+  if (next.planned.track !== "code") return undefined;
   const result = await renderSpecDiff({
-    plainFile: first.plainFile,
-    diff: first.planned.step.textDiff,
+    plainFile: next.plainFile,
+    diff: next.planned.step.textDiff,
     applied: "already applied",
-    spec: first.spec,
-    cases: first.planned.cases,
+    spec: next.spec,
+    cases: next.planned.cases,
     dryRun: true,
   });
   return result.task;
-}
-
-/** The first job a codebase would start, and the prompt its coding agent would get. */
-export interface JobPreview {
-  module: string;
-  title: string;
-  track: Track;
-  cases: JobCases;
-  /** The coding agent's task, whole. Not for a conformance job: it is built from what the code holds once it is built. */
-  task?: string;
-}
-
-/**
- * What bringing a spec's module up would start, in each codebase, and the prompt of each - planned on a loop of its own
- * that starts nothing. A codebase `busy` says is running a job is left out: a dry run starts from its last commit, and
- * what the next job there is given depends on what the running one lands.
- */
-export async function previewJobs(options: {
-  plainFile: string;
-  cwd: string;
-  model?: string;
-  plannerModel?: string;
-  steering?: (plainFile: string) => Steering[];
-  /** Whether a codebase, by its module, has a job running. */
-  busy?: (module: string) => boolean;
-}): Promise<{ statuses: ModuleStatus[]; previews: JobPreview[]; busy: string[] }> {
-  const loop = createWorkLoop({
-    registry: createJobRegistry(),
-    cwd: options.cwd,
-    dryRun: true,
-    ...(options.model !== undefined ? { modelFor: () => options.model } : {}),
-    ...(options.plannerModel !== undefined ? { plannerModel: options.plannerModel } : {}),
-    ...(options.steering !== undefined ? { steering: options.steering } : {}),
-  });
-  const statuses = await loop.bringUp(options.plainFile, options.model !== undefined ? { model: options.model } : {});
-  const previews: JobPreview[] = [];
-  const busy: string[] = [];
-  for (const first of loop.firsts()) {
-    if (options.busy?.(first.module) === true) {
-      busy.push(first.module);
-      continue;
-    }
-    const preview: JobPreview = { module: first.module, title: first.planned.title, track: first.planned.track, cases: first.planned.cases };
-    const task = await promptOf(first);
-    if (task !== undefined) preview.task = task;
-    previews.push(preview);
-  }
-  return { statuses, previews, busy };
 }
 
 /** Nothing runs, is planned or is waiting there, as its code is built from its spec as it is. */

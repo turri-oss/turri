@@ -179,12 +179,12 @@ describe("the work loop", () => {
       group: async (_specs: unknown, _check: unknown, steering?: Array<{ text: string }>) => (guided.push((steering ?? []).map((entry) => entry.text)), undefined),
       place: async () => undefined,
     };
-    // A dry run plans and starts nothing: what is planned stays planned.
-    const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner, dryRun: true, run: runner().run });
-    await loop.bringUp("app.plain");
-    await loop.bringUp("app.plain");
+    // A look ahead plans and starts nothing: what is planned stays planned.
+    const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner, run: runner().run });
+    await loop.lookAhead("app.plain");
+    await loop.lookAhead("app.plain");
     expect(guided).toEqual([[]]);
-    await loop.bringUp("app.plain", { guidance: "Hello and goodbye together." });
+    await loop.lookAhead("app.plain", { guidance: "Hello and goodbye together." });
     expect(guided).toEqual([[], ["Hello and goodbye together."]]);
   });
 
@@ -1678,38 +1678,198 @@ describe("a module regenerated from scratch", () => {
   });
 });
 
-describe("a preview of the next job", () => {
-  it("plans on a loop of its own and starts nothing - the job each codebase would start, with its coding agent's prompt - and copies nothing up", async () => {
-    const { previewJobs } = await import("../../src/regenerate/loop.ts");
-    const { existsSync } = await import("node:fs");
+describe("a look ahead", () => {
+  /** A planner that counts its calls, grouping hello and goodbye together when there are three functional specs. */
+  function countingPlanner() {
+    const calls = { group: 0 };
+    const planner = {
+      group: async (specs: Array<{ number: number }>) => {
+        calls.group += 1;
+        return specs.length === 3 ? { groups: [{ specs: [1, 2], title: "Greetings" }, { specs: [3], title: "Counting" }] } : undefined;
+      },
+      place: async () => undefined,
+    };
+    return { calls, planner };
+  }
+
+  it("plans and starts nothing, even when another module's pulse ends and the loop looks again", async () => {
+    writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye.", "Count to ten."]));
+    writePlain(dir, "other.plain", app(["Say hi."]));
+    const { ran, gate, holdNext, run } = runner();
+    const { planner } = countingPlanner();
+    const registry = createJobRegistry();
+    const loop = createWorkLoop({ registry, cwd: dir, planner, run });
+    holdNext();
+    await loop.bringUp("other.plain");
+    const [looked] = await loop.lookAhead("app.plain");
+    expect(looked!.planned.map((job) => job.title)).toEqual(["Greetings", "Counting"]);
+    expect(looked!.why).toContain("looked ahead");
+    // other's pulse ends: the loop looks at every codebase again, and app's still waits for regenerate.
+    gate.release!();
+    await loop.drain();
+    expect(ran.map((job) => job.module)).toEqual(["other"]);
+    expect(registry.list().map((job) => job.module)).toEqual(["other"]);
+    expect(existsSync(join(dir, "plain_modules", "app"))).toBe(false);
+    const app_ = loop.status().find((status) => status.module === "app")!;
+    expect(app_.planned.map((job) => job.title)).toEqual(["Greetings", "Counting"]);
+    const rows = loop.planned().filter((row) => row.module === "app");
+    expect(rows.map((row) => row.id)).toEqual(["planned-app-1", "planned-app-2"]);
+    expect(rows.every((row) => row.lookedAhead === true && row.note!.startsWith("Planned by a look ahead"))).toBe(true);
+  });
+
+  it("is the plan regenerate runs: regenerate after it starts the previewed pulses without calling the planner again", async () => {
+    writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye.", "Count to ten."]));
+    const { ran, run } = runner();
+    const { calls, planner } = countingPlanner();
+    const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner, run });
+    const [looked] = await loop.lookAhead("app.plain");
+    expect(calls.group).toBe(1);
+    await loop.bringUp("app.plain");
+    await loop.drain();
+    expect(calls.group).toBe(1);
+    expect(ran.map((job) => job.title)).toEqual(looked!.planned.map((job) => job.title));
+    expect(ran.map((job) => job.add)).toEqual([["say-hello", "say-goodbye"], ["count-to-ten"]]);
+  });
+
+  it("plans again when the ***plain changes after it - on the next look ahead, or on regenerate", async () => {
+    writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye.", "Count to ten."]));
+    const { ran, run } = runner();
+    const { calls, planner } = countingPlanner();
+    const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner, run });
+    await loop.lookAhead("app.plain");
+    writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye."]));
+    // The kept plan no longer fits: its prompt is not shown, and the next look ahead plans again.
+    expect((await loop.plannedPulse("planned-app-1"))!.why).toContain("changed since it was planned");
+    const [again] = await loop.lookAhead("app.plain");
+    expect(calls.group).toBe(2);
+    expect(again!.planned.map((job) => job.title)).toEqual(["Say hello.", "Say goodbye."]);
+    writePlain(dir, "app.plain", app(["Say hello."]));
+    await loop.bringUp("app.plain");
+    await loop.drain();
+    expect(ran.map((job) => job.title)).toEqual(["Say hello."]);
+  });
+
+  it("plans again when the steering changes after it, as regenerate would", async () => {
+    writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye."]));
+    const { ran, run } = runner();
+    let wishes: string[] = [];
+    const seen: string[][] = [];
+    const planner = {
+      group: async (_specs: unknown, _check: unknown, steering?: Array<{ text: string }>) => {
+        seen.push((steering ?? []).map((entry) => entry.text));
+        return wishes.length > 0 ? { groups: [{ specs: [1, 2], title: "Both" }] } : undefined;
+      },
+      place: async () => undefined,
+    };
+    const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner, steering: () => wishes.map((text) => ({ source: "the conversation", text })), run });
+    const [looked] = await loop.lookAhead("app.plain");
+    expect(looked!.planned).toHaveLength(2);
+    wishes = ["Hello and goodbye together."];
+    expect((await loop.plannedPulse("planned-app-1"))!.why).toContain("steering changed");
+    await loop.bringUp("app.plain");
+    await loop.drain();
+    expect(seen).toEqual([[], ["Hello and goodbye together."]]);
+    expect(ran.map((job) => job.title)).toEqual(["Both"]);
+  });
+
+  it("shows the next pulse's prompt from the kept plan, and says why a later pulse's is not shown", async () => {
+    const { writeTestScripts } = await import("../test-scripts.ts");
+    writeTestScripts(dir);
+    writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye.", "Count to ten."]));
+    const { calls, planner } = countingPlanner();
+    const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner, run: runner().run });
+    await loop.lookAhead("app.plain");
+    const next = await loop.plannedPulse("planned-app-1");
+    expect(next).toMatchObject({ module: "app", title: "Greetings", track: "code", index: 1, lookedAhead: true });
+    expect(next!.task).toContain("Say hello.");
+    expect(next!.task).toContain("Say goodbye.");
+    expect(next!.task).not.toContain("Count to ten.");
+    const later = await loop.plannedPulse("planned-app-2");
+    expect(later!.task).toBeUndefined();
+    expect(later!.why).toContain("depends on what that one lands");
+    expect(await loop.plannedPulse("planned-app-3")).toBeUndefined();
+    // Told from the plan kept, not planned again - and nothing written.
+    expect(calls.group).toBe(1);
+    expect(existsSync(join(dir, "plain_modules", "app"))).toBe(false);
+  });
+
+  it("starts from the code below for a module not started, and copies nothing up", async () => {
     const { writeTestScripts } = await import("../test-scripts.ts");
     writeTestScripts(dir);
     writePlain(dir, "app.plain", app(["Say hello."]));
     const { run } = runner();
-    const real = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run });
-    await real.bringUp("app.plain");
-    await real.drain();
-    // A module on top of it, not started: a dry run reads what it would start from, and writes nothing.
+    const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run });
+    await loop.bringUp("app.plain");
+    await loop.drain();
     writePlain(dir, "greet.plain", `---\nrequires:\n  - app\n---\n\n${app(["Say goodbye."])}`);
-
-    const { previews, busy } = await previewJobs({ plainFile: join(dir, "greet.plain"), cwd: dir, plannerModel: undefined });
-    expect(busy).toEqual([]);
-    expect(previews).toHaveLength(1);
-    expect(previews[0]).toMatchObject({ module: "greet", track: "code" });
-    expect(previews[0]!.task).toContain("Say goodbye.");
+    await loop.lookAhead("greet.plain");
+    const next = await loop.plannedPulse("planned-greet-1");
+    expect(next!.task).toContain("Say goodbye.");
     // What it starts from is app's code, as it would be copied up.
-    expect(previews[0]!.task).toContain('<functionality module="app" id="say-hello" status="implemented">');
+    expect(next!.task).toContain('<functionality module="app" id="say-hello" status="implemented">');
     expect(existsSync(join(dir, "plain_modules", "greet"))).toBe(false);
   });
 
-  it("leaves out a codebase with a job running: its next job depends on what that one lands", async () => {
-    const { previewJobs } = await import("../../src/regenerate/loop.ts");
-    const { writeTestScripts } = await import("../test-scripts.ts");
-    writeTestScripts(dir);
+  it("shows no prompt for a codebase with a pulse running: what its next pulse is given depends on what that one lands", async () => {
+    writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye."]));
+    const { gate, holdNext, run } = runner();
+    const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run });
+    holdNext();
+    await loop.bringUp("app.plain");
+    const [looked] = await loop.lookAhead("app.plain");
+    expect(looked!.running?.title).toBe("Say hello.");
+    const next = await loop.plannedPulse("planned-app-1");
+    expect(next!.task).toBeUndefined();
+    expect(next!.why).toMatch(/Pulse \S+ is running in this codebase/);
+    gate.release!();
+    await loop.drain();
+  });
+
+  it("leaves a module the person halted halted, and halting a module looked ahead at halts it as usual", async () => {
+    writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye."]));
+    const { ran, run } = runner();
+    const { calls, planner } = countingPlanner();
+    const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner, run });
+    await loop.lookAhead("app.plain");
+    expect(loop.halt("planned-app-1")).toContain("Halted app");
+    const [halted] = await loop.lookAhead("app.plain");
+    expect(halted!.why).toContain("you halted it");
+    expect(halted!.planned).toEqual([]);
+    expect(calls.group).toBe(1);
+    await loop.drain();
+    expect(ran).toEqual([]);
+    // Asked for, it is planned and built.
+    await loop.bringUp("app.plain");
+    await loop.drain();
+    expect(ran.map((job) => job.title)).toEqual(["Say hello.", "Say goodbye."]);
+  });
+
+  it("holds the conformance tests it planned until conform asks for them", async () => {
     writePlain(dir, "app.plain", app(["Say hello."]));
-    const { previews, busy } = await previewJobs({ plainFile: join(dir, "app.plain"), cwd: dir, busy: (module) => module === "app" });
-    expect(previews).toEqual([]);
-    expect(busy).toEqual(["app"]);
+    scenariosIn("say-hello");
+    const { run } = runner();
+    const tested: string[] = [];
+    const testsDir = join(dir, "plain_modules", "app", "tests");
+    const runConformance: JobRunner = async (job) => {
+      tested.push(job.planned.title);
+      mkdirSync(testsDir, { recursive: true });
+      writeTestsRecord(testsDir, job.planned.step.tree);
+      recordHistory(job.buildDir, `conformance: ${job.planned.title}`);
+      return { landed: true, report: "passed" };
+    };
+    const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run, runConformance });
+    await loop.bringUp("app.plain");
+    await loop.drain();
+    expect(tested).toHaveLength(1);
+    // A scenario changed: its tests are behind, planned by the look ahead and held.
+    scenariosIn("say-hello", "app", "# works\nIt works well.");
+    const [looked] = await loop.lookAhead("app.plain");
+    expect(looked!.planned.map((job) => job.track)).toEqual(["conformance"]);
+    await loop.drain();
+    expect(tested).toHaveLength(1);
+    await loop.conformance("app.plain");
+    await loop.drain();
+    expect(tested).toHaveLength(2);
   });
 });
 

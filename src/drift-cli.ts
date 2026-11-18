@@ -20,7 +20,7 @@ if (named === undefined) {
 }
 try {
   refuseTestPlainFile(named);
-  const loop = createWorkLoop({ registry: createJobRegistry(), cwd: process.cwd(), planner: false, dryRun: true });
+  const loop = createWorkLoop({ registry: createJobRegistry(), cwd: process.cwd(), planner: false });
   console.log(describeDrift(loop.drift(named)));
 } catch (error) {
   console.error(error instanceof Error ? error.message : error);

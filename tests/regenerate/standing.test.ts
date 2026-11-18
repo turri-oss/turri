@@ -34,7 +34,7 @@ function build(file: string): void {
 
 /** What drift and functionalityCompletion say of a module, each asked alone - as a host asked them before. */
 function alone(file: string) {
-  const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, dryRun: true });
+  const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir });
   return { drift: loop.drift(file), completion: functionalityCompletion(file) };
 }
 
