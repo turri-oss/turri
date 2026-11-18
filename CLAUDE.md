@@ -74,6 +74,20 @@ Tests that run real commands behind the OS sandbox are wrapped in `runIf(sandbox
 - `tests/test-scripts.ts` `writeTestScripts()` gives a temp project minimal Python testing scripts.
 - The gate machinery (retry, escalation, no-artifact rejection) has no automated coverage. It is checked by live runs, see "Trying the gate semantics" in `docs/skills-and-gates.md`.
 
+## Tools
+
+A tool's name, description, guidelines and parameters sit in its agent's prompt every turn - the chat's alone are about 6k tokens - so tool text is written and pruned as prompt. The rules follow [Writing effective tools for agents](https://www.anthropic.com/engineering/writing-tools-for-agents).
+
+- **One tool per question the agent asks.** Shape a tool around the agent's question, not turri's internals: `pulses` answers everything about a pulse - live state, why it did not land, what the ledger recorded, this session's or an earlier one's. A new need extends the tool whose question it is; two tools that answer the same question are folded into one.
+- **Modes are parameters, each obvious.** A parameter may switch what a tool returns when its description says which parameters go with which mode and what each defaults to.
+- **The chat's tools serve the person's work.** A question only someone developing turri asks - counting ledger events - stays out of the chat.
+- **Descriptions say what comes back, when to call it, and the sibling for the neighbouring question** (`drift`: "To see the next pulse's prompt as well, use glimpse"), in turri's words of now - pulse, regenerate, \*\*\*plain diff. A renamed or removed concept is renamed or removed in every tool text too.
+- **A failure is told so the agent can fix it.** A result that failed carries what failed and what shows it - the error, the end of the failing output, the next step - enough for the agent to debug it and tell the person. Long output is cut with an id `read_output` reads whole.
+- **Structured results come through a `submit_*` tool**, called once; the harness reads its arguments, never the agent's prose. A new one gets a name of its own across turri, so the ledger and transcripts tell roles apart.
+- **A tool lives while something uses it.** When the last role, skill or prompt that needs one goes, the tool goes, with what only it used - parameters, skill metadata, docs, tests. Before removing or renaming one, grep for its name in `src/` prompts, `SENTINEL_TOOLS`, `genome/`, `docs/` and `tests/`: a prompt naming a missing tool sends the model looking for it.
+- **Wiring:** a tool reaches an agent only when it is in both `customTools` and that role's `tools: [...]` list; the chat's are registered in `extension.ts`.
+- **Which tool the chat picks is learnt by running it.** No test calls a model, so check a change to the chat's tools against a few real prompts in the chat.
+
 ## Conventions
 
 - The name is always **turri**, lowercase, even at the start of a sentence. \*\*\*plain is written `***plain` (escaped in Markdown).
