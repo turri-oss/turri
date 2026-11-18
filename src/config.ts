@@ -88,15 +88,18 @@ function legacyStackConfigFile(stack: string): string {
 
 /**
  * The names in a folder - read again only once the folder itself has changed: a name added, removed or renamed in it
- * moves its modification time. Asked many times a look, for every module of every chain.
+ * moves its modification time. Asked many times a look, for every module of every chain. A folder changed less than a
+ * second before it was read is read again each time: a name added within the same tick of the file system's clock
+ * would not move it (readConfigFile).
  */
 function namesIn(root: string): string[] {
   try {
     const at = statSync(root).mtimeMs;
     const kept = keptNames.get(root);
-    if (kept !== undefined && kept.at === at) return [...kept.names];
+    if (kept !== undefined && kept.at === at && at < kept.readAt - RACY_MS) return [...kept.names];
+    const readAt = Date.now();
     const names = readdirSync(root);
-    keptNames.set(root, { at, names });
+    keptNames.set(root, { at, names, readAt });
     if (keptNames.size > 64) keptNames.delete(keptNames.keys().next().value!);
     return [...names];
   } catch {
@@ -104,7 +107,7 @@ function namesIn(root: string): string[] {
   }
 }
 
-const keptNames = new Map<string, { at: number; names: string[] }>();
+const keptNames = new Map<string, { at: number; names: string[]; readAt: number }>();
 
 /** The stacks in the old naming, `config.<stack>.yaml`. */
 function legacyStacks(root: string): string[] {
@@ -708,26 +711,34 @@ export function configForSpec(plainFile: string): ProjectConfig {
 
 /**
  * One config file, read, or nothing of it when it is not there or does not parse. Parsed again only once the file has
- * changed - its size or its modification time - and each caller given its own copy.
+ * changed - its size or its modification time - and each caller given its own copy. A file modified less than a second
+ * before it was read is read again each time, as git treats a racily clean file: written again within the same tick of
+ * the file system's clock - milliseconds on Linux - and to the same size, its stamp would not change.
  */
 export function readConfigFile(path: string): ProjectConfig {
   let stamp: string;
+  let modified: number;
   try {
     const stat = statSync(path);
     if (!stat.isFile()) return {};
     stamp = `${stat.size}:${stat.mtimeMs}:${stat.ino}`;
+    modified = stat.mtimeMs;
   } catch {
     return {};
   }
   const kept = keptConfigs.get(path);
-  if (kept !== undefined && kept.stamp === stamp) return structuredClone(kept.config);
+  if (kept !== undefined && kept.stamp === stamp && modified < kept.readAt - RACY_MS) return structuredClone(kept.config);
+  const readAt = Date.now();
   const config = readConfigFileNow(path);
-  keptConfigs.set(path, { stamp, config });
+  keptConfigs.set(path, { stamp, config, readAt });
   if (keptConfigs.size > 64) keptConfigs.delete(keptConfigs.keys().next().value!);
   return structuredClone(config);
 }
 
-const keptConfigs = new Map<string, { stamp: string; config: ProjectConfig }>();
+/** How long before it was read a config file must have last changed for its stamp to be trusted. */
+const RACY_MS = 1_000;
+
+const keptConfigs = new Map<string, { stamp: string; config: ProjectConfig; readAt: number }>();
 
 function readConfigFileNow(path: string): ProjectConfig {
   let parsed: unknown;

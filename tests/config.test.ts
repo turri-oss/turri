@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -357,5 +357,17 @@ describe("the config, read again and again", () => {
     writeFileSync(join(root, "config.turri.web.yaml"), "coding-model: p/web\n");
     expect(stacksOf(root)).toEqual(["web"]);
     expect(readProjectConfig(root, "web").codingModel).toEqual({ model: "p/web" });
+  });
+
+  it("is read afresh after an edit to the same size within the same tick of the file system's clock", () => {
+    const file = join(root, "config.turri.yaml");
+    // Linux stamps a file to the tick of its clock, milliseconds apart: the edit has the stamp the first write had.
+    const tick = new Date(Math.floor(Date.now() / 1000) * 1000 + 2000);
+    writeFileSync(file, "coding-model: p/eu\n");
+    utimesSync(file, tick, tick);
+    expect(readProjectConfig(root).codingModel).toEqual({ model: "p/eu" });
+    writeFileSync(file, "coding-model: p/jp\n");
+    utimesSync(file, tick, tick);
+    expect(readProjectConfig(root).codingModel).toEqual({ model: "p/jp" });
   });
 });

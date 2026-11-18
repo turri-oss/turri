@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, unlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -57,6 +57,20 @@ describe("what the role may not change", () => {
     expect(readFileSync(join(project, "test_scripts", "run_unittests_python.sh"), "utf8")).toBe("python3 -m unittest\n");
     expect(existsSync(join(project, "extra.plain"))).toBe(false);
     expect(result.putBack.sort()).toEqual(["app.plain", "config.yaml", "extra.plain", "test_scripts/run_unittests_python.sh"]);
+  });
+
+  it("puts back a testing script rewritten to the same size within the same tick of the file system's clock", () => {
+    const script = join(project, "test_scripts", "run_unittests_python.sh");
+    // Linux stamps a file to the tick of its clock: written just before the command and again in it, the times agree.
+    const tick = new Date(Date.now());
+    utimesSync(script, tick, tick);
+    const { mtimeMs } = statSync(script);
+    const before = beforeCommand(coder());
+    writeFileSync(script, "python3 -m pytest  \n");
+    utimesSync(script, tick, tick);
+    expect(statSync(script).mtimeMs).toBe(mtimeMs);
+    expect(afterCommand(before).putBack).toEqual(["test_scripts/run_unittests_python.sh"]);
+    expect(readFileSync(script, "utf8")).toBe("python3 -m unittest\n");
   });
 
   it("puts back a credential file anywhere in the project, its own folder included", () => {

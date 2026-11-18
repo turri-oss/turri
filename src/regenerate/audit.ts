@@ -51,6 +51,9 @@ const SKIPPED = new Set([
   "dist", ".gradle", ".m2", ".cargo", ".next", "coverage", ".git", ".turri", ".plaingit", ".idea", ".vscode",
 ]);
 
+/** How close to the command's start a file's time must be for its time and size alone not to be trusted. */
+const RACY_MS = 1_000;
+
 /** A file kept whole before the command - at most this big. */
 const MAX_KEPT = 1024 * 1024;
 
@@ -225,6 +228,11 @@ export function afterCommand(snapshot: AuditSnapshot): AuditResult {
         // Touched but the same: nothing to put back.
         if (kept !== undefined && readFileSync(path).equals(kept)) continue;
         changed.push(path);
+      } else if (seen.mtimeMs >= snapshot.at - RACY_MS) {
+        // Its time and size as before, but written around when the command started: rewritten to the same size within
+        // the same tick of the file system's clock would look the same. What it held before tells - where it was kept.
+        const kept = tree.kept?.get(path);
+        if (kept !== undefined && !readFileSync(path).equals(kept)) changed.push(path);
       }
     }
     for (const path of tree.files.keys()) if (!after.has(path)) changed.push(path);
