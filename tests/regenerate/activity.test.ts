@@ -121,10 +121,6 @@ describe("tool calls as one line", () => {
     expect(describeToolResult("write", {}, false)).toBeUndefined();
   });
 
-  it("shows a tool by the name the person knows it by, not the one its agent calls", () => {
-    expect(describeToolCall("change_plain", { plain_file: "app.plain", diff: "" })).toBe("• mutate");
-    expect(describeToolResult("change_plain", {}, true)).toBe("  ✗ mutate failed");
-  });
 });
 
 describe("the panel", () => {

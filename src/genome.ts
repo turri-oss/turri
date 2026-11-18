@@ -1,4 +1,4 @@
-import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { Command, MemorySaver } from "@langchain/langgraph";
 import { compileSkill, type Reporter } from "./graph.ts";
@@ -10,11 +10,8 @@ import { clearOfStop, describeToolCall, describeToolResult, withStopSignal } fro
 import { createLiveReviewer, type LiveReviewer } from "./review/live.ts";
 import { loadSkill, readRubric, type Skill } from "./skill.ts";
 import { createAskUserTool, createEndQuestionsTool, createReviewTools, createWriteArtifactTool, withReviewNote, type AskUser } from "./tools.ts";
-import { DECLINED, DISMISSED } from "./ask.ts";
 import { createQuestioning, levelOf, questioningQuestion, type Questioning, type QuestioningState } from "./questioning.ts";
-import { createSpecDiffTools } from "./spec-tools.ts";
 
-const CHANGE_PLAIN = "change_plain";
 /** The conversation's tools a skill acts on the work loop with - never pi built-ins. */
 const LOOP_TOOLS = ["regenerate", "drift", "halt", "conform"];
 /** How much of what the agent said before a question is shown with it: its end, where the brief is. */
@@ -152,33 +149,11 @@ async function runStoppable(opts: RunSkillOptions): Promise<RunSkillResult> {
   const startQuestioning = (level: string, from?: QuestioningState) =>
     (questioning = createQuestioning({ level: levelOf(level), phases: skill.questioning, from, onChange: keepQuestioning }));
   if (capsQuestions && resumed?.questioning !== undefined) startQuestioning(resumed.questioning.level, resumed.questioning);
-  // The step running now, and whether each of its answers is a spec change: then the next question waits until the last
-  // answer is written, and a change the agent decides itself needs no answer before it.
-  let currentStep = "";
-  const diffPerAnswer = () => skill.diffPerAnswer.includes(currentStep);
-  const holdsQuestions = capsQuestions || (skill.diffPerAnswer.length > 0 && opts.askUser !== undefined);
   const questions = {
-    refusal: (confirmsPhase: boolean) =>
-      diffPerAnswer() && diffs?.pace.owed() === true
-        ? "This question was not asked: the last answer is not in the spec yet. Every answer in this phase is a spec " +
-          "change, built at once - write it with change_plain first, then ask."
-        : questioning?.refusal(confirmsPhase),
+    refusal: (confirmsPhase: boolean) => questioning?.refusal(confirmsPhase),
     answered: (confirmsPhase: boolean) => questioning?.answered(confirmsPhase),
     end: () => questioning?.end() ?? "No questioning level was chosen: ask what the phase needs.",
   };
-
-  // A skill whose unit of work is a spec change gets change_plain: the change is applied
-  // and its build queued in one step.
-  const diffs =
-    opts.renderQueue !== undefined && skill.allowedTools.includes(CHANGE_PLAIN)
-      ? createSpecDiffTools({
-          loop: opts.renderQueue,
-          cwd: opts.cwd,
-          liveReview: liveProxy,
-          paced: skill.paced,
-          free: diffPerAnswer,
-        })
-      : undefined;
 
   // What the agent says between its questions - a brief to confirm, a plan - reaches the person only with
   // the next question: the session it talks in is its own, and nobody reads it.
@@ -189,13 +164,11 @@ async function runStoppable(opts: RunSkillOptions): Promise<RunSkillResult> {
     customTools.push(
       createAskUserTool(
         opts.askUser,
-        (answer, confirmsPhase) => {
+        () => {
           said = "";
-          // A phase's confirmation, or a question dismissed, owes the spec nothing.
-          diffs?.pace.answered(!confirmsPhase && answer !== DISMISSED && answer !== DECLINED);
         },
         () => said,
-        holdsQuestions ? questions : undefined,
+        capsQuestions ? questions : undefined,
       ),
     );
     if (capsQuestions) customTools.push(createEndQuestionsTool(questions));
@@ -207,7 +180,6 @@ async function runStoppable(opts: RunSkillOptions): Promise<RunSkillResult> {
       else if (skill.allowedTools.includes(tool.name)) customTools.push(tool);
     }
   }
-  if (diffs !== undefined) customTools.push(...diffs.tools);
   customTools.push(...(opts.sharedTools ?? []));
   // Its write and edit reach the project's ***plain only - not the code, a release, or what an app it started writes.
   customTools.push(...plainWriteTools(opts.cwd).filter((tool) => skill.allowedTools.includes(tool.name)));
@@ -215,7 +187,7 @@ async function runStoppable(opts: RunSkillOptions): Promise<RunSkillResult> {
   const names = customTools.map((tool) => tool.name);
   // Tools this harness provides are never pi built-ins, even when it did not provide them.
   const builtins = skill.allowedTools.filter(
-    (t) => !names.includes(t) && t !== CHANGE_PLAIN && !LOOP_TOOLS.includes(t),
+    (t) => !names.includes(t) && !LOOP_TOOLS.includes(t),
   );
   const executor = await createExecutor({
     cwd: opts.cwd,
@@ -283,11 +255,6 @@ async function runStoppable(opts: RunSkillOptions): Promise<RunSkillResult> {
   manifest.sessionFile = executor.sessionFile;
   writeManifest(runDir, manifest);
 
-  // Built renders were lost with the process; queue what the specs hold that is not built.
-  if (resumed !== undefined && opts.renderQueue !== undefined) {
-    for (const file of plainFilesIn(opts.cwd)) void opts.renderQueue.bringUp(file, { specChange: true }).catch(() => undefined);
-  }
-
   if (liveStep !== undefined && liveProxy !== undefined) {
     const continuous = liveStep.gate!.continuous!;
     holder.reviewer = createLiveReviewer({
@@ -324,7 +291,6 @@ async function runStoppable(opts: RunSkillOptions): Promise<RunSkillResult> {
         writeManifest(runDir, manifest);
       },
       beforeStep: async (step) => {
-        currentStep = step;
         if (!capsQuestions) return;
         // The first question of the first phase is the harness's: how many the capped phases may ask.
         if (questioning === undefined) {
@@ -398,17 +364,6 @@ function readManifest(runDir: string): RunManifest | undefined {
 function writeManifest(runDir: string, manifest: RunManifest): void {
   manifest.updatedAt = new Date().toISOString();
   writeFileSync(join(runDir, MANIFEST), JSON.stringify(manifest, null, 2));
-}
-
-/** The .plain files at the top of a project. */
-function plainFilesIn(dir: string): string[] {
-  try {
-    return readdirSync(dir)
-      .filter((name) => name.endsWith(".plain"))
-      .map((name) => join(dir, name));
-  } catch {
-    return [];
-  }
 }
 
 /** Whether there is a run of this skill here that was interrupted, and could be resumed. */

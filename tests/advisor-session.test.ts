@@ -20,7 +20,7 @@ describe("where the test advisor runs", () => {
   });
 
   it("is never made by a headless command, which builds its own work loop", () => {
-    // turri regenerate, conform, change-plain... all run through loop-cli.ts: it makes no session, and no advisor.
+    // turri regenerate, conform... all run through loop-cli.ts: it makes no session, and no advisor.
     const source = readFileSync(join(cwd, "src", "loop-cli.ts"), "utf8");
     expect(source).not.toMatch(/createTestAdvisor|createTurriCore|onSpec/);
   });

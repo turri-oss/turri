@@ -1,11 +1,10 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { chooseStack, chosenStack } from "../../src/config.ts";
 import { regenerateTool, withCallStack } from "../../src/loop-tools.ts";
-import { createSpecDiffTools } from "../../src/spec-tools.ts";
 import { createJobRegistry, describeJob } from "../../src/regenerate/jobs.ts";
 import { createWorkLoop, describeModules, type JobRunner } from "../../src/regenerate/loop.ts";
 import { recordHistory } from "../../src/regenerate/lineage.ts";
@@ -119,19 +118,22 @@ describe("a module of a project of stacks", () => {
     const { ran, run } = runner();
     const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run });
     writePlain(dir, "orders.plain", app(["Serve the orders."], "is Python."));
+    writePlain(dir, "invoices.plain", app(["Serve the invoices."], "is Python."));
     chooseStack("backend");
     await loop.bringUp("orders.plain");
     await loop.drain();
     chooseStack("frontend");
     writePlain(dir, "orders.plain", app(["Serve the orders.", "Serve the invoices."], "is Python."));
-    await loop.bringUp("orders.plain", { specChange: true });
+    // Another module asked for: the loop looks at every codebase again, and sees the change to orders by itself.
+    await loop.bringUp("invoices.plain");
     await loop.drain();
-    expect(ran.map((pulse) => pulse.stack)).toEqual(["backend", "backend"]);
+    const orders = () => ran.filter((pulse) => pulse.module === "orders");
+    expect(orders().map((pulse) => pulse.stack)).toEqual(["backend", "backend"]);
     // Asked for, not changed: the stack chosen now.
     writePlain(dir, "orders.plain", app(["Serve the orders.", "Serve the invoices.", "Serve the refunds."], "is Python."));
     await loop.bringUp("orders.plain");
     await loop.drain();
-    expect(ran.at(-1)!.stack).toBe("frontend");
+    expect(orders().at(-1)!.stack).toBe("frontend");
   });
 
   it("writes the conformance tests of its functional specs with scenarios with its stack too, once its code is built", async () => {
@@ -181,7 +183,7 @@ describe("a module of a project of stacks", () => {
     await loop.drain();
     writeFileSync(join(dir, "config.turri.backend.yaml"), "unittests-script: test_scripts/run_unittests_python.sh\n");
     writePlain(dir, "backend.plain", app(["Serve the orders.", "Serve the invoices."], "is Python."));
-    await loop.bringUp("backend.plain", { specChange: true });
+    await loop.bringUp("backend.plain");
     await loop.drain();
     expect(ran.map((pulse) => pulse.stack)).toEqual([undefined, "backend"]);
   });
@@ -275,55 +277,3 @@ describe("a missing unit testing script in a project of stacks", () => {
   });
 });
 
-describe("a spec change written in a project of stacks", () => {
-  const fileDiff = (file: string, before: string, after: string) =>
-    [
-      `diff --git a/${file} b/${file}`,
-      `--- a/${file}`,
-      `+++ b/${file}`,
-      `@@ -1,${before.split("\n").length - 1} +1,${after.split("\n").length - 1} @@`,
-      ...before.split("\n").slice(0, -1).map((line) => `-${line}`),
-      ...after.split("\n").slice(0, -1).map((line) => `+${line}`),
-      "",
-    ].join("\n");
-  const write = (loop: ReturnType<typeof createWorkLoop>) => {
-    const { tools } = createSpecDiffTools({ loop, cwd: dir, paced: false });
-    return (params: object) => tools[0]!.execute("id", params as never, undefined, undefined, {} as never) as Promise<{ content: Array<{ text: string }> }>;
-  };
-
-  it("is built with the stack named after its module, with nothing chosen", async () => {
-    const { ran, run } = runner();
-    const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run });
-    const before = app(["Serve the orders.", "Serve the invoices."], "is Python.");
-    const after = app(["Serve the orders.", "Serve the invoices.", "Serve the refunds."], "is Python.");
-    const result = await write(loop)({ plain_file: "backend.plain", diff: fileDiff("backend.plain", before, after) });
-    await loop.drain();
-    expect(result.content[0]!.text).toContain("Building in the background");
-    expect(result.content[0]!.text).toContain("stack backend");
-    expect(new Set(ran.map((pulse) => `${pulse.stack} ${pulse.unit}`))).toEqual(new Set(["backend test_scripts/run_unittests_python.sh"]));
-    expect(ran).toHaveLength(3);
-  });
-
-  it("is written, never refused, when its module cannot be built yet for want of a stack - and says what to pass", async () => {
-    const before = app(["Serve the orders."], "is Python.");
-    const after = app(["Serve the orders.", "Serve the refunds."], "is Python.");
-    writePlain(dir, "api.plain", before);
-    const { ran, run } = runner();
-    const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run });
-    const result = await write(loop)({ plain_file: "api.plain", diff: fileDiff("api.plain", before, after) });
-    expect(readFileSync(join(dir, "api.plain"), "utf8")).toBe(after);
-    expect(result.content[0]!.text).toContain("Applied the change to api.plain.");
-    expect(result.content[0]!.text).toContain("Not built yet - api.plain would be built with no stack");
-    expect(loop.status()).toEqual([]);
-    // A stack the project has no file for: written all the same, and said.
-    const later = app(["Serve the orders.", "Serve the refunds.", "Serve the invoices."], "is Python.");
-    const wrong = await write(loop)({ plain_file: "api.plain", diff: fileDiff("api.plain", after, later), stack: "mobile", fixes_earlier: true });
-    expect(wrong.content[0]!.text).toContain("Not built yet - There is no stack mobile");
-    // Passed with the next change, everything written so far is built.
-    const last = app(["Serve the orders.", "Serve the refunds.", "Serve the invoices.", "Serve the receipts."], "is Python.");
-    await write(loop)({ plain_file: "api.plain", diff: fileDiff("api.plain", later, last), stack: "backend", fixes_earlier: true });
-    await loop.drain();
-    expect(ran.map((pulse) => pulse.stack)).toEqual(["backend", "backend", "backend", "backend"]);
-    expect(readRecord(join(dir, "plain_modules", "api", "code"))).not.toBeNull();
-  });
-});

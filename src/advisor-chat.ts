@@ -18,7 +18,7 @@ import { refuseTestPlainFile } from "./test-plain-files.ts";
 /**
  * The test advisor in the chat (docs/test-advisor.md). The advisor decides; the chat is the only writer of the ***plain.
  * A finished verdict reaches the chat the person looks at once it is idle - never interrupting it: a yes is a message
- * that starts a turn, in which the chat tells the person and writes the scenarios with change_plain, asking nothing; a
+ * that starts a turn, in which the chat tells the person and writes the scenarios, then regenerates, asking nothing; a
  * no is one line drawn by turri, starting no turn. What else the chat is told of the advisor - in its system prompt, in a
  * change's result - is here too, and its own way to it, evaluate_tests.
  */
@@ -75,10 +75,10 @@ export function yesTask(verdicts: AdvisorVerdict[]): string {
     ]),
     "What to do, in this turn, asking the person nothing:",
     `1. Tell the person in a line for each, e.g. "${yesLine(verdicts[0]!)}"`,
-    "2. With change_plain, write whatever the step-7 guard would refuse, in this order, only what is missing: the ***test reqs*** of the module",
+    "2. With the file tools, write whatever the step-7 guard would refuse, in this order, only what is missing: the ***test reqs*** of the module",
     "   it is tested in - the stack's conformance template, stdlib/<kind>/conformance/<stack>, imported, or the module's own - then the",
     "   conformance testing script for its stack, with implement-conformance-testing-script - cultivate, plainFile the module it is tested in,",
-    "   which returns at once: go straight on - then the scenarios in its test plain file.",
+    "   which returns at once: go straight on - then the scenarios in its test plain file. Then call regenerate for the module.",
     "3. Cover each input of the report that is this functional spec's: an agreed one with the readers' output, never a placeholder such as",
     "   <name> where a value belongs; a split one settled by the reading most consistent with the functional spec and its module - say which",
     "   reading you took. Leave out an input that exercises another functional spec, or nothing this one says.",
@@ -183,11 +183,12 @@ export const TEST_ADVISOR_BLOCK = [
   "  down what it should do - say why in its reason. A functional spec with scenarios is not evaluated.",
   "When a change's result or evaluate_tests says a functional spec is being evaluated, tell the person so in a line, and go on: nothing waits",
   "for it. Its verdict comes back to this chat once you are idle:",
-  "- A yes is a message with its report: tell the person in a line, then write with change_plain what testing it needs - the test reqs, the",
-  "  conformance testing script and its scenarios, in that order and only what is missing - as the message says, asking the person nothing.",
+  "- A yes is a message with its report: tell the person in a line, then write with the file tools what testing it needs - the test reqs,",
+  "  the conformance testing script and its scenarios, in that order and only what is missing - and call regenerate, as the message says,",
+  "  asking the person nothing.",
   "- A no is a line turri draws itself: there is nothing for you to do.",
-  "When the person asks you for scenarios (\"write conformance scenarios for core:add-task\"), decide and write them yourself, with change_plain,",
-  "as a ***plain change they see, as the rules say - whatever test-advisor says.",
+  "When the person asks you for scenarios (\"write conformance scenarios for core:add-task\"), decide and write them yourself, with the file",
+  "tools, as a ***plain change they see, as the rules say - then call regenerate - whatever test-advisor says.",
   "</test advisor>",
 ].join("\n");
 

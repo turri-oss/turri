@@ -2,12 +2,12 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, extname, join, relative, resolve, sep } from "node:path";
 import { testDirOf } from "../config.ts";
 import { projectDirOf, resolveTemplateDirs } from "../regenerate/paths.ts";
-import { importingModules, isImportModule } from "../regenerate/requires.ts";
+import { isImportModule } from "../regenerate/requires.ts";
 import { testingGap } from "../regenerate/testing-steps.ts";
 import { missingBaseFolder } from "../regenerate/base-folder.ts";
 import { conformanceTestsOn } from "../conformance-switch.ts";
 import { testedFuncIds } from "../regenerate/records.ts";
-import { moduleOfTestPlainFile, projectModules, strayTestPlainFiles, testPlaceOf, testPlainFileRefusal } from "../test-plain-files.ts";
+import { projectModules, strayTestPlainFiles, testPlainFileRefusal } from "../test-plain-files.ts";
 import { plainFileParser, PLAIN_SOURCE_FILE_EXTENSION, PREVIOUS_SYNTAX_HINT, readPlainSourceMetadata, REQUIRES_DIRECTIVE } from "./parser.ts";
 import {
   ACCEPTANCE_TESTS,
@@ -20,7 +20,7 @@ import {
 
 /**
  * Static validation of ***plain, using this repo's own parser - `turri parse`, the chat's `parse`, and the check
- * `change_plain` and `turri change-plain` run on what a change touched.
+ * `regenerate` runs on the module it is given.
  *
  * It parses each module with its test plain files, resolves its imports and required modules, and reports every error
  * the parser can see without generating anything. The parser's errors come one at a time, the first it meets, as the
@@ -237,37 +237,6 @@ export function checkPlainTargets(target: string, templateDirs: string[] = []): 
     const folder = checkTestFolder(project);
     if (folder !== undefined) results.push(folder);
   }
-  return results;
-}
-
-/**
- * The check of what a ***plain change touched, shared by `change_plain` and `turri change-plain`: each module it
- * touched, an import module as the modules that import it read it, and each test plain file as its module - by its
- * folder - is parsed with its test plain files; a test plain file the change put where it does not belong is refused
- * as `parse` refuses it. A file the change deleted is checked through the module it belonged to.
- */
-export function checkTouchedPlain(paths: string[]): CheckResult[] {
-  const modules = new Set<string>();
-  const results: CheckResult[] = [];
-  for (const given of paths) {
-    const path = resolve(given);
-    const place = testPlaceOf(path);
-    if (place !== undefined && !place.directory) {
-      const stray = strayTestPlainFiles(place.projectDir).find((found) => resolve(place.projectDir, found.file) === path);
-      if (stray !== undefined) {
-        results.push({ file: path, ok: false, errorType: "a test plain file outside its module's folder", problems: [`${stray.file} - ${stray.problem}`] });
-        continue;
-      }
-      const owner = moduleOfTestPlainFile(path);
-      if (owner?.plainFile !== undefined) modules.add(owner.plainFile);
-      else if (owner !== undefined) results.push({ file: path, ok: false, errorType: "a test plain file outside a module's folder", problems: [`${shown(path, place.projectDir)} - no module ${owner.module}`] });
-      continue;
-    }
-    if (!existsSync(path)) continue;
-    const importing = isImportModule(path) ? importingModules(path) : [];
-    for (const module of importing.length > 0 ? importing : [path]) modules.add(resolve(module));
-  }
-  for (const module of modules) results.push(checkPlainFile(module));
   return results;
 }
 

@@ -34,9 +34,8 @@ export const GUIDANCE_PARAM = Type.Optional(
 export const WORKING_DIR_PARAM = Type.Optional(
   Type.String({
     description:
-      "The folder to render from, relative to where turri was started - as if it had been started there " +
-      "(e.g. \"plain\"). plain_file, build_dir and a spec diff's paths are then relative to it - hubspot.plain, not " +
-      "plain/hubspot.plain. Default: where " +
+      "The folder the .plain files are in, relative to where turri was started - as if it had been started there " +
+      "(e.g. \"plain\"). plain_file is then relative to it - hubspot.plain, not plain/hubspot.plain. Default: where " +
       "turri was started.",
   }),
 );
@@ -46,7 +45,7 @@ export const MODEL_PARAM = Type.Optional(
     description:
       "The model for the agents of this one call: a provider/model-id, or its name as the user said it. " +
       "Omitted: the model chosen for this kind of work with engine, else the conversation's. " +
-      "To change it for every later render, use engine instead.",
+      "To change it for every later pulse, use engine instead.",
   }),
 );
 

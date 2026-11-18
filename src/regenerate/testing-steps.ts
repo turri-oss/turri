@@ -111,7 +111,7 @@ export function testingGap(input: { moduleName: string; plainFile: string; tree:
       step: "test reqs",
       text:
         `${moduleName} has scenarios to test - ${named(tested)} - but no ***test reqs***, so its conformance tests cannot be written - the test reqs are ` +
-        `the first step of adding tests. Next step: ${reqs}, with change_plain${found.script === undefined ? `; then ${scriptStep}` : ""}.`,
+        `the first step of adding tests. Next step: ${reqs}${found.script === undefined ? `; then ${scriptStep}` : ""}.`,
       short: "scenarios not tested: no test reqs",
     };
   }

@@ -565,7 +565,7 @@ describe("the sentinel's tools", () => {
     expect(names).toEqual(expect.arrayContaining(["read", "ls", "grep", "find", "bash", "write", "edit"]));
     for (const name of names) expect(SENTINEL_TOOLS, name).toContain(name);
     expect(SENTINEL_TOOLS).toContain("resume");
-    for (const name of ["change_plain", "regenerate", "steer", "release", "activate", "conform"]) expect(SENTINEL_TOOLS).not.toContain(name);
+    for (const name of ["regenerate", "steer", "release", "activate", "conform"]) expect(SENTINEL_TOOLS).not.toContain(name);
   });
 
   it("fix a testing script and where the config says the scripts are - and put back any other change to the config, and refuse ***plain", async () => {

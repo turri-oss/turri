@@ -73,7 +73,7 @@ Nothing about testing exists until the person asks for it, or the test advisor's
 3. **The scenarios**, as below
 
 Then, and for every later request:
-- Decide in prose which scenarios each functional spec named needs, then write them with `change_plain`, conformance and acceptance in one change where both were asked for. Ask for no further confirmation: the change is visible, and turri starts the conformance pulses itself
+- Decide in prose which scenarios each functional spec named needs, then write them with the file tools, conformance and acceptance in one change where both were asked for, and call `regenerate` for the module. Ask for no further confirmation: the change is visible, and turri starts the conformance pulses itself
 - Write scenarios only for the functional specs the person named. Scenarios in one functional spec imply nothing about another, in the same module or not: the person may test one thoroughly and leave the rest untested
 - Write acceptance scenarios only when the person asks for them
 - On the test advisor's yes, the functional spec it names is named, and its report says what to cover: each input that is this functional spec's, an agreed one with the readers' output and never a placeholder, a split one by the reading most consistent with the functional spec and its module - say which you took. Leave out an input it does not settle rather than ask; ask the person nothing

@@ -7,7 +7,7 @@ import { createAgentSessionServices, getAgentDir, ModelRegistry, ModelRuntime } 
  *
  * In a chat, pi loads the person's installed pi packages itself, and turri's agents take the providers from the
  * conversation's model registry (pi.ts `inheritProviders`). A command with no conversation - `turri regenerate`,
- * `turri change-plain`, doctor's model check, init-config - has none: here they are loaded the way pi loads them, once a
+ * `turri conform`, doctor's model check, init-config - has none: here they are loaded the way pi loads them, once a
  * process, and only the providers they register are kept. turri's own extension, when an older turri installed it into
  * every pi, is loaded as nothing meanwhile (`LOADING_PROVIDERS`): it would start a session of its own.
  */

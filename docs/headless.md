@@ -51,7 +51,7 @@ coding-model:                             # the model every agent runs on, and h
 judge-model: anthropic/claude-opus-5-5    # the judge and the test review (default: coding-model)
 ```
 
-The same file names the [testing scripts](regenerating.md#the-testing-scripts); every key is in [the project config](config.md). `turri regenerate`, `change-plain` and `conform` take four of its keys on the command line too - `--harness-model`, `--coding-model` (`--model` is the same), `--judge-model` and `--review`. Each is read as if the file had it, in its place: it takes that key's value, and every key keeps its place in the order the config resolves them in - a `models:` entry still wins over `harness-model`, `coding-model` or `judge-model`, the planner runs on the harness model, the judge falls back on the coding model. So a run with the options is the same as one, or a chat, with those keys in `config.turri.yaml` - and a `config.yaml` the project has is left as it is. A project whose parts are on different stacks keeps each stack's settings in `config.turri.<stack>.yaml` beside it ([stacks](config.md#stacks)). Choose the one to build with `--stack <name>` - on any command: `regenerate`, `conform`, `change-plain`, `glimpse`, `release`, `cultivate` - or `TURRI_STACK`: `turri regenerate backend.plain --stack backend`. With none chosen, `config.turri.yaml` alone is used; a stack the project has no file for is refused.
+The same file names the [testing scripts](regenerating.md#the-testing-scripts); every key is in [the project config](config.md). `turri regenerate` and `conform` take four of its keys on the command line too - `--harness-model`, `--coding-model` (`--model` is the same), `--judge-model` and `--review`. Each is read as if the file had it, in its place: it takes that key's value, and every key keeps its place in the order the config resolves them in - a `models:` entry still wins over `harness-model`, `coding-model` or `judge-model`, the planner runs on the harness model, the judge falls back on the coding model. So a run with the options is the same as one, or a chat, with those keys in `config.turri.yaml` - and a `config.yaml` the project has is left as it is. A project whose parts are on different stacks keeps each stack's settings in `config.turri.<stack>.yaml` beside it ([stacks](config.md#stacks)). Choose the one to build with `--stack <name>` - on any command: `regenerate`, `conform`, `glimpse`, `release`, `cultivate` - or `TURRI_STACK`: `turri regenerate backend.plain --stack backend`. With none chosen, `config.turri.yaml` alone is used; a stack the project has no file for is refused.
 
 Useful options - `turri regenerate --help` lists all of them:
 
@@ -82,7 +82,8 @@ The command exits `0` only when every module is complete: its code regenerated f
 | `plain_modules/<module>/code/` | the code and unit tests |
 | `plain_modules/<module>/tests/` | the conformance tests |
 | `plain_modules/<module>/code/.turri.json` | the marshalled plain tree the code is built from |
-| `.turri/ledger/` | what each pulse did, how it ended and what it cost - `turri ledger` |
+| `.turri/ledger/` | what each pulse did, how it ended and what it cost - `pulses` in the chat reads it back |
+| `.turri/pulses/` | why each pulse that failed or finished without landing did - its diagnosis, the last failing test run's output, the last review, the tool calls that failed - kept whatever the debug setting |
 | `.turri/jobs/` | each pulse's log: its agents, its test runs, how it ended - with `--debug` (or `debug: true`) only |
 | `.turri/debug/` | each agent's whole conversation - with `--debug` only |
 
@@ -170,7 +171,7 @@ A module that `requires` others is built in its own codebase on top of theirs: t
 
 **Pulses.** `landed`: its work is committed. `rolled_back`: it ended without landing - failed, stopped, or did not pass - and everything it wrote was undone. A pulse that failed is tried once more before it counts as failed; both tries are the one pulse.
 
-**Time to first regeneration.** `pulses.first_started_seconds` is how long after the run started its first code pulse started - planning the work, and any wait for a free slot, before it - and `first_landed_seconds` how long until the first one landed, when there is first something to try. Both are `null` until it happens. In the chat, a skill that writes \*\*\*plain diffs with `change_plain` says the same in their result, counted from when the skill began.
+**Time to first regeneration.** `pulses.first_started_seconds` is how long after the run started its first code pulse started - planning the work, and any wait for a free slot, before it - and `first_landed_seconds` how long until the first one landed, when there is first something to try. Both are `null` until it happens.
 
 **Gaps in \*\*\*plain.** A behaviour \*\*\*plain leaves open that an agent met and decided on its own - reported with `report_spec_gap` (see [regenerating](regenerating.md)). In the chat they are put to you as the pulse ends; a headless run has no one to ask, so they are listed here, in the order the pulses started, and printed under the pulse that met them. `assumption` is what the agent decided meanwhile, also in the codebase's notes' assumptions while its pulse is `landed`; a pulse rolled back takes it out of the notes, but the question still stands. Settle the ones you care about in \*\*\*plain and run again.
 

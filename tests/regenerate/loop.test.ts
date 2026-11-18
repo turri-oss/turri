@@ -675,6 +675,7 @@ describe("the work loop", () => {
 
     it("are written for the functional specs conform names alone - the others left behind, as drift says, until the module is asked for again", async () => {
       writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye.", "Say thanks."]));
+      writePlain(dir, "other.plain", app(["Say hi."]));
       const code = runner();
       const tests = conformanceRunner();
       const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run: code.run, runConformance: tests.runConformance });
@@ -688,9 +689,10 @@ describe("the work loop", () => {
       const drift = describeDrift(loop.drift("app.plain"));
       expect(drift).toContain("conform asked for app:say-hello alone: the others wait for conform with no names, or the module asked for again");
       expect(drift).toContain("app:say-goodbye");
-      // A change to the scenarios of one not named: work again, and it joins them - the other still waits.
+      // A change to the scenarios of one not named, seen when the loop looks again - another module asked for: work
+      // again, and it joins them - the other still waits.
       scenariosIn("say-thanks", "app", "# works\nIt works, and says thanks.");
-      await loop.bringUp("app.plain", { specChange: true });
+      await loop.bringUp("other.plain");
       await loop.drain();
       expect(tests.ran.map((job) => job.add)).toEqual([["say-hello"], ["say-thanks"]]);
       // Asked for with no names: the rest.
@@ -717,7 +719,7 @@ describe("the work loop", () => {
       const noTestReqs = (specs: Spec[]) => app(specs).replace("***test reqs***\n\n- :ConformanceTests: use pytest.\n\n", "");
       const NO_TEST_REQS =
         "app has scenarios to test - app:say-hello - but no ***test reqs***, so its conformance tests cannot be written - the test reqs are the first step of adding tests. " +
-        "Next step: write the module's own ***test reqs***, with change_plain.";
+        "Next step: write the module's own ***test reqs***.";
       const NO_SCRIPT =
         "app has scenarios to test - app:say-hello - and ***test reqs*** but no conformance testing script, so nothing can run its conformance tests - the script is the second step of adding tests. " +
         "Next step: write the conformance testing script with the implement-conformance-testing-script skill.";
@@ -743,7 +745,7 @@ describe("the work loop", () => {
         expect(tests.ran).toEqual([]);
         // The ***plain has them now: the conformance pulse starts.
         writePlain(dir, "app.plain", app(["Say hello."]));
-        await loop.bringUp("app.plain", { specChange: true });
+        await loop.bringUp("app.plain");
         await loop.drain();
         expect(tests.ran.map((job) => job.add)).toEqual([["say-hello"]]);
         expect(loop.status()[0]!.why).toBe(UP_TO_DATE);
@@ -831,7 +833,7 @@ describe("the work loop", () => {
       await loop.drain();
       const codeJobs = code.ran.length;
       scenariosIn("say-hello", "app", "# loud\nIt says hello loudly.");
-      await loop.bringUp("app.plain", { specChange: true });
+      await loop.bringUp("app.plain");
       await loop.drain();
       expect(code.ran).toHaveLength(codeJobs);
       expect(tests.ran.slice(1)).toEqual([{ add: [], patch: ["say-hello"], delete: [] }]);
@@ -850,7 +852,7 @@ describe("the work loop", () => {
       const codeJobs = code.ran.length;
       // Its scenarios all taken out: its test plain file is deleted - an empty one is a syntax error.
       rmSync(join(dir, "tests", "app", "say-goodbye.plain"));
-      await loop.bringUp("app.plain", { specChange: true });
+      await loop.bringUp("app.plain");
       await loop.drain();
       expect(code.ran).toHaveLength(codeJobs);
       expect(tests.ran.slice(1)).toEqual([{ add: [], patch: [], delete: ["say-goodbye"] }]);
@@ -886,7 +888,7 @@ describe("the work loop", () => {
       const built = code.ran.length;
       scenarios("say-hello", "# works\nIt works well.", "# loud\nIt says hello loudly.");
       scenarios("say-goodbye", "# works\nIt works.");
-      await loop.bringUp("app.plain", { specChange: true });
+      await loop.bringUp("app.plain");
       await loop.drain();
       expect(pulses.slice(1)).toEqual([["say-hello: +loud ~works - =", "say-goodbye: + ~ -waves =works"]]);
       // Scenarios are the conformance tests' alone: no code pulse for them.
@@ -925,7 +927,7 @@ describe("the work loop", () => {
         const codeFile = readFileSync(join(codeDir(), "app.py"), "utf8");
         renamedTo("say-hello", "greet");
         expect(describeDrift(loop.drift("app.plain"))).toContain("  renames app:say-hello to app:greet - the records and the tests' labels only, nothing regenerated");
-        await loop.bringUp("app.plain", { specChange: true });
+        await loop.bringUp("app.plain");
         await loop.drain();
         expect(pulses()).toBe(before);
         expect(readFileSync(join(codeDir(), "app.py"), "utf8")).toBe(codeFile);
@@ -944,7 +946,7 @@ describe("the work loop", () => {
         const { loop, code } = await built();
         const before = code.ran.length;
         renamedTo("say-hello", "greet", "Say hello warmly.");
-        await loop.bringUp("app.plain", { specChange: true });
+        await loop.bringUp("app.plain");
         await loop.drain();
         expect(code.ran.slice(before).map((job) => job.add)).toEqual([["greet"]]);
       });
@@ -953,7 +955,7 @@ describe("the work loop", () => {
         const { loop, pulses } = await built();
         const before = pulses();
         scenariosIn("say-goodbye", "app", "# still-works\nIt works.");
-        await loop.bringUp("app.plain", { specChange: true });
+        await loop.bringUp("app.plain");
         await loop.drain();
         expect(pulses()).toBe(before);
         expect(readFileSync(join(testsDir(), "test_say.py"), "utf8")).toContain("# acceptance scenario still-works of app:say-goodbye\n");
@@ -968,7 +970,7 @@ describe("the work loop", () => {
         // The tests cannot be relabelled: the records are rewritten first, and put back with the rest.
         execFileSync("chmod", ["444", join(testsDir(), "test_say.py")]);
         renamedTo("say-hello", "greet");
-        await loop.bringUp("app.plain", { specChange: true });
+        await loop.bringUp("app.plain");
         await loop.drain();
         expect(pulses()).toBe(before);
         expect(JSON.stringify(readRecord(codeDir(), { onDisk: true }))).toBe(recordBefore);
@@ -1049,7 +1051,7 @@ describe("the work loop", () => {
       const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run: code.run, runConformance: tests.runConformance });
       await expect(loop.conformance("app.plain")).rejects.toThrow(/^No functional spec of app has scenarios - none has a test plain file - so there is nothing to test: write the conformance or acceptance scenarios first/);
       scenariosIn("say-hello");
-      await expect(loop.conformance("app.plain", { funcIds: ["app:say-goodbye"] })).rejects.toThrow(/^app:say-goodbye has no scenarios - no test plain file - so there is nothing to test: write the conformance or acceptance scenarios first, with change_plain.*Nothing was started\.$/);
+      await expect(loop.conformance("app.plain", { funcIds: ["app:say-goodbye"] })).rejects.toThrow(/^app:say-goodbye has no scenarios - no test plain file - so there is nothing to test: write the conformance or acceptance scenarios first, then regenerate.*Nothing was started\.$/);
       await expect(loop.conformance("app.plain", { funcIds: ["app:say-hello", "app:say-thanks"] })).rejects.toThrow("app has no functional spec app:say-thanks. Nothing was started.");
       expect(code.ran).toEqual([]);
       expect(tests.ran).toEqual([]);
@@ -1192,7 +1194,7 @@ describe("the work loop", () => {
       it("keeps the tests of a functional spec whose text changed up to date - a conformance pulse for it alone", async () => {
         const { loop } = await builtWithTests(["Say hello.", "Say goodbye."], ["say-hello", "say-goodbye"]);
         writePlain(dir, "app.plain", app([["say-hello", "Say hello loudly."], "Say goodbye."]));
-        await loop.bringUp("app.plain", { specChange: true });
+        await loop.bringUp("app.plain");
         await loop.drain();
         expect(pulses).toEqual([{ add: [], patch: ["say-hello"], again: [], delete: [] }]);
         expect(JSON.stringify(readRecord(testsDir()))).toContain("Say hello loudly.");
@@ -1210,7 +1212,7 @@ describe("the work loop", () => {
       it("brings a conformance pulse for the tested functional spec of a code pulse alone - none for the untested one beside it", async () => {
         const { loop } = await builtWithTests(["Say hello.", "Say goodbye.", "Say thanks."], ["say-hello"]);
         writePlain(dir, "app.plain", app([["say-hello", "Say hello loudly."], "Say goodbye.", ["say-thanks", "Say thanks warmly."]]));
-        await loop.bringUp("app.plain", { specChange: true });
+        await loop.bringUp("app.plain");
         await loop.drain();
         expect(pulses).toEqual([{ add: [], patch: ["say-hello"], again: [], delete: [] }]);
         expect(testedIds()).toEqual(["say-hello"]);
@@ -1220,7 +1222,7 @@ describe("the work loop", () => {
         const { loop } = await builtWithTests(["Say hello.", "Say goodbye."], []);
         await loop.regenerateAgain("app.plain", ["app:say-hello"]);
         writePlain(dir, "app.plain", app([["say-hello", "Say hello loudly."], "Say goodbye."]));
-        await loop.bringUp("app.plain", { specChange: true });
+        await loop.bringUp("app.plain");
         await loop.drain();
         expect(pulses).toEqual([]);
         expect(existsSync(join(testsDir(), ".turri.json"))).toBe(false);
@@ -1365,7 +1367,7 @@ describe("the work loop", () => {
         expect(inherited()).toContain("It works.");
 
         scenariosIn("say-hello", "base", "# works\nIt works, and says so.");
-        await loop.bringUp("top.plain", { specChange: true });
+        await loop.bringUp("top.plain");
         await loop.drain();
         expect(pulses.slice(1)).toEqual([{ module: "top", patch: ["base:say-hello"], again: [] }]);
         expect(inherited()).toContain("It works, and says so.");
@@ -1599,16 +1601,6 @@ describe("a module being planned", () => {
     expect(loop.status().filter((status) => status.module === "app")).toHaveLength(1);
   });
 
-  it("is looked at quietly when only its spec changed - no row before the plan", async () => {
-    writePlain(dir, "app.plain", app(["Say hello."]));
-    const registry = createJobRegistry();
-    const seen: string[][] = [];
-    const loop = createWorkLoop({ registry, cwd: dir, planner: false, run: runner().run });
-    registry.notify = () => seen.push(loop.planned().map((job) => job.id));
-    await loop.bringUp("app.plain", { specChange: true });
-    await loop.drain();
-    expect(seen.flat()).not.toContain("planned-app-preparing");
-  });
 });
 
 describe("a module regenerated from scratch", () => {
@@ -1870,6 +1862,7 @@ describe("halting a module's planned work", () => {
 
   it("keeps a module the person halted halted through a spec change, and runs it again once it is asked for", async () => {
     writePlain(dir, "app.plain", app(["Say hello."]));
+    writePlain(dir, "other.plain", app(["Say hi."]));
     const { ran, run } = runner();
     const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run });
     expect(loop.halt("app")).toBeUndefined();
@@ -1877,13 +1870,15 @@ describe("halting a module's planned work", () => {
     await loop.drain();
     writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye."]));
     loop.halt("app");
-    await loop.bringUp("app.plain", { specChange: true });
+    // Another module asked for: the loop looks at every codebase again, and sees the change to app by itself.
+    await loop.bringUp("other.plain");
     await loop.drain();
-    expect(ran).toHaveLength(1);
-    expect(loop.status()[0]!.why).toMatch(/^you halted it/);
+    const apps = () => ran.filter((job) => job.module === "app");
+    expect(apps()).toHaveLength(1);
+    expect(loop.status().find((module) => module.module === "app")!.why).toMatch(/^you halted it/);
     await loop.bringUp("app.plain");
     await loop.drain();
-    expect(ran.map((job) => job.add)).toEqual([["say-hello"], ["say-goodbye"]]);
+    expect(apps().map((job) => job.add)).toEqual([["say-hello"], ["say-goodbye"]]);
   });
 
   it("has the modules built on a halted module wait for it, and says which", async () => {

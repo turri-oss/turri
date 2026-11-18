@@ -22,7 +22,6 @@ import {
   describeToolCall,
   describeToolResult,
   JobStoppedError,
-  shownName,
   reportActivity,
   reportNow,
   reportAgent,
@@ -369,20 +368,20 @@ async function askOnce(session: AgentSession, text: string, onDelta?: (delta: st
           lastCallReport = now;
           const block = update.partial.content[update.contentIndex] as { name?: string } | undefined;
           const size = callChars >= 1000 ? `${(callChars / 1000).toFixed(1)}k` : `${callChars}`;
-          reportNow(`writing ${block?.name !== undefined ? shownName(block.name) : "a tool"} call · ${size} chars`, { keepSince: true });
+          reportNow(`writing ${block?.name ?? "a tool"} call · ${size} chars`, { keepSince: true });
         }
       }
     }
     if (event.type === "tool_execution_start") {
       toolStarted.set(event.toolCallId, Date.now());
       const args = JSON.stringify(event.args ?? {});
-      transcript({ kind: "tool", text: `${shownName(event.toolName)} ${clipText(args, MAX_TOOL_ARGS)}`, full: `${shownName(event.toolName)} ${args}` });
+      transcript({ kind: "tool", text: `${event.toolName} ${clipText(args, MAX_TOOL_ARGS)}`, full: `${event.toolName} ${args}` });
       const took = Date.now() - stepStarted;
       // Which agent made the call, by its role: several work in one pulse.
       const role = agentRoles.get(session);
       const line = `${role !== undefined ? `(${role}) ` : ""}${describeToolCall(event.toolName, event.args)}`;
       reportActivity(took >= 1000 ? `${line}   (model ${seconds(took)})` : line);
-      reportNow(`running ${shownName(event.toolName)}`);
+      reportNow(`running ${event.toolName}`);
     }
     if (event.type === "tool_execution_end") {
       failing = event.isError ? (event.toolName === failingTool ? failing + 1 : 1) : 0;
@@ -391,9 +390,9 @@ async function askOnce(session: AgentSession, text: string, onDelta?: (delta: st
         // A call its tool refuses never reaches the tool, so no guard on the tools sees it: an agent can
         // make the same bad call, worded a little differently, thousands of times. Its turn ends here, and
         // the harness goes on from there, as after any turn.
-        reportActivity(`  stopped the agent's turn: ${failing} ${shownName(event.toolName)} calls failed in a row`);
+        reportActivity(`  stopped the agent's turn: ${failing} ${event.toolName} calls failed in a row`);
         debugLogOf(session)?.note(`turn stopped: ${failing} ${event.toolName} calls failed in a row`);
-        stopTurn(session, `${failing} ${shownName(event.toolName)} calls failed in a row`);
+        stopTurn(session, `${failing} ${event.toolName} calls failed in a row`);
       }
       const output = resultText(event.result);
       const started = toolStarted.get(event.toolCallId);

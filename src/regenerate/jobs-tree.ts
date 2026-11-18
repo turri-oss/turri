@@ -240,7 +240,7 @@ export function jobsTreeLines(jobs: Job[], state: JobsTreeState, width: number, 
   });
   // The ledger has more than the runs shown: where to find them.
   if (state.open.earlier && (state.earlierMore ?? 0) > 0) {
-    lines.push(style.muted(`      ${state.earlierMore} earlier run${state.earlierMore === 1 ? "" : "s"} in the ledger - turri ledger lists them`));
+    lines.push(style.muted(`      ${state.earlierMore} earlier run${state.earlierMore === 1 ? "" : "s"} in the ledger - pulses with runs lists them`));
   }
   return { lines, rowStarts, rows };
 }

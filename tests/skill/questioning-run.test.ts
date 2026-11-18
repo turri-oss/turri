@@ -22,12 +22,6 @@ vi.mock("../../src/pi.ts", () => {
       const askUser = tools.find((tool) => tool.name === "ask_user")!;
       const question = async (text: string, extra: object = {}) =>
         replies.push((await askUser.execute("id", { question: text, options: ["Yes"], ...extra })).content[0]!.text);
-      if ((globalThis as { perAnswer?: boolean }).perAnswer === true) {
-        // Two questions in a row, the first answer never written as a spec change.
-        await question("Which feature first?");
-        await question("Which feature next?");
-        return "done";
-      }
       if (prompt.includes("step 'intent'")) await question("What problem does it solve?");
       else for (const n of [1, 2, 3, 4]) await question(`Stack question ${n}?`);
       if (prompt.includes("step 'stack'")) await question("Is this the stack?", { confirms_phase: true });
@@ -62,33 +56,6 @@ async function run(answer: (request: AskUserRequest) => string) {
   });
   return asked;
 }
-
-describe("a phase where each answer is a spec change", () => {
-  it("does not ask the next question until the last answer is written with change_plain", async () => {
-    writeFileSync(
-      join(root, "skill", "SKILL.md"),
-      "---\nname: interview\ndescription: Asks.\nallowed-tools: [read, change_plain]\nmetadata:\n  change-plain-per-answer: [product]\n---\n\n# Interview\n\n## Steps\n\n### product\n\nAsk about the product.\n",
-    );
-    const { runSkill } = await import("../../src/genome.ts");
-    const asked: AskUserRequest[] = [];
-    (globalThis as { perAnswer?: boolean }).perAnswer = true;
-    try {
-      await runSkill({
-        skillDir: join(root, "skill"),
-        cwd: root,
-        runDir: join(root, "run"),
-        report: { step: () => {}, artifact: () => {}, gate: () => {}, judge: () => {}, outcome: () => {} },
-        escalate: async () => false,
-        askUser: async (request) => (asked.push(request), "Sign-up"),
-        renderQueue: {} as never,
-      });
-    } finally {
-      delete (globalThis as { perAnswer?: boolean }).perAnswer;
-    }
-    expect(asked.map((request) => request.question)).toEqual(["Which feature first?"]);
-    expect(replies[1]).toMatch(/the last answer is not in the spec yet/);
-  });
-});
 
 describe("an interview whose phases the questioning level caps", () => {
   it("asks the level first, before the agent asks anything, and tells the agent what was chosen", async () => {

@@ -79,21 +79,10 @@ export interface Skill {
   allowedTools: string[];
   steps: StepSpec[];
   /**
-   * Whether `change_plain` needs an answer from the user between two new changes - one answer,
-   * one change, as an interview writes them. `metadata.paced: false` turns it off, for a skill that
-   * writes the specs on its own.
-   */
-  paced: boolean;
-  /**
    * The phases the questioning level caps (`metadata.questioning`, questioning.ts): when there are any, the harness asks
    * the level first, and each of them asks at most as many questions as it allows. Empty: no level is asked.
    */
   questioning: string[];
-  /**
-   * The steps where each answer is a spec change (`metadata.change-plain-per-answer`): the next question waits until the
-   * last answer is written with `change_plain`, and changes the agent decides itself need no answer before them.
-   */
-  diffPerAnswer: string[];
   /**
    * Started only by the person, with its slash command - `/release-notes` - never by the model on its own
    * (`metadata.command-only: true`): cultivate runs it only when the person has just typed its command.
@@ -240,14 +229,6 @@ export function loadSkill(skillDir: string): Skill {
     }
   }
 
-  const perAnswer = (data.metadata as Record<string, unknown> | undefined)?.["change-plain-per-answer"];
-  const diffPerAnswer = Array.isArray(perAnswer) ? perAnswer.map(String) : [];
-  for (const stepName of diffPerAnswer) {
-    if (!steps.some((s) => s.name === stepName)) {
-      throw new Error(`${name}: 'metadata.change-plain-per-answer' names unknown step '${stepName}'`);
-    }
-  }
-
   for (const stepName of gatesByStep.keys()) {
     if (!steps.some((s) => s.name === stepName)) {
       throw new Error(`${name}: gate references unknown step '${stepName}'`);
@@ -265,9 +246,7 @@ export function loadSkill(skillDir: string): Skill {
     // What a skill may use is what its frontmatter names, and nothing else: no list, no tools.
     allowedTools: Array.isArray(data["allowed-tools"]) ? (data["allowed-tools"] as string[]) : [],
     steps,
-    paced: (data.metadata as { paced?: unknown } | undefined)?.paced !== false,
     questioning: capped,
-    diffPerAnswer,
     commandOnly: (data.metadata as Record<string, unknown> | undefined)?.["command-only"] === true,
     background: (data.metadata as Record<string, unknown> | undefined)?.background === true,
     ...(model !== undefined ? { model } : {}),

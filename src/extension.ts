@@ -42,6 +42,7 @@ import { checkPlainFile, formatCheckResults } from "./plain/check.ts";
 import { checkPlainTool } from "./parse-tool.ts";
 import { changedFiles, projectFiles } from "./plain-files.ts";
 import { whyFailed } from "./regenerate/diagnose-job.ts";
+import { didNotLand } from "./regenerate/failure-reports.ts";
 import { conformanceRefusal, createWorkLoop, describeModules, isUpToDate, previewJobs, type WorkLoop } from "./regenerate/loop.ts";
 import { createTestAdvisor, type TestAdvisor } from "./regenerate/advisor-runs.ts";
 import { advisorDir } from "./regenerate/advisor-records.ts";
@@ -64,7 +65,6 @@ import { describeTurnIncident, describeUsage, JobStoppedError, onModelEvent, typ
 import { ledgerWanted, startLedger } from "./regenerate/ledger.ts";
 import { describePastPulse, describeRuns, earlierPulses, ledgerProjects } from "./regenerate/ledger-view.ts";
 import { doctorTool } from "./doctor-tool.ts";
-import { ledgerTool } from "./ledger-tools.ts";
 import { describeSpecConflict } from "./regenerate/stop-report.ts";
 import { inheritProviders, inheritThinkingLevel } from "./pi.ts";
 import { LOADING_PROVIDERS } from "./installed-providers.ts";
@@ -92,9 +92,7 @@ import {
   createJobRegistry,
   defaultParallelJobs,
   describeJob,
-  firstRegeneration,
   formatDuration,
-  formatElapsed,
   pulseName,
   shouldWait,
   STOPPED_ON_REQUEST,
@@ -891,7 +889,7 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
       .filter((part) => part !== undefined && part.trim() !== "")
       .join("\n\n");
     const filesBefore = projectFiles(cwd);
-    const writes = ["write", "edit", "bash", "change_plain"].some((tool) => skill.allowedTools.includes(tool));
+    const writes = ["write", "edit", "bash"].some((tool) => skill.allowedTools.includes(tool));
     const quiet: Reporter = { step: () => {}, artifact: () => {}, gate: () => {}, judge: () => {}, outcome: () => {} };
     const about = runDetails(kind, shown);
     const end = (ended: { ok: true; changed: string[] } | { ok: false; why: string; output?: string }) =>
@@ -1145,8 +1143,6 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
       const filesBefore = projectFiles(cwd);
       // A side question asked while it runs is told what it has done so far.
       const ended = skillRunStarted({ skill: skill.name, dir: skill.dir, step: () => live.step, trace: () => [...trace], runDir });
-      // From here the time to first regeneration is counted, for a skill that writes spec diffs: its first pulse started.
-      const began = Date.now();
       const ran = await captureConsole(() =>
         runSkill({
         skillDir: skill.dir,
@@ -1221,7 +1217,7 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
 
       const changes = changedFiles(filesBefore, projectFiles(cwd, filesBefore.keys()));
       // A skill that only reads and reports - an analysis - changes nothing, and its result is its verdict.
-      const writes = ["write", "edit", "bash", "change_plain"].some((tool) => skill.allowedTools.includes(tool));
+      const writes = ["write", "edit", "bash"].some((tool) => skill.allowedTools.includes(tool));
       const changed =
         changes.length > 0
           ? `It changed ${changes.length} file${changes.length === 1 ? "" : "s"} in the project: ${changes.join(", ")}.`
@@ -1236,16 +1232,10 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
         return owner === undefined ? path : `${path} (a test plain file of ${owner.plainFile !== undefined ? relative(cwd, owner.plainFile) : owner.module})`;
       });
       const unrendered =
-        specsChanged.length > 0 && !skill.allowedTools.includes("change_plain")
+        specsChanged.length > 0
           ? `${named.join(", ")} changed, and nothing is regenerated from that yet: call regenerate for ${named.length === 1 ? "its module" : "their modules"}, and the code and its conformance tests are brought up to the spec.`
           : "";
       const gated = skill.steps.some((step) => step.gate !== undefined);
-      const first = skill.allowedTools.includes("change_plain") ? firstRegeneration(jobs.list(), began) : {};
-      const ttfr =
-        first.started === undefined
-          ? ""
-          : `Time to first regeneration: ${formatElapsed(first.started)} - its first pulse started that long after ${skill.name} began` +
-            (first.landed !== undefined ? `, and landed after ${formatElapsed(first.landed)}.` : ".");
       const said =
         heard.length > 0 ? ["", `While it ran, the person said to it - its agent read and acted on each:`, ...heard.map((text) => `- ${text.replace(/\s+/g, " ").trim()}`)] : [];
       const text = result.ok
@@ -1253,7 +1243,6 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
             gated ? `${skill.name}: passed all gates.` : `${skill.name}: finished. It has no review gates, so nothing checked its work: read what it changed before you report it.`,
             changed,
             ...(unrendered !== "" ? [unrendered] : []),
-            ...(ttfr !== "" ? [ttfr] : []),
             ...said,
             "",
             "<artifact>",
@@ -1622,7 +1611,7 @@ function conformTool(options: {
       "no test reqs, or no conformance testing script for its stack: the refusal names the next step.",
     promptSnippet: "conform: write and run the conformance tests of functional specs with scenarios",
     promptGuidelines: [
-      "What is tested is the scenarios: a functional spec's conformance and acceptance scenarios, in its test plain file, tests/<module>/<func-id>.plain. When the user asks for conformance tests, decide in a sentence or two which scenarios to write, and write them with change_plain - a test plain file's ***conformance tests*** and ***acceptance tests***, each scenario a # <scenario-id> heading and its text. Every scenario written is tested once the code is built: the loop starts the conformance pulse by itself. Never edit config.turri.yaml for it, and never regenerate a functionality to get them.",
+      "What is tested is the scenarios: a functional spec's conformance and acceptance scenarios, in its test plain file, tests/<module>/<func-id>.plain. When the user asks for conformance tests, decide in a sentence or two which scenarios to write, write them with the file tools - a test plain file's ***conformance tests*** and ***acceptance tests***, each scenario a # <scenario-id> heading and its text - then call regenerate for the module. Every scenario written is tested once the code is built: the loop starts the conformance pulse by itself. Never edit config.turri.yaml for it, and never name a functionality in funcIds to get them.",
       "Call conform when the user asks for the conformance tests to be written or run now, for a module or some of its functional specs with scenarios.",
       "What the user asks for comes first: for a module already regenerated, while a module built on it is being regenerated, conform stops that pulse, deletes the codebase built on it, writes the tests, and the module above is regenerated from it after - say so. For a module not regenerated yet, its tests are written once its code is built, before anything is built on it.",
       "Conformance tests go in one pulse for all the functional specs tested. Set one_by_one only when the user asks for a pulse a functional spec - one at a time, separately, or the like.",
@@ -1836,7 +1825,7 @@ export function projectConfigBlock(root: string): string {
         stacks.length > 0 ? "project of stacks" : "project",
       ),
       ...(stacks.length > 0
-        ? ["", `Stacks: ${stacks.join(", ")} - chosen now: ${chosen ?? "none, so the project's file alone"}. Each module is built with the stack of its part, pinned to its pulses whatever is chosen after: a stack named after the module is its own - backend.plain is built with config.turri.backend.yaml - with nothing to choose. For a module whose stack has another name, pass it as stack to regenerate, conform, glimpse and change_plain. Choose one for this chat with the stack tool only when the user asks.`]
+        ? ["", `Stacks: ${stacks.join(", ")} - chosen now: ${chosen ?? "none, so the project's file alone"}. Each module is built with the stack of its part, pinned to its pulses whatever is chosen after: a stack named after the module is its own - backend.plain is built with config.turri.backend.yaml - with nothing to choose. For a module whose stack has another name, pass it as stack to regenerate, conform and glimpse. Choose one for this chat with the stack tool only when the user asks.`]
         : []),
       // A stack: its file over the project's, for everything built while it is chosen.
       ...stacks.flatMap((stack) => [
@@ -1866,7 +1855,7 @@ export function projectConfigBlock(root: string): string {
       ...[
         config.module !== undefined && of !== "stack" ? `- module: ${config.module}${where} - the module to build when the user does not name one.` : undefined,
         of !== "stack"
-          ? "- conformance tests: written for every functional spec with scenarios - the conformance and acceptance scenarios of its test plain file - once the module's code is built, before anything is built on it. A functional spec with an empty test plain file is not tested. To have one tested, write its scenarios with change_plain."
+          ? "- conformance tests: written for every functional spec with scenarios - the conformance and acceptance scenarios of its test plain file - once the module's code is built, before anything is built on it. A functional spec with an empty test plain file is not tested. To have one tested, write its scenarios with the file tools, then call regenerate."
           : undefined,
         config.review === true
           ? "- review: true - the code and its tests are reviewed once they pass: two reviews at most, the arbiter weighing the second."
@@ -2057,9 +2046,8 @@ function setRenderModelTool(pi: ExtensionAPI, conversation?: ExtensionContext) {
     label: "Engine",
     description:
       "The engine: which model the agents that regenerate the code run on. With no model, say which it is. With one, choose it " +
-      "for the rest of this session: for spec changes " +
-      "(render spec diff pulses, and the ones change_plain queues), for functionalities (render, module, " +
-      "regenerate with functionalities named, conformance), or for everything. By default " +
+      "for the rest of this session: for spec changes (every pulse the work loop plans, conformance tests included), for " +
+      "functionalities (regenerate with funcIds named), or for everything. By default " +
       "each runs on the model the project's config.turri.yaml names, or else the conversation's model. The model may be given as provider/model-id or by name as " +
       "the user said it; a name that fits more than one model, or none with credentials, comes back as a " +
       "list - ask the user which they meant, never pick one yourself. Pulses already queued keep their model.",
@@ -2067,7 +2055,7 @@ function setRenderModelTool(pi: ExtensionAPI, conversation?: ExtensionContext) {
     promptGuidelines: [
       "When the user says which model should regenerate or build something, call engine with it - once; it holds for the rest of the session. To say which one it is, call engine with no model.",
       "If engine returns several candidates, ask the user which one with ask_user or in your reply, then call it again with the exact provider/model-id.",
-      "Say which model a render will run on when you start one on something other than the conversation's model.",
+      "Say which model a pulse will run on when you start one on something other than the conversation's model.",
     ],
     parameters: Type.Object({
       work: Type.Optional(
@@ -2284,50 +2272,33 @@ const pastPulseNote =
   "for the read tool.";
 
 function registerJobTools(pi: ExtensionAPI, jobs: JobRegistry, cwd: string) {
-  pi.registerTool({
-    name: "diagnose",
-    label: "Diagnose a pulse",
-    description:
-      "Why a pulse did not land, from its whole transcript: how it ended and its diagnosis, the stages that went wrong, the " +
-      "last failing test run with its output, the last review that sent the work back, and the tool calls that failed - " +
-      "and where the whole log is. A pulse of an earlier session is told from the ledger - what it recorded of it, as facts.",
-    promptSnippet: "diagnose: why a pulse did not land, from its transcript",
-    promptGuidelines: ["When a pulse failed or did not land, call diagnose before you explain it or change the spec: go by what happened, not by the report alone."],
-    parameters: Type.Object({ job_id: Type.String({ description: "The pulse's id" }) }),
-    async execute(_id, params) {
-      const job = jobs.get(params.job_id);
-      if (job === undefined) {
-        const past = describePastPulse(ledgerProjects(cwd), params.job_id);
-        if (past !== undefined) return { content: [{ type: "text" as const, text: `${pastPulseNote}\n\n${past}` }], details: { status: "earlier" } };
-        return { content: [{ type: "text" as const, text: `No pulse ${params.job_id} has run in this session, and the ledger has none by that id.` }], details: { status: "unknown" } };
-      }
-      // What the ledger recorded of it besides: its rounds, test runs, healers and commits, as facts.
-      const facts = describePastPulse(ledgerProjects(cwd), job.id);
-      const text = facts !== undefined ? `${whyFailed(job)}\n\nWhat the ledger recorded of it:\n${facts}` : whyFailed(job);
-      return { content: [{ type: "text" as const, text }], details: { status: job.status as string } };
-    },
-  });
-
-  pi.registerTool(ledgerTool({ cwd }));
   pi.registerTool(doctorTool({ cwd }));
 
   pi.registerTool({
     name: "pulses",
     label: "Pulses",
     description:
-      "What is regenerating: with no pulse, every pulse of this session - running, planned and finished - and what deploy started; " +
-      "with a pulse's id, that pulse - whether it is still running, its latest output, and its report once it has finished. " +
-      "A pulse of an earlier session is told from the ledger.",
-    promptSnippet: "pulses: every pulse, or one - what is regenerating and how it is going",
+      "What is regenerating: with no pulse, every pulse of this session - running, planned and finished - what activate started, " +
+      "and the last runs of earlier sessions, a line a pulse - how each ended, how long, what it cost; " +
+      "with a pulse's id, that pulse - whether it is still running and its latest output; once it has finished, its report and " +
+      "what the ledger recorded of it - its rounds and test runs (how many failed the same way), the verdicts, the healers, the " +
+      "model provider's trouble, what turri refused, what it committed. One that did not land says why besides, from its whole " +
+      "transcript: its diagnosis, the stages that went wrong, the last failing test run with its output, the last review that sent " +
+      "the work back, the tool calls that failed, and where the whole log is. A pulse of an earlier session is told from the " +
+      "ledger - what it recorded of it, as facts, and why it did not land, as kept when it ended.",
+    promptSnippet: "pulses: every pulse, or one - what is regenerating, how it is going, and why one did not land",
+    promptGuidelines: ["When a pulse failed or did not land, call pulses with its id before you explain it or change the spec: go by what happened, not by the report alone."],
     parameters: Type.Object({
       job_id: Type.Optional(Type.String({ description: "The id returned when the pulse started. Omitted: every pulse" })),
       wait: Type.Optional(
         Type.Boolean({ description: "With a pulse: block until it finishes instead of reporting its current state" }),
       ),
+      runs: Type.Optional(Type.Number({ description: `Without a pulse: how many runs of earlier sessions to list (default ${EARLIER_RUNS})` })),
     }),
     async execute(_id, params) {
       if (params.job_id === undefined) {
-        return { content: [{ type: "text" as const, text: listJobs(jobs, cwd) }], details: { status: "all" } };
+        const runs = params.runs !== undefined && Number.isFinite(params.runs) ? Math.max(1, Math.floor(params.runs)) : EARLIER_RUNS;
+        return { content: [{ type: "text" as const, text: listJobs(jobs, cwd, runs) }], details: { status: "all" } };
       }
       const existing = jobs.get(params.job_id);
       const planned = shownJobs(jobs).find((job) => job.id === params.job_id && jobs.get(job.id) === undefined);
@@ -2353,10 +2324,13 @@ function registerJobTools(pi: ExtensionAPI, jobs: JobRegistry, cwd: string) {
       }
 
       const job = params.wait === true ? await jobs.wait(params.job_id) : existing;
-      return {
-        content: [{ type: "text" as const, text: describeJob(job) }],
-        details: { status: job.status as string },
-      };
+      if (job.status === "running" || job.status === "queued") return { content: [{ type: "text" as const, text: describeJob(job) }], details: { status: job.status as string } };
+      // Ended: how it went - why, for one that did not land - and what the ledger recorded of it besides: its rounds, test
+      // runs, verdicts, healers and commits, as facts. A pulse that landed after a struggle shows it there.
+      const told = didNotLand(job) ? whyFailed(job) : describeJob(job);
+      const facts = describePastPulse(ledgerProjects(cwd), job.id, { report: false });
+      const text = facts !== undefined ? `${told}\n\nWhat the ledger recorded of it:\n${facts}` : told;
+      return { content: [{ type: "text" as const, text }], details: { status: job.status as string } };
     },
   });
 
@@ -2859,22 +2833,25 @@ function shownJobs(jobs: JobRegistry): Job[] {
   return [...(workLoops.get(jobs)?.loop.planned() ?? []), ...jobs.list()];
 }
 
-function listJobs(jobs: JobRegistry, cwd: string): string {
+function listJobs(jobs: JobRegistry, cwd: string, runs = EARLIER_RUNS): string {
   const all = [...shownJobs(jobs)].reverse().filter((job) => job.replacedBy === undefined);
   const deployed = runningDeployed().map((item) => `deploy ${item.name}  running  ${item.moduleName}: ${item.url ?? item.command}  (pid ${item.pid}, output in ${relative(process.cwd(), item.log) || item.log})`);
   const listed = deployed.length > 0 ? `\n\nActivated from dist - /halt activated <name> halts one:\n${deployed.join("\n")}` : "";
-  const before = earlierRuns(jobs, cwd);
+  const before = earlierRuns(jobs, cwd, runs);
   if (all.length === 0) return `No pulses have been started in this session.${listed}${before}`;
   return `${jobLines(all)}${listed}${before}`;
 }
 
+/** How many runs of earlier sessions `pulses` lists when it is asked for none. */
+const EARLIER_RUNS = 3;
+
 /** Earlier sessions' last runs and their pulses, from the ledger - nothing when it has none. */
-function earlierRuns(jobs: JobRegistry, cwd: string): string {
+function earlierRuns(jobs: JobRegistry, cwd: string, runs: number): string {
   try {
-    const found = earlierPulses(ledgerProjects(cwd), new Set(jobs.list().map((job) => job.id)));
+    const found = earlierPulses(ledgerProjects(cwd), new Set(jobs.list().map((job) => job.id)), runs);
     if (found.runs.length === 0) return "";
-    const more = found.more > 0 ? `\n\n${found.more} earlier run${found.more === 1 ? "" : "s"} beyond these are in the ledger.` : "";
-    return `\n\nEarlier sessions, from the ledger - pulses or diagnose with a pulse's id tells one:\n${describeRuns(found.runs)}${more}`;
+    const more = found.more > 0 ? `\n\n${found.more} earlier run${found.more === 1 ? "" : "s"} beyond these: ask with runs for more.` : "";
+    return `\n\nEarlier sessions, from the ledger - pulses with a pulse's id tells one:\n${describeRuns(found.runs)}${more}`;
   } catch {
     return "";
   }

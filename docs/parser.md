@@ -88,7 +88,7 @@ FAIL  tests/  2 test plain files outside a module's folder
 
 A test plain file, or a test folder, is never taken for a module: `parse` - and `regenerate`, `conform`, `glimpse`, `drift`, `release`, `/regenerate` and the commands - refuse one, naming its module (`\`tests/todo/add-task.plain\` is a test plain file of \`todo\`; name \`todo.plain\`, or \`todo:add-task\` for that one functional spec`).
 
-The exit code is 0 only when every file passed. In a conversation the same check is `parse`; `change_plain` and `turri change-plain` run it on what a change touched - each module, an import module as the modules that import it, a test plain file as its module - and a change that does not pass is rolled back, a test plain file written outside its module's folder with it.
+The exit code is 0 only when every file passed. In a conversation the same check is `parse`; `regenerate` runs it on the module it is given, and regenerates nothing from one that does not pass.
 
 ## Two rules of inheritance
 

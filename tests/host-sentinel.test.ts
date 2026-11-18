@@ -224,7 +224,7 @@ describe("the sentinel in a host", () => {
     for (const name of ["read", "bash", "grep", "write", "edit", "resume", "notify_person", "conclude", "keep_guidance"]) expect(tools.has(name), name).toBe(true);
     // A tool of the chat's that is not its own is refused when it calls it.
     const guard = sessions[1]!.handlers.get("tool_call")!;
-    const refused = (await Promise.all(guard.map((handler) => handler({ type: "tool_call", toolName: "change_plain", toolCallId: "c", input: {} }, {})))).find((result) => result !== undefined) as { block?: boolean; reason?: string } | undefined;
+    const refused = (await Promise.all(guard.map((handler) => handler({ type: "tool_call", toolName: "regenerate", toolCallId: "c", input: {} }, {})))).find((result) => result !== undefined) as { block?: boolean; reason?: string } | undefined;
     expect(refused).toMatchObject({ block: true, reason: expect.stringContaining("not one of the sentinel's tools") });
     const result = await tools.get("notify_person")!.execute(
       "call",

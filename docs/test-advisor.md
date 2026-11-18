@@ -8,7 +8,7 @@ Which functional specs need explicit testing scenarios is not obvious, and not e
 
 **Two ways in.** By itself, for every new or changed functional spec without scenarios, as below - what `test-advisor: false` turns off. And when the chat asks, with `evaluate_tests`, whatever the setting - see [asking for an evaluation](#asking-for-an-evaluation).
 
-**Only in the chat and a host.** Never in a headless command - `turri regenerate`, `conform`, `change-plain` and the rest - and never in [pi](https://pi.dev)'s print, json and rpc modes (`turri -p`), which end when the answer is printed. That is decided where the session starts: the terminal's chat and a host's session have one, nothing else does.
+**Only in the chat and a host.** Never in a headless command - `turri regenerate`, `conform` and the rest - and never in [pi](https://pi.dev)'s print, json and rpc modes (`turri -p`), which end when the answer is printed. That is decided where the session starts: the terminal's chat and a host's session have one, nothing else does.
 
 **What it looks at by itself:** a functional spec, in any module, that is new or whose text changed since its code was built - measured against the code record, what the code was built from: text that differs from the record, or a functional spec not built yet. Then against the advisor's file: a text already looked at, under its hash, is not looked at again. So a fresh project's first functional specs are looked at, and a project already built that has no advisor file gets no backlog: only what changes from now on is.
 
@@ -16,23 +16,23 @@ Which functional specs need explicit testing scenarios is not obvious, and not e
 - a functional spec with scenarios of any kind - [today's review](regenerating.md#conformance-tests) of its scenarios covers it when its text changes
 - the standard library's templates, which have no functional specs
 
-**When:** by itself, as soon as the work loop sees a \*\*\*plain change - a `change_plain`, a `regenerate`, a pulse ending - beside the code pulse it plans. The functional spec is marked `pending` in the advisor's file there and then, so quitting loses nothing: the next start in the chat or a host picks up every `pending` entry.
+**When:** by itself, as soon as the work loop sees a \*\*\*plain change - a `regenerate`, a pulse ending - beside the code pulse it plans. The functional spec is marked `pending` in the advisor's file there and then, so quitting loses nothing: the next start in the chat or a host picks up every `pending` entry.
 
 **Two at a time at most,** outside `parallel-jobs` and the lanes: it never takes a pulse's slot, no pulse waits for it, and it never steers or stops one.
 
-**A text that changes while it runs throws the work away,** whoever changed it - you, the chat's `change_plain`, a skill: what it had judged for the old text is dropped (`advisor.dropped`), and the new text starts again.
+**A text that changes while it runs throws the work away,** whoever changed it - you, the chat, a skill: what it had judged for the old text is dropped (`advisor.dropped`), and the new text starts again.
 
 A failure - a model error, a call that never answered - is dropped quietly: the entry says `failed` and why, `advisor.failed` goes into the ledger, and the same text is not tried again. Nothing is shown.
 
 ## What you see
 
-**Being evaluated.** A change's result - `regenerate`'s, `change_plain`'s - names the functional specs the advisor has just taken up, as `evaluate_tests` names the ones it was asked for, and the chat says in a line that testing scenarios are being evaluated for them, and goes on: there is nothing to wait for.
+**Being evaluated.** `regenerate`'s result names the functional specs the advisor has just taken up, as `evaluate_tests` names the ones it was asked for, and the chat says in a line that testing scenarios are being evaluated for them, and goes on: there is nothing to wait for.
 
 **A yes** comes back to the chat you are looking at as a message that starts a turn. It holds the report - the questions that were a yes with their evidence, and the inputs to cover - and the chat, asking you nothing, tells you in a line:
 
 > core:clear-tasks needs testing scenarios - a wrong implementation could look right. Writing them now.
 
-Then it writes, with `change_plain`, whatever the [step-7 guard](regenerating.md#the-steps-of-adding-tests) would refuse the scenarios for, in turn and only what is missing: the \*\*\*test reqs\*\*\* of the module it is tested in - the top of its chain, where its conformance tests live - the stack's conformance template, `stdlib/<kind>/conformance/<stack>`, imported, or the module's own; the conformance testing script for its stack, with `implement-conformance-testing-script` - in the background, the chat going straight on; then the scenarios, in `tests/<module>/<func-id>.plain`. They cover the report's inputs that are this functional spec's - an agreed one with the readers' output, never a placeholder - and a split one is settled by the reading most consistent with the functional spec and its module, the chat saying which it took. The change is visible as any is, and the conformance pulse follows once the code is built.
+Then it writes, with its file tools, whatever the [step-7 guard](regenerating.md#the-steps-of-adding-tests) would refuse the scenarios for, in turn and only what is missing: the \*\*\*test reqs\*\*\* of the module it is tested in - the top of its chain, where its conformance tests live - the stack's conformance template, `stdlib/<kind>/conformance/<stack>`, imported, or the module's own; the conformance testing script for its stack, with `implement-conformance-testing-script` - in the background, the chat going straight on; then the scenarios, in `tests/<module>/<func-id>.plain`. They cover the report's inputs that are this functional spec's - an agreed one with the readers' output, never a placeholder - and a split one is settled by the reading most consistent with the functional spec and its module, the chat saying which it took. Then it calls `regenerate` for the module, and the conformance pulse follows once the code is built.
 
 **A no** is one line turri draws itself, starting no turn and reaching no model:
 

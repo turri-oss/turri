@@ -193,7 +193,7 @@ function talkBack(talks: "reply" | "context"): string {
         "with ask_user only once it is settled - changed, if what they said calls for it. It was not counted as answered."
     : "Answer what they said, then ask the question again with ask_user - changed, if what they said calls for it. Put " +
         "your answer to them in the question's `context`: nothing else you write reaches them. It was not counted as a " +
-        "question, and nothing is owed for it.";
+        "question.";
 }
 
 /** Ends the questions of a phase the questioning level caps: what is left, the agent decides itself. */
@@ -203,8 +203,7 @@ export function createEndQuestionsTool(questioning: Pick<Questioning, "end">) {
     label: "End questions",
     description:
       "End this phase's questions: you have asked what the person must decide, and you decide what is left " +
-      "yourself, saying what you chose. Afterwards ask_user asks only the phase's closing confirmation, and " +
-      "change_plain needs no answer between changes.",
+      "yourself, saying what you chose. Afterwards ask_user asks only the phase's closing confirmation.",
     promptSnippet: "end this phase's questions and decide what is left yourself",
     parameters: Type.Object({}),
     async execute() {

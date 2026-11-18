@@ -6,6 +6,7 @@ import { askUserVia, chatAskUserTool, createTurriCore, type TurriHost } from "..
 import { sideQuestionPrompt } from "../src/btw.ts";
 import { TURRI_IDENTITY } from "../src/identity.ts";
 import { stopJob } from "../src/loop-tools.ts";
+import { record, startLedger, stopLedger } from "../src/regenerate/ledger.ts";
 import { refusal, TOOLS_NOT_CLI } from "../src/self-invocation.ts";
 import { NEW_PROJECT } from "../src/new-project.ts";
 import type { AskUserIO } from "../src/ask.ts";
@@ -231,6 +232,62 @@ describe("the skills the person starts with a command", () => {
       expect(picked.content.map((part) => part.text).join("\n")).toContain('call cultivate with skill "kickoff" at once');
       expect((await cultivate()).content[0]!.text).toContain("There is an interrupted run of kickoff here");
     }));
+});
+
+describe("the pulses tool", () => {
+  /** turri's extension built into a pi that keeps the tools it registers, in a folder of its own. */
+  function chatTools() {
+    const tools = new Map<string, { execute: (...args: unknown[]) => Promise<{ content: Array<{ text: string }> }> }>();
+    const pi = new Proxy({}, {
+      get: (_target, key) =>
+        key === "registerTool" ? (tool: { name: string; execute: (...args: unknown[]) => Promise<{ content: Array<{ text: string }> }> }) => tools.set(tool.name, tool) : () => undefined,
+    }) as never;
+    const core = createTurriCore();
+    core.extension(pi);
+    const pulse = async (id: string) => (await tools.get("pulses")!.execute("call", { job_id: id }, undefined, undefined, { hasUI: false })).content[0]!.text;
+    return { core, tools, pulse };
+  }
+
+  it("is the one tool for a pulse and the runs before - no diagnose or ledger beside it", () => {
+    const { tools } = chatTools();
+    expect(tools.has("pulses")).toBe(true);
+    expect(tools.has("diagnose")).toBe(false);
+    expect(tools.has("ledger")).toBe(false);
+  });
+
+  it("says why a pulse did not land - its diagnosis and the stages that went wrong - and only its report for one that landed", async () => {
+    const before = process.cwd();
+    process.chdir(mkdtempSync(join(tmpdir(), "turri-pulses-")));
+    try {
+      const { core, pulse } = chatTools();
+      const failed = core.jobs.start({ kind: "regenerate", summary: "app pulse 1", module: "app", run: async () => ({ report: "", details: { passed: false, landed: false } }) });
+      await core.jobs.wait(failed.id);
+      core.jobs.get(failed.id)!.diagnosis = "The tests import a module the code never wrote.";
+      const told = await pulse(failed.id);
+      expect(told).toContain("<diagnosis>\nThe tests import a module the code never wrote.\n</diagnosis>");
+      // One that landed after a struggle: its report, and the ledger's facts - the failing rounds - with it.
+      startLedger({ mode: "chat", project: process.cwd() });
+      const landed = core.jobs.start({
+        kind: "regenerate",
+        summary: "app pulse 2",
+        module: "app",
+        lanes: [join(process.cwd(), "plain_modules", "app", "code")],
+        run: async () => {
+          for (const round of [1, 2, 3]) record({ kind: "gate.round", gate: "unit tests", round, of: 20 });
+          return { report: "Built say-hello.", details: { passed: true, landed: true } };
+        },
+      });
+      await core.jobs.wait(landed.id);
+      const fine = await pulse(landed.id);
+      stopLedger();
+      expect(fine).toContain("Built say-hello.");
+      expect(fine).not.toContain("<diagnosis>");
+      expect(fine).toContain("What the ledger recorded of it:");
+      expect(fine).toContain("rounds: unit tests 3 of 20");
+    } finally {
+      process.chdir(before);
+    }
+  });
 });
 
 describe("config settings for a host", () => {

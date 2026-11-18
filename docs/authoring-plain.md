@@ -69,7 +69,7 @@ Nothing about testing is written until the person asks for it, or the [test advi
 
 1. **The test reqs** - the stack's conformance template, `stdlib/<kind>/conformance/<stack>`, or the module's own `***test reqs***` when it has no stack from the standard library.
 2. **The conformance testing script** - with `implement-conformance-testing-script`, when the project has none for the module's stack. It runs in the background on the module's coding model; the conformance tests wait for it.
-3. **The scenarios** - for the functional specs the person named, conformance scenarios and, only when asked for, acceptance scenarios, written with `change_plain` with no further confirmation. Scenarios in one functional spec say nothing about another: the rest stay untested until they are asked for too.
+3. **The scenarios** - for the functional specs the person named, conformance scenarios and, only when asked for, acceptance scenarios, written with the file tools and regenerated with `regenerate`, with no further confirmation. Scenarios in one functional spec say nothing about another: the rest stay untested until they are asked for too.
 
 Scenarios that exist are kept in step with their functional specs: a functional spec changed has its scenarios reviewed in the same \*\*\*plain diff, and one split, moved, renamed or taken out takes its test plain file with it. The rules are in `test-plain-files.md`.
 
@@ -178,6 +178,6 @@ Every skill in `genome/skills/` can be run from a conversation; most are also us
 turri parse app.plain     # or parse in a conversation
 ```
 
-It parses \*\*\*plain with this repo's own parser - each module with its test plain files - resolves its imports and required modules, and reports every syntax, concept and structure error with its line, and every test plain file outside its module's folder; it lists each functional spec with its scenarios - `no scenarios - not tested` for one without, which is no problem - and warns of a step of adding tests that was skipped. No model, no API key. The interview skills run it before a phase ends, and `change_plain` refuses a change that leaves a file that does not pass. Pass the project directory to check every module at once.
+It parses \*\*\*plain with this repo's own parser - each module with its test plain files - resolves its imports and required modules, and reports every syntax, concept and structure error with its line, and every test plain file outside its module's folder; it lists each functional spec with its scenarios - `no scenarios - not tested` for one without, which is no problem - and warns of a step of adding tests that was skipped. No model, no API key. The interview skills run it before a phase ends, and `regenerate` refuses a module that does not pass. Pass the project directory to check every module at once.
 
 What `check` cannot see - a fact in the wrong section, a functional spec that is too big, two that conflict, wording no test can check - is what the rules, the skills and the reviewers are for.

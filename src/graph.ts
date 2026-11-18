@@ -77,13 +77,11 @@ export function endsOnQuestion(reply: string): boolean {
 }
 
 /** Sent when a step's turn ended on a question in its reply: no one reads it, and the step is not done. */
-function unansweredQuestionPrompt(skill: Skill, step: StepSpec): string {
+function unansweredQuestionPrompt(step: StepSpec): string {
   return [
     "Your turn ended on a question in your reply. No one reads it: the person sees only what ask_user asks, and",
     `the step ends when your turn does - so step '${step.name}' would end here, not done.`,
-    skill.paced
-      ? "If it is truly the person's to decide, ask it with ask_user. Otherwise decide it yourself."
-      : `'${skill.name}' asks the person nothing more: decide it yourself, as a careful engineer would, and say what you chose.`,
+    "If it is truly the person's to decide, ask it with ask_user. Otherwise decide it yourself.",
     `Then carry on with step '${step.name}' until all of it is done, and end your turn only then.`,
   ].join("\n");
 }
@@ -176,7 +174,7 @@ export function compileSkill(opts: {
       // A question in the reply reaches no one - the person sees only what ask_user asks - and the step ends with the
       // turn: back to the work, so a step is not left half done on a question nobody answers.
       for (let nudges = 0; nudges < QUESTION_NUDGES && endsOnQuestion(reply); nudges += 1) {
-        reply = await ask(opts.executor, unansweredQuestionPrompt(skill, step));
+        reply = await ask(opts.executor, unansweredQuestionPrompt(step));
       }
 
       let artifact = "";

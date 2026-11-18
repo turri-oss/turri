@@ -77,7 +77,7 @@ function diffOf(name: string, content: string): string {
 }
 
 beforeEach(() => {
-  dir = realpathSync(mkdtempSync(join(tmpdir(), "turri-change-plain-conformance-")));
+  dir = realpathSync(mkdtempSync(join(tmpdir(), "turri-conform-conformance-")));
   writeFileSync(join(dir, "config.turri.yaml"), "conformance-tests: true\n");
   writePlain(dir, "base.plain", module_([["base-one", "Base one."], ["base-two", "Base two."]]));
   writePlain(dir, "top.plain", module_([["top-one", "Top one."]], "base"));

@@ -20,7 +20,7 @@ import { ensureInScratch } from "./paths.ts";
  * was queued, started, went through its stages and ended, and how; what each agent's model calls and
  * turns cost; each tool call and test run, how long it took and how it ended; the gates' rounds and
  * verdicts; what turri refused or stopped; what its healers did; the history's commits. What a pulse
- * from an earlier session did is looked up here (`pulses`, `diagnose`, `turri ledger`) - and what it
+ * from an earlier session did is looked up here (`pulses`) - and what it
  * regenerated, its ***plain diff, kept whole as the one body the ledger has. Never stored: prompts,
  * replies, thinking, tool arguments and results, file contents - and what strings an event carries are
  * masked as the logs are.

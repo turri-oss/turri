@@ -139,19 +139,15 @@ describe("continuous review", () => {
 describe("an interview's frontmatter", () => {
   const steps = "## Steps\n\n### intent\n\nAsk.\n\n### stack\n\nAsk.\n\n### product\n\nAsk.\n";
 
-  it("names the phases the questioning level caps and those where every answer is a spec change", () => {
-    const s = skill(steps, "metadata:\n  questioning: [stack, product]\n  change-plain-per-answer: [product]\n");
+  it("names the phases the questioning level caps", () => {
+    const s = skill(steps, "metadata:\n  questioning: [stack, product]\n");
     expect(s.questioning).toEqual(["stack", "product"]);
-    expect(s.diffPerAnswer).toEqual(["product"]);
     expect(skill(steps).questioning).toEqual([]);
   });
 
-  it("is paced and left to the model unless it says otherwise", () => {
-    expect(skill(steps).paced).toBe(true);
+  it("is left to the model unless it says otherwise", () => {
     expect(skill(steps).commandOnly).toBe(false);
-    const own = skill(steps, "metadata:\n  paced: false\n  command-only: true\n");
-    expect(own.paced).toBe(false);
-    expect(own.commandOnly).toBe(true);
+    expect(skill(steps, "metadata:\n  command-only: true\n").commandOnly).toBe(true);
   });
 
   it("is rejected when its questioning level names a step it does not have", () => {
@@ -170,26 +166,24 @@ describe("a skill's tools", () => {
     expect(loadSkill(dir).allowedTools).toEqual([]);
   });
 
-  it("every skill here names its tools - the ones that only read and report can only read, and one that writes only through change_plain has no file tools to write with", async () => {
+  it("every skill here names its tools - the ones that only read and report can only read, and the rest write with the file tools", async () => {
     const { readdirSync, readFileSync } = await import("node:fs");
     for (const name of readdirSync("genome/skills")) {
       expect(readFileSync(`genome/skills/${name}/SKILL.md`, "utf8"), name).toMatch(/^allowed-tools: \[/m);
       const tools = loadSkill(`genome/skills/${name}`).allowedTools;
       expect(tools, name).toContain("read");
       if (name.startsWith("analyze-")) expect(tools, name).not.toContain("write");
-      else if (tools.includes("change_plain")) for (const tool of ["write", "edit"]) expect(tools, name).not.toContain(tool);
       else expect(tools, name).toEqual(expect.arrayContaining(["write", "edit"]));
     }
   });
 
-  it("convert-old-syntax rewrites a module through change_plain alone, its rewrite judged before it is kept", () => {
+  it("convert-old-syntax rewrites a module with the file tools, its rewrite judged before it is kept", () => {
     const skill = loadSkill("genome/skills/convert-old-syntax");
-    expect(skill.allowedTools).toEqual(["read", "ls", "grep", "find", "change_plain", "parse"]);
+    expect(skill.allowedTools).toEqual(["read", "write", "edit", "ls", "grep", "find", "parse"]);
     expect(skill.steps.map((step) => step.name)).toEqual(["ids", "rewrite", "check"]);
     const gate = skill.steps.find((step) => step.name === "rewrite")!.gate!;
     expect(gate.review.judgeTools).toEqual(["read", "ls", "grep", "find"]);
     expect(readRubric(skill, gate.review)).toContain("word for word");
-    expect(skill.paced).toBe(true);
     expect(skill.questioning).toEqual([]);
   });
 });

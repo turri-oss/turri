@@ -46,7 +46,6 @@ The workflow signs in to npm with npm's trusted publishing (OIDC), not a token: 
 | `src/judge.ts` | runs independent judges, applies the quorum, builds the critique |
 | `src/genome.ts` | `runSkill()` - the one entry point the CLI and the extension share |
 | `src/pi.ts` | [pi](https://pi.dev) session factories for executors, sub-agents and judges |
-| `src/spec-tools.ts` | `change_plain` |
 | `src/loop-tools.ts` | `regenerate`, `drift` and `halt` - one definition each, for the conversation and the skills alike |
 | `src/plain/` | the [\*\*\*plain](https://plainlang.org/docs/) parser - see [parser](parser.md) - and `highlight.ts`, which highlights \*\*\*plain with turri's own grammar, `plain.tmLanguage.json` - started from [plyn](https://github.com/plainlang/plyn)'s at `f9c02b8`, and changed here since: test plain files' sections and keys, the `# <id>` heading |
 | `src/regenerate/conformance.ts` | conformance tests: writing them, and fixing the test or the code until they pass |
@@ -64,7 +63,8 @@ The workflow signs in to npm with npm's trusted publishing (OIDC), not a token: 
 | `src/regenerate/spec-map.ts`, `src/regenerate/spec-map-view.ts` | regen: each item's mark, from the records, the `.plain` files and the work loop's plan (`mapPlan`), and the map drawn |
 | `src/regenerate/debug-log.ts` | each regenerating agent's whole conversation, streamed to `.turri/debug/` - while its pulse runs, and kept in debug mode |
 | `src/regenerate/pulse-files.ts` | what a pulse writes only for a person - its logs, outputs, temporary files, its chain's installed dependencies - removed as it ends outside debug mode |
-| `src/regenerate/ledger.ts`, `src/regenerate/ledger-view.ts`, `src/ledger-tools.ts`, `src/ledger-cli.ts` | the ledger: what turri did, as typed facts, in `.turri/ledger/` - `record()`, read back for the `ledger` tool, `pulses`, `diagnose` and `turri ledger` - see [the ledger](using.md#the-ledger) |
+| `src/regenerate/failure-reports.ts` | why a pulse that failed or finished without landing did - what `pulses` says of it - kept in `.turri/pulses/<id>.md` whatever the debug setting, for a later session |
+| `src/regenerate/ledger.ts`, `src/regenerate/ledger-view.ts` | the ledger: what turri did, as typed facts, in `.turri/ledger/` - `record()`, read back for `pulses` - see [the ledger](using.md#the-ledger) |
 | `genome/` | what turri knows and can do: `genome/skills/`, the skill library, and `genome/rules/`, the \*\*\*plain authoring rules |
 
 ## Known edges

@@ -3,10 +3,11 @@ import { join, resolve } from "node:path";
 import { describeUsage, type UsageReport } from "./activity.ts";
 import { formatElapsed, type Job, type JobStatus } from "./jobs.ts";
 import { LEDGER_DIR, ledgerRun, readLedger, type LedgerEntry } from "./ledger.ts";
+import { failureReport } from "./failure-reports.ts";
 
 /**
  * What the ledger says of pulses, read back: one pulse - from this session or an earlier one - as the chat and
- * `turri ledger` are told it, and the runs a project has had, each with its pulses.
+ * a host are told it, and the runs a project has had, each with its pulses.
  */
 
 type Of<K extends LedgerEntry["kind"]> = Extract<LedgerEntry, { kind: K }>;
@@ -177,7 +178,7 @@ function outcomeOf(view: PulseView): string {
 }
 
 /**
- * A pulse from the ledger, for the chat and `turri ledger <pulse>`: what happened in it, as facts - and, last, the
+ * A pulse from the ledger, for the chat's `pulses`: what happened in it, as facts - and, last, the
  * ***plain diff it regenerated, unless `diff` is false.
  */
 export function describePulseView(view: PulseView, options: { diff?: boolean } = {}): string {
@@ -236,12 +237,19 @@ export function describePulseView(view: PulseView, options: { diff?: boolean } =
   return lines.join("\n");
 }
 
-/** A pulse the ledger of any of these projects knows, described - or undefined. */
-export function describePastPulse(projects: string[], id: string): string | undefined {
+/**
+ * A pulse the ledger of any of these projects knows, described - or undefined. With `report` (the default), why one
+ * that did not land did not, as kept when it ended; without, the ledger's facts alone - for a pulse of this session,
+ * whose transcript says why.
+ */
+export function describePastPulse(projects: string[], id: string, options: { report?: boolean } = {}): string | undefined {
   for (const project of projects) {
     const entries = readLedger(project);
     const view = pulseView(id, entries);
-    if (view !== undefined) return describePulseView(view);
+    if (view === undefined) continue;
+    // Why one that did not land did not, as it was kept when it ended - what the ledger cannot hold.
+    const report = options.report === false ? undefined : failureReport(project, view.id);
+    return report !== undefined ? `${describePulseView(view)}\n\nWhy it did not land, as kept when it ended:\n${report}` : describePulseView(view);
   }
   return undefined;
 }
@@ -269,7 +277,7 @@ export function runViews(project: string): RunView[] {
     .reverse();
 }
 
-/** The project's last runs, a line a pulse: what `turri ledger` prints. */
+/** The project's last runs, a line a pulse: what `pulses` lists of earlier sessions. */
 export function describeRuns(runs: RunView[]): string {
   if (runs.length === 0) return "The ledger is empty: nothing has run here since it began.";
   return runs
@@ -335,72 +343,4 @@ export function asJob(view: PulseView): Job {
     details: { ...(finished?.landed !== undefined ? { landed: finished.landed } : {}), ...(finished?.passed !== undefined ? { passed: finished.passed } : {}) },
     earlier: { run: view.run, ...(view.runMode !== undefined ? { runMode: view.runMode } : {}), lines: describePulseView(view, { diff: false }).split("\n").slice(1).map((line) => line.replace(/^  /, "")) },
   };
-}
-
-/** What to count in the ledger: kinds - whole, or a group by what comes before the dot - a module, since when. */
-export interface EventQuery {
-  /** `healer.failed`, or `healer` for every healer event. */
-  kinds?: string[];
-  module?: string;
-  /** Only events at or after this time. */
-  since?: Date;
-  /** How many of the most recent to list, a line each. */
-  limit?: number;
-}
-
-/** The envelope's fields, said apart from an event's own. */
-const ENVELOPE = new Set(["v", "ts", "seq", "run", "job", "module", "agent", "kind"]);
-
-/** One event in a line: when, its pulse and module, its kind, its own fields - the agent's role when it has one. */
-export function eventLine(entry: LedgerEntry): string {
-  const fields = Object.entries(entry)
-    .filter(([key]) => !ENVELOPE.has(key))
-    .map(([key, value]) => {
-      // A long value - a ***plain diff, where its lines are - cut to the start of it: the line is a glance.
-      const whole = typeof value === "string" ? value : JSON.stringify(value);
-      const text = typeof value === "string" ? JSON.stringify(value.length > 160 ? `${value.slice(0, 159)}…` : value) : whole.length > 160 ? `${whole.slice(0, 159)}…` : whole;
-      return `${key}=${text}`;
-    });
-  const where = [entry.job, entry.module, entry.agent?.role ?? entry.agent?.label].filter((part): part is string => part !== undefined);
-  return [entry.ts.slice(0, 19).replace("T", " "), ...where, entry.kind, ...fields].join(" · ");
-}
-
-/**
- * The events of these projects' ledgers that `query` asks for: how many of each kind, and the most recent, a line each -
- * or, when no kind asked for is in the ledger, the kinds it has.
- */
-export function describeEvents(projects: string[], query: EventQuery = {}): string {
-  const all = projects.flatMap((project) => readLedger(project, query.since !== undefined ? { since: query.since } : {}));
-  const inModule = query.module !== undefined ? all.filter((entry) => entry.module === query.module) : all;
-  const wanted = query.kinds?.map((kind) => kind.trim()).filter((kind) => kind !== "");
-  const matches = (kind: string) => wanted === undefined || wanted.length === 0 || wanted.some((asked) => kind === asked || kind.startsWith(`${asked}.`));
-  const found = inModule.filter((entry) => matches(entry.kind));
-  const scope = [query.module !== undefined ? `in ${query.module}` : "", query.since !== undefined ? `since ${query.since.toISOString().slice(0, 16).replace("T", " ")}` : ""].filter(Boolean).join(", ");
-  if (found.length === 0) {
-    const kinds = [...new Set(inModule.map((entry) => entry.kind))].sort();
-    return `No ${wanted !== undefined && wanted.length > 0 ? wanted.join(", ") : ""} events${scope !== "" ? ` ${scope}` : ""} in the ledger.${kinds.length > 0 ? ` It has: ${kinds.join(", ")}.` : ""}`;
-  }
-  const counts = new Map<string, number>();
-  for (const entry of found) counts.set(entry.kind, (counts.get(entry.kind) ?? 0) + 1);
-  const pulses = new Set(found.map((entry) => entry.job).filter((job) => job !== undefined)).size;
-  const runs = new Set(found.map((entry) => entry.run)).size;
-  const limit = Math.max(1, query.limit ?? 20);
-  const recent = found.slice(-limit).reverse();
-  return [
-    `${found.length} event${found.length === 1 ? "" : "s"}${scope !== "" ? ` ${scope}` : ""}, in ${runs} run${runs === 1 ? "" : "s"} and ${pulses} pulse${pulses === 1 ? "" : "s"}: ${[...counts].sort((a, b) => b[1] - a[1]).map(([kind, times]) => `${kind} ${times}`).join(", ")}`,
-    "",
-    recent.length === found.length ? "Each, newest first:" : `The last ${recent.length}, newest first:`,
-    ...recent.map(eventLine),
-  ].join("\n");
-}
-
-/** `24h`, `7d`, `30m`, or a date and time: the moment it means, or undefined when it means none. */
-export function sinceOf(text: string, now = Date.now()): Date | undefined {
-  const relative = /^(\d+)\s*([mhd])$/i.exec(text.trim());
-  if (relative !== null) {
-    const unit = { m: 60_000, h: 3_600_000, d: 86_400_000 }[relative[2]!.toLowerCase() as "m" | "h" | "d"];
-    return new Date(now - Number(relative[1]) * unit);
-  }
-  const date = new Date(text.trim());
-  return Number.isNaN(date.getTime()) ? undefined : date;
 }

@@ -126,20 +126,6 @@ export function applySpecDiff(diff: string, cwd: string): "applied" | "already a
   }
 }
 
-/** Undo a spec diff this process applied, when what it produced cannot be used. */
-export function revertSpecDiff(diff: string, cwd: string): void {
-  const written = conversationWriting(plainFilesOf(diff).map((file) => resolve(cwd, file)));
-  const dir = mkdtempSync(join(tmpdir(), "turri-diff-"));
-  const patch = join(dir, "spec.diff");
-  writeFileSync(patch, diff.endsWith("\n") ? diff : `${diff}\n`);
-  try {
-    spawnSync("git", ["apply", "--recount", "--reverse", patch], { cwd, encoding: "utf8" });
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-    written();
-  }
-}
-
 /** The .plain files a diff writes to, relative to where it applies. */
 export function plainFilesOf(diff: string): string[] {
   const files = new Set<string>();

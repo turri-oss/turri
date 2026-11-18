@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, unlinkSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { checkPlainFile, checkPlainTargets, checkTouchedPlain, formatCheckResults } from "../../src/plain/check.ts";
+import { checkPlainFile, checkPlainTargets, formatCheckResults } from "../../src/plain/check.ts";
 import { testPlainFileRefusal, testPlainFilesOf } from "../../src/test-plain-files.ts";
 
 let dir: string;
@@ -64,7 +64,7 @@ describe("checkPlainFile", () => {
         "        list-tasks   tests/todo/list-tasks.plain  1 conformance",
         "        delete-task  no test plain file           no scenarios - not tested",
         "WARN  todo.plain  todo has scenarios to test - todo:add-task, todo:list-tasks - but no ***test reqs***, so its conformance tests cannot be written - the test reqs are the first step of adding tests. " +
-          "Next step: write the module's own ***test reqs***, with change_plain; then write the conformance testing script with the implement-conformance-testing-script skill.",
+          "Next step: write the module's own ***test reqs***; then write the conformance testing script with the implement-conformance-testing-script skill.",
       ].join("\n"),
     );
   });
@@ -206,7 +206,7 @@ describe("the steps of adding tests", () => {
     expect(result.ok).toBe(true);
     expect(result.warnings).toEqual([
       "shop has scenarios to test - shop:list-orders - but no ***test reqs***, so its conformance tests cannot be written - the test reqs are the first step of adding tests. " +
-        "Next step: import the stack's conformance template, stdlib/backend/conformance/python-flask, with change_plain; " +
+        "Next step: import the stack's conformance template, stdlib/backend/conformance/python-flask; " +
         "then write the conformance testing script with the implement-conformance-testing-script skill.",
     ]);
     expect(formatCheckResults([result]).split("\n").at(-1)).toMatch(/^WARN {2}shop\.plain {2}shop has scenarios to test - shop:list-orders - but no \*\*\*test reqs\*\*\*/);
@@ -234,7 +234,7 @@ describe("the steps of adding tests", () => {
     const below =
       "base's conformance tests are written in top, which requires it: top has scenarios to test - base:list-orders - but no ***test reqs***, " +
       "so its conformance tests cannot be written - the test reqs are the first step of adding tests. Next step: import the stack's conformance " +
-      "template, stdlib/backend/conformance/python-flask, with change_plain; then write the conformance testing script with the implement-conformance-testing-script skill.";
+      "template, stdlib/backend/conformance/python-flask; then write the conformance testing script with the implement-conformance-testing-script skill.";
     expect(checkPlainFile(join(dir, "base.plain")).warnings).toEqual([below]);
     expect(checkPlainFile(join(dir, "top.plain")).warnings?.[0]).toMatch(/^top has scenarios to test - base:list-orders - but no \*\*\*test reqs\*\*\*/);
 
@@ -251,31 +251,6 @@ describe("the steps of adding tests", () => {
     expect(result.ok).toBe(true);
     expect(result.warnings).toBeUndefined();
     expect(formatCheckResults([result])).not.toContain("WARN");
-  });
-});
-
-describe("checking what a change touched", () => {
-  it("checks a touched test plain file as its module", () => {
-    todo();
-    write("tests/todo/list-tasks.plain", testPlainFile("todo", "list-tasks", "# lists\nA :Note: is listed.\n"));
-    const [result] = checkTouchedPlain([join(dir, "tests", "todo", "list-tasks.plain")]);
-    expect(result!.file).toBe(join(dir, "todo.plain"));
-    expect(result!.error).toContain("Concept :Note: used in scenario `lists` is not defined in module 'todo'");
-  });
-
-  it("refuses a test plain file written outside its module's folder", () => {
-    todo();
-    write("tests/stray.plain", testPlainFile("todo", "add-task"));
-    expect(formatCheckResults(checkTouchedPlain([join(dir, "tests", "stray.plain")]))).toContain("tests/stray.plain - move it to tests/todo/ (its module: todo)");
-  });
-
-  it("checks the module of a test plain file the change deleted - which passes, that functional spec not tested now", () => {
-    todo();
-    write("tests/todo/delete-task.plain", testPlainFile("todo", "delete-task"));
-    unlinkSync(join(dir, "tests", "todo", "delete-task.plain"));
-    const [result] = checkTouchedPlain([join(dir, "tests", "todo", "delete-task.plain")]);
-    expect(result).toMatchObject({ ok: true, moduleName: "todo" });
-    expect(result!.functionalSpecs!.find((spec) => spec.funcId === "delete-task")!.testPlainFiles).toEqual([]);
   });
 });
 

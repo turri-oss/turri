@@ -7,11 +7,11 @@ description: >-
   when turri says a module is in the old ***plain syntax, or the person asks to
   convert one. One run converts one module, the lowest of the chain first;
   it never regenerates.
-allowed-tools: [read, ls, grep, find, change_plain, parse]
+allowed-tools: [read, write, edit, ls, grep, find, parse]
 metadata:
   phases:
     ids: "a func-id for each functional spec and a scenario-id for each acceptance test, proposed and confirmed"
-    rewrite: "the module and its test plain files, in one ***plain diff, word for word"
+    rewrite: "the module and its test plain files, word for word"
     check: "parse, and which module is next"
   gates:
     - after: rewrite
@@ -44,7 +44,7 @@ Ask the person once, with `ask_user`: the whole list in its `context` - each fun
 
 ### rewrite
 
-Write the whole conversion as one `change_plain` diff, with the confirmed ids:
+Write the whole conversion with `write` and `edit`, with the confirmed ids:
 
 - **The module.** Under `***functional specs***`, each bullet becomes its `# <func-id>` heading followed by its body: the bullet's text without its leading `- `, word for word. Its sub-bullets become `- ` bullets under that text, one level less indented, word for word and in the same order. Its nested `***acceptance tests***` are taken out of the module. The functional specs keep their order, one blank line between them. The frontmatter, every other section, the comments and any Liquid stay exactly as they are.
 - **Its test plain files,** one for each functional spec that has acceptance tests, at `tests/<module>/<func-id>.plain`: frontmatter `module:` (the module's file name without `.plain`) and `func_id:`, then `***conformance tests***`, then `***acceptance tests***` (`test-plain-files.md`). Each acceptance test of the functional spec becomes a scenario under `***acceptance tests***`: its `# <scenario-id>` heading followed by its text without its `- `, word for word, and its sub-bullets as `- ` bullets under it. `***conformance tests***` stays empty. A functional spec with no acceptance tests gets no test plain file: it has no scenarios.
@@ -53,13 +53,13 @@ Nothing else: no word added, reworded or dropped, no conformance scenario, no fi
 
 The change regenerates nothing: a module built before func-ids is not built on until its chain is regenerated from scratch, which the chat asks the person for.
 
-The record for the review: the module as it was before the change, word for word as you read it; the confirmed ids; and every file the change wrote. When the review sends the step back, show the person what it found and your fix with `ask_user`, then write the fix with one `change_plain`.
+The record for the review: the module as it was before the change, word for word as you read it; the confirmed ids; and every file the change wrote. When the review sends the step back, show the person what it found and your fix with `ask_user`, then write the fix.
 
 ### check
 
 Run `parse` on the module and show what it says in your reply.
 
-When it reports an error the conversion made, show it to the person with `ask_user`, with the fix, and write the fix with one `change_plain`; then run `parse` again. An error the module had before the conversion stays for the person.
+When it reports an error the conversion made, show it to the person with `ask_user`, with the fix, and write the fix; then run `parse` again. An error the module had before the conversion stays for the person.
 
 End with the result:
 - the module converted, its functional specs and scenarios counted, and the files written

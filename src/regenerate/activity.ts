@@ -371,18 +371,6 @@ export function withinModules(text: string): string {
   return text.replace(/(?:(?:\/|~\/)(?:[^\s'"`/]+\/)*|(?<![\w.-]))plain_modules\//g, "");
 }
 
-/**
- * What the person is shown a tool as, where that is not the name its agent calls it by. The agent's name says
- * what the call takes - `change_plain` takes a diff of the spec - and the shown one speaks turri's language.
- */
-const SHOWN_AS: Record<string, string> = {
-  change_plain: "mutate",
-};
-
-/** A tool's name as the person is shown it. */
-export function shownName(name: string): string {
-  return SHOWN_AS[name] ?? name;
-}
 
 /** A tool call as one short line. Unknown tools still show up, by name. */
 export function describeToolCall(name: string, args: Record<string, unknown> | undefined): string {
@@ -428,14 +416,14 @@ export function describeToolCall(name: string, args: Record<string, unknown> | u
       return `? ask_explorer`;
     default:
       // A hand-over - submit_work, submit_review, a verdict - ends with a check; anything else, a dot.
-      return `${/^submit_/.test(name) ? "✓" : "•"} ${shownName(name)}`;
+      return `${/^submit_/.test(name) ? "✓" : "•"} ${name}`;
   }
 }
 
 /** The outcome of a test run, or nothing for tools whose outcome is not worth a line. */
 export function describeToolResult(name: string, result: unknown, isError: boolean): string | undefined {
   if (name !== "run_unit_tests" && name !== "run_conformance_tests") {
-    return isError ? `  ✗ ${shownName(name)} failed` : undefined;
+    return isError ? `  ✗ ${name} failed` : undefined;
   }
   const exitCode = (result as { details?: { exitCode?: unknown } } | undefined)?.details?.exitCode;
   if (typeof exitCode !== "number") return undefined;

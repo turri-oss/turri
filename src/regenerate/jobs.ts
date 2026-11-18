@@ -8,6 +8,7 @@ import { firstLine, healing, record, type LedgerPlace } from "./ledger.ts";
 import { chosenStack, debugMode, withStack } from "../config.ts";
 import { currentChat } from "../chat-scope.ts";
 import { pulseEnded, pulseWrote } from "./pulse-files.ts";
+import { keepFailureReport } from "./failure-reports.ts";
 
 /**
  * Background jobs for conversation mode.
@@ -552,6 +553,8 @@ export function createJobRegistry(options?: {
           log?.end(finished.status === "succeeded" ? "finished" : finished.status === "stopped" ? "stopped" : "finished - failed", finished.announce ?? finished.report ?? finished.error, describeAgents(finished.agents));
           // What it wrote for a person goes now, outside debug mode - its log too, which nothing names from then on.
           if (ran && project !== undefined && !pulseEnded({ job: id, project, ...(input.module !== undefined ? { module: input.module } : {}), lanes: claimed })) delete finished.logFile;
+          // Why one that did not land did not, kept past the session whatever the debug setting (failure-reports.ts).
+          if (ran && project !== undefined) keepFailureReport(project, finished);
           const outcome = finished.details as { landed?: boolean; passed?: boolean } | undefined;
           const stopReason = stopReasons.get(id);
           record(

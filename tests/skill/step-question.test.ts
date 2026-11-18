@@ -17,12 +17,11 @@ vi.mock("../../src/pi.ts", () => ({
 
 const { compileSkill, endsOnQuestion, QUESTION_NUDGES } = await import("../../src/graph.ts");
 
-const skillOf = (paced: boolean) =>
+const skillOf = () =>
   ({
     name: "probe",
     dir: "/nowhere",
     allowedTools: [],
-    paced,
     steps: [
       { name: "groundwork", instructions: "Set it up." },
       { name: "product", instructions: "Write the product." },
@@ -37,9 +36,9 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-async function run(paced: boolean) {
+async function run() {
   const app = compileSkill({
-    skill: skillOf(paced), cwd: dir, runDir: dir, executor: {} as never,
+    skill: skillOf(), cwd: dir, runDir: dir, executor: {} as never,
     report: { step() {}, artifact() {}, gate() {}, judge() {}, outcome() {} },
   }).compile({ checkpointer: new MemorySaver() });
   return (await app.invoke({}, { configurable: { thread_id: "t" } })) as { artifacts: Record<string, string> };
@@ -48,23 +47,17 @@ async function run(paced: boolean) {
 describe("a step whose turn ends on a question in its reply", () => {
   it("is sent back to carry on - the question reaches no one - before the next step starts", async () => {
     replies = ["Groundwork is ready.", "The description is queued. Proceed with the health check feature?", "All ten features are queued."];
-    await run(false);
+    await run();
     expect(asked).toHaveLength(3);
     expect(asked[1]).toContain("Write the product.");
     expect(asked[2]).toContain("Your turn ended on a question in your reply");
-    expect(asked[2]).toContain("'probe' asks the person nothing more: decide it yourself");
+    expect(asked[2]).toContain("If it is truly the person's to decide, ask it with ask_user");
     expect(asked[2]).toContain("carry on with step 'product' until all of it is done");
-  });
-
-  it("is told to ask with ask_user, when the skill asks the person things", async () => {
-    replies = ["Ready?", "Done."];
-    await run(true);
-    expect(asked[1]).toContain("If it is truly the person's to decide, ask it with ask_user");
   });
 
   it("is sent back at most twice, then the step ends all the same", async () => {
     replies = ["Shall I?", "Shall I?", "Shall I?", "Shall I?"];
-    await run(false);
+    await run();
     // The groundwork asks three times - its turn and two nudges - and the product step still starts.
     expect(asked.slice(0, 3).filter((text) => text.includes("Your turn ended on a question"))).toHaveLength(QUESTION_NUDGES);
     expect(asked[3]).toContain("Write the product.");
@@ -74,7 +67,7 @@ describe("a step whose turn ends on a question in its reply", () => {
 describe("a step with no gate", () => {
   it("gives its reply, when it wrote no artifact - an analysis's verdict is all it says", async () => {
     replies = ["Groundwork is ready.", "COMPATIBLE"];
-    const { artifacts } = await run(false);
+    const { artifacts } = await run();
     expect(artifacts).toEqual({ groundwork: "Groundwork is ready.", product: "COMPATIBLE" });
   });
 });

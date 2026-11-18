@@ -40,7 +40,7 @@ describe("the jobs tree", () => {
     expect(text).toContain("earlier sessions (1)");
     expect(text).toContain("backend · regenerate pulse 4");
     expect(text).toContain("the debugger FAILED: No API key");
-    expect(text).toContain("2 earlier runs in the ledger - turri ledger lists them");
+    expect(text).toContain("2 earlier runs in the ledger - pulses with runs lists them");
   });
 
   it("leaves earlier sessions out when the ledger has none", () => {

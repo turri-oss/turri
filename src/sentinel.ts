@@ -189,8 +189,8 @@ export function sentinelPrompt(cwd: string, options: { extraTools?: string[]; su
         ]),
     "",
     "For the pulse:",
-    "1. Check how it went, from what turri tells you - and, when that is not enough, its log, the ledger (ledger, pulses),",
-    "   diagnose, and the code and the ***plain, which you read.",
+    "1. Check how it went, from what turri tells you - and, when that is not enough, the pulse in full (pulses with its id),",
+    "   its log, and the code and the ***plain, which you read.",
     "2. When it was released (the message says so - release-after-pulse is on), test what was released: it is running",
     "   where the message says. How far you test is yours to judge, from what the pulse changed and what the ***plain says",
     "   it should do: that it came up, answers, and does what its ***plain diff says it now does.",
@@ -346,7 +346,7 @@ export function sentinelCheckBrief(
  * The tools the sentinel's agent may call: what reads, write and edit for the project's tooling alone, resume, its
  * notices and its guidance - and what a host gives it.
  */
-export const SENTINEL_TOOLS = ["read", "ls", "grep", "find", "write", "edit", "bash", "read_output", "ledger", "pulses", "diagnose", "parse", "doctor", "web_search", "web_fetch", "resume", "notify_person", "conclude", "keep_guidance"];
+export const SENTINEL_TOOLS = ["read", "ls", "grep", "find", "write", "edit", "bash", "read_output", "pulses", "parse", "doctor", "web_search", "web_fetch", "resume", "notify_person", "conclude", "keep_guidance"];
 
 /** A testing script by its name - `run_unittests_python.sh`, `prepare_environment_node.sh` - and a config file of turri's. */
 const SCRIPT_FILE = /^(run_|prepare_environment).*\.(sh|ps1|bat|cmd)$/;

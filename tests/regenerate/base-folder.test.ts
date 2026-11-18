@@ -99,7 +99,7 @@ describe("a base folder", () => {
     expect(ran[0]).toEqual({ module: "app", files: ["assets/logo.svg", "src/main.py"] });
     // A later pulse starts from what the last one left, not from the folder again.
     file("app.plain", app(["Say hello.", "Say goodbye."]));
-    await loop.bringUp("app.plain", { specChange: true });
+    await loop.bringUp("app.plain");
     await loop.drain();
     expect(ran[1]!.files).toEqual(["app.py", "assets/logo.svg", "src/main.py"]);
   });

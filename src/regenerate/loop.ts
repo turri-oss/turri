@@ -34,7 +34,7 @@ import {
 import { describeSpecDiffConformance, renderSpecDiffConformance } from "./conform.ts";
 import { conformanceDirFor } from "./conformance.ts";
 import { modulesRoot, projectRootOf } from "./paths.ts";
-import { configForSpec, stackForModule, stackPinned, testDirOf, withStack } from "../config.ts";
+import { configForSpec, stackForModule, testDirOf, withStack } from "../config.ts";
 import { describeSpecChange } from "./prompt.ts";
 import { resolveTemplateDirs } from "./paths.ts";
 import { builtTips, copyRequiredCode, importingModules, isImportModule, newlyRequired, resolveRequiresChain, startFromScratch, type ChainEntry } from "./requires.ts";
@@ -289,11 +289,9 @@ export interface WorkLoop {
   /**
    * Bring a spec's module up to the spec as the .plain files have it now - in the codebases where its
    * code lives, and every module it is built on that has to be built first - planning and starting the
-   * first jobs. Asked again, it clears a halt. Also what a spec change is: the loop works out the work
-   * again. `specChange`: brought up because its spec was changed, not asked for - a module the person halted stays
-   * halted. Says what it planned.
+   * first jobs. Asked again, it clears a halt - one the person asked for too. Says what it planned.
    */
-  bringUp(plainFile: string, options?: { model?: string; guidance?: string; specChange?: boolean }): Promise<ModuleStatus[]>;
+  bringUp(plainFile: string, options?: { model?: string; guidance?: string }): Promise<ModuleStatus[]>;
   /**
    * Regenerate functional specs of a module again, their spec changed or not - each named by its func-id: each is marked to regenerate again in
    * the record of every codebase it is built in - committed - and they are brought up to their spec, the marked ones
@@ -1482,9 +1480,9 @@ export function createWorkLoop(options: {
 
   /**
    * Look after a codebase - its chain up to it - from now on; says its state. `pin`: its stack is worked out again - its
-   * tip's (`stackForModule`) - unless `keep`, and it has one: a spec change keeps the stack it was asked for with.
+   * tip's (`stackForModule`).
    */
-  const track = (chain: ChainEntry[], askedFile: string, request: { model?: string; guidance?: string }, pin?: { keep?: boolean }): ModuleState => {
+  const track = (chain: ChainEntry[], askedFile: string, request: { model?: string; guidance?: string }, pin = false): ModuleState => {
     const tip = tipOf(chain);
     let state = modules.get(tip.buildDir);
     if (state === undefined) {
@@ -1497,9 +1495,7 @@ export function createWorkLoop(options: {
     }
     state.chain = chain;
     state.askedFile = askedFile;
-    // Kept only when it is a stack: a module pinned to none - built before its stack's file was there - takes its own.
-    const keep = pin?.keep === true && !stackPinned() && state.stack?.name !== undefined;
-    if (pin !== undefined && !keep) state.stack = { name: stackForModule(tip.plainFile) };
+    if (pin) state.stack = { name: stackForModule(tip.plainFile) };
     // Its model as its stack has it: a stack's file can name a coding model of its own.
     const model = request.model ?? inStack(state, () => options.modelFor?.(tip.plainFile));
     if (model !== undefined) state.model = model;
@@ -1509,28 +1505,25 @@ export function createWorkLoop(options: {
 
   const loop: WorkLoop = {
     async bringUp(plainFile, given = {}) {
-      const now = async () => {
-        const { specChange, ...request } = given;
+      // Asked for, it shows as being planned at once.
+      return preparingFor(plainFile, async () => {
         const files = codebasesOf(resolve(options.cwd, plainFile));
-        for (const file of files) asked.set(file, { ...asked.get(file), ...request });
+        for (const file of files) asked.set(file, { ...asked.get(file), ...given });
         // Asked for, it is built with its stack - the one the call names, its own, or the one chosen now - pinned, whatever
-        // is chosen later; a spec change keeps the one it was asked for with.
-        const pin = { keep: specChange === true };
+        // is chosen later.
         const states = withParseCache(() =>
-          files.flatMap((file) => chainsFor(file).flatMap((chain) => toBuild(chain).map((entry) => track(chain.slice(0, chain.indexOf(entry) + 1), file, request, pin)))),
+          files.flatMap((file) => chainsFor(file).flatMap((chain) => toBuild(chain).map((entry) => track(chain.slice(0, chain.indexOf(entry) + 1), file, given, true)))),
         );
-        // Asked again, a halted codebase is tried again - one the person halted too, unless only its spec changed.
+        // Asked again, a halted codebase is tried again - one the person halted too.
         for (const state of states) {
           state.halted = undefined;
-          if (specChange !== true) state.held = undefined;
+          state.held = undefined;
           // Asked for again: its conformance tests are written for every functional spec with scenarios, not only those conform named.
-          if (specChange !== true) state.conformanceOnly = undefined;
+          state.conformanceOnly = undefined;
         }
         await tick();
         return [...new Set(states)].map(statusOf);
-      };
-      // Asked for, it shows as being planned at once; a spec change is looked at quietly, as every change is.
-      return given.specChange === true ? now() : preparingFor(plainFile, now);
+      });
     },
     async regenerateAgain(plainFile, given, request = {}) {
       return preparingFor(plainFile, async () => {
@@ -1677,7 +1670,7 @@ export function createWorkLoop(options: {
         }
       }
       const tracked = withParseCache(() =>
-        (wentBack ? [own] : chainsFor(file)).flatMap((chain) => toBuild(chain).map((entry) => track(chain.slice(0, chain.indexOf(entry) + 1), file, request, {}))),
+        (wentBack ? [own] : chainsFor(file)).flatMap((chain) => toBuild(chain).map((entry) => track(chain.slice(0, chain.indexOf(entry) + 1), file, request, true))),
       );
       // The module asked for, in its own codebase - and those below it: never the codebases built on it.
       const asking = tracked.find((state) => tipEntry(state).buildDir === self.buildDir);
@@ -2053,7 +2046,7 @@ function conformanceAskedIn(own: ChainEntry[], funcIds: string[] | undefined): {
   if (withScenarios.length === 0) {
     throw new Error(
       `No functional spec of ${self.moduleName} has scenarios - none has a test plain file - so there is nothing to test: ` +
-        "write the conformance or acceptance scenarios first, with change_plain, and their tests are written once the code is built. Nothing was started.",
+        "write the conformance or acceptance scenarios first, then regenerate, and their tests are written once the code is built. Nothing was started.",
     );
   }
   if (named !== undefined && named.length > 0) {
@@ -2064,7 +2057,7 @@ function conformanceAskedIn(own: ChainEntry[], funcIds: string[] | undefined): {
     if (untested.length > 0) {
       throw new Error(
         `${namesOf(self.moduleName, untested)} ${untested.length === 1 ? "has" : "have"} no scenarios - no test plain file - so there is nothing to test: ` +
-          "write the conformance or acceptance scenarios first, with change_plain, and their tests are written once the code is built. Nothing was started.",
+          "write the conformance or acceptance scenarios first, then regenerate, and their tests are written once the code is built. Nothing was started.",
       );
     }
   }
