@@ -36,6 +36,10 @@ describe("an agent's command", () => {
     expect(result.output).toMatch(/^Not run: .*is outside what this command may reach/);
     expect(() => readFileSync(join(code, "ran"))).toThrow();
     expect(lines).toEqual([expect.stringMatching(/^ {2}refused an agent's command \(path\): touch ran/)]);
+    // A command of several lines - a heredoc - is noted on one: the note is a row of the job panel.
+    await withActivity(sink, () => shell.run(`python3 - <<'EOF'\nprint(open("${project}/app.plain").read())\nEOF`));
+    expect(lines[1]).toMatch(/^ {2}refused an agent's command \(path\): python3 - <<'EOF' print\(open/);
+    expect(lines[1]).not.toContain("\n");
   });
 
   it("runs in the module's own environment, not the person's", async () => {

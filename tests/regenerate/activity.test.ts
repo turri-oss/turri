@@ -147,6 +147,24 @@ describe("the panel", () => {
     expect(jobPanelLines(jobs.list(), { expanded: true, marks, width: 80 }).slice(0, 2)).toEqual(lines.slice(0, 2));
   });
 
+  it("keeps each of its lines to one row of the screen - a line with a newline in it, an agent's words, is laid out on rows of its own", async () => {
+    const jobs = createJobRegistry();
+    jobs.start({
+      kind: "conformance",
+      summary: "x",
+      module: "tally",
+      pulse: 3,
+      run: () => {
+        reportActivity("(conformance) agent said:\ns=open(p).read()");
+        return new Promise(() => {});
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const lines = jobPanelLines(jobs.list(), { expanded: true, width: 80 });
+    expect(lines.some((line) => line.includes("\n"))).toBe(false);
+    expect(lines.some((line) => line.includes("s=open(p).read()"))).toBe(true);
+  });
+
   it("names a running conformance pulse by its module, kind and number alone - its functional specs run together are not its title", () => {
     const jobs = createJobRegistry();
     jobs.start({ kind: "conformance", summary: "b", module: "shorty", pulse: 6, title: ":ShortyApi: answers `GET /api/ping`; :UserAdmin: provisions a :User:", run: () => new Promise(() => {}) });

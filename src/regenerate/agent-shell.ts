@@ -135,7 +135,9 @@ export function agentShell(role: ShellRole, options: { wall?: Wall; busy?: (modu
       const checked = checkCommand(command, commandFence);
       if (!checked.ok) {
         record({ kind: "command.refused", rule: checked.rule });
-        reportNote(`  refused an agent's command (${checked.rule}): ${command.length > 120 ? `${command.slice(0, 120)}...` : command}`);
+        // On one line: a note is a line of the job panel, and a command's newlines would break the screen around it.
+        const shown = command.replace(/\s+/g, " ").trim();
+        reportNote(`  refused an agent's command (${checked.rule}): ${shown.length > 120 ? `${shown.slice(0, 120)}...` : shown}`);
         const output = `Not run: ${checked.reason}`;
         runOptions.onData?.(Buffer.from(output));
         return { exitCode: 126, output };

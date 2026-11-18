@@ -270,7 +270,9 @@ export function jobPanelLines(jobs: Job[], options: PanelOptions = {}): string[]
     const key = options.keys ?? ((_key: PanelKey, text: string) => text);
     lines.push(`  ${key("trace", `ctrl+o to ${expanded ? "collapse" : "expand"} the trace`)} · ${key("peek", `${PANEL_KEY} to peek at regen`)}`);
   }
-  return lines;
+  // A line is one row of the screen: a newline in one - an agent's words, a command - would draw past what the renderer
+  // tracks and stay on the screen, so each part is a row of its own.
+  return lines.flatMap((line) => line.split(/\r?\n/));
 }
 
 interface Redrawable {
