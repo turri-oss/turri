@@ -18,7 +18,7 @@ build when none is given), coding-model (the agents that build) and harness-mode
 for every functional spec's scenarios.
 
   --dry-run                look ahead: plan the work as regenerate would and print the prompt of each codebase's
-                           next pulse, starting and writing nothing
+                           next pulse, starting nothing and changing no code or tests
   --start-over             start over, without asking, a codebase regenerated without a module it now requires -
                            with no terminal to ask and without it, the run stops there
   --from-scratch           delete the module's code and conformance tests (its lineage keeps them) and regenerate all of it

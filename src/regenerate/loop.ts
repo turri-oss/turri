@@ -2274,7 +2274,13 @@ export function describeModules(statuses: ModuleStatus[], options: { for?: "chat
         ),
       );
       if (status.planNotes !== undefined) lines.push("  what the plan did not do as asked:", ...status.planNotes.map((note) => `    - ${note}`));
-      if (status.why !== undefined) lines.push(`  ${status.why}`);
+      // A look ahead from the command line keeps its plan only while the process lives: the run that starts it plans again.
+      if (status.why !== undefined)
+        lines.push(
+          options.for === "command line" && status.why === LOOKED_AHEAD
+            ? `  looked ahead - planned, nothing started: turri regenerate ${basename(status.plainFile)} runs it, planning it again as it starts`
+            : `  ${status.why}`,
+        );
       if (status.conformanceNote !== undefined) lines.push(`  ${status.conformanceNote}`);
       lines.push(...startOver(status));
       return lines.join("\n");

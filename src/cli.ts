@@ -112,7 +112,7 @@ const USAGE = [
   "       turri <command> [args]",
   "       turri --version          turri's version, and pi's",
   "",
-  `  ${"options".padEnd(12)} --harness-model <m>  the model you chat with   --coding-model <m>  the model renders run on`,
+  `  ${"options".padEnd(12)} --harness-model <m>  the model you chat with   --coding-model <m>  the model that writes the code`,
   `  ${"".padEnd(12)} --stack <name>  build with config.turri.<name>.yaml over config.turri.yaml - here and in every command`,
   `  ${"".padEnd(12)} --debug  keep what turri writes for debugging it - agents' logs and sessions - as debug: true does`,
   `  ${"".padEnd(12)} --use-theme <t>  another theme than turri-dark - and every option of pi's own`,
@@ -155,7 +155,8 @@ async function withoutStack(args: string[]): Promise<string[]> {
   return kept;
 }
 
-if (command === "-h" || command === "--help") {
+// `turri help` too: the word people type first, which would otherwise be an unknown command.
+if (command === "-h" || command === "--help" || command === "help") {
   console.log(USAGE);
   process.exit(0);
 }

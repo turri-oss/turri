@@ -1704,6 +1704,9 @@ describe("a look ahead", () => {
     const [looked] = await loop.lookAhead("app.plain");
     expect(looked!.planned.map((job) => job.title)).toEqual(["Greetings", "Counting"]);
     expect(looked!.why).toContain("looked ahead");
+    // The command line keeps no plan past its run: it names the command that starts it, not the chat's tools.
+    expect(describeModules([looked!], { for: "command line" })).toContain("looked ahead - planned, nothing started: turri regenerate app.plain runs it, planning it again as it starts");
+    expect(describeModules([looked!], { for: "command line" })).not.toContain("/regenerate");
     // other's pulse ends: the loop looks at every codebase again, and app's still waits for regenerate.
     gate.release!();
     await loop.drain();
