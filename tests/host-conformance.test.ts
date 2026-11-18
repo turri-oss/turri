@@ -96,7 +96,7 @@ describe("a host turning conformance tests on", () => {
     const turri = await createTurri();
     await turri.openChat();
     await turri.openChat();
-    // Off, as it is unset: conform is there, refused while off; nothing for the chat to turn them on with, or to ask the advisor.
+    // Off, as it is unset: conform is there, refused while off; nothing for the chat to turn them on with.
     for (const chat of [0, 1]) expect(offered(chat)).toEqual({ conform: true, evaluate: false, turnOn: false });
     expect(turri.turnOnConformanceTests()).toBe("config.turri.yaml");
     expect(readFileSync(join(dir, "config.turri.yaml"), "utf8")).toMatch(/^conformance-tests: true$/m);

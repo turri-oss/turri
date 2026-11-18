@@ -2,10 +2,9 @@ import { createAgentSession, DefaultResourceLoader, getAgentDir, SessionManager,
 import type { AskUserIO } from "./ask.ts";
 import { lastRun } from "./chat-records.ts";
 import { interruptChat, type ChatInfo, type TurriHost } from "./chats.ts";
-import { evaluateTests, type EvaluateOutcome } from "./advisor-chat.ts";
 import { reachable, ruleNames, settingCandidates } from "./config-command.ts";
 import { settingOf } from "./config-edit.ts";
-import { createTurriCore, sessionAdvisor, sessionLoop, turnOnConformance } from "./extension.ts";
+import { createTurriCore, sessionLoop, turnOnConformance } from "./extension.ts";
 import { stopDeployed } from "./regenerate/release.ts";
 import type { JobRegistry } from "./regenerate/jobs.ts";
 import type { WorkLoop } from "./regenerate/loop.ts";
@@ -82,13 +81,6 @@ export interface Turri {
    */
   check(request: CheckRequest): { check: string } | { refused: string };
   /**
-   * The test advisor asked to evaluate functional specs - a host's own way in,
-   * a button on a functional spec: `module:func-id`s, or func-ids of `plainFile`'s module, even a text judged already and
-   * whatever `test-advisor` says, `reason` given to it as context. It returns at once; each verdict comes to the chat the
-   * person looks at, as the advisor's verdicts do - a yes starting a turn that writes the scenarios, a no a line.
-   */
-  evaluateTests(funcIds: string[], options?: { plainFile?: string; reason?: string }): EvaluateOutcome;
-  /**
    * Every value /turri-config offers for a setting after `typed` - what its completions compute, in their order, but
    * whole: uncapped, and without "unset", which a host draws itself; the values alone, not `<key> <value>`. A model
    * setting's are every model of every provider signed in to, from the model registry the chats use - and after a colon,
@@ -98,8 +90,8 @@ export interface Turri {
   /**
    * Conformance tests turned on, as /conform does before it tests - the person's decision, a host's switch for it:
    * `conformance-tests: true` written where the module's value comes from - its stack's `config.turri.<stack>.yaml` when
-   * that sets the key, else `config.turri.yaml` - the chats' conform no longer refused, the test advisor starting at its
-   * next look. `plainFile`, absolute or from the project, picks the module; omitted,
+   * that sets the key, else `config.turri.yaml` - the chats' conform no longer refused. `plainFile`, absolute or from the
+   * project, picks the module; omitted,
    * the project's. Returns the file written, from the project. Starts no conformance pulse: that is `conform`'s.
    */
   turnOnConformanceTests(plainFile?: string): string;
@@ -119,7 +111,7 @@ export interface Turri {
 /** turri's session in a host, in the process's working folder - the project's. */
 export async function createTurri(options: TurriOptions = {}): Promise<Turri> {
   const { dialogs, uiContext, extensions = [], agentDir = getAgentDir(), sessionDir, restore, ...host } = options;
-  const core = createTurriCore(host, { persist: true, advisor: true, ...(dialogs !== undefined ? { dialogs } : {}) });
+  const core = createTurriCore(host, { persist: true, ...(dialogs !== undefined ? { dialogs } : {}) });
   const cwd = core.cwd;
   core.setDriver({
     async create(chat, sessionFile) {
@@ -175,7 +167,6 @@ export async function createTurri(options: TurriOptions = {}): Promise<Turri> {
     decline: async (id) => core.decline(id),
     notices: () => core.notices(),
     check: (request) => core.check(() => prepareCheck(cwd, request)),
-    evaluateTests: (funcIds, options) => evaluateTests(cwd, sessionAdvisor(core), funcIds, options),
     turnOnConformanceTests: (plainFile) => turnOnConformance(core, plainFile),
     settingChoices: (key, typed = "") => {
       const setting = settingOf(key, ruleNames());

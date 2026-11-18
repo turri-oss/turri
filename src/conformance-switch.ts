@@ -7,7 +7,7 @@ import { withSetting, writeSetting } from "./config-edit.ts";
  * Whether a project's functional specs are conformance tested: `conformance-tests:` in its config, a stack's own over the
  * project's, false when unset. Conformance testing is a validation step that makes each change take about twice as long,
  * so it is off until the person turns it on - with /conform, or the setting - and they keep it off to iterate fast. Off,
- * nothing of conformance testing runs - no conformance pulse, no conformance testing script, the test advisor off, the
+ * nothing of conformance testing runs - no conformance pulse, no conformance testing script, the
  * chat's conform refused; the test plain files there are kept, and not tested. The chat never turns them on: it says why
  * it wants them, and the person decides.
  */
@@ -71,11 +71,15 @@ export function conformanceBlock(on: boolean): string {
     "<conformance-tests>",
     what,
     on
-      ? "They are on here (conformance-tests: true): functional specs with scenarios are conformance tested, and the test advisor checks new ones in the background."
+      ? [
+          "They are on here (conformance-tests: true): functional specs with scenarios are conformance tested once their code is",
+          "built. As you write or change a functional spec, judge whether it needs scenarios, as the rules on test plain files say,",
+          "and write them when it does - in the same change, a visible ***plain change the person reviews like any other.",
+        ].join("\n")
       : [
           "They are off here (conformance-tests: false, or unset). They make each change take about twice as long, so the person",
           "keeps them off to iterate fast, and turning them on is theirs alone. While off, no conformance tests are written or run,",
-          "no conformance testing script either, the test advisor is off, and conform is refused. Test plain files already there are",
+          "no conformance testing script either, and conform is refused. Test plain files already there are",
           "kept, and not tested. When you think conformance tests are worth it here - the person asks for tests, a functional spec",
           "could go wrong silently, or the coding agent keeps failing at one - tell them in a line or two why, and what it costs.",
           "They decide, and turn them on with /conform - which also tests what is built - or /turri-config conformance-tests true.",

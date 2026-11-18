@@ -65,7 +65,7 @@ Adding a :Task: named "Buy milk" to an empty :TaskList: shows one :Task: named "
 Adding a :Task: named "Go" is rejected with the error "Name must be at least 3 characters".
 ```
 
-Nothing about testing is written until the person asks for it, or the [test advisor](test-advisor.md) finds a functional spec that needs it: a module imports its stack alone, and a new functional spec gets no test plain file. The first time tests are written in a module, turri does three things, in this order, each a change the person sees:
+Nothing about testing is written until the person asks for it, or - conformance tests on - the chat judges a functional spec needs it (when an incorrect implementation could give output that looks right but is wrong, when two reasonable readings of its text answer some input differently, or when a bug would be costly - money, security, data, users' trust): a module imports its stack alone, and a new functional spec gets no test plain file. The first time tests are written in a module, turri does three things, in this order, each a change the person sees:
 
 1. **The test reqs** - the stack's conformance template, `stdlib/<kind>/conformance/<stack>`, or the module's own `***test reqs***` when it has no stack from the standard library.
 2. **The conformance testing script** - with `implement-conformance-testing-script`, when the project has none for the module's stack. It runs in the background on the module's coding model; the conformance tests wait for it.

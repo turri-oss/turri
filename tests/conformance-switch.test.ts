@@ -2,10 +2,8 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { evaluateTests } from "../src/advisor-chat.ts";
 import { CONFORMANCE_OFF_REFUSAL, conformanceBlock, conformanceTestsOn, conformanceTestsOnIn, turnOnConformanceTests } from "../src/conformance-switch.ts";
 import { checkPlainFile } from "../src/plain/check.ts";
-import { createTestAdvisor } from "../src/regenerate/advisor-runs.ts";
 import { createJobRegistry } from "../src/regenerate/jobs.ts";
 import { recordHistory } from "../src/regenerate/lineage.ts";
 import { createWorkLoop, describeDrift, type JobRunner } from "../src/regenerate/loop.ts";
@@ -99,11 +97,6 @@ describe("conformance tests", () => {
       "its scenarios are not tested - app:say-hello: conformance tests are off (conformance-tests: false, or unset). /conform in the chat turns them on, or conformance-tests: true in config.turri.yaml.",
     ]);
   });
-
-  it("off, have the test advisor off with them - asked too", () => {
-    const advisor = createTestAdvisor({ advise: async () => ({ verdict: "no", questions: [], inputs: [] }) });
-    expect(() => evaluateTests(dir, advisor, ["app:say-hello"])).toThrow("Conformance tests are off for this project");
-  });
 });
 
 describe("what the chat is told of conformance tests", () => {
@@ -114,7 +107,11 @@ describe("what the chat is told of conformance tests", () => {
     expect(off).toContain("They make each change take about twice as long");
     expect(off).toContain("turning them on is theirs alone");
     expect(off).toContain("They decide, and turn them on with /conform");
-    expect(conformanceBlock(true)).toContain("They are on here (conformance-tests: true)");
+    const on = conformanceBlock(true);
+    expect(on).toContain("They are on here (conformance-tests: true)");
+    // On, the chat decides which functional specs need scenarios, by the rules' criteria - nothing does it for it.
+    expect(on).toContain("judge whether it needs scenarios, as the rules on test plain files say");
+    expect(on).toContain("a visible ***plain change the person reviews like any other");
   });
 
   it("refuses the chat while they are off, sending it to the person with its reasons", () => {

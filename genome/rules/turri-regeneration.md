@@ -36,14 +36,10 @@ The other rules say what a spec means. This one says what turri does with a chan
 - A functional spec written on its happy path and hardened later - its validation, edge cases and errors added to it - is patched in place each time: growing a spec a step at a time costs no more than writing it whole up front
 - A module's first pulse, when it builds one functional spec - the project set up and the smallest thing that runs - lands on its unit tests with no review
 
-## The test advisor
+## Conformance tests
 
-- Conformance tests are the person's choice: `conformance-tests:` in config.turri.yaml, off when unset, as they make each change take about twice as long. Off, no scenarios are tested, the test advisor is off and `conform` is refused - write no test plain file, test reqs or conformance testing script. When you think a module needs conformance tests, or the person asks for them, tell them in a line or two why; they decide, and turn them on with `/conform`
-- In the chat and a host, turri's test advisor looks at each functional spec that is new, or whose text changed since its code was built, and that has no scenarios - in the background, beside the pulses, taking no slot of theirs and never stopping one. It asks whether a wrong implementation could give output that looks right, whether two reasonable readings give different outputs for some input, whether it is likely to be built on later, and whether a bug in it would be costly. A yes to the first, the second or the last, with evidence, means the functional spec needs testing; built on later alone does not
-- It writes nothing in the ***plain: you are its only writer. A functional spec with scenarios of any kind is not looked at by it; its scenarios go through the usual review when its text changes
-- A change's result names the functional specs the advisor is checking: tell the person in a line that testing scenarios are being evaluated for them, and go on
-- Its yes comes to you as a message, once the chat is idle, with its report: tell the person in a line, then write with the file tools what testing the functional spec needs - its test reqs, the conformance testing script, its scenarios, in that order and only what is missing - the script written in the background, so you go straight on to the scenarios - and call `regenerate` for the module, as the rules on test plain files say, asking the person nothing. Its no is a line turri draws: nothing for you to do
-- When the person asks for scenarios, write them yourself, as the rules on test plain files say. `test-advisor: false` turns off the advisor's own start; it never runs in a headless run
+- Conformance tests are the person's choice: `conformance-tests:` in config.turri.yaml, off when unset, as they make each change take about twice as long. Off, no scenarios are tested and `conform` is refused - write no test plain file, test reqs or conformance testing script. When you think a module needs conformance tests, or the person asks for them, tell them in a line or two why; they decide, and turn them on with `/conform`
+- On, you decide which functional specs need scenarios: as you write or change one, judge it by the criteria in the rules on test plain files, and when it needs them, write them - with the test reqs and the conformance testing script first, when missing - as a visible ***plain change the person reviews like any other, then call `regenerate`. The work loop writes and runs their conformance tests once the code is built
 
 ## What a coding agent sees
 

@@ -18,7 +18,6 @@ turri is the first coding agent with the power of regenerative software: [\*\*\*
 | how to start a project, or add a feature, in a conversation | [using](using.md#in-a-conversation) |
 | how to have several chats open at once, and reopen them | [chats](chats.md) |
 | what checks each pulse as it finishes, and tells me what needs me | [the sentinel](sentinel.md) |
-| why the chat wrote scenarios I did not ask for, and how to turn that off | [the test advisor](test-advisor.md) |
 | which model codes, and how to change it | [using](using.md#choosing-a-model), [the project config](config.md#models) |
 | how to run turri on my Claude Pro, Max or Team subscription instead of an API key | [a Claude subscription](claude-subscription.md) |
 | what `config.turri.yaml` can set, and what happens without it | [the project config](config.md) |
@@ -46,7 +45,6 @@ turri is the first coding agent with the power of regenerative software: [\*\*\*
 | [Using turri](using.md) | the conversation, the tools, background jobs, choosing a model, module history, the command line |
 | [Chats](chats.md) | several chats in one session: what each keeps and what they share, `/chat` and its keys, `turri --continue` and `.turri/chats.json` |
 | [The sentinel](sentinel.md) | the chat every finished pulse goes to: what it checks and tests, its notices and how to answer them, what it may do, closing it, its model, in a host |
-| [The test advisor](test-advisor.md) | turri's background check of new and changed functional specs: when it runs, how it decides, what you see, its records, model and setting |
 | [A Claude subscription](claude-subscription.md) | running every agent on a Claude Pro, Max or Team subscription through Claude Code: setting it up, its models, checking it yourself, in turri-desktop, its limits, when it does not work |
 | [The project config](config.md) | `config.turri.yaml` and each stack's `config.turri.<stack>.yaml`: where they are read from, every key, models and their inheritance, conformance, the testing scripts, stacks and choosing one, the old `config.yaml` |
 | [Deploy](deploy.md) | trying what is built: dist/<module>, the last commit, starting it on your machine, `turri release` |
