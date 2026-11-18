@@ -99,11 +99,22 @@ describe("cutting the queue's work into jobs", () => {
     const from = input(base, current);
     const plan = await planChunks(from);
     const [built, comments] = jobs(plan, from);
-    expect(plan[0]!.title).toBe("Changes to what is built");
+    // Named by what it changes - the functional spec reworded - not "changes to what is built".
+    expect(plan[0]!.title).toBe(`Changes to ${IDS[1]}`);
     expect(built!.diff).toContain("Python 3.12");
     expect(built!.diff).toContain("signs in with their :Handle:");
     expect(built!.diff).not.toContain("+- :Comment:");
     expect(comments!.diff).toContain("+- :Comment: is a text");
+  });
+
+  it("titles the pulse of changes to what is built by what it changes - its func-ids, or the kinds of item", async () => {
+    const { builtTitle } = await import("../../src/regenerate/chunk-plan.ts");
+    const change = (section: string, after: object) => ({ kind: "change", section, after: JSON.stringify(after), before: JSON.stringify(after), position: 0 }) as never;
+    expect(builtTitle([change("functional specs", { id: "top-words", markdown: "x" })])).toBe("Changes to top-words");
+    expect(builtTitle([change("functional specs", { id: "a" }), change("functional specs", { id: "b" }), change("functional specs", { id: "c" }), change("definitions", { markdown: "- :X: is y." })])).toBe(
+      "Changes to a, b, and 2 more",
+    );
+    expect(builtTitle([change("definitions", { markdown: "- :X: is y." }), change("implementation reqs", { markdown: "- Python." })])).toBe("Changes to the definitions and implementation reqs");
   });
 
   describe("what is built already, changed, with the new work", () => {
@@ -135,7 +146,7 @@ describe("cutting the queue's work into jobs", () => {
       const from = input(base, current);
       const plan = await planChunks(from, agents({ groups: [{ specs: [1], title: "Comments" }], built: [{ change: 1, to: "first" }, { change: 2, to: 1 }] }));
       expect(checkDraft(from, plan)).toEqual([]);
-      expect(plan.map((job) => job.title)).toEqual(["Changes to what is built", "Comments"]);
+      expect(plan.map((job) => job.title)).toEqual([`Changes to ${IDS[1]}`, "Comments"]);
       const [built, comments] = jobs(plan, from);
       expect(built!.diff).toContain("+A :User: signs in with their :Handle:.");
       expect(built!.diff).not.toContain(`-${SPECS[2]}`);
@@ -144,7 +155,7 @@ describe("cutting the queue's work into jobs", () => {
 
     it("puts every change to what is built first when the grouping places none of them", async () => {
       const plan = await planChunks(input(base, current), agents({ groups: [{ specs: [1], title: "Comments" }] }));
-      expect(plan.map((job) => job.title)).toEqual(["Changes to what is built", expect.any(String)]);
+      expect(plan.map((job) => job.title)).toEqual([`Changes to ${IDS[1]}, ${IDS[2]}`, expect.any(String)]);
     });
   });
 

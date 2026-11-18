@@ -528,6 +528,22 @@ export function editTitle(changes: SpecChange[]): string {
   return `${shortTitle(line, TITLE_CHARS - more.length, TITLE_WORDS - 3).replace(/[.,;:]+$/, "")}${more}`;
 }
 
+/**
+ * The title of the pulse that changes what is built, first: what it changes, by name - the functional specs' func-ids,
+ * else the kinds of item - so the person reads which, not "changes to what is built".
+ */
+export function builtTitle(changes: SpecChange[]): string {
+  const ids = [...new Set(changes.filter(isFunctionalSpec).map(funcIdOf).filter((id): id is string => id !== undefined))];
+  if (ids.length > 0) {
+    const named = ids.slice(0, 2).join(", ");
+    const others = changes.length - changes.filter(isFunctionalSpec).length;
+    const more = ids.length - 2 + others;
+    return `Changes to ${named}${more > 0 ? `, and ${more} more` : ""}`;
+  }
+  const kinds = [...new Set(changes.map((change) => WHAT[change.section] ?? change.section))].map((kind) => `${kind}s`);
+  return `Changes to the ${kinds.length > 1 ? `${kinds.slice(0, -1).join(", ")} and ${kinds.at(-1)}` : kinds[0]}`;
+}
+
 /** A change as the title agent is shown it: what it is, how it changes, its text now - and before, for a change. */
 function titleChangeOf(change: SpecChange): TitleChange {
   return {
@@ -726,7 +742,7 @@ async function cut(input: PlanInput, agents?: ChunkAgents, notes?: string[]): Pr
   const bySpec = new Map(specs.map((change, index) => [index + 1, change]));
   const firstBuilt = () => builtChanges.filter((change) => (builtTo.get(change) ?? "first") === "first");
   const chunksFor = (list: Array<{ specs: number[]; title: string }>): Chunk[] => [
-    ...(firstBuilt().length > 0 ? [{ title: "Changes to what is built", specs: [], definitions: [], reqs: [], built: firstBuilt() }] : []),
+    ...(firstBuilt().length > 0 ? [{ title: builtTitle(firstBuilt()), specs: [], definitions: [], reqs: [], built: firstBuilt() }] : []),
     ...list.map((group) => ({
       title: group.title,
       specs: group.specs.map((number) => bySpec.get(number)!),
