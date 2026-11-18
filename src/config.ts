@@ -794,3 +794,35 @@ function readConfigFileNow(path: string): ProjectConfig {
     turnLimit: turnLimitSetting(raw[CONFIG_KEYS.turnLimit]),
   };
 }
+
+/** Keys a config file is read for besides CONFIG_KEYS: the older spellings turri still takes. */
+const OLDER_KEYS = ["model", "turn_limit"];
+
+/**
+ * The keys of the project's own config files - config.turri.yaml and each stack's - that turri reads nothing of: a setting
+ * turri no longer has (`test-advisor`), or one misspelt. Said as turri starts, so a setting the person thinks is on is
+ * not silently ignored. config.yaml is left out: it may be another tool's, with keys of its own.
+ */
+export function unknownConfigKeys(root: string): Array<{ file: string; keys: string[] }> {
+  const known = new Set<string>([...Object.values(CONFIG_KEYS), ...OLDER_KEYS]);
+  const found: Array<{ file: string; keys: string[] }> = [];
+  for (const file of namesIn(root).filter((name) => /^config\.turri(\.[^.]+)?\.yaml$/.test(name)).sort()) {
+    let parsed: unknown;
+    try {
+      parsed = loadYaml(readFileSync(join(root, file), "utf8"));
+    } catch {
+      continue;
+    }
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) continue;
+    const keys = Object.keys(parsed).filter((key) => !known.has(key));
+    if (keys.length > 0) found.push({ file, keys });
+  }
+  return found;
+}
+
+/** The banner's line for each config file with keys turri does not read. */
+export function unknownConfigLines(root: string): string[] {
+  return unknownConfigKeys(root).map(
+    ({ file, keys }) => `${file} has ${keys.length === 1 ? "a key" : "keys"} turri does not read - ${keys.join(", ")}: no setting turri has, so ${keys.length === 1 ? "it does" : "they do"} nothing. Take ${keys.length === 1 ? "it" : "them"} out, or see docs/config.md for the spelling.`,
+  );
+}

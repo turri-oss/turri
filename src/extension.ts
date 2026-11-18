@@ -12,7 +12,7 @@ import { allocateImageId, Box, type Component, getCapabilities, getPngDimensions
 import { defineTool, getMarkdownTheme, UserMessageComponent } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { CODING_MODEL_ENV } from "./chat-models.ts";
-import { AGENT_ROLES, chosenStack, CONFIG_FILE, configForSpec, stackForModule, hasProjectConfig, LEGACY_CONFIG_FILE, projectConfigFile, stackConfigFileIn, stackOf, stacksOf, withStack, modelOnly, modelSpec, projectModels, readProjectConfig, roleModel, splitModelSpec } from "./config.ts";
+import { AGENT_ROLES, chosenStack, CONFIG_FILE, configForSpec, stackForModule, hasProjectConfig, LEGACY_CONFIG_FILE, projectConfigFile, stackConfigFileIn, stackOf, stacksOf, withStack, modelOnly, modelSpec, projectModels, readProjectConfig, roleModel, splitModelSpec, unknownConfigLines } from "./config.ts";
 import { modulesRoot, projectDirOf, skillRunDir } from "./regenerate/paths.ts";
 import { sweepOrphanedGroups } from "./regenerate/shell.ts";
 import { readScript, scriptAgainstMachine, stackOnMachine, toolchainsBlock } from "./stack.ts";
@@ -3246,6 +3246,8 @@ function registerBranding(pi: ExtensionAPI, skills: SkillCatalogue) {
           sandbox?: ReturnType<typeof sandboxSummary>;
           /** A newer turri out, or installed and hidden behind this one on the PATH: a line each (turri-versions.ts). */
           versions?: string[];
+          /** Config files with keys turri does not read: a removed setting, a misspelt one. */
+          config?: string[];
         }
       | undefined;
     if (data === undefined) return undefined;
@@ -3255,6 +3257,7 @@ function registerBranding(pi: ExtensionAPI, skills: SkillCatalogue) {
         (data.commit !== undefined ? theme.fg("dim", `  from a clone, ${data.commit}${data.changed ? " with changes" : ""}`) : ""),
       // A newer turri out, or one installed and hidden behind this one: said first, under the version it is about.
       ...(data.versions ?? []).map((line) => theme.fg("warning", line)),
+      ...(data.config ?? []).map((line) => theme.fg("warning", line)),
       `${theme.fg("text", "the first coding agent with the power of ")}${brandPink(theme)("regenerative software")}`,
       // Where the settings are changed, without leaving the chat.
       theme.fg("muted", "configure with /turri-config"),
@@ -3304,6 +3307,7 @@ function registerBranding(pi: ExtensionAPI, skills: SkillCatalogue) {
         pending: skills.pending.length,
         sandbox: sandboxSummary(),
         versions: versions.lines,
+        config: unknownConfigLines(ctx.cwd),
       });
     } catch {
       // Branding is the least important thing here; never let it stop a session starting.

@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AGENT_ROLES, modelOnly, projectModels, readProjectConfig, ROLE_THINKING, roleModel, roleTurnLimitMs, skillModel, stacksOf } from "../src/config.ts";
+import { AGENT_ROLES, modelOnly, projectModels, readProjectConfig, ROLE_THINKING, roleModel, roleTurnLimitMs, skillModel, stacksOf, unknownConfigKeys, unknownConfigLines } from "../src/config.ts";
 
 let root: string;
 beforeEach(() => {
@@ -369,5 +369,25 @@ describe("the config, read again and again", () => {
     writeFileSync(file, "coding-model: p/jp\n");
     utimesSync(file, tick, tick);
     expect(readProjectConfig(root).codingModel).toEqual({ model: "p/jp" });
+  });
+});
+
+describe("keys turri does not read", () => {
+  it("are named, by file, for config.turri.yaml and each stack's - a removed setting and a misspelt one - never config.yaml's", () => {
+    writeFileSync(join(root, "config.turri.yaml"), "coding-model: p/small\ntest-advisor: true\nturn_limit: 3\n");
+    writeFileSync(join(root, "config.turri.web.yaml"), "unittest-script: run.sh\n");
+    writeFileSync(join(root, "config.yaml"), "another-tools-key: 1\n");
+    expect(unknownConfigKeys(root)).toEqual([
+      { file: "config.turri.web.yaml", keys: ["unittest-script"] },
+      { file: "config.turri.yaml", keys: ["test-advisor"] },
+    ]);
+    expect(unknownConfigLines(root)[1]).toBe(
+      "config.turri.yaml has a key turri does not read - test-advisor: no setting turri has, so it does nothing. Take it out, or see docs/config.md for the spelling.",
+    );
+  });
+
+  it("are none in a config of turri's own keys", () => {
+    writeFileSync(join(root, "config.turri.yaml"), "harness-model: p/big\ncoding-model: p/small\nconformance-tests: true\nmodels:\n  judge: p/big\n");
+    expect(unknownConfigKeys(root)).toEqual([]);
   });
 });
