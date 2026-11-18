@@ -29,7 +29,9 @@ export const SUBMIT_WORK_NOTE = [
   "When you are done with a turn - the work written and its tests passing - call submit_work, last: a short summary of",
   "what you did and why, and after a review, an answer for each problem it raised - fixed, or declined and why. Its",
   "reviewer gets your account beside the diff of what you changed, and checks the one against the other: say what you",
-  "did, not what you meant to.",
+  "did, not what you meant to. It is also the pulse's report to the person: say what the code does now, and a check you",
+  "ran as the check it was - \"breaking the tie order on purpose made 4 tests fail\" - never a bug you planted and undid",
+  "as if it were in the code.",
 ];
 
 /** What the agent is told with a review's problems: how it answers them. */
@@ -44,10 +46,13 @@ export interface WorkLedger {
   peek: () => WorkAccount[];
   /** What was handed over since the last take - and from now, nothing. */
   take: () => WorkAccount[];
+  /** The last account handed over, taken or not: what the agent last said it did. */
+  last: () => WorkAccount | undefined;
 }
 
 export function createWorkLedger(): WorkLedger {
   let accounts: WorkAccount[] = [];
+  let last: WorkAccount | undefined;
   const tool = defineTool({
     name: "submit_work",
     label: "Submit the work",
@@ -56,7 +61,7 @@ export function createWorkLedger(): WorkLedger {
       "raised, by its number - fixed, or declined and why, and the files. The reviewer checks it against the diff.",
     promptSnippet: "hand the work over for review - what you did, and your answer to each problem raised",
     parameters: Type.Object({
-      summary: Type.String({ description: "What you did in this turn and why, in a few sentences" }),
+      summary: Type.String({ description: "What you did in this turn and why, in a few sentences - the pulse's report: what the code does now, a check you ran said as a check" }),
       answers: Type.Optional(
         Type.Array(
           Type.Object({
@@ -70,13 +75,15 @@ export function createWorkLedger(): WorkLedger {
       ),
     }),
     async execute(_id, params) {
-      accounts.push({ summary: params.summary, answers: (params.answers ?? []) as WorkAnswer[] });
+      last = { summary: params.summary, answers: (params.answers ?? []) as WorkAnswer[] };
+      accounts.push(last);
       return { content: [{ type: "text" as const, text: "Handed over." }], details: {}, terminate: true };
     },
   }) as ToolDefinition;
   return {
     tool,
     peek: () => [...accounts],
+    last: () => last,
     take() {
       const taken = accounts;
       accounts = [];

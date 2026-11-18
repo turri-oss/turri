@@ -567,6 +567,22 @@ describe("rendering a spec diff", () => {
     expect(result.passed).toBe(true);
   });
 
+  it("reports what its agent handed over with submit_work, not what it said along the way", async () => {
+    writePlain(dir, "app.plain", plain(["One."]));
+    const { ask } = await import("../../src/pi.ts");
+    vi.mocked(ask).mockImplementation((async (session: StubSession, prompt: string) => {
+      if (prompt.includes("Before you finish: call update_notes")) return passingAgent(session, prompt);
+      await passingAgent(session, prompt);
+      await session.tools.find((tool) => tool.name === "submit_work")!.execute("id", { summary: "Built Two, with a unit test for it." });
+      // Its words came before its last tool calls: a plan, not an account.
+      return "I'll set the package up.\n\nNext I'll check that a test catches a broken behaviour.";
+    }) as never);
+    const result = await renderSpecDiff({ plainFile: "app.plain", diff: diffOf(plain(["One."]), plain(["One.", "Two."])), cwd: dir });
+    expect(result.passed).toBe(true);
+    expect(describeSpecDiff(result)).toContain("Built Two, with a unit test for it.");
+    expect(describeSpecDiff(result)).not.toContain("Next I'll check");
+  });
+
   it("starts from the notes earlier agents left, and leaves its own, labelled as the spec change - told first that its unit tests passed", async () => {
     writePlain(dir, "app.plain", plain(["One."]));
     const { ask } = await import("../../src/pi.ts");

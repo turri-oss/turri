@@ -686,11 +686,14 @@ export async function renderSpecDiff(options: RenderSpecDiffOptions): Promise<Re
   // Passing means the harness's own run of the unit testing script passed, last.
   const unitPassed = verified;
   const files = diffFiles(digestsBefore, digestFiles(buildDir));
+  // The report is what the agent said it did, handed over with submit_work - not what it said along the way, which reads
+  // as a plan ("next I'll check...") when its last words came before its last tool calls. Without an account, its words.
+  const account = work.last()?.summary.trim();
   const base = {
     moduleName,
     buildDir,
     diff: applied,
-    response,
+    response: account !== undefined && account !== "" ? account : response,
     runs,
     attempts,
     testRemovals,
