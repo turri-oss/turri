@@ -7,7 +7,10 @@ import { CONFIG_FILE, readProjectConfig, stackConfigFile, stackForModule, stackN
 import { checkPlainFile, formatCheckResults } from "./plain/check.ts";
 import { describeDrift, describeModules, type ModuleStatus, type WorkLoop } from "./regenerate/loop.ts";
 import type { RenderWork } from "./regenerate/engine.ts";
-import { pulseName, type JobRegistry } from "./regenerate/jobs.ts";
+import { describeJob, pulseName, type Job, type JobRegistry } from "./regenerate/jobs.ts";
+import { currentChat } from "./chat-scope.ts";
+import { whyFailed } from "./regenerate/diagnose-job.ts";
+import { didNotLand } from "./regenerate/failure-reports.ts";
 import { stopDeployed } from "./regenerate/release.ts";
 import { projectDirOf } from "./regenerate/paths.ts";
 import { findTestScripts } from "./regenerate/test-scripts.ts";
@@ -126,12 +129,80 @@ export function fromWorkingDir<T extends { working_dir?: string; plain_file?: st
   };
 }
 
-/** What the loop is doing for a spec's modules, for the conversation - and, waiting, how each module ended. */
-export async function loopReply(loop: WorkLoop, statuses: ModuleStatus[], wait: boolean) {
-  if (wait) await loop.drain();
+/**
+ * A call that waits for its pulses - print, json and rpc modes, or `wait: true` - in the chat it was made in: every pulse
+ * of that chat that was not there when it was made, and ends while it waits, is told in its reply.
+ */
+export interface Wait {
+  chat: string | undefined;
+  before: ReadonlySet<string>;
+}
+
+/** The calls waiting now, by registry. */
+const waits = new WeakMap<JobRegistry, Set<Wait>>();
+
+/** A call in this chat starts waiting, from the pulses there are now. */
+export function startWait(jobs: JobRegistry): Wait {
+  const wait: Wait = { chat: currentChat()?.id, before: new Set(jobs.list().map((job) => job.id)) };
+  const set = waits.get(jobs) ?? new Set();
+  set.add(wait);
+  waits.set(jobs, set);
+  return wait;
+}
+
+/** A call is done waiting: what ends now is told as any pulse's end is. */
+export function endWait(jobs: JobRegistry, wait: Wait): void {
+  waits.get(jobs)?.delete(wait);
+}
+
+/**
+ * Whether a pulse that ended is told by a call still waiting in its chat - its agent is told it in that call's reply, so
+ * a turn of its own to say it again would only repeat it.
+ */
+export function toldByWaitingCall(jobs: JobRegistry, job: Job): boolean {
+  for (const wait of waits.get(jobs) ?? []) if (wait.chat === job.chat && !wait.before.has(job.id)) return true;
+  return false;
+}
+
+/** A module's why while it waits for a testing script being written (loop.ts SCRIPT_BEING_WRITTEN). */
+const SCRIPT_WAIT = /, which is being written$/;
+/** How often a waiting call looks again while its module waits for a testing script. */
+const SCRIPT_POLL_MS = 500;
+
+/** How much of each pulse that ran while a call waited is told: the rest is pulses' with its id. */
+const RAN_CHARS = 3_000;
+
+/**
+ * What the loop is doing for a spec's modules, for the conversation - and, waiting, the pulses that ran meanwhile and how
+ * each ended, then how each module stands: `ran` is the registry and the call's wait (startWait).
+ */
+export async function loopReply(loop: WorkLoop, statuses: ModuleStatus[], wait: boolean, ran?: { jobs: JobRegistry; wait: Wait }) {
+  try {
+    if (wait) {
+      await loop.drain();
+      // A module held for a testing script being written - beside this call, by a skill run - starts once it is: a call
+      // that waits waits for that too, rather than say it waits and end before its pulse runs.
+      while (loop.status().some((status) => statuses.some((asked) => asked.plainFile === status.plainFile) && SCRIPT_WAIT.test(status.why ?? ""))) {
+        await new Promise((resolve) => setTimeout(resolve, SCRIPT_POLL_MS));
+        await loop.drain();
+      }
+    }
+  } finally {
+    if (ran !== undefined) endWait(ran.jobs, ran.wait);
+  }
   const now = wait ? loop.status().filter((status) => statuses.some((asked) => asked.plainFile === status.plainFile)) : statuses;
   const jobIds = now.flatMap((status) => (status.running !== undefined ? [status.running.jobId] : []));
+  const pulses = wait && ran !== undefined ? ran.jobs.list().filter((job) => job.chat === ran.wait.chat && !ran.wait.before.has(job.id)).sort((a, b) => a.sequence - b.sequence) : [];
+  const cut = (text: string) => (text.length > RAN_CHARS ? `${text.slice(0, RAN_CHARS)}\n… cut short: pulses with its id tells the whole of it` : text);
   const text = [
+    ...(pulses.length > 0
+      ? [
+          `What ran while you waited - ${pulses.length} pulse${pulses.length === 1 ? "" : "s"}:`,
+          ...pulses.map((job) => `\n<pulse id="${job.id}" landed="${didNotLand(job) ? "no" : "yes"}">\n${cut(didNotLand(job) ? whyFailed(job) : describeJob(job))}\n</pulse>`),
+          "",
+          "How each module stands now:",
+        ]
+      : []),
     describeModules(now),
     "",
     wait
@@ -265,13 +336,21 @@ export function regenerateTool(options: LoopToolsOptions & { loop: (ctx: Extensi
         const model = options.model !== undefined ? options.model(ctx, plainFile, given.model, work) : given.model;
         const loop = options.loop(ctx);
         const request = { ...(model !== undefined ? { model } : {}), ...(given.guidance !== undefined ? { guidance: given.guidance } : {}) };
-        const statuses =
-          given.from_scratch !== undefined
-            ? await loop.fromScratch(plainFile, { ...request, chain: given.from_scratch === "chain" })
-            : again.length > 0
-              ? await loop.regenerateAgain(plainFile, again, request)
-              : await loop.bringUp(plainFile, request);
-        return loopReply(loop, statuses, options.wait !== undefined ? options.wait(ctx, given.wait) : given.wait === true);
+        const wait = options.wait !== undefined ? options.wait(ctx, given.wait) : given.wait === true;
+        const waiting = wait && options.jobs !== undefined ? { jobs: options.jobs, wait: startWait(options.jobs) } : undefined;
+        let statuses: ModuleStatus[];
+        try {
+          statuses =
+            given.from_scratch !== undefined
+              ? await loop.fromScratch(plainFile, { ...request, chain: given.from_scratch === "chain" })
+              : again.length > 0
+                ? await loop.regenerateAgain(plainFile, again, request)
+                : await loop.bringUp(plainFile, request);
+        } catch (error) {
+          if (waiting !== undefined) endWait(waiting.jobs, waiting.wait);
+          throw error;
+        }
+        return loopReply(loop, statuses, wait, waiting);
       });
     },
   });

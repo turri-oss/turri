@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createJobRegistry } from "../../src/regenerate/jobs.ts";
+import { regenerateTool } from "../../src/loop-tools.ts";
 import { recordHistory } from "../../src/regenerate/lineage.ts";
 import { createWorkLoop, type JobRunner } from "../../src/regenerate/loop.ts";
 import { writeCodeRecord } from "../../src/regenerate/records.ts";
@@ -62,6 +63,37 @@ describe("a module whose unit testing script is being written in the background"
     await settled();
     await loop.drain();
     expect(ran).toHaveLength(1);
+  });
+
+  it("waits too while a script it has is written over - a regenerate called beside the rewrite would run against the old one", async () => {
+    writeUnitScript();
+    const { ran, run } = runner();
+    const loop = createWorkLoop({ registry: createJobRegistry({ maxRunning: 1 }), cwd: dir, planner: false, run });
+    const written = writingScript({ project: dir, kind: "unit" });
+    await loop.bringUp("app.plain");
+    expect(ran).toEqual([]);
+    expect(loop.status()[0]!.why).toBe("waiting for its unit testing script, which is being written");
+    written();
+    await settled();
+    await loop.drain();
+    expect(ran).toHaveLength(1);
+  });
+
+  it("keeps a call that waits - print mode - waiting until the script is written and its pulse has run, and tells that pulse", async () => {
+    const { ran, run } = runner();
+    const registry = createJobRegistry({ maxRunning: 1 });
+    const loop = createWorkLoop({ registry, cwd: dir, planner: false, run });
+    const written = writingScript({ project: dir, kind: "unit" });
+    const tool = regenerateTool({ cwd: dir, jobs: registry, loop: () => loop, wait: () => true });
+    const reply = tool.execute("call", { plain_file: "app.plain" }, undefined, undefined, {} as never);
+    await settled();
+    expect(ran).toEqual([]);
+    writeUnitScript();
+    written();
+    const text = (await reply).content.map((part) => (part.type === "text" ? part.text : "")).join("");
+    expect(ran).toHaveLength(1);
+    expect(text).toContain("What ran while you waited - 1 pulse:");
+    expect(text).not.toContain("which is being written");
   });
 
   it("is not held by a script written for another stack", async () => {

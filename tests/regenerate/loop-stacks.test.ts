@@ -4,7 +4,7 @@ import { join, relative } from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { chooseStack, chosenStack } from "../../src/config.ts";
-import { regenerateTool, withCallStack } from "../../src/loop-tools.ts";
+import { regenerateTool, toldByWaitingCall, withCallStack } from "../../src/loop-tools.ts";
 import { createJobRegistry, describeJob } from "../../src/regenerate/jobs.ts";
 import { createWorkLoop, describeModules, type JobRunner } from "../../src/regenerate/loop.ts";
 import { recordHistory } from "../../src/regenerate/lineage.ts";
@@ -219,6 +219,32 @@ describe("the chat's tools in a project of stacks", () => {
       "web frontend test_scripts/run_unittests_typescript.sh",
     ]);
     expect(chosenStack()).toBeUndefined();
+  });
+
+  it("tell, when the call waits, each pulse that ran and how it ended - not only that the module is now up to date", async () => {
+    const { run: land } = runner();
+    const registry = createJobRegistry();
+    // Each pulse, as it runs, is one the waiting call tells: its end starts no turn of its own to say it again.
+    const toldWhileRunning: boolean[] = [];
+    const run: JobRunner = async (job, onDelta) => {
+      toldWhileRunning.push(toldByWaitingCall(registry, registry.list().find((pulse) => pulse.status === "running")!));
+      return land(job, onDelta);
+    };
+    const loop = createWorkLoop({ registry, cwd: dir, planner: false, run });
+    const tool = regenerateTool({ cwd: dir, jobs: registry, loop: () => loop, wait: () => true });
+    const result = await tool.execute("call", { plain_file: "backend.plain" }, undefined, undefined, ctx);
+    const text = result.content.map((part) => (part.type === "text" ? part.text : "")).join("");
+    const ran = registry.list();
+    expect(ran).toHaveLength(2);
+    expect(text).toContain("What ran while you waited - 2 pulses:");
+    for (const job of ran) expect(text).toContain(`<pulse id="${job.id}" landed="yes">`);
+    expect(text.indexOf("What ran while you waited")).toBeLessThan(text.indexOf("backend is up to date"));
+    expect(toldWhileRunning).toEqual([true, true]);
+    // The call returned: a pulse that ends from now on is told as any is.
+    for (const job of ran) expect(toldByWaitingCall(registry, job)).toBe(false);
+    // Called again with nothing left to do: no pulse ran, and none is told.
+    const again = await tool.execute("call", { plain_file: "backend.plain" }, undefined, undefined, ctx);
+    expect(again.content.map((part) => (part.type === "text" ? part.text : "")).join("")).not.toContain("What ran");
   });
 
   it("build with the stack the call names over the module's own", async () => {

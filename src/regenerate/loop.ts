@@ -697,13 +697,14 @@ export function createWorkLoop(options: {
   };
 
   /**
-   * Whether a codebase lacks a testing script of this kind that is being written in the background now: it waits for it,
-   * rather than fail for want of it, and is looked at again once the run ends.
+   * Whether a testing script of this kind is being written for a codebase now - one it lacks, or one written over: it waits
+   * for it, rather than fail for want of it or run against the old one, and is looked at again once the run ends.
    */
   const awaitsScript = (state: ModuleState, kind: ScriptKind): boolean => {
     const tip = tipEntry(state);
     const root = projectRootFor(tip.plainFile, tip.buildDir);
-    return scriptBeingWritten(root, kind, stackForModule(tip.plainFile)) && findTestScripts(root, tip.plainFile, tip.buildDir)[kind] === undefined;
+    // Lacking the script, or with one being written over: a pulse started now would run without it, or against the old one.
+    return scriptBeingWritten(root, kind, stackForModule(tip.plainFile));
   };
 
   /**

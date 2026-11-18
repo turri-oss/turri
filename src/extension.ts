@@ -24,7 +24,7 @@ import { bannerWarnings } from "./turri-versions.ts";
 import { CONFORMANCE_OFF_REFUSAL, conformanceBlock, conformanceTestsOn, conformanceTestsOnIn, turnOnConformanceTests } from "./conformance-switch.ts";
 import { BACKGROUND_NOTE, doneLine, failedTask, ownChanges, runDetails, skillRunDelivery, startedText } from "./background-skills.ts";
 import { createAskUserTool } from "./tools.ts";
-import { asksFromScratch, asksWholeChain, driftTool, fromWorkingDir, haltTool, loopReply, MODEL_PARAM, regenerateTool, STACK_PARAM, stopJob, WAIT_PARAM, withCallStack, WORKING_DIR_PARAM } from "./loop-tools.ts";
+import { asksFromScratch, asksWholeChain, driftTool, endWait, fromWorkingDir, haltTool, loopReply, startWait, toldByWaitingCall, MODEL_PARAM, regenerateTool, STACK_PARAM, stopJob, WAIT_PARAM, withCallStack, WORKING_DIR_PARAM } from "./loop-tools.ts";
 import { createWebTools } from "./regenerate/web.ts";
 import { describeGates, interruptedRun, runSkill, type SkillMessages } from "./genome.ts";
 import { unqueue } from "./chat-waiting.ts";
@@ -500,6 +500,8 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
   // what finished. In the chat that asked for the pulse, shown or not.
   const announce = (job: Job) => {
     announceJob(pi, job);
+    // A pulse a call of this chat waits for is told in that call's reply: a turn of its own would say it again.
+    if (toldByWaitingCall(jobs, job) && job.specConflict === undefined) return;
     // A spec that contradicts itself is the person's to settle, now: the agent is started on it.
     if (job.specConflict !== undefined) {
       void pi.sendMessage(
@@ -579,7 +581,7 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
   const landed = (job: Job, options: { tell?: boolean } = {}) => {
     announceJob(pi, job);
     if (job.specConflict !== undefined) session.notice(specConflictNotice(job, specConflictTask(job.specConflict)));
-    if (options.tell !== true) return;
+    if (options.tell !== true || toldByWaitingCall(jobs, job)) return;
     // A host that shows the person the pulse's end itself: the chat knows of it - in order, with no turn of its own.
     const shown = host.pulseEndsShown === true;
     void pi.sendMessage(
@@ -1082,7 +1084,16 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
       // files while it runs, and they are not its doing.
       const filesBefore = projectFiles(cwd);
       // A side question asked while it runs is told what it has done so far.
-      const ended = skillRunStarted({ skill: skill.name, dir: skill.dir, step: () => live.step, trace: () => [...trace], runDir });
+      const ran_ = skillRunStarted({ skill: skill.name, dir: skill.dir, step: () => live.step, trace: () => [...trace], runDir });
+      // A testing script being written - here to its end, in print mode - holds the modules it is for, as in the background:
+      // a pulse started meanwhile, by a regenerate called beside it, would run against the script as it was.
+      const kind = scriptKindOfSkill(skill.name);
+      const stack = plainFile !== undefined ? stackForModule(plainFile) : chosenStack();
+      const written = kind !== undefined ? writingScript({ project: plainFile !== undefined ? projectDirOf(plainFile) : cwd, kind, ...(stack !== undefined ? { stack } : {}) }) : () => {};
+      const ended = () => {
+        written();
+        ran_();
+      };
       const ran = await captureConsole(() =>
         runSkill({
         skillDir: skill.dir,
@@ -1114,7 +1125,7 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
           regenerateTool({ cwd, jobs, loop: () => workLoopFor(jobs, cwd, ctx), model: (_skill, plainFile, named, work) => jobModel(ctx, work ?? "spec_changes", named, plainFile), wait: () => false }),
           driftTool({ cwd, jobs, loop: () => workLoopFor(jobs, cwd, ctx) }),
           haltTool({ jobs, workLoop: () => workLoops.get(jobs)?.loop }),
-          conformTool({ cwd, loop: () => workLoopFor(jobs, cwd, ctx), model: (_skill, plainFile, named) => jobModel(ctx, "spec_changes", named, plainFile), wait: () => false }),
+          conformTool({ cwd, jobs, loop: () => workLoopFor(jobs, cwd, ctx), model: (_skill, plainFile, named) => jobModel(ctx, "spec_changes", named, plainFile), wait: () => false }),
         ],
         // The escalation becomes a real dialog - the host's own, when it has them. Without one there is nobody to ask,
         // so the gate stands.
@@ -1447,6 +1458,7 @@ function registerBind(pi: ExtensionAPI, cwd: string, jobs: JobRegistry, turnOn: 
   pi.registerTool(
     conformTool({
       cwd,
+      jobs,
       loop: (ctx) => workLoopFor(jobs, cwd, ctx),
       model: (ctx, plainFile, named) => jobModel(ctx, "spec_changes", named, plainFile),
       wait: (ctx, asked) => shouldWait(ctx.mode, asked),
@@ -1534,6 +1546,8 @@ function registerBind(pi: ExtensionAPI, cwd: string, jobs: JobRegistry, turnOn: 
  */
 function conformTool(options: {
   cwd: string;
+  /** The pulses a waiting call tells of as it returns. */
+  jobs: JobRegistry;
   loop: (ctx: ExtensionContext) => WorkLoop;
   model: (ctx: ExtensionContext, plainFile: string, named: string | undefined) => string | undefined;
   wait: (ctx: ExtensionContext, asked: boolean | undefined) => boolean;
@@ -1582,12 +1596,20 @@ function conformTool(options: {
         if (!conformanceTestsOn(plainFile)) return { content: [{ type: "text" as const, text: CONFORMANCE_OFF_REFUSAL }], details: { refused: true } };
         const model = options.model(ctx, plainFile, params.model);
         const loop = options.loop(ctx);
-        const statuses = await loop.conformance(plainFile, {
-          ...(params.funcIds !== undefined ? { funcIds: params.funcIds } : {}),
-          ...(model !== undefined ? { model } : {}),
-          ...(params.one_by_one === true ? { separately: true } : {}),
-        });
-        return loopReply(loop, statuses, options.wait(ctx, params.wait));
+        const wait = options.wait(ctx, params.wait);
+        const waiting = wait ? { jobs: options.jobs, wait: startWait(options.jobs) } : undefined;
+        let statuses: ModuleStatus[];
+        try {
+          statuses = await loop.conformance(plainFile, {
+            ...(params.funcIds !== undefined ? { funcIds: params.funcIds } : {}),
+            ...(model !== undefined ? { model } : {}),
+            ...(params.one_by_one === true ? { separately: true } : {}),
+          });
+        } catch (error) {
+          if (waiting !== undefined) endWait(waiting.jobs, waiting.wait);
+          throw error;
+        }
+        return loopReply(loop, statuses, wait, waiting);
       });
     },
   });

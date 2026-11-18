@@ -226,4 +226,4 @@ turri regenerate app.plain --harness-model amazon-bedrock/eu.anthropic.claude-op
 nohup turri -p "Render app.plain as a whole module, with conformance tests" > render.log 2>&1 &
 ```
 
-It reports what it did at the end, and nothing streams in between, so for long runs `turri regenerate` is the better choice. A skill that interviews needs someone to answer; without one it decides and record their assumptions, and a gate that escalates to a human stops the run.
+It reports what it did at the end, and nothing streams in between, so for long runs `turri regenerate` is the better choice. A tool that waited - `regenerate`, `conform` - comes back with every pulse of the chat that ran while it waited, each with its report or why it did not land, before how each module stands; those pulses' ends start no turn of their own after it, so the answer says each once. A module waiting for a testing script being written beside it - a skill run in the same turn - is waited for too, until its pulse has run. A skill that interviews needs someone to answer; without one it decides and record their assumptions, and a gate that escalates to a human stops the run.
