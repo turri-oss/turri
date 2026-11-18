@@ -1377,10 +1377,14 @@ export const COMMAND_STARTED_REACTION =
  * to do that, rather than leave the person with a refusal and a silent chat.
  */
 export const CONFORM_REFUSED_REACTION =
-  "Nothing was started from the person's /conform, for the reason shown. Tell them now, in a line or two, why - in your " +
-  "words, not the message's - and what would let it start. Where it is something you can do - the scenarios, the test " +
-  "reqs, the conformance testing script, the ***plain fixed - offer to do it, and do it once they say yes; then /conform, " +
-  "or conform, runs their tests. Start nothing yet.";
+  "Nothing was started from the person's /conform, for the reason shown - and their /conform is their yes to conformance " +
+  "tests here. Where what is missing is yours to write - the test reqs, the conformance testing script, the scenarios - " +
+  "write it now, in that order and only what is missing, asking nothing: the scenarios of the functional specs they named, " +
+  "or, naming none, of each functional spec that needs them by the rules on test plain files. Then call regenerate for the " +
+  "module: the work loop writes and runs their tests once the code is built. Say in a line or two what you wrote, and for " +
+  "each functional spec why it needs scenarios - or, when none does, that and why. Where it is not yours to settle - a " +
+  "functional spec they named that is not there, ***plain that would have to change its meaning to be tested - tell them " +
+  "why nothing started and what would let it, and start nothing.";
 
 export const COMMAND_OUTCOME = "turri_command_outcome";
 

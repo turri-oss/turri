@@ -123,10 +123,16 @@ describe("a /conform asking for a pulse a functional spec", () => {
 });
 
 describe("what the agent does when /conform started nothing", () => {
-  it("answers it at once - why, and an offer to do what would let it start - starting nothing unasked", () => {
-    expect(CONFORM_REFUSED_REACTION).toContain("Tell them now");
-    expect(CONFORM_REFUSED_REACTION).toContain("offer to do it, and do it once they say yes");
-    expect(CONFORM_REFUSED_REACTION).toContain("Start nothing yet");
+  it("writes what is missing at once, asking nothing - the /conform was the person's yes - and regenerates", () => {
+    expect(CONFORM_REFUSED_REACTION).toContain("their /conform is their yes to conformance tests here");
+    expect(CONFORM_REFUSED_REACTION).toContain("write it now, in that order and only what is missing, asking nothing");
+    expect(CONFORM_REFUSED_REACTION).toContain("of each functional spec that needs them by the rules on test plain files");
+    expect(CONFORM_REFUSED_REACTION).toContain("Then call regenerate for the module");
+  });
+
+  it("starts nothing where what is missing is the person's to settle", () => {
+    expect(CONFORM_REFUSED_REACTION).toContain("a functional spec they named that is not there");
+    expect(CONFORM_REFUSED_REACTION).toContain("tell them why nothing started and what would let it, and start nothing");
   });
 
   it("starts a turn, as a follow-up, so the chat replies without the person typing", () => {
