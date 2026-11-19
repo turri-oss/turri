@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { JOB_FINISHED_REACTION } from "../src/extension.ts";
+import { JOB_FINISHED_REACTION, pulseEndNote } from "../src/extension.ts";
+import type { Job } from "../src/regenerate/jobs.ts";
 import { TURRI_IDENTITY } from "../src/identity.ts";
 
 describe("what the chat is told it is", () => {
@@ -64,10 +65,35 @@ describe("what the chat is told to do when a pulse stops on its environment", ()
   });
 });
 
-describe("what the chat is told to do when a pulse was released after it", () => {
-  it("does not release it again, and then does what it was told to do once something is released", () => {
-    expect(JOB_FINISHED_REACTION).toContain('"Released after the pulse" was released by turri itself');
-    expect(JOB_FINISHED_REACTION).toContain("do not call\nrelease for it");
-    expect(JOB_FINISHED_REACTION).toContain("do what you were\ntold to do once something is released");
+describe("what the chat is told to do when a pulse is launched after it", () => {
+  it("does not launch it itself, and does what it was told to do once something is launched when it is told it is", () => {
+    expect(JOB_FINISHED_REACTION).toContain("Under launch-after-pulse turri launches what a pulse lands itself, in the background");
+    expect(JOB_FINISHED_REACTION).toContain("do not call launch for it");
+    expect(JOB_FINISHED_REACTION).toContain("do then what you were told to do once something is launched");
+  });
+});
+
+describe("what the chat that asked for a pulse is told as it ends, with the sentinel off", () => {
+  const job = (over: Partial<Job> = {}) =>
+    ({ id: "p3", kind: "regenerate", status: "succeeded", startedAt: 0, finishedAt: 5000, report: "greet says hello.", details: { landed: true }, ...over }) as unknown as Job;
+
+  it("says the pulse's commit is being launched now, in the background, and that it is told once that ends - to say so in a line, and offer nothing else", () => {
+    const text = pulseEndNote(job(), { launching: true });
+    expect(text).toContain("Pulse p3 (regenerate) finished");
+    expect(text).toContain("greet says hello.");
+    expect(text).toContain("turri is launching the commit it landed now, in the background (launch-after-pulse): you are told once\nthat launch ends");
+    expect(text).toContain("say in a line or two what landed and that it is being launched");
+    expect(text).toContain("never say nothing runs");
+    expect(text).not.toContain(JOB_FINISHED_REACTION);
+  });
+
+  it("reacts as before with launch-after-pulse off, and for a pulse that did not land", () => {
+    expect(pulseEndNote(job(), { launching: false })).toContain(JOB_FINISHED_REACTION);
+    expect(pulseEndNote(job(), { launching: false })).not.toContain("is launching the commit it landed");
+    const failed = pulseEndNote(job({ status: "failed", error: "the unit tests failed", details: {} }), { launching: true });
+    expect(failed).toContain("failed after");
+    expect(failed).toContain(JOB_FINISHED_REACTION);
+    const notLanded = pulseEndNote(job({ details: { landed: false } }), { launching: true });
+    expect(notLanded).toContain(JOB_FINISHED_REACTION);
   });
 });

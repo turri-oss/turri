@@ -324,7 +324,7 @@ describe("config settings for a host", () => {
   it("lists every setting /settings changes, rules-off offering turri's own rules, and reads what the file has", async () => {
     const host = await import("../src/host.ts");
     const keys = host.configSettings().map((setting) => setting.key);
-    expect(keys).toEqual(expect.arrayContaining(["harness-model", "review", "mutation-testing", "release-after-pulse", "parallel-jobs", "models.coding"]));
+    expect(keys).toEqual(expect.arrayContaining(["harness-model", "review", "mutation-testing", "launch-after-pulse", "parallel-jobs", "models.coding"]));
     const review = host.configSettings().find((setting) => setting.key === "review")!;
     expect(review).toMatchObject({ kind: "boolean", unset: "true" });
     expect(host.EFFECT_TEXT[review.effect]).toMatch(/next pulse/);

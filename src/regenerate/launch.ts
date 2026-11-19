@@ -1,7 +1,7 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { connect } from "node:net";
-import { basename, dirname, join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { HISTORY_DIR } from "./lineage.ts";
 import { NOTES_FILE } from "./notes.ts";
 import { distDirFor, ensureInScratch, projectDirOf } from "./paths.ts";
@@ -9,40 +9,34 @@ import { findCodebaseTip, type ChainEntry } from "./requires.ts";
 import { RECORD_FILE } from "./paths.ts";
 
 /**
- * Deploy: a module's code, as its last commit has it, put out in `dist/<module>` for the person to try.
+ * Launch: a codebase's code, as one of its commits has it, put out in `dist/<module>` for the person and the sentinel
+ * to try - the commit a pulse landed, or the codebase's last.
  *
- * A render works in `plain_modules/<module>/code` while the person asks to try what is there, so what
- * is there is half-written. Its last commit is not: every unit of work starts from one and ends with
- * one, and both are runnable. So the commit is exported - git's own list of what it tracks, and
- * nothing else - which is a copy of the working tree with every unstaged and untracked change put
- * back, without a list of what each stack leaves lying around (`node_modules`, `.venv`, `target`). The
- * working tree itself is never read or touched.
+ * A pulse works in `plain_modules/<module>/code` while a launch runs, so what is there is half-written. A commit is not:
+ * every unit of work starts from one and ends with one, and both are runnable. So the commit is exported from the
+ * module's history - git's own list of what it tracks, and nothing else - without a list of what each stack leaves lying
+ * around (`node_modules`, `.venv`, `target`). The working tree is never read, reset or touched: the next pulse may be
+ * writing in it.
  *
- * What starts it runs here, on the person's machine, unfenced: a server the person opens in their
- * browser, with their toolchains. The agent that releases it installs and runs what it needs itself,
- * as any agent with a shell would - nothing is put to the person - and everything started is the
- * harness's to stop: on a redeploy, on /halt, and when turri exits.
+ * What starts it runs here, on the person's machine, unfenced: a server the person opens in their browser, with their
+ * toolchains. The launch agent installs and runs what it needs itself, as any agent with a shell would - nothing is put to
+ * the person - and everything started is the harness's to stop: on the next launch, on /halt, and when turri exits.
  */
 
-/**
- * How a module is released - always from its last commit, exported to `dist/<module>` first. `dist`, the default: started
- * from there. `guided`: taken on from there as there is guidance to - the person's, the project's AGENTS.md, a skill -
- * into the host codebase, say.
- */
-export type ReleaseWay = "dist" | "guided";
-
-export interface Deployment {
+/** A codebase's code at a commit, exported - what a launch takes on from. */
+export interface ExportedCode {
+  /** The codebase: the module whose `plain_modules/<module>` holds the code. */
   moduleName: string;
   plainFile: string;
-  way: ReleaseWay;
-  /** `dist/<module>`, in the project: the module's last commit, exported. */
+  /** `dist/<module>`, in the project: the commit's code. */
   dir: string;
-  /** Guided: the host codebase the guidance takes the code into, and what release runs and starts runs from. */
-  hostDir?: string;
   /** Where the module's code is built: `plain_modules/<module>/code`. */
   buildDir: string;
+  /** The commit, whole. */
   commit: string;
-  /** The commit's subject: what the last unit of work that landed did. */
+  /** The commit, short - as the person and the agents are told it. */
+  short: string;
+  /** The commit's subject: what the unit of work that landed it did. */
   subject: string;
   /** When, as git says it: "3 minutes ago". */
   when: string;
@@ -50,47 +44,63 @@ export interface Deployment {
   unfinished: boolean;
   /** The module the spec's code lives in had nothing committed yet: the nearest one below it that had, instead. */
   instead?: string;
-  /** When the release tool shipped it: what it started since is this release's. */
-  at?: number;
 }
 
 function git(moduleDir: string, args: string[]) {
   return spawnSync("git", ["--git-dir", join(moduleDir, HISTORY_DIR), "--work-tree", moduleDir, ...args], { cwd: moduleDir, encoding: "utf8" });
 }
 
-/** The module's last commit, when it has one with code in it. */
-function committedCode(moduleDir: string): string | undefined {
+/** A commit of the module's history, whole - `HEAD` its last - when it has one with code in it. */
+function committedCode(moduleDir: string, commit = "HEAD"): string | undefined {
   if (!existsSync(join(moduleDir, HISTORY_DIR))) return undefined;
-  const commit = git(moduleDir, ["rev-parse", "--verify", "--quiet", "HEAD"]);
-  if (commit.status !== 0) return undefined;
+  const found = git(moduleDir, ["rev-parse", "--verify", "--quiet", `${commit}^{commit}`]);
+  if (found.status !== 0) return undefined;
+  const whole = found.stdout.trim();
   // A commit with no code folder in it has nothing to run.
-  if (git(moduleDir, ["rev-parse", "--verify", "--quiet", "HEAD:code"]).status !== 0) return undefined;
-  return commit.stdout.trim();
+  if (git(moduleDir, ["rev-parse", "--verify", "--quiet", `${whole}:code`]).status !== 0) return undefined;
+  return whole;
+}
+
+/** The tree of a commit's code: two commits with the same one hold the same code - one landed only tests, say. */
+export function codeTreeOf(moduleDir: string, commit: string): string | undefined {
+  const tree = git(moduleDir, ["rev-parse", "--verify", "--quiet", `${commit}:code`]);
+  return tree.status === 0 ? tree.stdout.trim() : undefined;
+}
+
+/** Whether `commit` holds `ancestor`: the same commit, or one built on it. */
+export function holdsCommit(moduleDir: string, ancestor: string, commit: string): boolean {
+  return git(moduleDir, ["merge-base", "--is-ancestor", ancestor, commit]).status === 0;
 }
 
 /**
- * Which module to deploy for a spec: the tip of its codebase - code accumulates up a requires chain, so
- * the top module holds everything below it. Before the tip has anything committed, the nearest module
- * below it that has.
+ * Which codebase to launch for a spec, and at which commit: the tip of its codebase - code accumulates up a requires
+ * chain, so the top module holds everything below it - at `commit`, or its last. Before the tip has anything committed,
+ * the nearest module below it that has.
  */
-export function deployTarget(plainFile: string, inModule?: string): { entry: ChainEntry; commit: string; instead?: string } {
-  const { tip, chain } = findCodebaseTip(plainFile, { allowNoFunctionalities: true, ...(inModule !== undefined ? { inModule } : {}) });
+export function launchTarget(plainFile: string, options: { inModule?: string; commit?: string } = {}): { entry: ChainEntry; commit: string; instead?: string } {
+  const { tip, chain } = findCodebaseTip(plainFile, { allowNoFunctionalities: true, ...(options.inModule !== undefined ? { inModule: options.inModule } : {}) });
+  if (options.commit !== undefined) {
+    const commit = committedCode(dirname(tip.buildDir), options.commit);
+    if (commit === undefined) throw new Error(`${tip.moduleName} has no commit ${options.commit} with code in it: nothing to launch.`);
+    return { entry: tip, commit };
+  }
   const candidates = [tip, ...[...chain].reverse().filter((entry) => entry.moduleName !== tip.moduleName)];
   for (const entry of candidates) {
     const commit = committedCode(dirname(entry.buildDir));
     if (commit !== undefined) return { entry, commit, ...(entry.moduleName !== tip.moduleName ? { instead: tip.moduleName } : {}) };
   }
-  throw new Error(`Nothing is built yet for ${tip.moduleName}${candidates.length > 1 ? " or the modules it requires" : ""}: there is no code to deploy. Render it first.`);
+  throw new Error(`Nothing is built yet for ${tip.moduleName}${candidates.length > 1 ? " or the modules it requires" : ""}: there is no code to launch. Regenerate it first.`);
 }
 
 /**
- * Export the module's code at its last commit into `dist/<module>` - or `into`, `turri regenerate --build-dir` -
- * replacing whatever was there, the harness's own files (what the code is built from, the agents' notes) left out.
+ * Export a codebase's code at a commit - its last, unless `commit` names one - into `dist/<module>`, or `into`
+ * (`turri regenerate --build-dir`), replacing whatever was there, the harness's own files (what the code is built from,
+ * the agents' notes) left out.
  */
-export function exportModule(plainFile: string, inModule?: string, into?: string): Deployment {
-  const { entry, commit, instead } = deployTarget(plainFile, inModule);
+export function exportModule(plainFile: string, options: { inModule?: string; into?: string; commit?: string } = {}): ExportedCode {
+  const { entry, commit, instead } = launchTarget(plainFile, options);
   const moduleDir = dirname(entry.buildDir);
-  const dir = into ?? distDirFor(projectDirOf(entry.plainFile), entry.moduleName);
+  const dir = options.into ?? distDirFor(projectDirOf(entry.plainFile), entry.moduleName);
   // Emptied, not removed: the folder may be a mount point - a container's volume - that cannot be removed.
   mkdirSync(dir, { recursive: true });
   for (const entry of readdirSync(dir)) rmSync(join(dir, entry), { recursive: true, force: true });
@@ -107,10 +117,10 @@ export function exportModule(plainFile: string, inModule?: string, into?: string
   return {
     moduleName: entry.moduleName,
     plainFile: entry.plainFile,
-    way: "dist",
     dir,
     buildDir: entry.buildDir,
-    commit: short ?? commit.slice(0, 8),
+    commit,
+    short: short ?? commit.slice(0, 8),
     subject: subject ?? "",
     when: when ?? "",
     unfinished,
@@ -119,7 +129,7 @@ export function exportModule(plainFile: string, inModule?: string, into?: string
 }
 
 /**
- * The host codebase a guided release works in: the git repository the project is in - an embedded project's host -
+ * The host codebase a launch with guidance works in: the git repository the project is in - an embedded project's host -
  * or else `fallback`, where turri runs.
  */
 export function hostDirOf(plainFile: string, fallback: string): string {
@@ -133,18 +143,13 @@ export function shortPath(path: string): string {
   return fromHere === "" || fromHere.startsWith("..") ? path : fromHere;
 }
 
-/** What was deployed, in a line or three. */
-export function describeDeployment(deployment: Deployment): string {
+/** What was exported, in a line or three. */
+export function describeExport(code: ExportedCode): string {
   return [
-    `Deployed ${deployment.moduleName} to ${shortPath(deployment.dir)} - commit ${deployment.commit}, ${deployment.when}: ${deployment.subject}.`,
-    ...(deployment.hostDir !== undefined ? [`Its guidance takes it on from there, in ${shortPath(deployment.hostDir)}.`] : []),
-    ...(deployment.instead !== undefined ? [`${deployment.instead}, the module on top, has nothing built yet - this is ${deployment.moduleName}, the module below it.`] : []),
-    ...(deployment.unfinished
-      ? [
-          deployment.hostDir === undefined
-            ? "A pulse is at work on the module right now: what it has written so far is not finished, and is left out."
-            : `A pulse is at work on the module right now: what it has written so far is not finished, and is left out of ${shortPath(deployment.dir)} - but ${shortPath(deployment.buildDir)} holds it, so take the code from ${shortPath(deployment.dir)}, never from there.`,
-        ]
+    `${code.moduleName}'s code at commit ${code.short} (${code.when}: ${code.subject}) is in ${shortPath(code.dir)}.`,
+    ...(code.instead !== undefined ? [`${code.instead}, the module on top, has nothing built yet - this is ${code.moduleName}, the module below it.`] : []),
+    ...(code.unfinished
+      ? [`A pulse is at work on the module right now: what it has written so far is not finished, and is left out of ${shortPath(code.dir)} - ${shortPath(code.buildDir)} holds it, so take the code from ${shortPath(code.dir)}, never from there.`]
       : []),
   ].join("\n");
 }
@@ -152,7 +157,7 @@ export function describeDeployment(deployment: Deployment): string {
 // ---------------------------------------------------------------------------------------------
 // What runs on this machine.
 
-export interface DeployedProcess {
+export interface LaunchedProcess {
   name: string;
   moduleName: string;
   command: string;
@@ -167,22 +172,22 @@ export interface DeployedProcess {
   exited?: { code: number | null; signal: string | null };
 }
 
-const processes = new Map<string, { info: DeployedProcess; child: ChildProcess }>();
+const processes = new Map<string, { info: LaunchedProcess; child: ChildProcess }>();
 
-/** Everything deploy started, running or ended, oldest first. */
-export function listDeployed(): DeployedProcess[] {
+/** Everything a launch started, running or ended, oldest first. */
+export function listLaunched(): LaunchedProcess[] {
   return [...processes.values()].map((entry) => entry.info);
 }
 
 /** The ones still running. */
-export function runningDeployed(moduleName?: string): DeployedProcess[] {
-  return listDeployed().filter((info) => info.exited === undefined && (moduleName === undefined || info.moduleName === moduleName));
+export function runningLaunched(moduleName?: string): LaunchedProcess[] {
+  return listLaunched().filter((info) => info.exited === undefined && (moduleName === undefined || info.moduleName === moduleName));
 }
 
-/** Where a project's deployed processes write their output: its scratch, not the code in dist. */
-export function deployLogDir(projectDir: string): string {
+/** Where what a project's launches started write their output: its scratch, not the code in dist. */
+export function launchLogDir(projectDir: string): string {
   const scratch = join(projectDir, ".turri");
-  return ensureInScratch(scratch, join(scratch, "deploy"));
+  return ensureInScratch(scratch, join(scratch, "launch"));
 }
 
 /** The end of a log, for when something did not come up. */
@@ -210,8 +215,8 @@ function signalGroup(pid: number, signal: NodeJS.Signals): void {
 
 const sleep = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
 
-/** Stop one deployed process, or every one of a module, or every one: politely, then not. Returns the names stopped. */
-export async function stopDeployed(which: { name?: string; moduleName?: string } = {}): Promise<string[]> {
+/** Stop one launched process, or every one of a module, or every one: politely, then not. Returns the names stopped. */
+export async function stopLaunched(which: { name?: string; moduleName?: string } = {}): Promise<string[]> {
   const targets = [...processes.values()].filter(
     ({ info }) => info.exited === undefined && (which.name === undefined || info.name === which.name) && (which.moduleName === undefined || info.moduleName === which.moduleName),
   );
@@ -223,7 +228,7 @@ export async function stopDeployed(which: { name?: string; moduleName?: string }
 }
 
 /** Stop everything at once, without waiting: for when turri itself is going. */
-export function stopAllDeployedNow(): void {
+export function stopAllLaunchedNow(): void {
   for (const { info } of processes.values()) if (info.exited === undefined) signalGroup(info.pid, "SIGTERM");
 }
 
@@ -231,7 +236,7 @@ let exitHooked = false;
 function stopOnExit(): void {
   if (exitHooked) return;
   exitHooked = true;
-  process.on("exit", stopAllDeployedNow);
+  process.on("exit", stopAllLaunchedNow);
 }
 
 function portOf(url: URL): number {
@@ -269,14 +274,14 @@ async function answers(url: string): Promise<boolean> {
 }
 
 /** How long a server is given to answer at its URL, and to stay up when it has none. */
-export const READY_TIMEOUT_MS = Number(process.env.TURRI_DEPLOY_READY_TIMEOUT ?? 60) * 1000;
+export const READY_TIMEOUT_MS = Number(process.env.TURRI_LAUNCH_READY_TIMEOUT ?? 60) * 1000;
 const ALIVE_AFTER_MS = 4000;
 
 export interface StartResult {
   ok: boolean;
   /** What happened, for the agent and the person. */
   text: string;
-  process?: DeployedProcess;
+  process?: LaunchedProcess;
 }
 
 /**
@@ -300,10 +305,10 @@ function listing(dir: string): string {
 }
 
 /**
- * Start what keeps running, in `dir` - the deployed folder `root`, or one inside it. A folder that is not there starts
- * nothing: said, with what the deployed folder holds, so the agent can name the right one.
+ * Start what keeps running, in `dir` - the folder `root` it is named from, or one inside it. A folder that is not there
+ * starts nothing: said, with what `root` holds, so the agent can name the right one.
  */
-export async function startDeployed(input: { name: string; command: string; dir: string; moduleName: string; logDir: string; url?: string; root?: string }): Promise<StartResult> {
+export async function startLaunched(input: { name: string; command: string; dir: string; moduleName: string; logDir: string; url?: string; root?: string }): Promise<StartResult> {
   let isFolder = false;
   try {
     isFolder = statSync(input.dir).isDirectory();
@@ -316,11 +321,11 @@ export async function startDeployed(input: { name: string; command: string; dir:
       ok: false,
       text:
         input.root !== undefined
-          ? `${input.name} was not started: ${shortPath(input.dir)} ${why}. \`dir\` is relative to the deployed folder, ${shortPath(input.root)} - a folder inside it, e.g. frontend, or none for the deployed folder itself; never the project's path to it. ${shortPath(input.root)} holds: ${listing(input.root)}.`
+          ? `${input.name} was not started: ${shortPath(input.dir)} ${why}. \`dir\` is relative to ${shortPath(input.root)} - a folder inside it, e.g. frontend, or none for the folder itself; never the project's path to it. ${shortPath(input.root)} holds: ${listing(input.root)}.`
           : `${input.name} was not started: ${shortPath(input.dir)} ${why}.`,
     };
   }
-  await stopDeployed({ name: input.name });
+  await stopLaunched({ name: input.name });
   let url: URL | undefined;
   if (input.url !== undefined) {
     try {
@@ -343,7 +348,7 @@ export async function startDeployed(input: { name: string; command: string; dir:
   const fd = openSync(log, "w");
   const child = spawn("bash", ["-c", input.command], { cwd: input.dir, detached: true, stdio: ["ignore", fd, fd], env: process.env });
   // Listened to at once: a child's 'error' with no listener is thrown, and takes the whole process down with it.
-  let info: DeployedProcess | undefined;
+  let info: LaunchedProcess | undefined;
   let spawnError: Error | undefined;
   const spawned = new Promise<void>((done) => {
     child.once("spawn", () => done());
@@ -358,7 +363,7 @@ export async function startDeployed(input: { name: string; command: string; dir:
     await spawned;
     return { ok: false, text: `${input.name} could not be started in ${shortPath(input.dir)}: ${spawnError?.message ?? "no process was made"}.` };
   }
-  const started: DeployedProcess = { name: input.name, moduleName: input.moduleName, command: input.command, dir: input.dir, log, pid: child.pid, startedAt: Date.now(), ...(input.url !== undefined ? { url: input.url } : {}) };
+  const started: LaunchedProcess = { name: input.name, moduleName: input.moduleName, command: input.command, dir: input.dir, log, pid: child.pid, startedAt: Date.now(), ...(input.url !== undefined ? { url: input.url } : {}) };
   info = started;
   child.on("exit", (code, signal) => {
     started.exited = { code, signal };

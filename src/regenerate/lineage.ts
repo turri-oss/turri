@@ -377,6 +377,14 @@ export function head(dir: string): string | undefined {
   return result.status === 0 ? result.stdout.trim() : undefined;
 }
 
+/** The module's last commit, whole. */
+export function lastCommit(dir: string): string | undefined {
+  const moduleDir = moduleDirOf(dir);
+  if (!existsSync(join(moduleDir, HISTORY_DIR))) return undefined;
+  const result = git(moduleDir, ["rev-parse", "--verify", "--quiet", "HEAD"]);
+  return result.status === 0 ? result.stdout.trim() : undefined;
+}
+
 /** The module's history, newest first, one line per commit. */
 export function historyLog(dir: string, limit = 30): string {
   const moduleDir = moduleDirOf(dir);

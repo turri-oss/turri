@@ -78,7 +78,7 @@ const COMMANDS: Record<string, { module: string; blurb: string; args?: string[] 
   conform: { module: "./conform-cli.ts", blurb: "write and run a module's conformance tests" },
   parse: { module: "./parse-cli.ts", blurb: "parse ***plain - its syntax and structure, never its code or tests - regenerating nothing" },
   lineage: { module: "./lineage-cli.ts", blurb: "a module's lineage: what was regenerated into it, and when" },
-  release: { module: "./release-cli.ts", blurb: "release what is regenerated to dist/<module> and activate it on this machine" },
+  launch: { module: "./launch-cli.ts", blurb: "launch what is regenerated from dist/<module> on this machine" },
   cultivate: { module: "./cultivate-cli.ts", blurb: "run a gated skill" },
 };
 

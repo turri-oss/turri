@@ -6,7 +6,7 @@ import { ACCEPTANCE_TESTS, CONFORMANCE_TESTS, FUNCTIONAL_REQUIREMENTS, REQUIRED_
 import { testPlainFilesOf } from "../test-plain-files.ts";
 import { reportActivity, reportStage } from "./activity.ts";
 import { llmChunkAgents, MAX_LINES_PER_JOB, MAX_SPECS_PER_JOB, planChunks, stepsOf, type ChunkAgents, type PlanInput } from "./chunk-plan.ts";
-import { commitNotes, landWork, recordHistory, resetToLastCommit } from "./lineage.ts";
+import { commitNotes, landWork, lastCommit, recordHistory, resetToLastCommit } from "./lineage.ts";
 import { firstLine, record } from "./ledger.ts";
 import { NOTES_FILE, recordPulse, type SpecGap } from "./notes.ts";
 import { formatDuration, type Job, type JobRegistry, type PulseCases } from "./jobs.ts";
@@ -626,10 +626,10 @@ export function createWorkLoop(options: {
   /** Writes and runs a conformance job's tests. Default: a spec diff's conformance run, the whole suite with it. */
   runConformance?: JobRunner;
   /**
-   * Under `release-after-pulse: true`, what releases a pulse that landed, as its last stage - before the pulse ends, so
-   * the module's next pulse starts on what is released. Its last reply goes in the pulse's report. Not given: nothing is.
+   * A pulse landed: its codebase's commit, once its line is in the notes - the commit what is built on it builds on.
+   * Called before the codebase's next pulse starts; what it does - a launch, under launch-after-pulse - runs on its own.
    */
-  release?: (input: { plainFile: string; moduleName: string; title: string; onDelta: (delta: string) => void }) => Promise<string>;
+  landed?: (input: { job: Job; plainFile: string; moduleName: string; commit: string; title: string }) => void;
 }): WorkLoop {
   const modules = new Map<string, ModuleState>();
   const order: string[] = [];
@@ -1050,25 +1050,11 @@ export function createWorkLoop(options: {
           },
           onDelta,
         );
-        const report = result.report;
-        // Released as its last stage, when the config says so: the module's next pulse starts on what is released.
-        let released: string | undefined;
-        if (result.landed && options.release !== undefined && configForSpec(tip.plainFile).releaseAfterPulse === true) {
-          reportStage(`module ${tip.moduleName}: releasing what this pulse landed (release-after-pulse)`);
-          try {
-            released = `Released after the pulse: ${(await options.release({ plainFile: tip.plainFile, moduleName: tip.moduleName, title: planned.title, onDelta })).trim()}`;
-          } catch (error) {
-            // What landed stays landed: a release that fails is said, and the next pulse goes on.
-            released = `The release after the pulse failed: ${error instanceof Error ? error.message : String(error)}`;
-          }
-          reportActivity(`  ${released.split("\n")[0]}`);
-        }
         return {
-          report: released !== undefined ? `${report}\n\n${released}` : report,
+          report: result.report,
           details: {
             passed: result.landed,
             landed: result.landed,
-            ...(released !== undefined ? { released: true } : {}),
             ...(result.story !== undefined ? { story: result.story } : {}),
             // The spec gaps its agents met, for a headless run to say - in the chat the report puts them to the person.
             ...(result.specGaps !== undefined && result.specGaps.length > 0 ? { specGaps: result.specGaps } : {}),
@@ -1173,6 +1159,19 @@ export function createWorkLoop(options: {
     }
     // What it did, in the notes every agent after reads - once anything it did not land is rolled back, so the line stays.
     if (running !== undefined) notePulse(state, running, settled, landed);
+    // Landed: the commit it ends on, its line in the notes amended in - told before the codebase's next pulse starts.
+    if (running !== undefined && settled !== undefined && landed) {
+      const tip = tipEntry(state);
+      const commit = lastCommit(tip.buildDir);
+      if (commit !== undefined) {
+        settled.details = { ...(settled.details as object), commit };
+        try {
+          options.landed?.({ job: settled, plainFile: tip.plainFile, moduleName: tip.moduleName, commit, title: running.planned.title });
+        } catch {
+          /* what is done with a landing is not the loop's to fail on */
+        }
+      }
+    }
     void tick();
   };
 

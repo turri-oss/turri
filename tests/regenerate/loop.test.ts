@@ -8,7 +8,7 @@ import type { JobCases } from "../../src/regenerate/drift.ts";
 import { moduleLanes } from "../../src/regenerate/lanes.ts";
 import { conformanceRefusal, createWorkLoop, describeDrift, describeModules, skipsReview, UP_TO_DATE, type JobRunner } from "../../src/regenerate/loop.ts";
 import { codeTree, readRecord, writeCodeRecord, writeTestsRecord } from "../../src/regenerate/records.ts";
-import { historyLog, recordHistory } from "../../src/regenerate/lineage.ts";
+import { historyLog, lastCommit, recordHistory } from "../../src/regenerate/lineage.ts";
 import { copyRequiredCode } from "../../src/regenerate/requires.ts";
 import { snapshotSpec } from "../../src/regenerate/regenerate.ts";
 import { testPlainFile, writePlain } from "../test-plain.ts";
@@ -72,9 +72,8 @@ function runner() {
   return { ran, gate, holdNext, run };
 }
 
-describe("releasing after each pulse", () => {
-  it("releases what each pulse landed as its last stage, under release-after-pulse - before the next pulse starts", async () => {
-    writeFileSync(join(dir, "config.yaml"), "conformance-tests: true\nrelease-after-pulse: true\n");
+describe("a pulse that lands", () => {
+  it("says the commit it ended on - its line in the notes amended in - before the codebase's next pulse starts, and nothing waits on what is done with it", async () => {
     writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye.", "Count to ten."]));
     const { ran, run } = runner();
     const events: string[] = [];
@@ -83,52 +82,38 @@ describe("releasing after each pulse", () => {
       return run(job, onDelta);
     };
     const registry = createJobRegistry();
+    const told: Array<{ job: string; commit: string; title: string; moduleName: string }> = [];
     const loop = createWorkLoop({
       registry,
       cwd: dir,
       planner: false,
       run: tracked,
-      release: async ({ moduleName, title }) => {
-        events.push(`release ${title}`);
-        return `${moduleName} is running`;
+      landed: ({ job, commit, title, moduleName }) => {
+        events.push(`landed ${title}`);
+        told.push({ job: job.id, commit, title, moduleName });
+        // The module's last commit: what the next pulse builds on - nothing amends it after.
+        expect(lastCommit(codeDir())).toBe(commit);
       },
     });
     await loop.bringUp("app.plain");
     await loop.drain();
     expect(ran).toHaveLength(3);
-    // One release a pulse, each before the next pulse builds.
-    expect(events).toEqual(["build Say hello.", "release Say hello.", "build Say goodbye.", "release Say goodbye.", "build Count to ten.", "release Count to ten."]);
-    expect(registry.list().every((job) => job.report?.includes("Released after the pulse: app is running"))).toBe(true);
+    expect(events).toEqual(["build Say hello.", "landed Say hello.", "build Say goodbye.", "landed Say goodbye.", "build Count to ten.", "landed Count to ten."]);
+    expect(told.map((each) => each.moduleName)).toEqual(["app", "app", "app"]);
+    // Each pulse's commit is in the history of the next's, and on its job.
+    expect(execFileSync("git", ["--git-dir", join(dir, "plain_modules", "app", ".plaingit"), "merge-base", "--is-ancestor", told[0]!.commit, told[2]!.commit]).toString()).toBe("");
+    for (const each of told) expect((registry.get(each.job)?.details as { commit?: string }).commit).toBe(each.commit);
   });
 
-  it("releases nothing when release-after-pulse is off - the default - or the pulse did not land", async () => {
+  it("says nothing of a pulse that did not land", async () => {
     writePlain(dir, "app.plain", app(["Say hello."]));
     const { gate, run } = runner();
-    const release = vi.fn(async () => "released");
-    let loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run, release });
-    await loop.bringUp("app.plain");
-    await loop.drain();
-    expect(release).not.toHaveBeenCalled();
-
-    rmSync(join(dir, "plain_modules"), { recursive: true, force: true });
-    writeFileSync(join(dir, "config.yaml"), "conformance-tests: true\nrelease-after-pulse: true\n");
     gate.land = false;
-    loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run, release });
+    const landed = vi.fn();
+    const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run, landed });
     await loop.bringUp("app.plain");
     await loop.drain();
-    expect(release).not.toHaveBeenCalled();
-  });
-
-  it("keeps what a pulse landed when its release fails, and says so", async () => {
-    writeFileSync(join(dir, "config.yaml"), "conformance-tests: true\nrelease-after-pulse: true\n");
-    writePlain(dir, "app.plain", app(["Say hello."]));
-    const { run } = runner();
-    const registry = createJobRegistry();
-    const loop = createWorkLoop({ registry, cwd: dir, planner: false, run, release: async () => { throw new Error("port 8000 is taken"); } });
-    await loop.bringUp("app.plain");
-    await loop.drain();
-    expect(registry.list()[0]).toMatchObject({ status: "succeeded", details: { landed: true } });
-    expect(registry.list()[0]!.report).toContain("The release after the pulse failed: port 8000 is taken");
+    expect(landed).not.toHaveBeenCalled();
   });
 });
 

@@ -2,30 +2,30 @@ import { closeSync, openSync, readSync, statSync } from "node:fs";
 import { refuseTestPlainFile } from "./test-plain-files.ts";
 import { join, resolve } from "node:path";
 import { configForSpec, modelSpec, projectModels, readProjectConfig } from "./config.ts";
-import { createDeployState } from "./release-tools.ts";
-import { runReleaseAgent } from "./release-agent.ts";
-import { listDeployed, runningDeployed, stopDeployed } from "./regenerate/release.ts";
+import { createLaunchTrack } from "./launch-track.ts";
+import { runLaunchAgent } from "./launch-agent.ts";
+import { listLaunched, runningLaunched, stopLaunched } from "./regenerate/launch.ts";
 import { c } from "./module-report.ts";
 
-const USAGE = `usage: turri release [file.plain] [options]
+const USAGE = `usage: turri launch [file.plain] [options]
 
-Releases the module on top of the spec's requires chain, which holds the code of the ones below, and
+Launches the module on top of the spec's requires chain, which holds the code of the ones below, and
 has an agent start it here, on this machine. The module's code, as its last commit has it, always
-goes in dist/<module> first. The agent looks for guidance on how this project releases it - what
+goes in dist/<module> first. The agent looks for guidance on how this project launches it - what
 --guidance says, the project's AGENTS.md - and follows it from there when there is some: an
 integration its host application takes with the host's own scripts, say. When there is none, it
 reads how the code in dist runs, installs what it needs, and starts what serves. Either way it asks
 nothing, and stays in the foreground with the servers' output; Ctrl-C stops them.
 
 The project's config.turri.yaml gives the defaults: module (the file when none is given) and
-harness-model (the agent's model).
+coding-model (the agent's model).
 
   --in-module <module>     the codebase to take, when modules built on this one branch
-  --guidance <text>        how this project releases it: the scripts to run, in order
-  --model <provider/id>    the agent's model (default: harness-model)`;
+  --guidance <text>        how this project launches it: the scripts to run, in order
+  --model <provider/id>    the agent's model (default: coding-model)`;
 
 
-const PROBLEMS = "If you are having problems, use chat mode to deploy: run turri and ask to try it.";
+const PROBLEMS = "If you are having problems, launch it from the chat: run turri and ask to try it.";
 
 function parseArgs(argv: string[]) {
   const positional: string[] = [];
@@ -53,8 +53,8 @@ function followLogs(): Promise<void> {
   const offsets = new Map<string, number>();
   return new Promise((done) => {
     const tick = () => {
-      const running = runningDeployed();
-      for (const item of listDeployed()) {
+      const running = runningLaunched();
+      for (const item of listLaunched()) {
         let size = 0;
         try {
           size = statSync(item.log).size;
@@ -89,12 +89,11 @@ async function main() {
   }
   const plainFile = resolve(named);
   refuseTestPlainFile(plainFile);
-  // A release follows steps - a script, a start command: the coding model does that well, thinking low.
+  // A launch follows steps - a script, a start command: the coding model does that well, thinking low.
   const model = args.model ?? modelSpec(projectModels(configForSpec(plainFile)).coding);
 
-  const state = createDeployState();
   const stopAll = async () => {
-    const stopped = await stopDeployed();
+    const stopped = await stopLaunched();
     if (stopped.length > 0) console.log(c.dim(`\nStopped ${stopped.join(", ")}.`));
   };
   process.on("SIGINT", () => {
@@ -102,25 +101,43 @@ async function main() {
   });
 
   console.log(c.dim(`\nworking out how to start it${model !== undefined ? ` (${model})` : ""}…\n`));
-  await runReleaseAgent({
-    plainFile,
+  // One launch, on a track of its own: the code exported first, then the agent, its words as they come.
+  let streamed = "";
+  const track = createLaunchTrack({
     cwd: process.cwd(),
-    state,
-    ...(model !== undefined ? { model } : {}),
+    run: (launch, code, signal) =>
+      runLaunchAgent({
+        launch,
+        code,
+        cwd: process.cwd(),
+        signal,
+        ...(model !== undefined ? { model } : {}),
+        onDelta: (delta: string) => {
+          streamed += delta;
+          process.stdout.write(delta);
+        },
+      }),
+  });
+  const { launch } = track.request({
+    plainFile,
     ...(args.inModule !== undefined ? { inModule: args.inModule } : {}),
     ...(args.guidance !== undefined ? { guidance: args.guidance } : {}),
-    onDelta: (delta) => process.stdout.write(delta),
+    cause: {},
   });
-  console.log(`\n\n${c.dim(PROBLEMS)}`);
+  const ended = await track.done(launch.id);
+  // What the agent said as it went is on the screen already: its summary only when it said nothing.
+  const said = streamed.trim() === "" ? `\n${ended.summary ?? ""}` : "";
+  console.log(`\n\n${ended.status === "launched" ? c.success(`Launched.${said}`) : c.error(`It did not come up.${said}`)}`);
+  if (ended.status !== "launched") console.log(`\n${c.dim(PROBLEMS)}`);
 
-  if (runningDeployed().length === 0) process.exit(0);
+  if (runningLaunched().length === 0) process.exit(ended.status === "launched" ? 0 : 1);
   console.log(c.success(c.bold("\nRunning - Ctrl-C stops it.")) + c.dim(" Its output follows.\n"));
   await followLogs();
   process.exit(0);
 }
 
 main().catch(async (error) => {
-  await stopDeployed();
+  await stopLaunched();
   console.error(error instanceof Error ? error.message : error);
   console.error(`\n${PROBLEMS}`);
   process.exit(1);

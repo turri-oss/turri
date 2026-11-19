@@ -5,7 +5,7 @@ import { interruptChat, type ChatInfo, type TurriHost } from "./chats.ts";
 import { reachable, ruleNames, settingCandidates } from "./settings.ts";
 import { settingOf } from "./config-edit.ts";
 import { createTurriCore, sessionLoop, turnOnConformance } from "./extension.ts";
-import { stopDeployed } from "./regenerate/release.ts";
+import { stopLaunched } from "./regenerate/launch.ts";
 import type { JobRegistry } from "./regenerate/jobs.ts";
 import type { WorkLoop } from "./regenerate/loop.ts";
 import type { Notice, NoticeAnswer } from "./notice.ts";
@@ -55,7 +55,7 @@ export interface Turri {
   /**
    * ctrl+c in a chat, as the terminal has it: what the chat is doing stopped - its turn, a skill or a tool in it, a `!`
    * command, a compaction - and nothing in the others (`stopped`). In a chat doing nothing the session ends - every
-   * chat let go and what activate started stopped, as `dispose` does - for the host to close what showed it (`ended`).
+   * chat let go and what launches started stopped, as `dispose` does - for the host to close what showed it (`ended`).
    * A second interrupt straight after one that stopped something does nothing (`ignored`); `missing` for a chat not open.
    */
   interrupt(id: string): Promise<"stopped" | "ignored" | "ended" | "missing">;
@@ -72,9 +72,10 @@ export interface Turri {
    */
   notices(): Notice[];
   /**
-   * The sentinel asked to check functional specs in a module's release - `funcIds` each `module:func-id`, of the module or
-   * of any module its requires chain builds on (a bare func-id is the module's own) - in the module's release, as it tests a release after a pulse: the module's own codebase's last
-   * commit, which holds every module its chain builds on, released first unless that is what runs. Queued behind the
+   * The sentinel asked to check functional specs in what is launched of a module - `funcIds` each `module:func-id`, of the
+   * module or of any module its requires chain builds on (a bare func-id is the module's own) - as it tests a launch after a
+   * pulse: the module's own codebase's code, which holds every module its chain builds on. Nothing launched of it, the
+   * check ends unchecked: the sentinel launches nothing. Queued behind the
    * sentinel's work, in a conversation of its own. Returns the check's id - its notices and its conclusion carry it - or
    * why it was refused: the sentinel off or not started this session, a module not there or that does not parse, a
    * module outside its chain, a func-id a module does not have, one not built in its codebase as its ***plain has it now.
@@ -104,7 +105,7 @@ export interface Turri {
   answer(id: string, answer: NoticeAnswer): Promise<"done" | "dismissed" | "ignored" | "refused" | "missing" | "over">;
   /** Told when a chat is opened, closed, renamed, or starts or stops working. */
   onChats(listener: (chats: ChatInfo[]) => void): () => void;
-  /** Every chat let go, and what activate started stopped. */
+  /** Every chat let go, and what launches started stopped. */
   dispose(): Promise<void>;
 }
 
@@ -141,7 +142,7 @@ export async function createTurri(options: TurriOptions = {}): Promise<Turri> {
   let lastStop = 0;
   const dispose = async () => {
     await core.dispose();
-    await stopDeployed();
+    await stopLaunched();
   };
   return {
     jobs: core.jobs,

@@ -24,7 +24,7 @@ import { createJobRegistry, pulseName, type Job } from "./regenerate/jobs.ts";
 import type { SpecGap } from "./regenerate/notes.ts";
 import { createWorkLoop, describeModules, functionalityCompletion, type DriftReport, type ModuleStatus, type WorkLoop } from "./regenerate/loop.ts";
 import { MODULES_DIR, projectDirOf } from "./regenerate/paths.ts";
-import { exportModule } from "./regenerate/release.ts";
+import { exportModule } from "./regenerate/launch.ts";
 import { listFiles } from "./regenerate/testing.ts";
 import { startRunReport, type ModuleState, type RunReporter } from "./run-report.ts";
 import { configKeyOptions, optionValue } from "./cli-options.ts";
@@ -261,11 +261,11 @@ function refuseBuildDir(buildDir: string, projectDir: string): void {
 /** The furthest-built codebase's last commit, exported into `dir` - or why nothing was. */
 function exportCode(plainFile: string, dir: string): Record<string, unknown> {
   try {
-    const deployment = exportModule(plainFile, undefined, dir);
+    const code = exportModule(plainFile, { into: dir });
     const files = listFiles(dir).length;
     // Its history began, and nothing landed in it yet: only the harness's own files, which are left out.
-    if (files === 0) return { exported: false, dir, why: `nothing has landed in ${deployment.moduleName} yet: its codebase holds no code` };
-    return { exported: true, dir, module: deployment.moduleName, commit: deployment.commit, files };
+    if (files === 0) return { exported: false, dir, why: `nothing has landed in ${code.moduleName} yet: its codebase holds no code` };
+    return { exported: true, dir, module: code.moduleName, commit: code.short, files };
   } catch (error) {
     return { exported: false, dir, why: error instanceof Error ? error.message : String(error) };
   }

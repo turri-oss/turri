@@ -12,7 +12,7 @@ import { allocateImageId, Box, type Component, getCapabilities, getPngDimensions
 import { defineTool, getMarkdownTheme, UserMessageComponent } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { CODING_MODEL_ENV } from "./chat-models.ts";
-import { AGENT_ROLES, CONFIG_FILE, configForSpec, readConfigFile, configModuleFor, hasProjectConfig, LEGACY_CONFIG_FILE, projectConfigFile, moduleConfigFile, moduleConfigFileIn, configModuleOf, moduleConfigsOf, withConfigModule, modelOnly, modelSpec, projectModels, readProjectConfig, roleModel, splitModelSpec, unknownConfigLines } from "./config.ts";
+import { AGENT_ROLES, CONFIG_FILE, configForSpec, readConfigFile, configModuleFor, hasProjectConfig, LEGACY_CONFIG_FILE, projectConfigFile, moduleConfigFile, moduleConfigFileIn, configModuleOf, moduleConfigsOf, withConfigModule, modelOnly, modelSpec, projectModels, readProjectConfig, roleModel, splitModelSpec, configLines, type ConfigLine } from "./config.ts";
 import { modulesRoot, projectDirOf, skillRunDir } from "./regenerate/paths.ts";
 import { sweepOrphanedGroups } from "./regenerate/shell.ts";
 import { readScript, scriptAgainstMachine, stackOnMachine, toolchainsBlock } from "./stack.ts";
@@ -24,16 +24,17 @@ import { bannerWarnings } from "./turri-versions.ts";
 import { CONFORMANCE_OFF_REFUSAL, conformanceBlock, conformanceTestsOn, conformanceTestsOnIn, turnOnConformanceTests } from "./conformance-switch.ts";
 import { BACKGROUND_NOTE, doneLine, failedTask, ownChanges, runDetails, skillRunDelivery, startedText } from "./background-skills.ts";
 import { createAskUserTool } from "./tools.ts";
-import { asksFromScratch, asksWholeChain, driftTool, endWait, fromWorkingDir, haltTool, loopReply, startWait, toldByWaitingCall, MODEL_PARAM, regenerateTool, stopJob, WAIT_PARAM, whenBuildable, WORKING_DIR_PARAM } from "./loop-tools.ts";
+import { asksFromScratch, asksWholeChain, driftTool, endWait, fromWorkingDir, haltLaunched, haltTool, loopReply, startWait, toldByWaitingCall, MODEL_PARAM, regenerateTool, stopJob, WAIT_PARAM, whenBuildable, WORKING_DIR_PARAM } from "./loop-tools.ts";
 import { createWebTools } from "./regenerate/web.ts";
 import { describeGates, interruptedRun, runSkill, type SkillMessages } from "./genome.ts";
 import { unqueue } from "./chat-waiting.ts";
 import type { Reporter } from "./graph.ts";
 import { loadSkill, skillStatus, type Skill } from "./skill.ts";
-import { runningDeployed, stopDeployed } from "./regenerate/release.ts";
-import { createDeployState, createDeployTools, currentRelease, type DeployState } from "./release-tools.ts";
+import { runningLaunched, stopLaunched } from "./regenerate/launch.ts";
+import { launchTool } from "./launch-tools.ts";
+import { createSessionLaunches, launchedNote, replacedNote, type SessionLaunches } from "./launch-session.ts";
+import { describeLaunchLine, type Launch } from "./launch-track.ts";
 import { checkedSpecs } from "./sentinel-check.ts";
-import { runReleaseAgent } from "./release-agent.ts";
 import { createSteeringStore, EVERY_MODULE, moduleNameOf, queueSectionOf, steeringFor } from "./regenerate/steer.ts";
 import { askedForCommandLine, refusal, selfInvocation, TOOLS_NOT_CLI } from "./self-invocation.ts";
 import { NEW_PROJECT } from "./new-project.ts";
@@ -396,8 +397,26 @@ export function createTurriCore(
       core?.jobFinished(job);
     },
   });
+  // The session's launches (docs/launch.md): a codebase's one at a time, the newest commit winning, on the coding model
+  // of the codebase - and what the sentinel waits on of them.
+  const launches = createSessionLaunches({
+    cwd,
+    jobs,
+    model: (plainFile) => launchModel(workLoops.get(jobs)?.from.ctx, plainFile),
+    onChange: (launch) => {
+      core?.jobsChanged();
+      try {
+        host.onLaunch?.(launch);
+      } catch {
+        /* a host that throws still has the launch in the track */
+      }
+      core?.launchChanged(launch);
+    },
+  });
+  sessionLaunches.set(jobs, launches);
   core = createChats({
     cwd,
+    launches,
     host,
     jobs,
     extension: (pi, link) => turriExtension(pi, core!, link),
@@ -414,8 +433,6 @@ export function createTurriCore(
   hosts.set(jobs, host);
   // What the model is told of where the person watches the work, deep in the tools too: the host's surface, or the terminal.
   setSurface(jobs, host.surface);
-  // What release has shipped, module by module: release does nothing for a module whose last commit it already shipped.
-  deployStates.set(jobs, createDeployState());
   // What this session does, as facts, in the project's .turri/ledger - a pulse's own in its project. Said once, in the
   // chat shown, when it cannot be written.
   if (ledgerWanted()) {
@@ -506,7 +523,7 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
   // gets the full report as a hidden message that starts a turn of its own - at once when it is
   // idle, else as soon as the turn it is in ends (a follow-up, never cutting into a reply or an
   // interview) - so it reacts to every job that ends without waiting for the person to speak:
-  // does what the project's guidance says to do then (release what was built, say), or says
+  // does what the project's guidance says to do then (launch what was built, say), or says
   // what finished. In the chat that asked for the pulse, shown or not.
   const announce = (job: Job) => {
     announceJob(pi, job);
@@ -520,16 +537,16 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
       );
       return;
     }
+    let launching = false;
+    try {
+      launching = readProjectConfig(cwd, job.configModule).launchAfterPulse === true;
+    } catch {
+      /* a config that cannot be read launches nothing */
+    }
     void pi.sendMessage(
       {
         customType: "turri_job",
-        content:
-          (job.status === "succeeded"
-            ? `Pulse ${job.id} (${job.kind}) finished after ${formatDuration(job)}.\n\n${job.report ?? ""}`
-            : job.status === "stopped"
-              ? `Pulse ${job.id} (${job.kind}) was stopped after ${formatDuration(job)}. ${job.error ?? STOPPED_ON_REQUEST}${job.error === undefined || job.error === STOPPED_ON_REQUEST ? " The person stopped it; what it was building counts as not built." : ""}`
-              : `Pulse ${job.id} (${job.kind}) failed after ${formatDuration(job)}.\n\n${job.error ?? ""}`) +
-          `\n\n${JOB_FINISHED_REACTION}`,
+        content: pulseEndNote(job, { launching }),
         display: false,
         details: { jobId: job.id, status: job.status },
       },
@@ -538,53 +555,44 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
   };
   // The sentinel's: what a pulse that ended is, told to its agent in a conversation of its own for the pulse. The hidden
   // message is the conversation's first entry - a host splits the sentinel's work by pulse on it - so the pulse's end is
-  // not drawn above it here: the person's chat shows it.
+  // not drawn above it here: the person's chat shows it. Told once what runs holds its commit (chats.ts readyFor).
   const brief = async (job: Job, context: { asked?: string; focused?: string }) => {
-    const config = readProjectConfig(cwd);
+    const launch = sessionLaunches.get(jobs)?.forPulse(job) ?? { later: [], laterSpecs: [], running: [] };
     const content = sentinelBrief(job, {
       project: cwd,
       ...(context.asked !== undefined ? { asked: context.asked } : {}),
       ...(context.focused !== undefined ? { focused: context.focused } : {}),
-      released: runningDeployed(job.module),
-      releaseAfterPulse: config.releaseAfterPulse === true,
+      launch,
       reaction: JOB_FINISHED_REACTION,
     });
     void pi.sendMessage({ customType: "turri_sentinel_pulse", content, display: false, details: { jobId: job.id, status: job.status } }, { triggerTurn: true });
   };
-  // The sentinel's: functional specs a host asked it to check. The module is released first - as release-after-pulse
-  // releases it - unless what runs is its own codebase's last commit; then told, in a conversation of its own for the
-  // check, its hidden first message `turri_sentinel_check`. Why not, when the release failed: its agent is told nothing.
-  const briefCheck = async (check: SentinelCheck, context: { focused?: string }): Promise<string | undefined> => {
-    const state = deployStates.get(jobs) ?? createDeployState();
-    let releasedNow = false;
-    if (currentRelease(state, check.plainFile, check.module) === undefined) {
-      // Behind, never made, or what it started died: released afresh - the release tool would say it shipped that already.
-      state.released.delete(check.module);
-      let said: string;
-      try {
-        const ctx = contextNow();
-        const model = ctx !== undefined ? releaseModel(ctx, check.plainFile) : undefined;
-        said = await runReleaseAgent({ plainFile: check.plainFile, cwd, state, inModule: check.module, forCheck: { moduleName: check.module }, ...(model !== undefined ? { model } : {}) });
-      } catch (error) {
-        return error instanceof Error ? error.message : String(error);
-      }
-      if (currentRelease(state, check.plainFile, check.module) === undefined) return said.trim() || "its last commit was not released";
-      releasedNow = true;
-    }
-    const commit = state.released.get(check.module)?.commit;
+  // The sentinel's: functional specs a host asked it to check, in what is launched of the module - told, in a
+  // conversation of its own for the check, its hidden first message `turri_sentinel_check`. It launches nothing.
+  const briefCheck = async (check: SentinelCheck, context: { focused?: string }): Promise<void> => {
+    const current = sessionLaunches.get(jobs)?.track.current(check.module);
+    const commit = current?.short;
     const content = sentinelCheckBrief(check, {
       specs: checkedSpecs(check),
-      released: runningDeployed(check.module),
-      releasedNow,
+      running: runningLaunched(check.module),
       ...(commit !== undefined ? { commit } : {}),
+      ...(current?.status === "failed" ? { failed: { id: current.id, ...(current.summary !== undefined ? { summary: current.summary } : {}) } } : {}),
       ...(context.focused !== undefined ? { focused: context.focused } : {}),
     });
     void pi.sendMessage(
       { customType: "turri_sentinel_check", content, display: false, details: { checkId: check.id, module: check.module, funcIds: check.funcIds } },
       { triggerTurn: true },
     );
-    return undefined;
   };
+  // The sentinel's: its check carried on in the conversation it was in, once its codebase was launched again.
+  const resume = async (work: { job: Job } | { check: SentinelCheck }): Promise<void> => {
+    const launches = sessionLaunches.get(jobs);
+    if (launches === undefined) return;
+    const content = launches.resumeText(work);
+    void pi.sendMessage({ customType: "turri_sentinel_resume", content, display: false }, { triggerTurn: true });
+  };
+  // A launch this chat is to hear of ended: its agent told how it went, to tell the person.
+  const launched = (launch: Launch) => tellLaunch(pi, jobs, launch);
   // A pulse ended, with the sentinel on: said in the chat. One that landed is told to its agent too, to tell the person
   // it landed and what the sentinel does with it - and nothing more: the pulse is the sentinel's. ***plain that
   // contradicts itself is put to the person at once, by turri itself, as the chat would have been started on it.
@@ -594,8 +602,14 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
     if (options.tell !== true || toldByWaitingCall(jobs, job)) return;
     // A host that shows the person the pulse's end itself: the chat knows of it - in order, with no turn of its own.
     const shown = host.pulseEndsShown === true;
+    let launching = false;
+    try {
+      launching = readProjectConfig(cwd, job.configModule).launchAfterPulse === true;
+    } catch {
+      /* a config that cannot be read launches nothing */
+    }
     void pi.sendMessage(
-      { customType: "turri_job_landed", content: landedNote(job, runningDeployed(job.module), { shown }), display: false, details: { jobId: job.id, status: job.status } },
+      { customType: "turri_job_landed", content: landedNote(job, { shown, launching }), display: false, details: { jobId: job.id, status: job.status } },
       shown ? { triggerTurn: false } : { triggerTurn: true, deliverAs: "followUp" },
     );
   };
@@ -605,6 +619,8 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
     landed,
     brief,
     briefCheck,
+    resume,
+    launched,
     notice: notices.put,
     noticeOver: notices.over,
     concluded: notices.concluded,
@@ -784,7 +800,7 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
   registerRegenerate(pi, cwd, jobs);
   registerDrift(pi, cwd, jobs);
   registerBind(pi, cwd, jobs, (plainFile) => turnOnConformance(session, plainFile));
-  registerDeploy(pi, cwd, jobs, deployStates.get(jobs) ?? createDeployState());
+  registerLaunch(pi, cwd, jobs);
   registerSteering(pi, cwd);
   registerSideQuestions(pi, cwd, jobs);
   // More chats beside this one, in the terminal: /chat, alt+n, alt+1…9 (chat-commands.ts).
@@ -1088,7 +1104,7 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
       };
 
       // What the run changes in the project's ***plain - its specs, resources, scripts - is said with its result: a skill
-      // that writes nothing is not taken for one that did its work. Only those: a release or a running app changes other
+      // that writes nothing is not taken for one that did its work. Only those: a launch or a running app changes other
       // files while it runs, and they are not its doing.
       const filesBefore = projectFiles(cwd);
       // A side question asked while it runs is told what it has done so far.
@@ -1132,7 +1148,7 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
         loopTools: [
           regenerateTool({ cwd, jobs, loop: () => workLoopFor(jobs, cwd, ctx), model: (_skill, plainFile, named) => jobModel(ctx, named, plainFile), wait: () => false }),
           driftTool({ cwd, jobs, loop: () => workLoopFor(jobs, cwd, ctx) }),
-          haltTool({ jobs, workLoop: () => workLoops.get(jobs)?.loop }),
+          haltTool({ jobs, workLoop: () => workLoops.get(jobs)?.loop, ...(sessionLaunches.get(jobs) !== undefined ? { launches: sessionLaunches.get(jobs)!.track } : {}) }),
           conformTool({ cwd, jobs, loop: () => workLoopFor(jobs, cwd, ctx), model: (_skill, plainFile, named) => jobModel(ctx, named, plainFile), wait: () => false }),
         ],
         // The escalation becomes a real dialog - the host's own, when it has them. Without one there is nobody to ask,
@@ -1388,7 +1404,7 @@ export function shownAfterCommand(
 export const COMMAND_STARTED_REACTION =
   "My pulses are running from the person's command, in the background. Tell the person, in a line or two, what " +
   "runs and what is planned - and that the two of us can go on with the ***plain, or anything else, meanwhile: they need " +
-  "not wait for it. Start nothing for it: no regenerate, no check, no release - its end is told when it comes.";
+  "not wait for it. Start nothing for it: no regenerate, no check, no launch - its end is told when it comes.";
 
 /**
  * What the agent does when /conform started nothing: answers it at once - why, and what would let it start - and offers
@@ -1878,9 +1894,17 @@ function conversationModel(ctx: ExtensionContext, override?: string): string | u
  * The chat's model, read now - it can change while a skill runs - or, from a context that has
  * gone stale since, the model it had when it was last readable.
  */
-/** The model a release runs on - a pulse's last stage, and a check's: the one that regenerated the module. A release follows steps, and a small model thinking little does that well. */
-function releaseModel(ctx: ExtensionContext, plainFile: string): string | undefined {
-  return projectModel(ctx, plainFile) ?? chatModelOf(ctx);
+/**
+ * The model a launch runs on: the coding model of the codebase - a launch follows steps, and a small model thinking little
+ * does that well. Without a chat's context yet, the config's as it names it.
+ */
+function launchModel(ctx: ExtensionContext | undefined, plainFile: string): string | undefined {
+  try {
+    if (ctx !== undefined) return projectModel(ctx, plainFile) ?? chatModelOf(ctx);
+  } catch {
+    /* a name the chat cannot resolve: the config's, as it is */
+  }
+  return modelSpec(projectModels(configForSpec(plainFile)).coding);
 }
 
 function chatModelOf(ctx: ExtensionContext): string | undefined {
@@ -1976,8 +2000,8 @@ const workLoops = new WeakMap<JobRegistry, { loop: WorkLoop; from: { ctx: Extens
 /** How the conversation wants the work planned, for the session - set with steer. */
 const steeringStore = createSteeringStore();
 
-/** What release has shipped in a conversation, by its jobs: shared by the chat's release and a pulse's own. */
-const deployStates = new WeakMap<JobRegistry, DeployState>();
+/** A session's launches, by its jobs: the launch track every chat's launch tool and every pulse's launch share. */
+const sessionLaunches = new WeakMap<JobRegistry, SessionLaunches>();
 
 function workLoopFor(jobs: JobRegistry, cwd: string, ctx: ExtensionContext): WorkLoop {
   let shared = workLoops.get(jobs);
@@ -1991,19 +2015,9 @@ function workLoopFor(jobs: JobRegistry, cwd: string, ctx: ExtensionContext): Wor
       plannerModel: () => chatModelOf(from.ctx),
       // How the work is to be planned: the conversation's steering, and AGENTS.md's - read afresh each plan.
       steering: (plainFile) => steeringFor(plainFile, cwd, steeringStore),
-      // Under release-after-pulse, a pulse releases what it landed itself, before the next starts - on the model that
-      // regenerated it: a release follows steps, and a small model thinking little does that well.
-      release: ({ plainFile, moduleName, title, onDelta }) => {
-        const model = releaseModel(from.ctx, plainFile);
-        return runReleaseAgent({
-          plainFile,
-          cwd,
-          state: deployStates.get(jobs) ?? createDeployState(),
-          afterPulse: { moduleName, subject: title },
-          onDelta,
-          ...(model !== undefined ? { model } : {}),
-        });
-      },
+      // A pulse landed: its commit kept for the sentinel - and, under launch-after-pulse, launched in the background, the
+      // codebase's next pulse not waiting on it.
+      landed: (input) => sessionLaunches.get(jobs)?.landed(input),
     });
     shared = { loop, from };
     workLoops.set(jobs, shared);
@@ -2105,7 +2119,7 @@ function registerJobTools(pi: ExtensionAPI, jobs: JobRegistry, cwd: string) {
     label: "Pulses",
     description:
       "Pulses in every tense - earlier sessions', this session's, running now and what runs next. With no parameter: every pulse of " +
-      "this session - finished, running, and planned, those of a look ahead marked as waiting for regenerate - what activate started, " +
+      "this session - finished, running, and planned, those of a look ahead marked as waiting for regenerate - the launches and what they started, " +
       "and the last runs of earlier sessions, a line a pulse - how each ended, how long, what it cost. With job_id, one pulse: " +
       "running, whether it still is and its latest output; finished, its report and what the ledger recorded of it - its rounds " +
       "and test runs (how many failed the same way), the verdicts, the healers, the model provider's trouble, what turri refused, " +
@@ -2189,39 +2203,45 @@ function registerJobTools(pi: ExtensionAPI, jobs: JobRegistry, cwd: string) {
   // list, finished jobs included, put in the transcript where it stays.
 
   pi.registerCommand("halt", {
-    description: "Halt a queued or running pulse, a module's planned pulses, or what activate started: /halt [pulse id | module | activated <name>]",
+    description: "Halt a queued or running pulse, a module's planned pulses, a launch, or what a launch started: /halt [pulse id | module | launched <name | module>]",
     handler: async (args, ctx) => {
       if (!ctx.hasUI) return;
       const live = jobs.list().filter((job) => job.status === "running" || job.status === "queued");
-      const deployed = runningDeployed();
+      const servers = runningLaunched();
+      const track = sessionLaunches.get(jobs)?.track;
+      const underWay = (track?.list() ?? []).filter((launch) => launch.status === "running" || launch.status === "waiting");
       const loop = workLoops.get(jobs)?.loop;
       // A module's planned pulses, one line a module: halting one halts the module.
       const plannedRows = loop?.planned() ?? [];
       const planned = [...new Set(plannedRows.map((row) => row.module ?? ""))].filter((module) => module !== "");
       let id = args.trim();
       if (id === "") {
-        if (live.length === 0 && deployed.length === 0 && planned.length === 0) return ctx.ui.notify("Nothing is regenerating, queued or planned.", "info");
+        if (live.length === 0 && servers.length === 0 && underWay.length === 0 && planned.length === 0) return ctx.ui.notify("Nothing is regenerating, queued, planned or launched.", "info");
         const label = (job: Job) => `${job.id}  ${job.status.padEnd(8)} ${pulseName(job)}`;
         const plannedLabel = (module: string) => {
           const rows = plannedRows.filter((row) => row.module === module);
           const waiting = rows.find((row) => row.id.endsWith("-waiting"));
           return `${module}  ${waiting !== undefined ? waiting.summary : `${rows.length} planned`} - halts the module`;
         };
-        const labels = [...live.map(label), ...planned.map(plannedLabel), ...deployed.map((item) => deployedLabel(item.name, item.url ?? item.command))];
+        const labels = [
+          ...live.map(label),
+          ...planned.map(plannedLabel),
+          ...underWay.map(describeLaunchLine),
+          ...servers.map((item) => launchedLabel(item.name, item.url ?? item.command)),
+        ];
         const picked = await ctx.ui.select("Halt which?", labels);
         const job = live.find((candidate) => picked !== undefined && label(candidate) === picked);
         const module = planned.find((name) => picked !== undefined && plannedLabel(name) === picked);
-        const server = deployed.find((item) => picked !== undefined && deployedLabel(item.name, item.url ?? item.command) === picked);
-        if (server !== undefined) id = `activated ${server.name}`;
+        const launch = underWay.find((candidate) => picked !== undefined && describeLaunchLine(candidate) === picked);
+        const server = servers.find((item) => picked !== undefined && launchedLabel(item.name, item.url ?? item.command) === picked);
+        if (server !== undefined) id = `launched ${server.name}`;
+        else if (launch !== undefined) id = `launched ${launch.codebase}`;
         else if (job !== undefined) id = job.id;
         else if (module !== undefined) id = module;
         else return;
       }
-      const name = /^(?:activated|deploy)\s+(.+)$/.exec(id)?.[1]?.trim();
-      if (name !== undefined) {
-        const stopped = await stopDeployed({ name });
-        return shownAfterCommand(pi, ctx, `/halt ${id}`, stopped.length > 0 ? `Halted ${stopped.join(", ")}.` : `Nothing activate started is running as ${name}.`, "info");
-      }
+      const name = /^launched\s+(.+)$/.exec(id)?.[1]?.trim();
+      if (name !== undefined) return shownAfterCommand(pi, ctx, `/halt ${id}`, await haltLaunched(name, track), "info");
       ctx.ui.notify(stopJob(jobs, id, undefined, loop), "info");
     },
   });
@@ -2328,17 +2348,42 @@ export { fromWorkingDir };
 
 const WATCH_REDRAW_MS = 500;
 /**
+ * What a chat's agent is told of a pulse it asked for that ended, with the sentinel off. One that landed under
+ * launch-after-pulse is being launched as it is told: it says so, and offers nothing else for it - it is told once the
+ * launch ends.
+ */
+export function pulseEndNote(job: Job, options: { launching?: boolean } = {}): string {
+  const head =
+    job.status === "succeeded"
+      ? `Pulse ${job.id} (${job.kind}) finished after ${formatDuration(job)}.\n\n${job.report ?? ""}`
+      : job.status === "stopped"
+        ? `Pulse ${job.id} (${job.kind}) was stopped after ${formatDuration(job)}. ${job.error ?? STOPPED_ON_REQUEST}${job.error === undefined || job.error === STOPPED_ON_REQUEST ? " The person stopped it; what it was building counts as not built." : ""}`
+        : `Pulse ${job.id} (${job.kind}) failed after ${formatDuration(job)}.\n\n${job.error ?? ""}`;
+  const landed = job.status === "succeeded" && (job.details as { landed?: unknown } | undefined)?.landed === true;
+  if (!landed || options.launching !== true) return `${head}\n\n${JOB_FINISHED_REACTION}`;
+  return [
+    head,
+    "",
+    "It landed, and turri is launching the commit it landed now, in the background (launch-after-pulse): you are told once",
+    "that launch ends - where it runs, or why it did not come up. React to this now - the person has not asked, and need",
+    "not: say in a line or two what landed and that it is being launched. Offer nothing else for it - do not call launch,",
+    "open it, run it or test it, and never say nothing runs - and start no other work, unless guidance for this project",
+    "(its AGENTS.md, a skill, what the person said) says to do something besides launching it when a pulse finishes: do",
+    "that. When you are told it is launched, do what you were told to do once something is launched.",
+  ].join("\n");
+}
+
+/**
  * What the agent is to do with a job that just ended, unasked: what the project's guidance says to do then, or else say
  * in a line or two what ended - the person saw it end already, in the transcript.
  */
 export const JOB_FINISHED_REACTION = [
   "React to this now - the person has not asked, and need not. If guidance for this project - its AGENTS.md, a skill,",
-  "what the person said earlier - says what to do when a pulse finishes (release what was built, run something, tell",
+  "what the person said earlier - says what to do when a pulse finishes (launch what was built, run something, tell",
   "someone), do that, as it says. Otherwise say in a line or two what finished and what it means for the person - the",
   "report is theirs to read in full; do not repeat it - and, when it failed, what they can do. Start no other work.",
-  "A report that says \"Released after the pulse\" was released by turri itself, as the pulse's last stage: do not call",
-  "release for it. Say in a line what was released, or why nothing was - then, when it was released, do what you were",
-  "told to do once something is released (opening it where the person can watch it, saying what to test), if anything.",
+  "Under launch-after-pulse turri launches what a pulse lands itself, in the background: do not call launch for it - you",
+  "are told once it is launched, and do then what you were told to do once something is launched.",
   "A pulse that stopped on its environment - \"stopped: turri's sandbox kept its agents from…\" or \"stopped: the",
   "environment lacks…\" - stops the same way again until that is fixed: never regenerate it before. Heal it, then regenerate the",
   "module to resume:",
@@ -2650,9 +2695,9 @@ function modulesWithHistory(cwd: string): string[] {
 
 /** Stop a job by id or id prefix, and say what that means for the queue. */
 /** Every job, in the order it was started, with what a queued one is waiting for. */
-/** What deploy started, as /halt offers it. */
-function deployedLabel(name: string, what: string): string {
-  return `deploy ${name}  running  ${what}`;
+/** What a launch started, as /halt offers it. */
+function launchedLabel(name: string, what: string): string {
+  return `launched ${name}  running  ${what}`;
 }
 
 /** The jobs as the person is shown them: those started, and those the work loop has planned after them. */
@@ -2662,8 +2707,11 @@ function shownJobs(jobs: JobRegistry): Job[] {
 
 function listJobs(jobs: JobRegistry, cwd: string, runs = EARLIER_RUNS): string {
   const all = [...shownJobs(jobs)].reverse().filter((job) => job.replacedBy === undefined);
-  const deployed = runningDeployed().map((item) => `deploy ${item.name}  running  ${item.moduleName}: ${item.url ?? item.command}  (pid ${item.pid}, output in ${relative(process.cwd(), item.log) || item.log})`);
-  const listed = deployed.length > 0 ? `\n\nActivated from dist - /halt activated <name> halts one:\n${deployed.join("\n")}` : "";
+  const servers = runningLaunched().map((item) => `launched ${item.name}  running  ${item.moduleName}: ${item.url ?? item.command}  (pid ${item.pid}, output in ${relative(process.cwd(), item.log) || item.log})`);
+  const launches = (sessionLaunches.get(jobs)?.track.list() ?? []).slice(-10).reverse().map(describeLaunchLine);
+  const listed =
+    (launches.length > 0 ? `\n\nLaunches, newest first - /halt launched <module> halts one under way:\n${launches.join("\n")}` : "") +
+    (servers.length > 0 ? `\n\nWhat launches started - /halt launched <name> halts one:\n${servers.join("\n")}` : "");
   const before = earlierRuns(jobs, cwd, runs);
   if (all.length === 0) return `No pulses have been started in this session.${listed}${before}`;
   return `${jobLines(all)}${listed}${before}`;
@@ -2797,11 +2845,6 @@ function registerSteering(pi: ExtensionAPI, cwd: string) {
   });
 }
 
-/**
- * Deploy: the conversation puts what is built out in dist/<module> and starts it on this machine (see
- * regenerate/release.ts), installing what it needs in its own shell - nothing is put to the person. What it
- * started is stopped when the session ends.
- */
 const SIDE_ENTRY = "turri_btw";
 /** A message the person sent while a skill ran in the chat, read by the skill's agent: drawn as the message it is. */
 const SKILL_MESSAGE_ENTRY = "turri_skill_message";
@@ -2879,18 +2922,46 @@ async function askOnTheSide(pi: ExtensionAPI, ctx: ExtensionContext, cwd: string
   return answer;
 }
 
-function registerDeploy(pi: ExtensionAPI, cwd: string, jobs: JobRegistry, state: DeployState) {
-  const tools = createDeployTools({
-    cwd,
-    state,
-    jobs,
-    workLoop: () => workLoops.get(jobs)?.loop,
-    defaultPlainFile: () => readProjectConfig(cwd).module,
-  });
-  for (const tool of tools) pi.registerTool(tool);
-  // What activate started runs until turri ends - not when a chat is opened, closed, forked or reloaded.
+/** A launch ended, told to a chat's agent - to tell the person where it runs, or why it did not come up. */
+function tellLaunch(pi: ExtensionAPI, jobs: JobRegistry, launch: Launch): void {
+  const job = "pulse" in launch.cause ? jobs.get(launch.cause.pulse) : undefined;
+  void pi.sendMessage(
+    { customType: "turri_launch", content: launchedNote(launch, job), display: false, details: { launch: launch.id, status: launch.status } },
+    { triggerTurn: true, deliverAs: "followUp" },
+  );
+}
+
+/** A newer launch took the place of one a chat asked for, told to its agent: it hears that one's end instead. */
+function tellReplaced(pi: ExtensionAPI, jobs: JobRegistry, launch: Launch, next: Launch): void {
+  const job = "pulse" in next.cause ? jobs.get(next.cause.pulse) : undefined;
+  void pi.sendMessage(
+    { customType: "turri_launch", content: replacedNote(launch, next, job), display: false, details: { launch: launch.id, status: launch.status, replacedBy: next.id } },
+    { triggerTurn: true, deliverAs: "followUp" },
+  );
+}
+
+function registerLaunch(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
+  const launches = sessionLaunches.get(jobs);
+  if (launches !== undefined) {
+    pi.registerTool(
+      launchTool({
+        cwd,
+        track: launches.track,
+        defaultPlainFile: () => readProjectConfig(cwd).module,
+        chat: () => currentChat()?.id,
+        // Told in the chat that asked, as a launch after a pulse is with the sentinel off.
+        ended: (launch) => tellLaunch(pi, jobs, launch),
+        replaced: (launch, next) => tellReplaced(pi, jobs, launch, next),
+        wait: (ctx) => shouldWait(ctx.mode, undefined),
+      }),
+    );
+  }
+  pi.registerTool(haltTool({ jobs, workLoop: () => workLoops.get(jobs)?.loop, ...(launches !== undefined ? { launches: launches.track } : {}) }));
+  // What launches started runs until turri ends - not when a chat is opened, closed, forked or reloaded.
   pi.on("session_shutdown", async (event) => {
-    if (event.reason === "quit") await stopDeployed();
+    if (event.reason !== "quit") return;
+    await launches?.track.stop();
+    await stopLaunched();
   });
 }
 
@@ -3150,8 +3221,8 @@ function registerBranding(pi: ExtensionAPI, skills: SkillCatalogue) {
           sandbox?: ReturnType<typeof sandboxSummary>;
           /** A newer turri out, or installed and hidden behind this one on the PATH: a line each (turri-versions.ts). */
           versions?: string[];
-          /** Config files with keys turri does not read: a removed setting, a misspelt one. */
-          config?: string[];
+          /** What turri says of the config files: a key it renamed in one, an old name left, keys it does not read. */
+          config?: ConfigLine[];
         }
       | undefined;
     if (data === undefined) return undefined;
@@ -3161,7 +3232,8 @@ function registerBranding(pi: ExtensionAPI, skills: SkillCatalogue) {
         (data.commit !== undefined ? theme.fg("dim", `  from a clone, ${data.commit}${data.changed ? " with changes" : ""}`) : ""),
       // A newer turri out, or one installed and hidden behind this one: said first, under the version it is about.
       ...(data.versions ?? []).map((line) => theme.fg("warning", line)),
-      ...(data.config ?? []).map((line) => theme.fg("warning", line)),
+      // A key renamed is information; the rest are the person's to take out.
+      ...(data.config ?? []).map((line) => theme.fg(line.kind === "renamed" ? "muted" : "warning", line.text)),
       `${theme.fg("text", "the first coding agent with the power of ")}${brandPink(theme)("regenerative software")}`,
       // Where the settings are changed, without leaving the chat.
       theme.fg("muted", "configure with /settings"),
@@ -3211,7 +3283,7 @@ function registerBranding(pi: ExtensionAPI, skills: SkillCatalogue) {
         pending: skills.pending.length,
         sandbox: sandboxSummary(),
         versions: versions.lines,
-        config: unknownConfigLines(ctx.cwd),
+        config: configLines(ctx.cwd),
       });
     } catch {
       // Branding is the least important thing here; never let it stop a session starting.

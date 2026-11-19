@@ -10,7 +10,8 @@ import { describeJob, pulseName, type Job, type JobRegistry } from "./regenerate
 import { currentChat } from "./chat-scope.ts";
 import { whyFailed } from "./regenerate/diagnose-job.ts";
 import { didNotLand } from "./regenerate/failure-reports.ts";
-import { stopDeployed } from "./regenerate/release.ts";
+import { runningLaunched, stopLaunched } from "./regenerate/launch.ts";
+import type { LaunchTrack } from "./launch-track.ts";
 import { projectDirOf } from "./regenerate/paths.ts";
 import { findTestScripts } from "./regenerate/test-scripts.ts";
 import { surfaceOf } from "./surface.ts";
@@ -240,7 +241,7 @@ export function stopJob(jobs: JobRegistry, named: string, reason?: string, loop?
 export interface LoopToolsOptions {
   /** Where turri was started: the folder plain_file and working_dir are relative to. */
   cwd: string;
-  /** The pulses `halt` stops. Without them - the release agent's - it stops only what activate started. */
+  /** The pulses the tools act on. */
   jobs?: JobRegistry;
   /** The work loop the tools act on - the conversation's, for a call in it. */
   loop?: (ctx: ExtensionContext) => WorkLoop;
@@ -371,51 +372,53 @@ export function driftTool(options: LoopToolsOptions & { loop: (ctx: ExtensionCon
   });
 }
 
-const ACTIVATED_PARAM = Type.Optional(Type.String({ description: 'What activate started, by name - or "all" for every one' }));
-const HALT_PULSE_PARAMS = Type.Object({
+const HALT_PARAMS = Type.Object({
   job_id: Type.Optional(Type.String({ description: "The pulse's id, or the start of it; a planned row's id (planned-<module>-...), or a module's name, halts the module" })),
   reason: Type.Optional(Type.String({ description: "Why it is halted, kept with it - what the spec now says that it did not, say" })),
-  activated: ACTIVATED_PARAM,
+  launched: Type.Optional(Type.String({ description: 'What a launch started, by name; a module\'s name for its launch under way and what it started; or "all"' })),
 });
-/** With no pulses - the release agent's halt - only what activate started. */
-const HALT_ACTIVATED_PARAMS = Type.Object({ activated: ACTIVATED_PARAM });
 
-/** halt: stop a pulse, or what activate started. */
-export function haltTool(options: Pick<LoopToolsOptions, "jobs"> & { workLoop?: () => WorkLoop | undefined }): AnyTool {
+/** halt: stop a pulse, a module's planned pulses, a launch under way, or what a launch started. */
+export function haltTool(options: { jobs: JobRegistry; workLoop?: () => WorkLoop | undefined; launches?: LaunchTrack }): AnyTool {
   const { jobs } = options;
   return defineTool({
     name: "halt",
     label: "Halt",
     description:
-      jobs !== undefined
-        ? "Halt a pulse, a module's planned pulses, or what activate started. A pulse: a queued one never starts, a running one has its " +
-          "agent stopped at once, and the pulses queued behind it move up - what a running pulse already changed is rolled back, and what " +
-          "it was regenerating counts as not regenerated. A planned row (planned-<module>-...) or a module's name halts the module: its " +
-          "running pulse stopped, none of its planned pulses started, and the modules built on it waiting - until it is asked for again " +
-          "with regenerate; a spec change does not start it. A module whose .plain file is gone is dropped. What activate started: the " +
-          "one named, or every one."
-        : "Stop what activate started: the one named, or every one.",
-    promptSnippet: jobs !== undefined ? "halt a pulse, or what activate started" : "stop a deployed server, or all of them",
-    promptGuidelines:
-      jobs !== undefined
-        ? [
-            "Halt a pulse only when the user asks, or your instructions say to. Name which one, and say which pulses were queued behind it - they will now run.",
-            "Halting a planned row halts its whole module - one planned pulse cannot be taken out alone, as the plan is made again from the spec. To build some of it later, or cut it differently, use steer; to drop work, change the spec.",
-            "A planned row for a module that is no longer in the project is halted the same way, and dropped.",
-          ]
-        : [],
-    parameters: (jobs !== undefined ? HALT_PULSE_PARAMS : HALT_ACTIVATED_PARAMS) as typeof HALT_PULSE_PARAMS,
+      "Halt a pulse, a module's planned pulses, or a launch. A pulse: a queued one never starts, a running one has its " +
+      "agent stopped at once, and the pulses queued behind it move up - what a running pulse already changed is rolled back, and what " +
+      "it was regenerating counts as not regenerated. A planned row (planned-<module>-...) or a module's name halts the module: its " +
+      "running pulse stopped, none of its planned pulses started, and the modules built on it waiting - until it is asked for again " +
+      "with regenerate; a spec change does not start it. A module whose .plain file is gone is dropped. launched: what a launch " +
+      "started, by name; a module's name, its launch under way and what it started; or all.",
+    promptSnippet: "halt a pulse, or a launch and what it started",
+    promptGuidelines: [
+      "Halt a pulse only when the user asks, or your instructions say to. Name which one, and say which pulses were queued behind it - they will now run.",
+      "Halting a planned row halts its whole module - one planned pulse cannot be taken out alone, as the plan is made again from the spec. To build some of it later, or cut it differently, use steer; to drop work, change the spec.",
+      "A planned row for a module that is no longer in the project is halted the same way, and dropped.",
+    ],
+    parameters: HALT_PARAMS,
     async execute(_id, params) {
-      if (params.job_id === undefined && params.activated === undefined) {
-        throw new Error(jobs !== undefined ? "Say what to halt: a job_id, or what activate started (activated)." : 'Say what to stop: its name, or "all" (activated).');
-      }
+      if (params.job_id === undefined && params.launched === undefined) throw new Error("Say what to halt: a job_id, or a launch (launched).");
       const lines: string[] = [];
-      if (params.job_id !== undefined && jobs !== undefined) lines.push(stopJob(jobs, params.job_id, params.reason, options.workLoop?.()));
-      if (params.activated !== undefined) {
-        const stopped = await stopDeployed(params.activated === "all" ? {} : { name: params.activated });
-        lines.push(stopped.length > 0 ? `Halted ${stopped.join(", ")}.` : `Nothing activate started is running${params.activated === "all" ? "" : ` as ${params.activated}`}.`);
-      }
+      if (params.job_id !== undefined) lines.push(stopJob(jobs, params.job_id, params.reason, options.workLoop?.()));
+      if (params.launched !== undefined) lines.push(await haltLaunched(params.launched, options.launches));
       return { content: [{ type: "text" as const, text: lines.join("\n") }], details: {} };
     },
   });
+}
+
+/** Halt what a launch started by its name, a module's launch under way and what it started, or every one: what was halted, said. */
+export async function haltLaunched(which: string, launches: LaunchTrack | undefined): Promise<string> {
+  const all = which === "all";
+  const underWay = launches !== undefined && (all || launches.pending(which) !== undefined) ? await launches.stop(all ? undefined : which) : [];
+  const module = !all && runningLaunched(which).length > 0 && !runningLaunched().some((item) => item.name === which);
+  const before = runningLaunched();
+  const stopped = await stopLaunched(all ? {} : module || underWay.length > 0 ? { moduleName: which } : { name: which });
+  // The launches whose servers those were, with nothing of them left running: stopped too - a host hears it, and the next
+  // launch of the codebase launches anew.
+  const codebases = new Set(before.filter((item) => item.exited !== undefined).map((item) => item.moduleName));
+  for (const codebase of codebases) launches?.halted(codebase);
+  const halted = [...underWay.map((id) => `the launch ${id}`), ...stopped];
+  return halted.length > 0 ? `Halted ${halted.join(", ")}.` : `Nothing a launch started is running${all ? "" : ` as ${which}`}, and no launch of it is under way.`;
 }

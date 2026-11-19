@@ -59,10 +59,18 @@ export type LedgerEvent =
   // What the sentinel - or turri itself - put to the person, and how it ended: answered, dismissed, superseded.
   | { kind: "notice.put"; notice: string; severity: string; module?: string }
   | { kind: "notice.over"; notice: string; state: string }
-  // A host asked the sentinel to check functional specs of a module, in its release: the check's id.
+  // A host asked the sentinel to check functional specs of a module, in what is launched of it: the check's id.
   | { kind: "sentinel.asked"; check: string; module: string; funcIds: string[] }
-  // The sentinel on a pulse - or a host's check - in a conversation of its own; in place of its check of `replaced`, a pulse of the same module.
-  | { kind: "sentinel.checking"; module?: string; replaced?: string; check?: string }
+  // The sentinel on a pulse - or a host's check - in a conversation of its own.
+  | { kind: "sentinel.checking"; module?: string; check?: string }
+  // The sentinel's check of a pulse paused while its codebase is launched again, and resumed in the launch that holds it.
+  | { kind: "sentinel.paused"; module: string; launch: string }
+  | { kind: "sentinel.resumed"; module: string; launch: string }
+  // The sentinel not told of a pulse - or a check - because what runs cannot be tested for it: turri itself got it wrong.
+  | { kind: "sentinel.refused"; module?: string; check?: string; why: string }
+  // A launch of a codebase (launch-track.ts), from started to its end: its id, the commit, the pulse that landed it.
+  | { kind: "launch.started"; launch: string; commit: string; pulse?: string }
+  | { kind: "launch.finished"; launch: string; commit: string; status: string; ms: number }
   // The sentinel done with a pulse or a check: whether what it checked holds - `unchecked`, a check that never ran.
   | { kind: "sentinel.concluded"; verdict: string; module?: string; check?: string }
   | { kind: "chat.closed" }
