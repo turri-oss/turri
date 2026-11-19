@@ -502,8 +502,6 @@ function signInText(vendor: Vendor, bedrock?: BedrockChoice, models?: ModelSet):
       brand.bold(`Set up ${extension.label}`),
       `  ${brand.accent(extension.install)}   ${brand.muted("its pi extension: turri finds what pi has installed")}`,
       `  ${brand.muted(extension.signIn)}`,
-      "",
-      brand.muted("turri doctor --models checks it answers."),
     ]);
   }
   const keys =
@@ -715,7 +713,7 @@ export async function initConfig(dir: string, options: InitConfigOptions = {}): 
       "",
       brand.bold("Then"),
       ...(here ? [] : [`  ${brand.accent(`cd ${folder}`)}`]),
-      `  ${brand.accent("turri doctor")}   ${brand.muted("checks the models answer with your credentials")}`,
+      `  ${brand.accent("turri doctor")}   ${brand.muted("validates your login, and checks everything else turri needs")}`,
       `  ${brand.accent("turri")}`,
       "",
       brand.muted(`turri reads this config when it starts in ${here ? "this folder" : folder} or one below it.`),

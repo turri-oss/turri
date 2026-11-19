@@ -250,7 +250,7 @@ describe("turri init-config", () => {
     expect(message).toContain("export OPENAI_API_KEY=...");
     expect(message).toContain("type /login");
     expect(message).toContain(`turri reads this config when it starts in ${dir} or one below it.`);
-    expect(message).toContain(`Then\n  cd ${dir}\n  turri doctor   checks the models answer with your credentials\n  turri`);
+    expect(message).toContain(`Then\n  cd ${dir}\n  turri doctor   validates your login, and checks everything else turri needs\n  turri`);
     // Written to a pipe, as here, it has no colours.
     expect(message).not.toContain("\x1b[");
     // Other names both keys, and that any provider pi supports will do.
