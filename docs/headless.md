@@ -27,7 +27,7 @@ turri parse app.plain
 turri regenerate app.plain --model anthropic/claude-sonnet-5
 ```
 
-That builds every functionality in order - code and unit tests, then conformance tests when the module has `***test reqs***`, then every conformance test so far - and advances only when they pass. A module that `requires` others builds them first, bottom up. When it is done it prints `To try it: turri release <spec>` - see [deploy](deploy.md).
+That builds every functionality in order - code and unit tests, then conformance tests when the module has `***test reqs***`, then every conformance test so far - and advances only when they pass. A module that `requires` others builds them first, bottom up. When it is done it prints `To try it: turri launch <spec>` - see [launch](launch.md).
 
 Keep it running when the terminal closes and the laptop would sleep, and keep the log:
 

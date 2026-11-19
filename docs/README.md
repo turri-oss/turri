@@ -30,7 +30,7 @@ turri is the first coding agent with the power of regenerative software: [\*\*\*
 | which skill does what | [authoring \*\*\*plain](authoring-plain.md#the-skills) |
 | what happens when \*\*\*plain changes | [regenerating the code](regenerating.md#when-plain-changes) |
 | why a test was not allowed to be deleted | [regenerating the code](regenerating.md#the-tests-must-actually-pass) |
-| how to try what is built, and what deploy may install | [deploy](deploy.md) |
+| how to try what is built, and what a launch may install | [launch](launch.md) |
 | what the agents can and cannot reach | [the sandbox](sandbox.md) |
 | how skill review gates and judges work | [skills and gates](skills-and-gates.md) |
 | how the parser matches the reference implementation | [the \*\*\*plain parser](parser.md) |
@@ -47,7 +47,7 @@ turri is the first coding agent with the power of regenerative software: [\*\*\*
 | [The sentinel](sentinel.md) | the chat every finished pulse goes to: what it checks and tests, its notices and how to answer them, what it may do, closing it, its model, in a host |
 | [A Claude subscription](claude-subscription.md) | running every agent on a Claude Pro, Max or Team subscription through Claude Code: setting it up, its models, checking it yourself, in turri-desktop, its limits, when it does not work |
 | [The project config](config.md) | `config.turri.yaml` and a module's own `config.turri.<module>.yaml`: where they are read from, every key, models and their inheritance, conformance, the testing scripts, which file builds a module, the old `config.yaml` |
-| [Deploy](deploy.md) | trying what is built: dist/<module>, the last commit, starting it on your machine, `turri release` |
+| [Launch](launch.md) | trying what is built: the launch track, a commit in dist/<module>, starting it on your machine, after every pulse, `turri launch` |
 | [Running unattended](headless.md) | regenerating overnight or in CI: before you leave it, the command, the results, resuming, rebuilding one functionality |
 | [Authoring \*\*\*plain](authoring-plain.md) | a \*\*\*plain project, what \*\*\*plain is made of, the rules, writing \*\*\*plain with the agent, the skills, checking \*\*\*plain |
 | [Regenerating](regenerating.md) | where things go, one job, a whole module and how its work is cut into jobs, each job's cases, \*\*\*plain changes, conformance tests, the two records of what is built |

@@ -27,7 +27,7 @@ turri
 
 ## 3. Try the first command while the second is built
 
-When `plan` lands, it is released. **turri** says how to run it from `dist/tidy` - that depends on the stack. Try it on a copy of a folder:
+When `plan` lands, it is launched. **turri** says how to run it from `dist/tidy` - that depends on the stack. Try it on a copy of a folder:
 
 ```bash
 cp -r ~/Downloads /tmp/downloads-copy

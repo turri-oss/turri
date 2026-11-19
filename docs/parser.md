@@ -86,7 +86,7 @@ FAIL  tests/  2 test plain files outside a module's folder
         tests/todos/x.plain - no module todos; module: todo is in tests/todo/
 ```
 
-A test plain file, or a test folder, is never taken for a module: `parse` - and `regenerate`, `conform`, `pulses`, `drift`, `release`, `/regenerate` and the commands - refuse one, naming its module (`\`tests/todo/add-task.plain\` is a test plain file of \`todo\`; name \`todo.plain\`, or \`todo:add-task\` for that one functional spec`).
+A test plain file, or a test folder, is never taken for a module: `parse` - and `regenerate`, `conform`, `pulses`, `drift`, `launch`, `/regenerate` and the commands - refuse one, naming its module (`\`tests/todo/add-task.plain\` is a test plain file of \`todo\`; name \`todo.plain\`, or \`todo:add-task\` for that one functional spec`).
 
 The exit code is 0 only when every file passed. In a conversation the same check is `parse`; `regenerate` runs it on the module it is given, and regenerates nothing from one that does not pass.
 

@@ -29,11 +29,11 @@ That is a \*\*\*plain change to `frontend.plain`. The page's first pulse is stil
 
 ## 3. Try what has landed
 
-Each pulse that lands is released and running: the backend on its port, and the frontend on its own, pointed at the backend. Ask where to open it:
+Each pulse that lands is launched and running, in the background: the backend on its port, and the frontend on its own, pointed at the backend. Ask where to open it:
 
 > Where is the frontend running?
 
-The list is there. The form may still be regenerating: try it again once its pulse lands. The sentinel tries each release too, and tells you in the chat when something does not work.
+The list is there. The form may still be regenerating: try it again once its pulse lands. The sentinel tries each launch too, and tells you in the chat when something does not work.
 
 ## 4. Change a rule mid-build
 

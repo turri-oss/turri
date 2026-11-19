@@ -40,8 +40,8 @@ The harness's scratch - each ignores itself, and is never part of a module's his
 | `.turri/debug/` | each agent's log: its prompt, every tool call and every answer - kept in debug mode only |
 | `.turri/sessions/` | the agents' saved sessions - in debug mode, and a gated skill's run's |
 | `.turri/runs/<skill>/` | a gated skill's run: what an interrupted one resumes from, and its gates' evidence |
-| `.turri/deploy/` | the output of what `deploy` started |
-| `dist/<module>/` | what `deploy` puts out: the module's code as its last commit has it, replaced whole each time - see [deploy](deploy.md) |
+| `.turri/launch/` | the output of what a launch started |
+| `dist/<module>/` | what a launch puts out: the module's code as a commit has it, replaced whole each time - see [launch](launch.md) |
 
 ### Parts on different stacks
 
@@ -158,7 +158,7 @@ Every time a review sends tests back, the agent that fixes them also leaves the 
 
 ### Then
 
-Once the unit tests pass and are reviewed, the job lands: the code record becomes the \*\*\*plain description the job ends on, and a commit is made to the module's history. The conformance tests are not run here: they are the conformance track's, and its job for what this one built runs next, before anything is built on it (see [conformance tests in the work loop](#conformance-tests-in-the-work-loop)). A job that does not pass is undone instead - see [below](#what-the-code-is-built-from). Trying what it built is [deploy](deploy.md)'s, not the job's: on the command line, a run that landed ends with `turri release <spec>`.
+Once the unit tests pass and are reviewed, the job lands: the code record becomes the \*\*\*plain description the job ends on, and a commit is made to the module's history. The conformance tests are not run here: they are the conformance track's, and its job for what this one built runs next, before anything is built on it (see [conformance tests in the work loop](#conformance-tests-in-the-work-loop)). A job that does not pass is undone instead - see [below](#what-the-code-is-built-from). Trying what it built is a [launch](launch.md)'s, not the job's: under `launch-after-pulse` the chat launches what each pulse lands in the background, and on the command line a run that landed ends with `turri launch <spec>`.
 
 ## A whole module
 

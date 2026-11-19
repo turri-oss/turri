@@ -53,7 +53,7 @@ The workflow signs in to npm with npm's trusted publishing (OIDC), not a token: 
 | `src/regenerate/chunk-plan.ts`, `src/regenerate/cases.ts` | cutting the work into jobs, and what a job's agents are told by its cases |
 | `src/regenerate/regression.ts` | the whole conformance suite run, and the repair agent that may not touch tests |
 | `src/regenerate/lineage.ts` | module history in `.plaingit` |
-| `src/regenerate/release.ts`, `src/release-tools.ts`, `src/release-cli.ts` | deploy: the last commit to `dist/<module>`, what installs software, what it starts on the host - see [deploy](deploy.md) |
+| `src/regenerate/launch.ts`, `src/launch-track.ts`, `src/launch-session.ts`, `src/launch-agent.ts`, `src/launch-tools.ts`, `src/launch-cli.ts` | launch: a commit to `dist/<module>`, the launch track, the launch agent and what it starts on the host - see [launch](launch.md) |
 | `src/regenerate/confine.ts`, `src/regenerate/agent-shell.ts`, `src/regenerate/command-check.ts`, `src/regenerate/os-sandbox.ts`, `src/regenerate/audit.ts`, `src/regenerate/agent-env.ts`, `src/regenerate/shell.ts` | the file-tool fence and the walls around every agent command: the check, the OS sandbox, the audit, the module's environment, the host runner - see [sandbox](sandbox.md) |
 | `src/regenerate/model-names.ts` | resolving a model named as the person said it - for a call's `model` and the `settings` tool |
 | `src/regenerate/job-panel.ts`, `src/regenerate/transcript-view.ts`, `src/regenerate/diff-view.ts` | the job panel, the side panel's colours, and a \*\*\*plain diff as they show it - highlighted and banded |

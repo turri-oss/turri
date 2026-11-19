@@ -73,7 +73,7 @@ A failing conformance test is not simply made to pass. A judge first works out w
 
 ## 7. Try it
 
-Each pulse that lands is released and running. Ask where:
+Each pulse that lands is launched and running, in the background. Ask where:
 
 > Where is shorty running?
 
