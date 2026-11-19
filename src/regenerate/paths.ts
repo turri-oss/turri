@@ -109,12 +109,12 @@ export function ensureInModulesScratch(dir: string, path: string): string {
   return ensureInScratch(modulesScratchDir(dir), path);
 }
 
-/** Where the project keeps what `deploy` puts out: `dist/`, beside `plain_modules`. */
+/** Where the project keeps what a launch puts out: `dist/`, beside `plain_modules`. */
 export const DIST_DIR = "dist";
 
 /**
  * Where a person tries a module: `<project>/dist/<module>`, the module's code as its last commit has
- * it. Outside `plain_modules`, so no agent can reach it, and replaced whole by every deploy.
+ * it. Outside `plain_modules`, so no agent can reach it, and replaced whole by every launch.
  */
 export function distDirFor(projectDir: string, moduleName: string): string {
   return join(projectDir, DIST_DIR, moduleName);

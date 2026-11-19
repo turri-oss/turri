@@ -126,7 +126,7 @@ describe("what a pulse writes for a person", () => {
 describe("an agent outside a pulse", () => {
   it("writes no log of its own outside debug mode", () => {
     mkdirSync(join(moduleDir("app"), "code"), { recursive: true });
-    expect(startDebugLog(quietSession, { cwd: join(moduleDir("app"), "code"), label: "release agent" })).toBeUndefined();
+    expect(startDebugLog(quietSession, { cwd: join(moduleDir("app"), "code"), label: "launch agent" })).toBeUndefined();
     expect(existsSync(debugDir(project))).toBe(false);
   });
 });

@@ -37,9 +37,9 @@ describe("what a slash command showed the person", () => {
 
   it("is shown for a moment when it cannot be kept, and still reaches the conversation", () => {
     const { pi, ctx, notified, sent } = fakes({ appendFails: true });
-    shownAfterCommand(pi, ctx, "/halt activated api", "Halted api.", "info");
+    shownAfterCommand(pi, ctx, "/halt launched api", "Halted api.", "info");
     expect(notified).toEqual([{ text: "Halted api.", level: "info" }]);
-    expect(sent.map((entry) => entry.message.content)).toEqual(["The person ran /halt activated api, and was shown:\nHalted api."]);
+    expect(sent.map((entry) => entry.message.content)).toEqual(["The person ran /halt launched api, and was shown:\nHalted api."]);
   });
 });
 

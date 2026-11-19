@@ -17,7 +17,7 @@ const TOOL_FOR: Record<string, string> = {
   regenerate: "regenerate",
   conform: "conform",
   cultivate: "cultivate",
-  release: "release",
+  launch: "launch",
   chat: "nothing - you are the conversation already",
   ask: "nothing - you are the conversation already",
 };
@@ -36,7 +36,7 @@ const ENTRY: Record<string, string> = {
   "regenerate-cli": "regenerate",
   "conform-cli": "conform",
   "cultivate-cli": "cultivate",
-  "release-cli": "release",
+  "launch-cli": "launch",
 };
 
 /** Where a command starts: the start of the string, or after a separator. */
@@ -48,9 +48,9 @@ const AT_COMMAND = String.raw`(?:^|[\s;&|()\x60$])`;
  * agent - and neither are setup and doctor.
  */
 export function selfInvocation(command: string): string | undefined {
-  const cli = new RegExp(`${AT_COMMAND}(?:npx\\s+)?turri\\s+(regenerate|conform|cultivate|release)\\b`).exec(command);
+  const cli = new RegExp(`${AT_COMMAND}(?:npx\\s+)?turri\\s+(regenerate|conform|cultivate|launch)\\b`).exec(command);
   if (cli) return cli[1];
-  const launcher = new RegExp(`(?:bin/turri\\.mjs|src/cli\\.ts)\\s+(regenerate|conform|cultivate|release)\\b`).exec(command);
+  const launcher = new RegExp(`(?:bin/turri\\.mjs|src/cli\\.ts)\\s+(regenerate|conform|cultivate|launch)\\b`).exec(command);
   if (launcher) return launcher[1];
   // turri alone, or with options, is the conversation - where a command starts, not a word an argument names (`which turri`).
   const bare =
@@ -85,7 +85,7 @@ export function askedForCommandLine(message: string): boolean {
   const text = message.toLowerCase();
   return (
     /\b(headless|command[ -]line|cli|terminal|shell|in bash|via bash|through bash|npm run|nohup)\b/.test(text) ||
-    /\bturri\s+(regenerate|conform|cultivate|release)\b/.test(text) ||
+    /\bturri\s+(regenerate|conform|cultivate|launch)\b/.test(text) ||
     /(^|\s)turri\s+-p\b/.test(text) ||
     /(^|\s)pi\s+-p\b/.test(text)
   );
@@ -109,8 +109,8 @@ export function refusal(what: string, surface?: string): string {
 export const TOOLS_NOT_CLI = [
   "<turri-tools>",
   "In this conversation, you do your work with your tools - regenerate, conform, cultivate and the rest - which run as",
-  "background jobs the user can watch and halt. To try what is regenerated, release it - never by hand in plain_modules. Never",
-  "run your own command line (turri regenerate, conform, cultivate, release, turri itself; npm run",
+  "background jobs the user can watch and halt. To try what is regenerated, launch it - never by hand in plain_modules. Never",
+  "run your own command line (turri regenerate, conform, cultivate, launch, turri itself; npm run",
   "regenerate and the like) or start another pi through bash:",
   "that is a separate headless run the user cannot see or stop. Only when the user explicitly asks for the",
   "command line, run it. Configuring pi itself - turri install, update, remove, list; pi install, update, list, config, auth; or its settings files -",

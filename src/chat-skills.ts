@@ -8,7 +8,7 @@
  * runs its own skills, and the project's, with `cultivate`, steps and gates and all. A skill the chat followed by hand
  * instead would skip those gates, and one from another tool may say otherwise than turri's rules. So the conversation
  * is offered neither: no skill turri runs itself, and none about ***plain. A skill about anything else - a commit
- * message, a deploy - is offered as pi offers it.
+ * message, a launch - is offered as pi offers it.
  */
 
 /** What a skill says it is about, that turri covers: ***plain specs and their testing scripts. */

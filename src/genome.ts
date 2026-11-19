@@ -182,7 +182,7 @@ async function runStoppable(opts: RunSkillOptions): Promise<RunSkillResult> {
     }
   }
   customTools.push(...(opts.sharedTools ?? []));
-  // Its write and edit reach the project's ***plain only - not the code, a release, or what an app it started writes.
+  // Its write and edit reach the project's ***plain only - not the code, a launch, or what an app it started writes.
   customTools.push(...plainWriteTools(opts.cwd).filter((tool) => skill.allowedTools.includes(tool.name)));
   // Its shell runs neither turri nor another pi again: that would build outside the session's work loop.
   if (skill.allowedTools.includes("bash")) customTools.push(skillShell(opts.cwd));

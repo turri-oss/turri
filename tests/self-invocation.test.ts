@@ -15,7 +15,7 @@ describe("a shell command that runs turri again", () => {
     expect(selfInvocation("npx tsx src/regenerate-cli.ts app.plain 1")).toBe("regenerate");
     expect(selfInvocation("turri regenerate app.plain")).toBe("regenerate");
     expect(selfInvocation("turri conform app.plain 2")).toBe("conform");
-    expect(selfInvocation("turri release app.plain")).toBe("release");
+    expect(selfInvocation("turri launch app.plain")).toBe("launch");
     expect(selfInvocation('pi -p "build it"')).toBe("pi");
     expect(selfInvocation("turri -p 'render the module'")).toBe("chat");
     expect(selfInvocation("cd ~/proj && turri")).toBe("chat");
@@ -49,7 +49,7 @@ describe("a shell command that runs turri again", () => {
 
   it("is refused with the tool to use instead", () => {
     expect(refusal("regenerate")).toContain("Use regenerate instead.");
-    expect(refusal("release")).toContain("Use release instead.");
+    expect(refusal("launch")).toContain("Use launch instead.");
     expect(refusal("pi")).toContain("Do not start another agent");
   });
 });

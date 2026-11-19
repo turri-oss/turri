@@ -21,7 +21,7 @@ function outsidePlain(path: string): boolean {
 
 /**
  * The project's ***plain and what it is built with, and a digest of each: its .plain files, the resources they link,
- * its testing scripts and its config.turri*.yaml. Nothing else is a skill's to change - not the built code, a release,
+ * its testing scripts and its config.turri*.yaml. Nothing else is a skill's to change - not the built code, a launch,
  * what a running app writes. `also`: paths that were among them before, digested while they are there, so one a skill
  * stopped linking or naming is still seen if it changed it.
  */
@@ -92,7 +92,7 @@ export function changedFiles(before: Map<string, string>, after: Map<string, str
 /**
  * Why a skill's agent may not write a path, or nothing when it may. It writes the project's ***plain: a file of it
  * (`projectFiles`), or a new one - a resource it is about to link, a testing script - anywhere in the project but where
- * what is built, released or installed lives. Never an existing file that is not the ***plain's: the code, a release,
+ * what is built, launched or installed lives. Never an existing file that is not the ***plain's: the code, a launch,
  * what an app it started writes.
  */
 export function plainWriteRefusal(root: string, path: string): string | undefined {
@@ -103,7 +103,7 @@ export function plainWriteRefusal(root: string, path: string): string | undefine
   if (outsidePlain(inProject)) {
     return (
       `${inProject} is not the project's ***plain - ${MODULES_DIR}/, ${DIST_DIR}/ and the hidden folders hold what is ` +
-      "built, released and installed, and turri's own. A skill writes .plain files, the resources they link and the testing scripts."
+      "built, launched and installed, and turri's own. A skill writes .plain files, the resources they link and the testing scripts."
     );
   }
   if (existsSync(absolute) && !projectFiles(root).has(inProject)) {

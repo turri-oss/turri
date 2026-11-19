@@ -184,7 +184,7 @@ function systemSettingIn(segment: string): string | undefined {
  * Why a command line changes the machine - installs software outside the project, or changes a setting of the
  * machine's or the person's environment - or nothing when it does not. The project's own dependencies, installed into
  * the project (npm install, a venv, mvn, cargo), change nothing of the machine's. turri changes the machine nowhere: not
- * an agent, not the chat, not a release - what the machine lacks is the person's to install, in their own words.
+ * an agent, not the chat, not a launch - what the machine lacks is the person's to install, in their own words.
  */
 export function machineChange(command: string): string | undefined {
   if (PIPED_DOWNLOAD.test(command) || RUN_DOWNLOAD.test(command)) return "it runs a script downloaded from the web";
