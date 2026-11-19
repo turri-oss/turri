@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { copyFileSync, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { copyFileSync, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { load as loadYaml } from "js-yaml";
 import { projectDirOf, resolveTemplateDirs } from "./regenerate/paths.ts";
@@ -25,8 +25,8 @@ import { projectDirOf, resolveTemplateDirs } from "./regenerate/paths.ts";
  * review: false                                             # review the code and its tests once they pass (default: true)
  * mutation-testing: false                                   # give the coding agent and the reviewer can_it_fail (default: true)
  * allow-to-stop-jobs: false                                 # stop a running job the spec moved on from (default: true)
- * release-after-pulse: true                                 # release what each pulse lands, as its last stage, before the next pulse (default: false)
- * sentinel: true                                            # a chat of its own every finished pulse goes to, which tests the release and tells you what is wrong: true, false, or ask - the person asked before it first opens in a session (default: ask)
+ * launch-after-pulse: true                                  # launch what each pulse lands, in the background, the newest commit winning (default: false)
+ * sentinel: true                                            # a chat of its own every finished pulse goes to, which tests what is launched and tells you what is wrong: true, false, or ask - the person asked before it first opens in a session (default: ask)
  * rules-off: [integrations]                                 # ***plain rules to leave out of the prompts, by name (default: none)
  * unittests-script: test_scripts/run_unittests.sh           # the testing scripts - see test-scripts.ts
  * conformance-tests-script: test_scripts/run_conformance_tests.sh
@@ -151,7 +151,68 @@ export function moduleConfigsOf(root: string): string[] {
  * config.turri.yaml, and each config.<module>.yaml to config.turri.<module>.yaml, so nothing is lost when the old files
  * stop being read. The old files are left as they are. Gives back the files written, by name.
  */
+/**
+ * Keys turri has renamed, old to new - no alias: a project's config.turri.yaml or config.turri.<module>.yaml that still has
+ * the old one has it renamed as turri first reads or writes the project's config (`renameOldKeys`), its value and its
+ * comment kept. One that sets the new one too is left as it is, the old one said in the banner as doing nothing.
+ */
+export const RENAMED_KEYS: Readonly<Record<string, string>> = { "release-after-pulse": "launch-after-pulse" };
+
+/** A key renamed in a config file. */
+export interface RenamedKey {
+  file: string;
+  from: string;
+  to: string;
+}
+
+/** The projects whose config files were looked at for old keys this process, and what was renamed in each - for the banner. */
+const renamedKeys = new Map<string, RenamedKey[]>();
+
+/**
+ * Rename the old keys of `RENAMED_KEYS` in the project's config.turri*.yaml files - once a process, or again with `again`
+ * (a file just copied from its old name). A top-level key alone, its line kept but for the key's name; a file that also
+ * sets the new key, one that does not parse, or one that cannot be written is left as it is. Returns every key renamed
+ * in the project this process.
+ */
+export function renameOldKeys(root: string, options: { again?: boolean } = {}): RenamedKey[] {
+  const dir = resolve(root);
+  const done = renamedKeys.get(dir);
+  if (done !== undefined && options.again !== true) return done;
+  const renamed = done ?? [];
+  renamedKeys.set(dir, renamed);
+  for (const file of namesIn(dir).filter((name) => /^config\.turri(\.[^.]+)?\.yaml$/.test(name))) {
+    const path = join(dir, file);
+    let text: string;
+    let parsed: unknown;
+    try {
+      text = readFileSync(path, "utf8");
+      parsed = loadYaml(text);
+    } catch {
+      continue;
+    }
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) continue;
+    let changed = text;
+    const now: RenamedKey[] = [];
+    for (const [from, to] of Object.entries(RENAMED_KEYS)) {
+      if (!(from in parsed) || to in parsed) continue;
+      const line = new RegExp(`^${from.replace(/[-]/g, "\\-")}(?=[ \\t]*:)`, "m");
+      if (!line.test(changed)) continue;
+      changed = changed.replace(line, to);
+      now.push({ file, from, to });
+    }
+    if (now.length === 0) continue;
+    try {
+      writeFileSync(path, changed);
+      renamed.push(...now);
+    } catch {
+      /* a file turri cannot write keeps its old key: the banner says it does nothing */
+    }
+  }
+  return renamed;
+}
+
 export function adoptLegacyConfig(root: string, options: { projectFile?: boolean } = {}): string[] {
+  renameOldKeys(root);
   if (!usesLegacyConfig(root)) return [];
   const copies: Array<[string, string]> = [
     // `projectFile: false`: the modules' files alone - turri init-config writes config.turri.yaml itself.
@@ -159,6 +220,8 @@ export function adoptLegacyConfig(root: string, options: { projectFile?: boolean
     ...legacyModuleConfigs(root).map((module) => [legacyModuleConfigFile(module), moduleConfigFile(module)] as [string, string]),
   ];
   for (const [from, to] of copies) copyFileSync(join(root, from), join(root, to));
+  // What was copied may have keys turri has renamed since.
+  if (copies.length > 0) renameOldKeys(root, { again: true });
   return copies.map(([, to]) => to);
 }
 
@@ -263,12 +326,12 @@ export interface ModelChoice {
  * The code fixer of a conformance run and the repair agent are coding agents; the unit-test and conformance arbiters
  * are both `arbiter`.
  */
-export const AGENT_ROLES = ["chat", "sentinel", "planner", "diagnosis", "release", "coding", "conformance", "explorer", "reviewer", "test-reviewer", "judge", "arbiter", "debugger"] as const;
+export const AGENT_ROLES = ["chat", "sentinel", "planner", "diagnosis", "launch", "coding", "conformance", "explorer", "reviewer", "test-reviewer", "judge", "arbiter", "debugger"] as const;
 export type AgentRole = (typeof AGENT_ROLES)[number];
 
 /**
  * How hard each role thinks when nothing names a level - not the config's `models:`, nor a `:level` on the model it is
- * given. The agents that do the work - write the code and the tests, explore, release - think little: they work from a
+ * given. The agents that do the work - write the code and the tests, explore, launch - think little: they work from a
  * spec that leaves little to guess, and every turn of theirs is many. The ones that judge - review, weigh, plan, find a
  * cause - think more: a wrong call there costs pulses. The conversation keeps its own level, pi's.
  */
@@ -276,7 +339,7 @@ export const ROLE_THINKING: Partial<Record<AgentRole, ThinkingLevel>> = {
   coding: "low",
   conformance: "low",
   explorer: "low",
-  release: "low",
+  launch: "low",
   reviewer: "medium",
   "test-reviewer": "medium",
   judge: "medium",
@@ -287,7 +350,7 @@ export const ROLE_THINKING: Partial<Record<AgentRole, ThinkingLevel>> = {
 };
 
 /** The roles on the conversation's side: without their own entry they take the chat's model, not `default`. */
-// The release is not: it follows steps - a script, a start command - and runs on the coding model, thinking low. Nor
+// The launch is not: it follows steps - a script, a start command - and runs on the coding model, thinking low. Nor
 // is the diagnosis: a post-mortem of a job that failed, read by the person - it runs on the coding model, thinking medium.
 const CHAT_SIDE: readonly AgentRole[] = ["chat", "sentinel", "planner"];
 
@@ -472,12 +535,12 @@ export interface ProjectConfig {
    */
   allowToStopJobs?: boolean;
   /**
-   * Whether every pulse that lands code releases it as its last stage, before the module's next pulse starts - an agent
-   * looking for the project's release guidance as the chat does, and doing what it says. Unset: false.
+   * Whether every pulse that lands code is launched (docs/launch.md): in the background, on the launch track - the newest
+   * commit winning, no pulse waiting on it - by an agent that follows the project's launch guidance. Unset: false.
    */
-  releaseAfterPulse?: boolean;
+  launchAfterPulse?: boolean;
   /**
-   * Whether the session has a sentinel: a chat of its own that every finished pulse goes to - checked, a release tested,
+   * Whether the session has a sentinel: a chat of its own that every finished pulse goes to - checked, what is launched tested,
    * and what is wrong put to the person - instead of the chat that asked for it (docs/sentinel.md). `ask`: the person is
    * asked, before it first opens in a session, whether to start it. Unset: ask.
    */
@@ -569,7 +632,7 @@ export const CONFIG_KEYS = {
   review: "review",
   mutationTesting: "mutation-testing",
   allowToStopJobs: "allow-to-stop-jobs",
-  releaseAfterPulse: "release-after-pulse",
+  launchAfterPulse: "launch-after-pulse",
   sentinel: "sentinel",
   testDir: "test-dir",
   conformanceTests: "conformance-tests",
@@ -609,6 +672,8 @@ export function readProjectConfig(root: string, module?: string): ProjectConfig 
 }
 
 function readLayeredConfig(root: string, module?: string): ProjectConfig {
+  // A key turri has renamed, renamed in the files as they are first read.
+  renameOldKeys(root);
   const project = readConfigFile(join(root, projectConfigFile(root)));
   if (module === undefined) return project;
   const own = readConfigFile(join(root, moduleConfigFileIn(root, module)));
@@ -775,7 +840,7 @@ function readConfigFileNow(path: string): ProjectConfig {
     review: typeof raw[CONFIG_KEYS.review] === "boolean" ? (raw[CONFIG_KEYS.review] as boolean) : undefined,
     mutationTesting: typeof raw[CONFIG_KEYS.mutationTesting] === "boolean" ? (raw[CONFIG_KEYS.mutationTesting] as boolean) : undefined,
     allowToStopJobs: typeof raw[CONFIG_KEYS.allowToStopJobs] === "boolean" ? (raw[CONFIG_KEYS.allowToStopJobs] as boolean) : undefined,
-    releaseAfterPulse: typeof raw[CONFIG_KEYS.releaseAfterPulse] === "boolean" ? (raw[CONFIG_KEYS.releaseAfterPulse] as boolean) : undefined,
+    launchAfterPulse: typeof raw[CONFIG_KEYS.launchAfterPulse] === "boolean" ? (raw[CONFIG_KEYS.launchAfterPulse] as boolean) : undefined,
     sentinel: typeof raw[CONFIG_KEYS.sentinel] === "boolean" || raw[CONFIG_KEYS.sentinel] === "ask" ? (raw[CONFIG_KEYS.sentinel] as SentinelSetting) : undefined,
     testDir: text(raw[CONFIG_KEYS.testDir]),
     conformanceTests: typeof raw[CONFIG_KEYS.conformanceTests] === "boolean" ? (raw[CONFIG_KEYS.conformanceTests] as boolean) : undefined,
@@ -822,7 +887,8 @@ const OLDER_KEYS = ["model", "turn_limit"];
  * not silently ignored. config.yaml is left out: it may be another tool's, with keys of its own.
  */
 export function unknownConfigKeys(root: string): Array<{ file: string; keys: string[] }> {
-  const known = new Set<string>([...Object.values(CONFIG_KEYS), ...OLDER_KEYS]);
+  // An old name of a renamed key is said on a line of its own (configLines), not as a key turri does not read.
+  const known = new Set<string>([...Object.values(CONFIG_KEYS), ...OLDER_KEYS, ...Object.keys(RENAMED_KEYS)]);
   const found: Array<{ file: string; keys: string[] }> = [];
   for (const file of namesIn(root).filter((name) => /^config\.turri(\.[^.]+)?\.yaml$/.test(name)).sort()) {
     let parsed: unknown;
@@ -838,9 +904,46 @@ export function unknownConfigKeys(root: string): Array<{ file: string; keys: str
   return found;
 }
 
-/** The banner's line for each config file with keys turri does not read. */
-export function unknownConfigLines(root: string): string[] {
-  return unknownConfigKeys(root).map(
-    ({ file, keys }) => `${file} has ${keys.length === 1 ? "a key" : "keys"} turri does not read - ${keys.join(", ")}: no setting turri has, so ${keys.length === 1 ? "it does" : "they do"} nothing. Take ${keys.length === 1 ? "it" : "them"} out, or see docs/config.md for the spelling.`,
+/**
+ * What a line under the banner about a config file is, for a host that draws them without reading their text: `renamed`,
+ * a key turri renamed in the file - information, nothing to do; `old-beside-new`, an old name left beside its new one,
+ * doing nothing - take it out; `unknown`, keys turri does not read - take them out, or fix their spelling.
+ */
+export type ConfigLineKind = "renamed" | "old-beside-new" | "unknown";
+
+export interface ConfigLine {
+  kind: ConfigLineKind;
+  /** The file, from the project: `config.turri.yaml`, `config.turri.<module>.yaml`. */
+  file: string;
+  /** The line, as the terminal shows it. */
+  text: string;
+}
+
+/**
+ * The banner's lines for the project's config files: each key turri renamed in them this process, each old name left
+ * beside its new one - doing nothing - and each file with keys turri does not read.
+ */
+export function configLines(root: string): ConfigLine[] {
+  const renamed = renameOldKeys(root).map(({ file, from, to }): ConfigLine => ({ kind: "renamed", file, text: `${file}: ${from} is called ${to} now - turri renamed it there, its value kept.` }));
+  const left: ConfigLine[] = [];
+  for (const file of namesIn(root).filter((name) => /^config\.turri(\.[^.]+)?\.yaml$/.test(name)).sort()) {
+    let parsed: unknown;
+    try {
+      parsed = loadYaml(readFileSync(join(root, file), "utf8"));
+    } catch {
+      continue;
+    }
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) continue;
+    for (const [from, to] of Object.entries(RENAMED_KEYS)) {
+      if (from in parsed && to in parsed) left.push({ kind: "old-beside-new", file, text: `${file} has ${from}, the old name of ${to}, which it sets too: ${from} does nothing - take it out.` });
+    }
+  }
+  const unknown = unknownConfigKeys(root).map(
+    ({ file, keys }): ConfigLine => ({
+      kind: "unknown",
+      file,
+      text: `${file} has ${keys.length === 1 ? "a key" : "keys"} turri does not read - ${keys.join(", ")}: no setting turri has, so ${keys.length === 1 ? "it does" : "they do"} nothing. Take ${keys.length === 1 ? "it" : "them"} out, or see docs/config.md for the spelling.`,
+    }),
   );
+  return [...renamed, ...left, ...unknown];
 }

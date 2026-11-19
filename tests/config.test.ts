@@ -1,8 +1,8 @@
-import { mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AGENT_ROLES, modelOnly, projectModels, readProjectConfig, ROLE_THINKING, roleModel, roleTurnLimitMs, skillModel, moduleConfigsOf, unknownConfigKeys, unknownConfigLines } from "../src/config.ts";
+import { AGENT_ROLES, modelOnly, projectModels, readProjectConfig, ROLE_THINKING, roleModel, roleTurnLimitMs, skillModel, moduleConfigsOf, unknownConfigKeys, configLines } from "../src/config.ts";
 
 let root: string;
 beforeEach(() => {
@@ -100,7 +100,7 @@ describe("the project's config.yaml", () => {
 
 describe("how hard each role thinks when nothing names a level", () => {
   it("has the agents that do the work think low, the ones that judge medium, and leaves the conversation its own", () => {
-    for (const role of ["coding", "conformance", "explorer", "release"] as const) expect(ROLE_THINKING[role], role).toBe("low");
+    for (const role of ["coding", "conformance", "explorer", "launch"] as const) expect(ROLE_THINKING[role], role).toBe("low");
     for (const role of ["reviewer", "test-reviewer", "judge", "arbiter", "debugger", "planner", "diagnosis"] as const) expect(ROLE_THINKING[role], role).toBe("medium");
     // The sentinel is a chat too: it keeps its own level, as the conversation does.
     expect(ROLE_THINKING.chat).toBeUndefined();
@@ -172,8 +172,8 @@ describe("models: and turn-limit:", () => {
     expect(roleModel(config, "debugger")).toBeUndefined();
     // The conversation's side keeps the chat's model unless named.
     expect(roleModel(config, "planner")).toBeUndefined();
-    // The release is not of it: it follows steps, on the model it is given - the coding model - or the default.
-    expect(roleModel(config, "release")).toEqual({ model: luna, thinking: "medium" });
+    // The launch is not of it: it follows steps, on the model it is given - the coding model - or the default.
+    expect(roleModel(config, "launch")).toEqual({ model: luna, thinking: "medium" });
     // Nor the diagnosis of a failed job: unnamed, the default - else the coding model it is given, never the chat's.
     expect(roleModel(config, "diagnosis")).toEqual({ model: luna, thinking: "medium" });
     expect(roleModel({ harnessModel: { model: opus } }, "diagnosis")).toBeUndefined();
@@ -390,9 +390,49 @@ describe("keys turri does not read", () => {
       { file: "config.turri.web.yaml", keys: ["unittest-script"] },
       { file: "config.turri.yaml", keys: ["test-advisor"] },
     ]);
-    expect(unknownConfigLines(root)[1]).toBe(
-      "config.turri.yaml has a key turri does not read - test-advisor: no setting turri has, so it does nothing. Take it out, or see docs/config.md for the spelling.",
+    expect(configLines(root)[1]).toEqual({
+      kind: "unknown",
+      file: "config.turri.yaml",
+      text: "config.turri.yaml has a key turri does not read - test-advisor: no setting turri has, so it does nothing. Take it out, or see docs/config.md for the spelling.",
+    });
+  });
+
+  it("rename release-after-pulse to launch-after-pulse as the config is first read - value and comment kept - and say so, not as a key turri does not read", () => {
+    writeFileSync(join(root, "config.turri.yaml"), "coding-model: p/small\n# Whether every pulse that lands code is released.\nrelease-after-pulse: true   # on for the demo\n");
+    writeFileSync(join(root, "config.turri.web.yaml"), "release-after-pulse:  false\n");
+    expect(readProjectConfig(root).launchAfterPulse).toBe(true);
+    expect(readFileSync(join(root, "config.turri.yaml"), "utf8")).toBe("coding-model: p/small\n# Whether every pulse that lands code is released.\nlaunch-after-pulse: true   # on for the demo\n");
+    expect(readFileSync(join(root, "config.turri.web.yaml"), "utf8")).toBe("launch-after-pulse:  false\n");
+    expect(readProjectConfig(root, "web").launchAfterPulse).toBe(false);
+    expect(unknownConfigKeys(root)).toEqual([]);
+    const lines = configLines(root);
+    expect(lines).toHaveLength(2);
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        { kind: "renamed", file: "config.turri.web.yaml", text: "config.turri.web.yaml: release-after-pulse is called launch-after-pulse now - turri renamed it there, its value kept." },
+        { kind: "renamed", file: "config.turri.yaml", text: "config.turri.yaml: release-after-pulse is called launch-after-pulse now - turri renamed it there, its value kept." },
+      ]),
     );
+  });
+
+  it("leave release-after-pulse beside a launch-after-pulse that is set - saying the old one does nothing - and a nested key of that name alone", () => {
+    writeFileSync(join(root, "config.turri.yaml"), "launch-after-pulse: false\nrelease-after-pulse: true\n");
+    writeFileSync(join(root, "config.turri.api.yaml"), "agent-env:\n  release-after-pulse: x\n");
+    expect(readProjectConfig(root).launchAfterPulse).toBe(false);
+    expect(readFileSync(join(root, "config.turri.yaml"), "utf8")).toBe("launch-after-pulse: false\nrelease-after-pulse: true\n");
+    expect(readFileSync(join(root, "config.turri.api.yaml"), "utf8")).toBe("agent-env:\n  release-after-pulse: x\n");
+    expect(configLines(root)).toEqual([
+      { kind: "old-beside-new", file: "config.turri.yaml", text: "config.turri.yaml has release-after-pulse, the old name of launch-after-pulse, which it sets too: release-after-pulse does nothing - take it out." },
+    ]);
+  });
+
+  it("rename it in a module's file copied from its old name as turri first writes a setting", async () => {
+    const { writeSetting } = await import("../src/config-edit.ts");
+    writeFileSync(join(root, "config.yaml"), "coding-model: p/small\n");
+    writeFileSync(join(root, "config.web.yaml"), "release-after-pulse: true\n");
+    writeSetting(root, "review", false);
+    expect(readFileSync(join(root, "config.turri.web.yaml"), "utf8")).toBe("launch-after-pulse: true\n");
+    expect(readFileSync(join(root, "config.web.yaml"), "utf8")).toBe("release-after-pulse: true\n");
   });
 
   it("are none in a config of turri's own keys", () => {

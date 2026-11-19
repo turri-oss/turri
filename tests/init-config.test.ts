@@ -57,7 +57,7 @@ describe("turri init-config", () => {
       review: false,
       mutationTesting: true,
       allowToStopJobs: true,
-      releaseAfterPulse: true,
+      launchAfterPulse: true,
       sentinel: "ask",
       testingScriptsRunOn: "in-place",
       turnLimit: DEFAULTS.turnLimit,
@@ -218,8 +218,8 @@ describe("turri init-config", () => {
     expect(written).toContain("The reviews and judges run on the\n# coding model but think medium");
     expect(projectModels(readProjectConfig(dir))).toMatchObject({ harness: { thinking: "medium" }, coding: { thinking: "low" } });
     expect(projectModels(readProjectConfig(dir)).judge).toEqual({ model: "anthropic/claude-haiku-5-5" });
-    // The release follows steps: the coding model, thinking low.
-    expect(written).toMatch(/^# {3}release: \{ model: anthropic\/claude-haiku-5-5, thinking: low \}/m);
+    // The launch follows steps: the coding model, thinking low.
+    expect(written).toMatch(/^# {3}launch: \{ model: anthropic\/claude-haiku-5-5, thinking: low \}/m);
     // Uncommented, each role thinks as turri has it think unset - so the file shows what applies.
     writeFileSync(join(dir, "config.turri.yaml"), written.replace(/^# (?=[a-z-]+:|  [a-z-]+:)/gm, ""));
     const models = readProjectConfig(dir).models ?? {};
@@ -326,7 +326,7 @@ describe("turri init-config with the two models given", () => {
     expect(text).toContain("#   default: amazon-bedrock/us.openai.gpt-6-astra");
     expect(text).toMatch(/^# {3}chat: amazon-bedrock\/us\.openai\.gpt-6-luna +#/m);
     expect(text).toMatch(/^# {3}planner: \{ model: amazon-bedrock\/us\.openai\.gpt-6-luna,/m);
-    expect(text).toMatch(/^# {3}release: \{ model: amazon-bedrock\/us\.openai\.gpt-6-astra,/m);
+    expect(text).toMatch(/^# {3}launch: \{ model: amazon-bedrock\/us\.openai\.gpt-6-astra,/m);
     // The judging examples name the strong one: the harness model, none being given.
     expect(text).toMatch(/^# {3}judge: \{ model: amazon-bedrock\/us\.openai\.gpt-6-luna,/m);
   });
