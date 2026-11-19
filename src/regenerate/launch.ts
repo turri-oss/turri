@@ -390,7 +390,7 @@ function portTaken(host: string, port: number): Promise<boolean> {
 }
 
 /** What holds a port, as lsof says it - or nothing when it cannot say. */
-function holderOf(port: number): string {
+export function holderOf(port: number): string {
   const found = spawnSync("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN"], { encoding: "utf8" });
   return found.status === 0 ? found.stdout.trim().split("\n").slice(0, 4).join("\n") : "";
 }

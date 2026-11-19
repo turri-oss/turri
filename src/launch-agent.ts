@@ -12,7 +12,7 @@ import {
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { describeExport, launchLogDir, shortPath, startLaunched, type ExportedCode } from "./regenerate/launch.ts";
+import { describeExport, holderOf, launchLogDir, runningLaunched, shortPath, startLaunched, type ExportedCode } from "./regenerate/launch.ts";
 import { machineChange, machineChangeReason } from "./regenerate/command-check.ts";
 import { projectDirOf } from "./regenerate/paths.ts";
 import { ask, BEGIN, createExecutor } from "./pi.ts";
@@ -142,21 +142,62 @@ export function activateTool(launch: Pick<Launch, "codebase" | "plainFile" | "ho
   });
 }
 
+/** The ports of the URLs a summary names. */
+function portsIn(summary: string): number[] {
+  const ports = new Set<number>();
+  for (const match of summary.matchAll(/\bhttps?:\/\/[^\s/"'`)<>]+/g)) {
+    try {
+      const url = new URL(match[0]);
+      ports.add(url.port !== "" ? Number(url.port) : url.protocol === "https:" ? 443 : 80);
+    } catch {
+      /* not a URL after all */
+    }
+  }
+  return [...ports];
+}
+
+/**
+ * Why a launch said to be up is not: it says something serves - `serves`, or a URL in its summary - and nothing this
+ * launch started with activate still runs. Something else answering there - an earlier build left running, another
+ * program - is not this launch. Undefined when it holds.
+ */
+export function notBacked(launch: Pick<Launch, "codebase" | "serversSince">, outcome: { launched: boolean; summary: string; serves?: boolean }): string | undefined {
+  if (!outcome.launched) return undefined;
+  const ports = portsIn(outcome.summary);
+  if (outcome.serves !== true && ports.length === 0) return undefined;
+  const since = launch.serversSince ?? 0;
+  if (runningLaunched(launch.codebase).some((item) => item.startedAt >= since)) return undefined;
+  const holders = ports.map((port) => ({ port, holder: holderOf(port) })).filter((each) => each.holder !== "");
+  return [
+    `nothing this launch started with activate is running, so what answers${ports.length > 0 ? ` at port ${ports.join(", ")}` : ""} is not this launch's code${holders.length > 0 ? " - it is held by something else:" : "."}`,
+    ...holders.map((each) => `port ${each.port}:\n${each.holder}`),
+  ].join("\n");
+}
+
 /** submit_launch: how the launch went, once, last - the harness reads its arguments, never the agent's prose. */
-function submitLaunchTool(submitted: { outcome?: LaunchOutcome }): AnyTool {
+function submitLaunchTool(launch: Pick<Launch, "codebase" | "serversSince">, submitted: { outcome?: LaunchOutcome & { serves?: boolean } }): AnyTool {
   return defineTool({
     name: "submit_launch",
     label: "Submit launch",
     description:
       "Say how the launch went - once, last. launched: true when it is running, or in place for the person to try - a CLI " +
       "or a library ready to run from its folder; false when it is not. The summary is what the person is told: where to " +
-      "open it, or what to run - or why it did not come up, and what they can do.",
+      "open it, or what to run - or why it did not come up, and what they can do. Something that serves counts as running " +
+      "only when you started it with activate and it still runs: something else answering at its port - an earlier build, " +
+      "another program - is not it, and is refused.",
     parameters: Type.Object({
       launched: Type.Boolean({ description: "true: it runs, or is in place to try; false: it did not come up" }),
+      serves: Type.Boolean({ description: "true: something keeps running for the person to open or call - a backend, a frontend; false: a CLI or a library, tried from its folder" }),
       summary: Type.String({ description: "In a line or three: where it runs - the URL to open, the API's in a line - or the commands to try it; or why it did not come up" }),
     }),
     async execute(_id, params) {
-      submitted.outcome = { launched: params.launched, summary: params.summary };
+      const why = notBacked(launch, params);
+      if (why !== undefined) {
+        throw new Error(
+          `Not taken: you say it runs, but ${why}\nStart it with activate - stopping nothing turri did not start - or call submit_launch with launched false, saying what holds the port.`,
+        );
+      }
+      submitted.outcome = { launched: params.launched, summary: params.summary, serves: params.serves };
       return text("Taken. You are done: end your turn.");
     },
   });
@@ -186,9 +227,11 @@ export function launchGuide(code: ExportedCode, hostDir: string): string {
     "",
     `Either way, never change ${built} or ${dist}: they are what was built, and a fix belongs in the ***plain. A config file it needs made from its example (a .env from .env.example) is fine. A port that is taken: say which and by what, and do not move the app to another.`,
     "",
-    "Last, call submit_launch once: launched, and in a line or three where to open it - the frontend's URL, and the API's in one",
-    "line when there is one - or, a CLI or a library, a few commands to paste, run from its folder, with what they print; or",
-    "why it did not come up. Where the guidance does not fit what you find, say so, and do not guess past it.",
+    "Last, call submit_launch once: launched, whether it serves, and in a line or three where to open it - the frontend's URL,",
+    "and the API's in one line when there is one - or, a CLI or a library, a few commands to paste, run from its folder, with",
+    "what they print; or why it did not come up. Where the guidance does not fit what you find, say so, and do not guess past it.",
+    "Something answering at the app's port that you did not start with activate - an earlier build left running, another",
+    "program - is not this launch: it is not launched, and you say what holds the port. Never stop a process you did not start.",
   ].join("\n");
 }
 
@@ -218,8 +261,8 @@ export async function runLaunchAgent(input: LaunchAgentInput): Promise<LaunchOut
     outsideBuiltCode(createEditToolDefinition(dir), dir),
     outsideBuiltCode(createWriteToolDefinition(dir), dir),
   ];
-  const submitted: { outcome?: LaunchOutcome } = {};
-  const tools = [activateTool(launch, code), submitLaunchTool(submitted)];
+  const submitted: { outcome?: LaunchOutcome & { serves?: boolean } } = {};
+  const tools = [activateTool(launch, code), submitLaunchTool(launch, submitted)];
   const executor = await createExecutor({
     // Its sessions are kept in the project, not in the folder it launches.
     cwd: projectDirOf(launch.plainFile),
@@ -246,12 +289,17 @@ export async function runLaunchAgent(input: LaunchAgentInput): Promise<LaunchOut
   });
   const stop = () => void executor.abort();
   input.signal?.addEventListener("abort", stop, { once: true });
+  // What it said is checked again as it ends: a server it started may have exited since.
+  const checked = (outcome: LaunchOutcome & { serves?: boolean }): LaunchOutcome => {
+    const why = notBacked(launch, outcome);
+    return why !== undefined ? { launched: false, summary: `Not launched: the launch agent said it runs, but ${why}` } : { launched: outcome.launched, summary: outcome.summary };
+  };
   try {
     const said = await ask(executor, BEGIN, input.onDelta);
-    if (submitted.outcome !== undefined) return submitted.outcome;
+    if (submitted.outcome !== undefined) return checked(submitted.outcome);
     // Ended without saying how it went: asked once more, then taken as not launched.
     const again = await ask(executor, "Call submit_launch now: launched or not, and in a line or three where it runs or why it did not come up.", input.onDelta);
-    return submitted.outcome ?? { launched: false, summary: (again.trim() || said.trim() || "The launch agent ended without saying how it went.") };
+    return submitted.outcome !== undefined ? checked(submitted.outcome) : { launched: false, summary: (again.trim() || said.trim() || "The launch agent ended without saying how it went.") };
   } finally {
     input.signal?.removeEventListener("abort", stop);
     executor.dispose();

@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -29,9 +30,19 @@ vi.mock("../src/pi.ts", async (importOriginal) => ({
 }));
 
 const { runLaunchAgent } = await import("../src/launch-agent.ts");
+const { stopLaunched } = await import("../src/regenerate/launch.ts");
+
+/** Something else answering at a port - an earlier build left running: a server of the test's own. */
+function squatter(): Promise<{ server: Server; port: number }> {
+  return new Promise((done) => {
+    const server = createServer((socket) => socket.end());
+    server.listen(0, "127.0.0.1", () => done({ server, port: (server.address() as { port: number }).port }));
+  });
+}
 
 const dirs: string[] = [];
-afterEach(() => {
+afterEach(async () => {
+  await stopLaunched();
   tasks.splice(0);
   toolSets.splice(0);
   delete script.first;
@@ -90,6 +101,57 @@ describe("the launch agent", () => {
     };
     expect(await runLaunchAgent({ launch, code, cwd: dir })).toEqual({ launched: false, summary: "node is not installed: brew install node." });
   });
+
+  it("refuses launched when what answers at its port is not something it started - an earlier build left running - and takes it as not launched", async () => {
+    const { dir, launch, code } = project();
+    const { server, port } = await squatter();
+    let refused = "";
+    script.first = async (call) => {
+      await call("submit_launch", { launched: true, serves: true, summary: `Open http://127.0.0.1:${port}` }).catch((error: Error) => (refused = error.message));
+      return "It answers, so it is up.";
+    };
+    script.again = async (call) => {
+      await call("submit_launch", { launched: true, serves: false, summary: `Open http://127.0.0.1:${port}` }).catch(() => undefined);
+      return "It answers.";
+    };
+    try {
+      const outcome = await runLaunchAgent({ launch, code, cwd: dir });
+      expect(refused).toContain(`Not taken: you say it runs, but nothing this launch started with activate is running, so what answers at port ${port} is not this launch's code`);
+      expect(refused).toContain("call submit_launch with launched false, saying what holds the port");
+      expect(outcome.launched).toBe(false);
+    } finally {
+      server.close();
+    }
+  });
+
+  it("takes launched for a server it started with activate that still runs, and for a CLI in place with nothing serving", async () => {
+    const { dir, launch, code } = project();
+    script.first = async (call) => {
+      await call("activate", { name: "app", command: "sleep 30" });
+      await call("submit_launch", { launched: true, serves: true, summary: "Open http://127.0.0.1:8000" });
+      return "Up.";
+    };
+    expect(await runLaunchAgent({ launch, code, cwd: dir })).toEqual({ launched: true, summary: "Open http://127.0.0.1:8000" });
+    await stopLaunched();
+    script.first = async (call) => {
+      await call("submit_launch", { launched: true, serves: false, summary: "Run python3 -m app hello from dist/app." });
+      return "In place.";
+    };
+    expect(await runLaunchAgent({ launch, code, cwd: dir })).toEqual({ launched: true, summary: "Run python3 -m app hello from dist/app." });
+  }, 20_000);
+
+  it("takes a launched that held as it was submitted as not launched when what it started has ended by the time it ends", async () => {
+    const { dir, launch, code } = project();
+    script.first = async (call) => {
+      await call("activate", { name: "app", command: "sleep 30" });
+      await call("submit_launch", { launched: true, serves: true, summary: "Open http://127.0.0.1:8000" });
+      await stopLaunched();
+      return "Up.";
+    };
+    const outcome = await runLaunchAgent({ launch, code, cwd: dir });
+    expect(outcome.launched).toBe(false);
+    expect(outcome.summary).toContain("Not launched: the launch agent said it runs, but nothing this launch started with activate is running");
+  }, 20_000);
 
   it("asks once more when it ends without submitting, then takes it as not launched", async () => {
     const { dir, launch, code } = project();
