@@ -1,10 +1,6 @@
 /**
- * Which model the agents of a job run on.
- *
- * By default, whatever the conversation is using. The person can say otherwise - "render spec
- * changes with Gemini Flash" - for one kind of work or for all of it, and that holds for the
- * rest of the session, for jobs started from a tool call and for jobs a skill queues alike. A
- * single tool call can also name a model for itself alone.
+ * A model named as the person said it - "gpt 5.5", "gemini flash" - resolved to the one it means: for a pulse a call
+ * names a model for, and for a model written into the config with the settings tool.
  *
  * A name is resolved strictly. pi's own pattern matching picks its best guess and says nothing
  * - "gpt-5" becomes a Bedrock model with no credentials, "flash" a GLM one - and a job on a
@@ -116,35 +112,4 @@ export function resolveModel(query: string, catalog: ModelCatalog): ModelResolut
 export function describeResolution(resolution: ModelResolution): string {
   if (resolution.ok) return `${resolution.model} (${resolution.name})`;
   return [resolution.message, ...resolution.candidates.map((candidate) => `- ${candidate}`)].join("\n");
-}
-
-/** Kinds of work a model can be chosen for. */
-export type RenderWork = "spec_changes" | "functionalities";
-
-export const WORK_LABEL: Record<RenderWork | "all", string> = {
-  spec_changes: "spec changes",
-  functionalities: "functionalities",
-  all: "everything",
-};
-
-/** The models chosen in this session, by kind of work. Unset: the project's, or the conversation's model. */
-export type ModelChoices = Partial<Record<RenderWork | "all", string>>;
-
-/** The model a job of this kind runs on: chosen for it, chosen for everything, or the chat's. */
-export function modelFor(choices: ModelChoices, work: RenderWork, chat: string | undefined): string | undefined {
-  return choices[work] ?? choices.all ?? chat;
-}
-
-/**
- * Where each kind of work runs now, in a line each: chosen in this session, or the default coding
- * model - from `--coding-model` or config.turri.yaml, said which - or the conversation's.
- */
-export function describeChoices(choices: ModelChoices, chat: string | undefined, project?: { model: string; from: string }): string {
-  const fallback = project !== undefined ? `${project.model} (${project.from})` : `${chat ?? "pi's default model"} (the chat's model)`;
-  return (["spec_changes", "functionalities"] as const)
-    .map((work) => {
-      const chosen = choices[work] ?? choices.all;
-      return `- ${WORK_LABEL[work]}: ${chosen ?? fallback}`;
-    })
-    .join("\n");
 }

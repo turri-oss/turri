@@ -67,7 +67,7 @@ export type LedgerEvent =
   | { kind: "sentinel.concluded"; verdict: string; module?: string; check?: string }
   | { kind: "chat.closed" }
   // A pulse, from queued to its end.
-  | { kind: "job.queued"; jobKind: string; summary: string; pulse?: number; title?: string; model?: string; stack?: string; cases?: PulseCases; waitingOn: string[]; follows?: string }
+  | { kind: "job.queued"; jobKind: string; summary: string; pulse?: number; title?: string; model?: string; configModule?: string; cases?: PulseCases; waitingOn: string[]; follows?: string }
   | { kind: "job.started"; waitedMs: number; logFile?: string }
   // Its ***plain diff, whole, as its agent is given it - again each time steering moves it - and where its lines are written.
   | { kind: "job.diff"; diff: string; where?: DiffWhere }

@@ -8,14 +8,13 @@ Each chat has its own:
 
 - **history** - what was said in it, and nothing said in another; a chat asked about another's says so and asks;
 - **turns** - a hidden chat keeps working, and starts a turn of its own when a pulse it asked for ends;
-- **model and thinking level** - [pi](https://pi.dev)'s `/model`, and `/turri-config harness-model` in that chat;
-- **stack** - `/stack` and the chat's `stack` tool choose it for that chat alone; a new chat starts with `--stack`'s, or none (see [stacks](config.md#stacks));
+- **model and thinking level** - [pi](https://pi.dev)'s `/model`, and `/settings harness-model` in that chat;
 - **questions** - what it asks waits in it until you look at it.
 
 The session's, shared by every chat:
 
 - **the pulses and their plan** - one job registry and one work loop on the project: a pulse any chat starts is in every chat's side panel and `pulses`, and two chats asking for the same module get one plan, not two;
-- **the coding model** chosen with `engine` or `--coding-model`, and `parallel-jobs`;
+- **the coding model** given with `--coding-model`, and `parallel-jobs`;
 - **steering** - what `steer` was told, every plan follows;
 - **conformance** chosen with `conform`, module by module;
 - **what `activate` started** - it runs until turri ends or `/halt activated <name>`, whatever chats are opened or closed;
@@ -61,7 +60,7 @@ turri records which chats are open in `.turri/chats.json` - a run a session, eac
 - **a session's chats** are kept until five newer sessions have recorded theirs, then deleted with their record;
 - a session still running is never reopened by another turri.
 
-In [debug mode](config.md#debug-mode) nothing is deleted. The `engine`'s choices come back too: the coding model a reopened chat chose, when it is newer than the session's.
+In [debug mode](config.md#debug-mode) nothing is deleted.
 
 ## Where there is one chat
 

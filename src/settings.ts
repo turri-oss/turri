@@ -1,8 +1,9 @@
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { join } from "node:path";
+import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { applyBedrockRegion } from "./bedrock-region.ts";
-import { CONFIG_FILE, LEGACY_CONFIG_FILE, THINKING_LEVELS, usesLegacyConfig } from "./config.ts";
+import { CONFIG_FILE, LEGACY_CONFIG_FILE, moduleConfigFile, moduleConfigsOf, THINKING_LEVELS, usesLegacyConfig } from "./config.ts";
 import {
   currentValue,
   dotenvFiles,
@@ -11,6 +12,7 @@ import {
   parseValue,
   pathOptions,
   readConfigText,
+  readModuleConfigText,
   settingOf,
   settings,
   shownValue,
@@ -18,26 +20,33 @@ import {
   type Setting,
 } from "./config-edit.ts";
 import { PACKAGE_ROOT } from "./environment.ts";
+import { describeResolution, resolveModel } from "./regenerate/model-names.ts";
+import { openPiSettings } from "./pi-settings.ts";
 import { loadRules } from "./rules.ts";
 
 /**
- * `/turri-config`: every setting of the project's config.turri.yaml from the chat - `/turri-config` alone lists them,
- * `/turri-config review` asks for review's value, `/turri-config review false` sets it. Each is written into the file
+ * `/settings`: every setting of the project's config.turri.yaml from the chat - `/settings` alone lists them,
+ * `/settings review` asks for review's value, `/settings review false` sets it. Each is written into the file
  * and takes effect as it says - now, at your next message, at the next pulse - never only once turri starts again:
- * what turri fixes at its start is changed live here (live).
+ * what turri fixes at its start is changed live here (live). It takes pi's own /settings over (pi-settings.ts), whose
+ * menu is its last entry.
+ *
+ * The chat's `settings` tool reads them and changes them as the person asks - into config.turri.yaml, or a module's
+ * own config.turri.<module>.yaml - a model checked as it is written, by the name the person said. What is the person's
+ * alone (`personOnly`) it refuses, and points to /settings.
  */
 
 /** What a change does to turri as it runs, beside the file: each says what it did, or nothing. */
 export interface LiveHooks {
   /** The chat's model is now this - provider/id:thinking - or, undefined, no longer set in the file. */
   chatModel(spec: string | undefined, ctx: ExtensionContext): Promise<string | undefined>;
-  /** The coding model changed in the file: one chosen this session - --coding-model, engine - gives way to it. */
+  /** The coding model changed in the file: one given for this session - --coding-model - gives way to it. */
   codingModel(): string | undefined;
   /** How many pulses run at once: the number, or the machine's default. */
   parallelJobs(count: number | undefined): string | undefined;
 }
 
-export interface TurriConfigOptions {
+export interface SettingsOptions {
   /** The folder whose config.turri.yaml the chat reads. */
   cwd: string;
   /** The ***plain rules there are, by name - what rules-off takes. */
@@ -52,6 +61,7 @@ const unsetOption = (setting: Setting) => `unset - ${setting.unset}`;
 const TYPE_ANOTHER = "type another…";
 const DONE = "done";
 const ROLES_ENTRY = "models.<role> - each agent role's own model, thinking and turn limit…";
+const PI_ENTRY = "pi's own settings - the theme, the editor, how the chat is shown…";
 
 /** The models pi can reach here, signed in: provider/id - from a chat's context, the model registry the chats use. */
 export function reachable(ctx: ExtensionContext | undefined): string[] {
@@ -66,7 +76,7 @@ export function reachable(ctx: ExtensionContext | undefined): string[] {
 const COMPLETIONS_SHOWN = 40;
 
 /**
- * Every value /turri-config offers for a setting after what is typed, in its order - "unset" left out, and uncapped: what
+ * Every value /settings offers for a setting after what is typed, in its order - "unset" left out, and uncapped: what
  * its completions show, the first of them, and what a host's settings list shows (host-session.ts `settingChoices`).
  * A model setting's are every model pi can reach, signed in - `models` - and after a colon, that model's thinking levels.
  */
@@ -97,7 +107,7 @@ function listLine(setting: Setting, text: string): string {
   return `${setting.key}: ${value === undefined ? `(unset - ${setting.unset})` : shownValue(value)}`;
 }
 
-export function registerTurriConfig(pi: ExtensionAPI, options: TurriConfigOptions): void {
+export function registerSettings(pi: ExtensionAPI, options: SettingsOptions): void {
   const { cwd } = options;
   // The models for completions, which are given no context: the last one seen.
   let seen: ExtensionContext | undefined;
@@ -105,18 +115,15 @@ export function registerTurriConfig(pi: ExtensionAPI, options: TurriConfigOption
     seen = ctx;
   });
 
-  /** Set a setting to what was typed - or unset it - and say what it did and when it takes effect. */
-  const apply = async (setting: Setting, typed: string, ctx: ExtensionContext): Promise<void> => {
-    const models = reachable(ctx);
-    const parsed = parseValue(setting, typed, models.length > 0 ? (model) => models.includes(model) : undefined);
-    if ("error" in parsed) {
-      ctx.ui.notify(parsed.error, "error");
-      return;
-    }
-    const value = "unset" in parsed ? undefined : parsed.value;
+  /**
+   * Write a setting - or unset it - into config.turri.yaml, or `module`'s own file, and change live what turri fixed at
+   * its start; says what it did and when it takes effect.
+   */
+  const change = async (setting: Setting, value: unknown, ctx: ExtensionContext, module?: string): Promise<string> => {
     // The first setting written where the project is still read from config.yaml: copied to config.turri.yaml first.
     const adopting = usesLegacyConfig(cwd);
-    const text = writeSetting(cwd, setting.key, value);
+    const text = writeSetting(cwd, setting.key, value, module);
+    const file = module !== undefined ? moduleConfigFile(module) : CONFIG_FILE;
     const notes: string[] = [];
     // A model changed: the AWS region its Bedrock models need is worked out again - set, moved or taken back by turri.
     if (setting.key.endsWith("-model") || setting.key.startsWith("models.")) applyBedrockRegion(cwd);
@@ -134,9 +141,21 @@ export function registerTurriConfig(pi: ExtensionAPI, options: TurriConfigOption
       if (said !== undefined) notes.push(said);
     }
     if (adopting) notes.push(`${LEGACY_CONFIG_FILE} was copied to ${CONFIG_FILE} first - turri reads its own file from now on, and leaves ${LEGACY_CONFIG_FILE} as it is.`);
-    notes.push(...overriddenBy(cwd, text, setting));
-    const what = value === undefined ? `${setting.key} unset - ${setting.unset}` : `${setting.key}: ${shownValue(value)}`;
-    ctx.ui.notify([`${what} - written to ${CONFIG_FILE}, ${EFFECT_TEXT[setting.effect]}.`, ...notes].join("\n"), "info");
+    if (module !== undefined) notes.push(`It holds for ${module}.plain and every module built on it that has no file of its own, over ${CONFIG_FILE}.`);
+    notes.push(...overriddenBy(cwd, text, setting, module));
+    const what = value === undefined ? `${setting.key} unset - ${module !== undefined ? `${CONFIG_FILE}'s holds` : setting.unset}` : `${setting.key}: ${shownValue(value)}`;
+    return [`${what} - written to ${file}, ${EFFECT_TEXT[setting.effect]}.`, ...notes].join("\n");
+  };
+
+  /** Set a setting to what was typed - or unset it - and say what it did and when it takes effect. */
+  const apply = async (setting: Setting, typed: string, ctx: ExtensionContext): Promise<void> => {
+    const models = reachable(ctx);
+    const parsed = parseValue(setting, typed, models.length > 0 ? (model) => models.includes(model) : undefined);
+    if ("error" in parsed) {
+      ctx.ui.notify(parsed.error, "error");
+      return;
+    }
+    ctx.ui.notify(await change(setting, "unset" in parsed ? undefined : parsed.value, ctx), "info");
   };
 
   /** Ask for a setting's value, as its kind takes it: what is typed comes back, or nothing when the dialog is left. */
@@ -191,14 +210,18 @@ export function registerTurriConfig(pi: ExtensionAPI, options: TurriConfigOption
     }
   };
 
-  /** Pick a setting from the list - the models of each role behind one entry. */
+  /** Pick a setting from the list - the models of each role behind one entry, and pi's own settings last. */
   const askSetting = async (ctx: ExtensionContext): Promise<Setting | undefined> => {
     const text = readConfigText(cwd);
     const all = settings(options.rules());
     const top = all.filter((setting) => !setting.key.startsWith("models."));
-    const lines = [...top.map((setting) => listLine(setting, text)), ROLES_ENTRY];
-    const chosen = await ctx.ui.select(`/turri-config - the project's ${CONFIG_FILE}. Pick a setting to change:`, lines);
+    const lines = [...top.map((setting) => listLine(setting, text)), ROLES_ENTRY, PI_ENTRY];
+    const chosen = await ctx.ui.select(`/settings - the project's ${CONFIG_FILE}. Pick a setting to change:`, lines);
     if (chosen === undefined) return undefined;
+    if (chosen === PI_ENTRY) {
+      if (!openPiSettings()) ctx.ui.notify("pi's own settings open only in the terminal's chat.", "info");
+      return undefined;
+    }
     if (chosen === ROLES_ENTRY) {
       const roles = all.filter((setting) => setting.key.startsWith("models."));
       const role = await ctx.ui.select("Which role's model or turn limit?", roles.map((setting) => listLine(setting, text)));
@@ -236,8 +259,8 @@ export function registerTurriConfig(pi: ExtensionAPI, options: TurriConfigOption
     },
   });
 
-  pi.registerCommand("turri-config", {
-    description: `Change a setting of the project's ${CONFIG_FILE}`,
+  pi.registerCommand("settings", {
+    description: `Change a setting of the project's ${CONFIG_FILE} - or pi's own, last in the list`,
     getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {
       const all = settings(options.rules());
       const space = prefix.indexOf(" ");
@@ -266,7 +289,7 @@ export function registerTurriConfig(pi: ExtensionAPI, options: TurriConfigOption
         setting = settingOf(key, options.rules());
         if (setting === undefined) {
           const near = settings(options.rules()).filter((entry) => entry.key.includes(key.toLowerCase())).map((entry) => entry.key);
-          ctx.ui.notify(`No setting ${key}.${near.length > 0 ? ` Did you mean ${near.slice(0, 5).join(", ")}?` : " /turri-config alone lists them."}`, "error");
+          ctx.ui.notify(`No setting ${key}.${near.length > 0 ? ` Did you mean ${near.slice(0, 5).join(", ")}?` : " /settings alone lists them."}`, "error");
           return;
         }
       }
@@ -275,4 +298,127 @@ export function registerTurriConfig(pi: ExtensionAPI, options: TurriConfigOption
       await apply(setting, given, ctx);
     },
   });
+
+  pi.registerTool(
+    defineTool({
+      name: "settings",
+      label: "Settings",
+      description:
+        `Read or change the project's settings: ${CONFIG_FILE}, and a module's own config.turri.<module>.yaml laid over it for ` +
+        "that module and every module built on it that has no file of its own. With no key: every setting, what it is " +
+        "and where it is set. With a key and no value: that setting, what it takes and what it is unset. With a value: " +
+        "written, taking effect as it says - the coding model at the next pulse. A model may be given by its name as the " +
+        "user said it; one that fits several, or none with credentials, comes back as a list - ask the user which. " +
+        "Some settings are the user's alone and are refused: they change them with /settings. For one pulse on another " +
+        "model, pass model to regenerate or conform instead.",
+      promptSnippet: "read the project's settings, or change one when the user asks - the coding model among them",
+      promptGuidelines: [
+        "Change a setting only when the user asks for it - \"regenerate with gpt 5.5 from now on\" is coding-model - and say what it is now and when it takes effect.",
+        "If settings returns several candidate models, ask the user which one, then call it again with the exact provider/model-id.",
+        "A setting settings refuses is the user's to change: tell them why it matters and that /settings changes it - never edit the config files to get round it.",
+      ],
+      parameters: Type.Object({
+        key: Type.Optional(
+          Type.String({ description: "The setting as the config file writes it - coding-model, models.coding, review, unittests-script. Omitted: every setting" }),
+        ),
+        value: Type.Optional(
+          Type.String({
+            description:
+              "What to set it to: true or false, a number, one of its words, a path from the project root, a model as " +
+              "provider/model-id - :thinking after it - or its name as the user said it, a list separated by commas; " +
+              "unset to take it out. Omitted: what it is now",
+          }),
+        ),
+        module: Type.Optional(
+          Type.String({
+            description: `The module - its .plain file, e.g. backend.plain - whose own config.turri.<module>.yaml to write. Omitted: ${CONFIG_FILE}, the whole project's`,
+          }),
+        ),
+      }),
+      async execute(_id, params, _signal, _onUpdate, ctx) {
+        const reply = (text: string) => ({ content: [{ type: "text" as const, text }], details: {} });
+        const module = params.module !== undefined && params.module.trim() !== "" ? basename(params.module.trim(), ".plain") : undefined;
+        if (params.key === undefined || params.key.trim() === "") return reply(describeSettings(cwd, options.rules));
+        const setting = settingOf(params.key, options.rules());
+        if (setting === undefined) {
+          const key = params.key.trim().toLowerCase();
+          const near = settings(options.rules()).filter((entry) => entry.key.includes(key)).map((entry) => entry.key);
+          throw new Error(`No setting ${params.key}.${near.length > 0 ? ` Did you mean ${near.slice(0, 5).join(", ")}?` : " Call settings with no key for every one."}`);
+        }
+        if (params.value === undefined) return reply(describeSetting(cwd, setting));
+        if (setting.personOnly === true) {
+          throw new Error(
+            `${setting.key} is the user's to change, not yours: ${setting.about}. Nothing was written. Tell them what it would change, ` +
+              `and that /settings ${setting.key} changes it.`,
+          );
+        }
+        if (module !== undefined && setting.projectOnly === true) throw new Error(`${setting.key} is the whole project's: it is set in ${CONFIG_FILE} alone, never in a module's file. Nothing was written.`);
+        const value = writtenValue(setting, params.value, cwd, ctx);
+        return reply(await change(setting, value, ctx, module));
+      },
+    }),
+  );
+}
+
+/** What a setting is set to, read from what the chat gave: a model's name resolved, a path kept inside the project - or why not. */
+function writtenValue(setting: Setting, given: string, cwd: string, ctx: ExtensionContext): unknown {
+  let typed = given.trim();
+  if (setting.kind === "model" && !/^(unset|default|none|-)$/i.test(typed)) {
+    const colon = typed.lastIndexOf(":");
+    const level = colon !== -1 && (THINKING_LEVELS as readonly string[]).includes(typed.slice(colon + 1)) ? typed.slice(colon + 1) : undefined;
+    const name = level !== undefined ? typed.slice(0, colon) : typed;
+    const resolved = resolveModel(name, ctx.modelRegistry);
+    if (!resolved.ok) throw new Error(`Nothing was written.\n${describeResolution(resolved)}`);
+    typed = `${resolved.model}${level !== undefined ? `:${level}` : ""}`;
+  }
+  if (setting.kind === "path" && !/^(unset|default|none|-)$/i.test(typed)) {
+    const inside = relative(cwd, resolve(cwd, typed));
+    if (inside.startsWith("..") || isAbsolute(inside)) throw new Error(`${setting.key} takes a path inside the project, from its root - ${typed} is outside it. Nothing was written.`);
+  }
+  const parsed = parseValue(setting, typed);
+  if ("error" in parsed) throw new Error(`${parsed.error} Nothing was written.`);
+  return "unset" in parsed ? undefined : parsed.value;
+}
+
+/** Every setting, as the chat is told them: what each is in config.turri.yaml, what each module's file sets over it. */
+function describeSettings(cwd: string, rules: () => string[]): string {
+  const text = readConfigText(cwd);
+  const all = settings(rules());
+  const lines = all
+    .filter((setting) => !setting.key.startsWith("models.") || currentValue(text, setting.key) !== undefined)
+    .map((setting) => `- ${listLine(setting, text)}${setting.personOnly === true ? " - the user's to change" : ""}`);
+  const modules = moduleConfigsOf(cwd).map((module) => {
+    const own = readModuleConfigText(cwd, module);
+    const set = all.filter((setting) => currentValue(own, setting.key) !== undefined).map((setting) => `${setting.key}: ${shownValue(currentValue(own, setting.key))}`);
+    return `${moduleConfigFile(module)}, over it for ${module}.plain and the modules built on it: ${set.length > 0 ? set.join(", ") : "nothing"}`;
+  });
+  return [`${CONFIG_FILE}:`, ...lines, ...(modules.length > 0 ? ["", ...modules] : []), "", "models.<role> not listed are unset: each role takes default's, then coding-model's."].join("\n");
+}
+
+/** One setting, as the chat is told it: what it does, what it takes, what it is in each file. */
+function describeSetting(cwd: string, setting: Setting): string {
+  const now = currentValue(readConfigText(cwd), setting.key);
+  const takes =
+    setting.kind === "boolean"
+      ? "true or false"
+      : setting.kind === "model"
+        ? "a model, provider/model-id[:thinking]"
+        : setting.kind === "path"
+          ? "a path from the project root"
+          : setting.kind === "list"
+            ? `a list${setting.options !== undefined ? ` of ${setting.options.join(", ")}` : ""}`
+            : setting.options !== undefined
+              ? `${setting.kind === "number" ? "a number - e.g. " : "one of "}${setting.options.join(", ")}`
+              : `a ${setting.kind}`;
+  const modules = setting.projectOnly === true ? [] : moduleConfigsOf(cwd).flatMap((module) => {
+    const own = currentValue(readModuleConfigText(cwd, module), setting.key);
+    return own !== undefined ? [`${moduleConfigFile(module)}: ${shownValue(own)}`] : [];
+  });
+  return [
+    `${setting.key} - ${setting.about}.`,
+    `Takes ${takes}; unset: ${setting.unset}.`,
+    `${CONFIG_FILE}: ${now === undefined ? "unset" : shownValue(now)}${modules.length > 0 ? `; ${modules.join("; ")}` : ""}.`,
+    ...(setting.personOnly === true ? ["The user's to change, with /settings - not yours."] : []),
+    ...(setting.projectOnly === true ? [`The whole project's: set in ${CONFIG_FILE} alone.`] : []),
+  ].join("\n");
 }

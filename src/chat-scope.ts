@@ -3,12 +3,10 @@ import { AsyncLocalStorage } from "node:async_hooks";
 /**
  * The chat a piece of work runs for: its tools, its commands, its event handlers - and what they start, a pulse
  * queued from them among it. A turri session holds several chats (chats.ts); what each keeps for itself rides along
- * with its work here: its id, which pulses and the ledger's events carry, and the stack it chose.
+ * with its work here: its id, which pulses and the ledger's events carry.
  */
 export interface ChatScope {
   id: string;
-  /** The stack this chat chose with /stack or the stack tool - none: the project's config alone. */
-  stack: string | undefined;
   /** The questions it asks now, each with what declines it: a host declines them with `Turri.decline`. */
   readonly asking: Set<() => void>;
 }

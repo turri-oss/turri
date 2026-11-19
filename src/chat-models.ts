@@ -7,7 +7,7 @@ import { modelSpec, projectModels, type ProjectConfig } from "./config.ts";
  * is another name for, or else `harness-model:` in config.turri.yaml. The coding model is the one
  * every render runs on: `--coding-model`, or else `coding-model:` in config.turri.yaml - pi knows
  * nothing of it, so it reaches the extension through the environment. Either can still be
- * changed in the conversation: pi's /model, engine.
+ * changed in the conversation: pi's /model, and the settings tool or /settings for the coding model.
  */
 
 /** The environment variable a chat's --coding-model reaches the extension through. */

@@ -15,7 +15,7 @@ import { newNotice, noticeTask, SENTINEL, sentinelStartChoice, wentWrong, type C
  * The chats of a turri session.
  *
  * One turri process is one session on one project, and holds up to MAX_CHATS chats: conversations, each with its own
- * history, model, thinking level, stack and questions, each working while another is shown. What they share is the
+ * history, model, thinking level and questions, each working while another is shown. What they share is the
  * session's: the one job registry and work loop the project's pulses run in - a pulse any chat starts is in every
  * chat's side panel - the coding model, steering, releases and the ledger.
  *
@@ -394,7 +394,7 @@ export function createChats(options: CoreOptions): TurriCore {
     const id = randomUUID().slice(0, 8);
     const chat: ChatState = {
       id,
-      scope: { id, stack: process.env.TURRI_STACK?.trim() || undefined, asking: new Set() },
+      scope: { id, asking: new Set() },
       ...(title !== undefined ? { recordedTitle: title } : {}),
       ...(role !== undefined ? { role } : {}),
       working: false,
@@ -1067,7 +1067,7 @@ export function createChats(options: CoreOptions): TurriCore {
 
 /**
  * pi's extension API for a chat: every tool, command, shortcut and handler the extension registers runs inside the
- * chat's scope - its stack, and its id on what it starts.
+ * chat's scope - its id on what it starts.
  */
 export function scopedToChat(pi: ExtensionAPI, scope: ChatScope): ExtensionAPI {
   const within =

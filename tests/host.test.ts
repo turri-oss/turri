@@ -321,7 +321,7 @@ describe("the conform tool while conformance tests are off", () => {
 });
 
 describe("config settings for a host", () => {
-  it("lists every setting /turri-config changes, rules-off offering turri's own rules, and reads what the file has", async () => {
+  it("lists every setting /settings changes, rules-off offering turri's own rules, and reads what the file has", async () => {
     const host = await import("../src/host.ts");
     const keys = host.configSettings().map((setting) => setting.key);
     expect(keys).toEqual(expect.arrayContaining(["harness-model", "review", "mutation-testing", "release-after-pulse", "parallel-jobs", "models.coding"]));

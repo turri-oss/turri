@@ -3,10 +3,10 @@ import { join } from "node:path";
 import { dump as dumpYaml, load as loadYaml } from "js-yaml";
 import { PACKAGE_ROOT } from "./environment.ts";
 import { loadRules } from "./rules.ts";
-import { adoptLegacyConfig, AGENT_ROLES, CONFIG_FILE, chosenStack, projectConfigFile, stackConfigFileIn, stacksOf, splitModelSpec, THINKING_LEVELS } from "./config.ts";
+import { adoptLegacyConfig, AGENT_ROLES, CONFIG_FILE, moduleConfigFile, moduleConfigFileIn, moduleConfigsOf, projectConfigFile, splitModelSpec, THINKING_LEVELS } from "./config.ts";
 
 /**
- * `/turri-config`'s side of config.turri.yaml: every setting turri reads, what it takes - a yes or no, one of a few words, a
+ * `/settings`' and the chat's settings tool's side of config.turri.yaml: every setting turri reads, what it takes - a yes or no, one of a few words, a
  * number, a model, a list - and when a change to it takes effect, so the person knows whether to wait for the next
  * pulse or not at all. A change is written into the file line by line, its comments and the commented-out examples
  * kept; `models:` and `agent-env:`, which nest, are written again whole, their own comments lost.
@@ -30,8 +30,14 @@ export interface Setting {
   options?: string[];
   /** The least a number may be. */
   min?: number;
-  /** Set in the project's config.turri.yaml only: a stack's file does not change it. */
+  /** Set in the project's config.turri.yaml only: a module's config.turri.<module>.yaml does not change it. */
   projectOnly?: boolean;
+  /**
+   * Changed by the person alone, with /settings: the chat's settings tool refuses it. What it decides is theirs - turning
+   * conformance tests on doubles each change - or it widens what the agents reach (credentials, folders past the
+   * sandbox), or it is a check on the chat's own work (the sentinel, the ***plain rules, the ledger).
+   */
+  personOnly?: boolean;
 }
 
 /** What each effect is, said to the person. */
@@ -96,8 +102,8 @@ export function settings(rules: string[] = []): Setting[] {
     { key: "mutation-testing", about: "whether the coding agent and the reviewer can put a bug in the code for one test run (can_it_fail)", kind: "boolean", unset: "true", effect: "next-pulse" },
     { key: "allow-to-stop-jobs", about: "whether turri stops a running pulse the ***plain has moved on from", kind: "boolean", unset: "true", effect: "now" },
     { key: "release-after-pulse", about: "whether every pulse that lands code releases it", kind: "boolean", unset: "false", effect: "next-landing" },
-    { key: "sentinel", about: "whether a chat of its own checks every finished pulse, tests the release, and tells you what is wrong - ask: you are asked before it first opens", kind: "choice", options: ["ask", "true", "false"], unset: "ask", effect: "next-landing" },
-    { key: "conformance-tests", about: "whether functional specs' scenarios are written and conformance tested - false: none, and the chat's conform refused", kind: "boolean", unset: "false", effect: "now" },
+    { key: "sentinel", about: "whether a chat of its own checks every finished pulse, tests the release, and tells you what is wrong - ask: you are asked before it first opens", kind: "choice", options: ["ask", "true", "false"], unset: "ask", effect: "next-landing", personOnly: true },
+    { key: "conformance-tests", about: "whether functional specs' scenarios are written and conformance tested - false: none, and the chat's conform refused", kind: "boolean", unset: "false", effect: "now", personOnly: true },
     { key: "test-dir", about: "the folder of the test plain files, a folder per module in it, by path from the project root", kind: "path", unset: "tests", effect: "now" },
     { key: "base-folder", about: "a folder a codebase that requires no other module starts from, by path from the project root - code to build on, files to use, copied in once", kind: "path", unset: "none: it starts empty", effect: "next-pulse" },
     { key: "unittests-script", about: "the unit testing script, by path from the project root", kind: "path", unset: "the one run_unittests*.sh found", effect: "next-test-run" },
@@ -109,18 +115,18 @@ export function settings(rules: string[] = []): Setting[] {
     { key: "max-lines-per-pulse", about: "the most lines of ***plain in one pulse before a group is split", kind: "number", options: ["60", "120", "200", "300"], min: 1, unset: "120", effect: "next-plan" },
     { key: "turn-limit", about: "seconds each agent turn has, for every role without its own - 0 for none", kind: "number", options: SECONDS, min: 0, unset: "120", effect: "next-pulse" },
     { key: "compact-at", about: "tokens of work an agent holds before it is compacted between turns", kind: "number", options: ["50000", "100000", "150000", "200000"], min: 1000, unset: "100000", effect: "next-pulse", projectOnly: true },
-    { key: "rules-off", about: "***plain rules left out of the prompts of the agents that write ***plain", kind: "list", options: rules, unset: "none", effect: "next-message", projectOnly: true },
-    { key: "agent-env.files", about: "dotenv files whose variables the agents' commands get", kind: "list", unset: "none", effect: "next-pulse", projectOnly: true },
-    { key: "agent-env.vars", about: "variables from turri's environment the agents' commands get, by name", kind: "list", unset: "none", effect: "next-pulse", projectOnly: true },
-    { key: "toolchains", about: "folders of this machine an agent's commands may read beside the usual ones", kind: "list", unset: "none", effect: "next-pulse", projectOnly: true },
+    { key: "rules-off", about: "***plain rules left out of the prompts of the agents that write ***plain", kind: "list", options: rules, unset: "none", effect: "next-message", projectOnly: true, personOnly: true },
+    { key: "agent-env.files", about: "dotenv files whose variables the agents' commands get", kind: "list", unset: "none", effect: "next-pulse", projectOnly: true, personOnly: true },
+    { key: "agent-env.vars", about: "variables from turri's environment the agents' commands get, by name", kind: "list", unset: "none", effect: "next-pulse", projectOnly: true, personOnly: true },
+    { key: "toolchains", about: "folders of this machine an agent's commands may read beside the usual ones", kind: "list", unset: "none", effect: "next-pulse", projectOnly: true, personOnly: true },
     { key: "debug", about: "whether turri keeps what it writes for debugging it - agents' logs and sessions, pulse logs, outputs", kind: "boolean", unset: "false", effect: "next-pulse", projectOnly: true },
     { key: "cache-keep", about: "megabytes of package caches the project keeps; 0 keeps none", kind: "number", options: ["0", "1024", "4096", "16384"], min: 0, unset: "4096", effect: "next-start", projectOnly: true },
-    { key: "ledger-keep", about: "megabytes of the ledger - what turri did, as facts - the project keeps; 0 keeps none", kind: "number", options: ["0", "50", "100", "500"], min: 0, unset: "100", effect: "next-start", projectOnly: true },
+    { key: "ledger-keep", about: "megabytes of the ledger - what turri did, as facts - the project keeps; 0 keeps none", kind: "number", options: ["0", "50", "100", "500"], min: 0, unset: "100", effect: "next-start", projectOnly: true, personOnly: true },
     ...roles,
   ];
 }
 
-/** Every setting, as a host is given them: rules-off offering turri's own rules, as /turri-config offers them. */
+/** Every setting, as a host is given them: rules-off offering turri's own rules, as /settings offers them. */
 export function configSettings(): Setting[] {
   return settings(loadRules(join(PACKAGE_ROOT, "genome", "rules")).map((rule) => rule.name));
 }
@@ -327,18 +333,21 @@ export function readConfigText(dir: string): string {
   return existsSync(path) ? readFileSync(path, "utf8") : "";
 }
 
-/** What a change does beside setting the value: the files and settings that win over it, said to the person. */
-export function overriddenBy(dir: string, text: string, setting: Setting): string[] {
+/**
+ * What a change does beside setting the value: the files and settings that win over it, said to the person. `module`:
+ * written into that module's own file - the project's file is the one it wins over, and nothing over it is said.
+ */
+export function overriddenBy(dir: string, text: string, setting: Setting, module?: string): string[] {
   const notes: string[] = [];
   const wins: Record<string, string> = { "harness-model": "models.chat", "coding-model": "models.coding", "judge-model": "models.judge" };
   const over = wins[setting.key];
-  if (over !== undefined && currentValue(text, over) !== undefined) notes.push(`${over} is set too, and wins over ${setting.key} - change it with /turri-config ${over}.`);
-  if (setting.projectOnly === true) return notes;
+  if (over !== undefined && currentValue(text, over) !== undefined) notes.push(`${over} is set too, and wins over ${setting.key} - change it with /settings ${over}.`);
+  if (setting.projectOnly === true || module !== undefined) return notes;
   const top = setting.key.split(".")[0]!;
-  for (const stack of stacksOf(dir)) {
-    const file = stackConfigFileIn(dir, stack);
+  for (const each of moduleConfigsOf(dir)) {
+    const file = moduleConfigFileIn(dir, each);
     const own = loadMapping(safeRead(join(dir, file)))[top];
-    if (own !== undefined) notes.push(`${file} sets ${top} too, and wins while the stack ${stack} is chosen${chosenStack() === stack ? " - as it is now" : ""}.`);
+    if (own !== undefined) notes.push(`${file} sets ${top} too, and wins for ${each}.plain and the modules built on it.`);
   }
   return notes;
 }
@@ -352,14 +361,20 @@ function safeRead(path: string): string {
 }
 
 /**
- * Write a setting into the project's config.turri.yaml - made when it is not there, from config.yaml and each stack's
- * file in the old naming when they are what the project is read from - and give back the file as written.
+ * Write a setting into the project's config.turri.yaml - or, with `module`, that module's config.turri.<module>.yaml -
+ * made when it is not there, from config.yaml and each module's file in the old naming when they are what the project
+ * is read from - and give back the file as written.
  */
-export function writeSetting(dir: string, key: string, value: unknown): string {
+export function writeSetting(dir: string, key: string, value: unknown, module?: string): string {
   adoptLegacyConfig(dir);
-  const text = withSetting(readConfigText(dir), key, value);
-  writeFileSync(join(dir, CONFIG_FILE), text);
+  const text = withSetting(module !== undefined ? safeRead(join(dir, moduleConfigFile(module))) : readConfigText(dir), key, value);
+  writeFileSync(join(dir, module !== undefined ? moduleConfigFile(module) : CONFIG_FILE), text);
   return text;
+}
+
+/** A module's own config.turri.<module>.yaml - or the config.<module>.yaml it is read from until the project has turri's files - its text, empty when there is none. */
+export function readModuleConfigText(dir: string, module: string): string {
+  return safeRead(join(dir, moduleConfigFileIn(dir, module)));
 }
 
 /** The files a path setting is offered: the testing scripts in the root and test_scripts/, the .plain files of the folder, or - the test folder - its folders. */

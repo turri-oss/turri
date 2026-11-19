@@ -10,11 +10,11 @@ const MODELS = [
   ...Array.from({ length: 30 }, (_, at) => ({ provider: "openai", id: `gpt-${String(at).padStart(2, "0")}` })),
 ];
 
-/** /turri-config as each chat registered it: its argument completions. */
+/** /settings as each chat registered it: its argument completions. */
 const commands: Array<{ getArgumentCompletions: (prefix: string) => Array<{ value: string; label: string }> | null }> = [];
 
 // A chat's session, as pi makes one: turri's extension built into it, and shown - its session_start told a context with
-// the model registry the chats use. No /turri-config is ever run in it.
+// the model registry the chats use. No /settings is ever run in it.
 vi.mock("@earendil-works/pi-coding-agent", async (actual) => {
   const pi = await actual<typeof import("@earendil-works/pi-coding-agent")>();
   class DefaultResourceLoader {
@@ -36,7 +36,7 @@ vi.mock("@earendil-works/pi-coding-agent", async (actual) => {
         {
           get: (_target, key) => {
             if (key === "on") return (event: string, handler: (event: unknown, ctx: unknown) => void) => (event === "session_start" ? started.push(handler) : undefined);
-            if (key === "registerCommand") return (name: string, command: (typeof commands)[number]) => (name === "turri-config" ? commands.push(command) : undefined);
+            if (key === "registerCommand") return (name: string, command: (typeof commands)[number]) => (name === "settings" ? commands.push(command) : undefined);
             return () => undefined;
           },
         },

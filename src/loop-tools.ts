@@ -3,10 +3,9 @@ import { refuseTestPlainFile } from "./test-plain-files.ts";
 import { basename, relative, resolve } from "node:path";
 import { defineTool, type ExtensionContext, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { CONFIG_FILE, readProjectConfig, stackConfigFile, stackForModule, stackNamed, stacksOf, withStack } from "./config.ts";
+import { CONFIG_FILE, readProjectConfig, moduleConfigFile, configModuleFor, moduleConfigsOf, withConfigModule } from "./config.ts";
 import { checkPlainFile, formatCheckResults } from "./plain/check.ts";
 import { describeDrift, describeModules, type ModuleStatus, type WorkLoop } from "./regenerate/loop.ts";
-import type { RenderWork } from "./regenerate/engine.ts";
 import { describeJob, pulseName, type Job, type JobRegistry } from "./regenerate/jobs.ts";
 import { currentChat } from "./chat-scope.ts";
 import { whyFailed } from "./regenerate/diagnose-job.ts";
@@ -46,49 +45,44 @@ export const MODEL_PARAM = Type.Optional(
   Type.String({
     description:
       "The model for the agents of this one call: a provider/model-id, or its name as the user said it. " +
-      "Omitted: the model chosen for this kind of work with engine, else the conversation's. " +
-      "To change it for every later pulse, use engine instead.",
-  }),
-);
-
-export const STACK_PARAM = Type.Optional(
-  Type.String({
-    description:
-      "In a project of stacks: the stack that builds this module - its config.turri.<stack>.yaml over config.turri.yaml, " +
-      "its testing scripts, toolchains and models - for every pulse of it, whatever stack is chosen later. \"none\": " +
-      "config.turri.yaml alone. Omitted: the stack named after the module - config.turri.backend.yaml for backend.plain - " +
-      "else the one chosen now.",
+      "Omitted: the coding model the module's config names, else the conversation's. " +
+      "To change it for every later pulse, set coding-model with settings instead.",
   }),
 );
 
 /**
- * Why a module asked for with no stack named cannot be built: a project of stacks where it has no stack of its own and
- * none is chosen, and config.turri.yaml alone names no unit testing script - every pulse would stop for want of one.
- * The stacks and the script each names, and what to do. Undefined when it can be built.
+ * Why a module cannot be built with the config it would be built with: two of the modules it requires have a config
+ * file of their own (`configModuleFor`); or, in a project where modules have their own files, it has none - nor any
+ * module it requires - and config.turri.yaml alone names no unit testing script, so every pulse would stop for want of
+ * one. The files there are and the script each names, and what to do. Undefined when it can be built.
  */
-export function stacklessBuild(plainFile: string): string | undefined {
+export function unbuildableConfig(plainFile: string): string | undefined {
   const root = projectDirOf(plainFile);
-  const stacks = stacksOf(root);
-  if (stacks.length === 0 || stackForModule(plainFile) !== undefined || findTestScripts(root).unit !== undefined) return undefined;
-  const scripts = stacks.map((each) => {
-    const unit = withStack(each, () => findTestScripts(root).unit);
-    return `${each}${unit !== undefined ? ` (${stackConfigFile(each)}: ${relative(root, unit)})` : ""}`;
+  let own: string | undefined;
+  try {
+    own = configModuleFor(plainFile);
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+  const files = moduleConfigsOf(root);
+  if (files.length === 0 || own !== undefined || findTestScripts(root).unit !== undefined) return undefined;
+  const scripts = files.map((each) => {
+    const unit = withConfigModule(each, () => findTestScripts(root).unit);
+    return `${moduleConfigFile(each)}${unit !== undefined ? ` (${relative(root, unit)})` : ""}`;
   });
+  const name = basename(plainFile, ".plain");
   return (
-    `${basename(plainFile)} would be built with no stack - ${CONFIG_FILE} alone - and that names no unit testing script, so every ` +
-    `pulse would stop. No stack is named after it, and none is chosen. The project's stacks: ${scripts.join(", ")}. Pass the ` +
-    `stack that builds ${basename(plainFile)} as stack - or ask the user which, when the spec does not make it plain.`
+    `${basename(plainFile)} would be built with ${CONFIG_FILE} alone - it has no ${moduleConfigFile(name)}, and none of the ` +
+    `modules it requires has one - and that names no unit testing script, so every pulse would stop. The modules' own ` +
+    `files: ${scripts.join(", ")}. Name its testing scripts in its own file - the settings tool, with module ${basename(plainFile)} - ` +
+    `or ask the user which, when the ***plain does not make it plain.`
   );
 }
 
-/**
- * `work` with the stack a call names chosen for it - or, none named, as it is: each module is then built with its own
- * (`stackForModule`). A module that could not be built that way is refused before anything is planned (`stacklessBuild`).
- */
-export function withCallStack<T>(plainFile: string, named: string | undefined, work: () => T): T {
-  if (named !== undefined) return withStack(stackNamed(projectDirOf(plainFile), named), work);
-  const stackless = stacklessBuild(plainFile);
-  if (stackless !== undefined) throw new Error(`Nothing was started: ${stackless}`);
+/** `work`, once the module asked for can be built with the config it would be built with - refused before anything is planned otherwise (`unbuildableConfig`). */
+export function whenBuildable<T>(plainFile: string, work: () => T): T {
+  const unbuildable = unbuildableConfig(plainFile);
+  if (unbuildable !== undefined) throw new Error(`Nothing was started: ${unbuildable}`);
   return work();
 }
 
@@ -250,8 +244,8 @@ export interface LoopToolsOptions {
   jobs?: JobRegistry;
   /** The work loop the tools act on - the conversation's, for a call in it. */
   loop?: (ctx: ExtensionContext) => WorkLoop;
-  /** The model a pulse of this call regenerates on: the one named, or the one chosen for the work. Default: the one named. */
-  model?: (ctx: ExtensionContext, plainFile: string, named?: string, work?: RenderWork) => string | undefined;
+  /** The model a pulse of this call regenerates on: the one named, or the module's coding model. Default: the one named. */
+  model?: (ctx: ExtensionContext, plainFile: string, named?: string) => string | undefined;
   /** Whether a call waits for its work to finish, given what it asked. Default: only when it asked to. */
   wait?: (ctx: ExtensionContext, asked?: boolean) => boolean;
 }
@@ -300,7 +294,6 @@ export function regenerateTool(options: LoopToolsOptions & { loop: (ctx: Extensi
       "A change to a file the spec links - an API surface, a mapping document - is a change to the spec: regenerate sees it by itself, and regenerates every functional spec that uses what links it.",
       "Never stop pulses and start them again yourself to follow a spec change: regenerate does it.",
       "Set from_scratch only when the user asks for the module to be regenerated from scratch - started over, its code deleted - in this conversation, or agrees to it when a module's status says it has to start over: never to fix a pulse that did not land.",
-      "In a project of stacks - a backend and a frontend, each with its config.turri.<stack>.yaml - a module is built with the stack named after it by itself: backend.plain with config.turri.backend.yaml. Pass stack only for a module whose stack has another name. It is pinned to the module's pulses: a backend and a frontend regenerate side by side, each with its own, without switching the stack chosen. What it says back names the stack each module is built with.",
       'from_scratch "module" takes out the code where the module is built; the modules below keep theirs, and the module starts from a copy of the code below it. "chain" takes out every codebase of its requires chain, the base\'s too, and builds all of it again from the bottom: use it after modules were split, merged or moved (refactor-module), or when the user asks for the whole chain.',
     ],
     parameters: Type.Object({
@@ -319,21 +312,18 @@ export function regenerateTool(options: LoopToolsOptions & { loop: (ctx: Extensi
             '"chain": every module of its requires chain too, built again from the bottom',
         }),
       ),
-      stack: STACK_PARAM,
       model: MODEL_PARAM,
       wait: WAIT_PARAM,
     }),
     async execute(_id, given, _signal, _onUpdate, ctx) {
       const plainFile = plainFileOf(options.cwd, given, "regenerate");
-      return withCallStack(plainFile, given.stack, async () => {
+      return whenBuildable(plainFile, async () => {
         const check = checkPlainFile(plainFile);
         // The parser's message as it gives it, a test plain file out of place, and turri's next step for the old syntax.
         if (!check.ok) throw new Error(`${relative(options.cwd, plainFile) || plainFile} does not parse, so nothing can be regenerated from it yet:\n${formatCheckResults([check])}`);
         const again = given.funcIds ?? [];
         if (again.length > 0 && given.from_scratch !== undefined) throw new Error("Name funcIds or set from_scratch, not both: from scratch regenerates every one of them.");
-        // Named functionalities are work on functionalities, as engine chooses a model for it; the rest, spec changes.
-        const work: RenderWork = again.length > 0 ? "functionalities" : "spec_changes";
-        const model = options.model !== undefined ? options.model(ctx, plainFile, given.model, work) : given.model;
+        const model = options.model !== undefined ? options.model(ctx, plainFile, given.model) : given.model;
         const loop = options.loop(ctx);
         const request = { ...(model !== undefined ? { model } : {}), ...(given.guidance !== undefined ? { guidance: given.guidance } : {}) };
         const wait = options.wait !== undefined ? options.wait(ctx, given.wait) : given.wait === true;

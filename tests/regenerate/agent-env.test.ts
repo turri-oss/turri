@@ -109,17 +109,12 @@ describe("agent-env: the credentials a project passes to its agents", () => {
     expect(agentEnvironment(module, { hostEnv: host, home }).env.HOME).toBe(join(project, "plain_modules", ".turri", "home", "app"));
   });
 
-  it("adds the chosen stack's to the project's", async () => {
-    const { chooseStack } = await import("../../src/config.ts");
+  it("adds the pulse's module's own file's to the project's", async () => {
+    const { withConfigModule } = await import("../../src/config.ts");
     writeFileSync(join(project, "config.turri.yaml"), "agent-env:\n  vars: [D365_TENANT_ID]\n");
     writeFileSync(join(project, "config.turri.api.yaml"), "agent-env:\n  vars: [GITHUB_TOKEN]\n");
     expect(agentEnvironment(module, { hostEnv: host, home }).passed).toEqual(["D365_TENANT_ID"]);
-    chooseStack("api");
-    try {
-      expect(agentEnvironment(module, { hostEnv: host, home }).passed).toEqual(["D365_TENANT_ID", "GITHUB_TOKEN"]);
-    } finally {
-      chooseStack(undefined);
-    }
+    expect(withConfigModule("api", () => agentEnvironment(module, { hostEnv: host, home }).passed)).toEqual(["D365_TENANT_ID", "GITHUB_TOKEN"]);
   });
 
   it("reports a credential it names that is not there - no such file, no such variable, an empty one", () => {

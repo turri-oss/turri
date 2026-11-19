@@ -33,7 +33,8 @@ Follow `module-structure.md`, `import-modules.md` and `linked-resources.md` for 
 
 - Settle a decision, write it into the config in the same step - never leave it to be inferred from what is on disk. A testing script you write or keep is named by its key, by path from the root (`unittests-script: test_scripts/run_unittests_python.sh`)
 - Change only the keys you settled. Where the file has a key's example commented out, uncomment that line and set it; keep every other line and comment as it is
-- A project whose parts are on different stacks keeps each stack's scripts in its own `config.turri.<stack>.yaml` beside it; what the stacks share stays in `config.turri.yaml`
+- A project whose parts are on different stacks gives a module its own `config.turri.<module>.yaml` beside it, with that module's scripts - it builds the module and every module built on it that has no file of its own; what they share stays in `config.turri.yaml`. Name the file after the module at the bottom of the chain it builds - two files among the modules one requires is an error
+- In the conversation, a setting is changed with the `settings` tool, which checks what it writes; an agent without it writes the key in the file itself
 - A project with only a `config.yaml` has it copied to `config.turri.yaml` first, and each `config.<name>.yaml` to `config.turri.<name>.yaml`; `config.yaml` may be another tool's, and is never written
 - Say in your summary which lines you wrote
 

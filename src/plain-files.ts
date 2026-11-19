@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { createEditToolDefinition, createWriteToolDefinition, type ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { readProjectConfig, stacksOf } from "./config.ts";
+import { readProjectConfig, moduleConfigsOf } from "./config.ts";
 import { parseMarkdown } from "./plain/markdown.ts";
 import { hasScheme, linksIn } from "./plain/parser.ts";
 import { insideAny } from "./regenerate/confine.ts";
@@ -10,7 +10,7 @@ import { credentialRefusal, isCredentialFile } from "./regenerate/credentials.ts
 import { DIST_DIR, MODULES_DIR } from "./regenerate/paths.ts";
 import { PREPARE_NAME, SCRIPTS_DIR, scriptKind } from "./regenerate/test-scripts.ts";
 
-/** A config.turri.yaml, a stack's config.turri.<stack>.yaml - what the project's testing scripts are named in. */
+/** A config.turri.yaml, a module's own config.turri.<module>.yaml - what the project's testing scripts are named in. */
 const TURRI_CONFIG_NAME = /^config\.turri(\.[^/]+)?\.yaml$/;
 
 /** Folders that hold what is built, installed or turri's own - never the project's ***plain. */
@@ -63,8 +63,8 @@ export function projectFiles(root: string, also: Iterable<string> = []): Map<str
     }
   }
   // Scripts config.turri*.yaml names, whatever they are called.
-  for (const stack of [undefined, ...stacksOf(root)]) {
-    const config = readProjectConfig(root, stack);
+  for (const module of [undefined, ...moduleConfigsOf(root)]) {
+    const config = readProjectConfig(root, module);
     named(config.unittestsScript);
     named(config.conformanceTestsScript);
     named(config.prepareEnvironmentScript);

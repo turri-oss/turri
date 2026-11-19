@@ -34,7 +34,7 @@ function sample(key: string): string {
   }
 }
 
-describe("/turri-config's settings", () => {
+describe("/settings's settings", () => {
   it("are every key turri reads - each written as typed is read back by turri as set", () => {
     for (const setting of settings(["concise-specs"])) {
       const parsed = parseValue(setting, sample(setting.key));
@@ -103,10 +103,13 @@ describe("/turri-config's settings", () => {
     expect(parseValue(settingOf("review")!, "unset")).toEqual({ unset: true });
   });
 
-  it("say what wins over a change: models: over the model keys, a stack's file over the project's", () => {
+  it("say what wins over a change: models: over the model keys, a module's own file over the project's", () => {
     writeFileSync(join(dir, "config.turri.backend.yaml"), "review: true\n");
     const text = writeSetting(dir, "review", false);
-    expect(overriddenBy(dir, text, settingOf("review")!)).toEqual(["config.turri.backend.yaml sets review too, and wins while the stack backend is chosen."]);
+    expect(overriddenBy(dir, text, settingOf("review")!)).toEqual(["config.turri.backend.yaml sets review too, and wins for backend.plain and the modules built on it."]);
+    // Written into the module's own file, nothing wins over it.
+    expect(overriddenBy(dir, writeSetting(dir, "review", false, "backend"), settingOf("review")!, "backend")).toEqual([]);
+    expect(readFileSync(join(dir, "config.turri.backend.yaml"), "utf8")).toBe("review: false\n");
     const models = writeSetting(dir, "models.chat", "openai/gpt-6-astra");
     expect(overriddenBy(dir, models, settingOf("harness-model")!)[0]).toContain("models.chat is set too");
     expect(readFileSync(join(dir, "config.turri.yaml"), "utf8")).toContain("review: false");

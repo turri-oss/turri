@@ -2,7 +2,6 @@ import type { AgentSession, ExtensionAPI } from "@earendil-works/pi-coding-agent
 import { describe, expect, it } from "vitest";
 import { currentChat, inChat } from "../src/chat-scope.ts";
 import { createChats, MAX_CHATS, scopedToChat, type ChatLink, type TurriCore } from "../src/chats.ts";
-import { chooseStack, chosenStack } from "../src/config.ts";
 import { createJobRegistry, type Job } from "../src/regenerate/jobs.ts";
 import { OPTION_AS_META, tellOfOptionOnce } from "../src/chat-commands.ts";
 
@@ -136,30 +135,6 @@ describe("the chats of a session", () => {
 });
 
 describe("what each chat keeps for itself", () => {
-  it("keeps the stack it chose, apart from the other chats' and the command line's", () => {
-    const backend = { id: "a", stack: undefined };
-    const frontend = { id: "b", stack: undefined };
-    inChat(backend, () => chooseStack("backend"));
-    inChat(frontend, () => chooseStack("frontend"));
-    expect(inChat(backend, () => chosenStack())).toBe("backend");
-    expect(inChat(frontend, () => chosenStack())).toBe("frontend");
-    expect(chosenStack()).toBe(process.env.TURRI_STACK?.trim() || undefined);
-  });
-
-  it("starts a chat with the stack the command line chose", async () => {
-    const before = process.env.TURRI_STACK;
-    process.env.TURRI_STACK = "backend";
-    try {
-      const { core, links } = session();
-      await core.open();
-      expect(links[0]!.scope.stack).toBe("backend");
-      expect(core.chats()).toHaveLength(1);
-    } finally {
-      if (before === undefined) delete process.env.TURRI_STACK;
-      else process.env.TURRI_STACK = before;
-    }
-  });
-
   it("runs every tool, command and handler a chat's extension registers in the chat's scope", async () => {
     const registered: Record<string, (...args: unknown[]) => unknown> = {};
     const pi = {
@@ -167,7 +142,7 @@ describe("what each chat keeps for itself", () => {
       registerCommand: (name: string, command: { handler: (...args: unknown[]) => unknown }) => (registered[`/${name}`] = command.handler),
       on: (event: string, handler: (...args: unknown[]) => unknown) => (registered[event] = handler),
     } as unknown as ExtensionAPI;
-    const scoped = scopedToChat(pi, { id: "c1", stack: undefined });
+    const scoped = scopedToChat(pi, { id: "c1" });
     scoped.registerTool({ name: "t", execute: async () => currentChat()?.id } as never);
     scoped.registerCommand("c", { handler: async () => currentChat()?.id } as never);
     scoped.on("agent_end", (() => currentChat()?.id) as never);

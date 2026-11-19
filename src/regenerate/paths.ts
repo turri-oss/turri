@@ -44,7 +44,7 @@ export function defaultBuildDir(moduleName: string, cwd: string = process.cwd())
  */
 /**
  * The project a spec belongs to: the nearest folder, from the spec's own up, that holds a
- * `config.turri.yaml`, a stack's `config.turri.<stack>.yaml`, the `config.yaml` turri read before it had a file of
+ * `config.turri.yaml`, a module's `config.turri.<module>.yaml`, the `config.yaml` turri read before it had a file of
  * its own, or a `plain_modules` - where its code is built, its config read, its testing scripts found. Without any, the
  * spec's own folder. So `plain/hubspot.plain`, beside `plain/config.turri.yaml` and `plain/plain_modules`, is built there,
  * wherever turri was started;
@@ -63,7 +63,7 @@ export function isProjectDir(dir: string): boolean {
   return existsSync(join(dir, "config.yaml")) || existsSync(join(dir, MODULES_DIR)) || hasModuleConfig(dir);
 }
 
-/** Whether a folder holds a config file - config.turri.yaml, a stack's config.turri.<stack>.yaml, or one in the old naming - which makes it a project too. */
+/** Whether a folder holds a config file - config.turri.yaml, a module's config.turri.<module>.yaml, or one in the old naming - which makes it a project too. */
 function hasModuleConfig(dir: string): boolean {
   try {
     return readdirSync(dir).some((name) => /^config\..+\.yaml$/.test(name));

@@ -1,11 +1,11 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { adoptLegacyConfig, CONFIG_FILE, CONFIG_KEYS, configForSpec, readConfigFile, readProjectConfig, stackConfigFileIn, stackForModule, stackOf, stacksOf } from "./config.ts";
+import { adoptLegacyConfig, CONFIG_FILE, CONFIG_KEYS, configForSpec, readConfigFile, readProjectConfig, moduleConfigFileIn, configModuleFor, moduleConfigsOf } from "./config.ts";
 import { withSetting, writeSetting } from "./config-edit.ts";
 
 /**
- * Whether a project's functional specs are conformance tested: `conformance-tests:` in its config, a stack's own over the
- * project's, false when unset. Conformance testing is a validation step that makes each change take about twice as long,
+ * Whether a project's functional specs are conformance tested: `conformance-tests:` in its config, a module's own file's
+ * over the project's, false when unset. Conformance testing is a validation step that makes each change take about twice as long,
  * so it is off until the person turns it on - with /conform, or the setting - and they keep it off to iterate fast. Off,
  * nothing of conformance testing runs - no conformance pulse, no conformance testing script, the
  * chat's conform refused; the test plain files there are kept, and not tested. The chat never turns them on: it says why
@@ -17,9 +17,9 @@ export const CONFORMANCE_OFF_REFUSAL =
   "Conformance tests are off for this project (conformance-tests: false, or unset), and turning them on is the person's " +
   "decision: they make each change take about twice as long, and the person keeps them off to iterate fast. Tell the " +
   "person, in a line or two, why you want conformance tests here; they decide, and turn them on with /conform - which " +
-  "also starts them - or /turri-config conformance-tests true. Nothing was started.";
+  "also starts them - or /settings conformance-tests true. Nothing was started.";
 
-/** Whether a module's functional specs are conformance tested: its stack's `conformance-tests:` over the project's. */
+/** Whether a module's functional specs are conformance tested: its own file's `conformance-tests:` over the project's. */
 export function conformanceTestsOn(plainFile: string): boolean {
   try {
     return configForSpec(resolve(plainFile)).conformanceTests === true;
@@ -28,29 +28,29 @@ export function conformanceTestsOn(plainFile: string): boolean {
   }
 }
 
-/** Whether the project conformance tests anything: its own config, or a stack's - for the chat's tools, which are the project's. */
+/** Whether the project conformance tests anything: its own config, or a module's own file - for the chat's tools, which are the project's. */
 export function conformanceTestsOnIn(project: string): boolean {
   try {
-    const stacks = [stackOf(project), ...stacksOf(project)].filter((stack): stack is string => stack !== undefined);
-    return readProjectConfig(project).conformanceTests === true || stacks.some((stack) => readProjectConfig(project, stack).conformanceTests === true);
+    return readProjectConfig(project).conformanceTests === true || moduleConfigsOf(project).some((module) => readProjectConfig(project, module).conformanceTests === true);
   } catch {
     return false;
   }
 }
 
 /**
- * Turn conformance testing on: `conformance-tests: true` written where the module's value comes from - its stack's file
- * when that names the key, else config.turri.yaml - and in effect at once. Says which file.
+ * Turn conformance testing on: `conformance-tests: true` written where the module's value comes from - its config
+ * file, its own or one of a module it requires, when that names the key, else config.turri.yaml - and in effect at once.
+ * Says which file.
  */
 export function turnOnConformanceTests(project: string, plainFile?: string): string {
-  const stack = plainFile !== undefined ? stackForModule(resolve(plainFile)) : stackOf(project);
-  if (stack !== undefined) {
-    const file = join(project, stackConfigFileIn(project, stack));
+  const module = plainFile !== undefined ? configModuleFor(resolve(plainFile)) : undefined;
+  if (module !== undefined) {
+    const file = join(project, moduleConfigFileIn(project, module));
     if (existsSync(file) && readConfigFile(file).conformanceTests !== undefined) {
       adoptLegacyConfig(project);
-      const own = join(project, stackConfigFileIn(project, stack));
+      const own = join(project, moduleConfigFileIn(project, module));
       writeFileSync(own, withSetting(readFileSync(own, "utf8"), CONFIG_KEYS.conformanceTests, true));
-      return stackConfigFileIn(project, stack);
+      return moduleConfigFileIn(project, module);
     }
   }
   writeSetting(project, CONFIG_KEYS.conformanceTests, true);
@@ -85,7 +85,7 @@ export function conformanceBlock(on: boolean): string {
           "no conformance testing script either, and conform is refused. Test plain files already there are",
           "kept, and not tested. When you think conformance tests are worth it here - the person asks for tests, a functional spec",
           "could go wrong silently, or the coding agent keeps failing at one - tell them in a line or two why, and what it costs.",
-          "They decide, and turn them on with /conform - which also tests what is built - or /turri-config conformance-tests true.",
+          "They decide, and turn them on with /conform - which also tests what is built - or /settings conformance-tests true.",
         ].join("\n"),
     "</conformance-tests>",
   ].join("\n");

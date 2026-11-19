@@ -113,7 +113,6 @@ const USAGE = [
   "       turri --version          turri's version, and pi's",
   "",
   `  ${"options".padEnd(12)} --harness-model <m>  the model you chat with   --coding-model <m>  the model that writes the code`,
-  `  ${"".padEnd(12)} --stack <name>  build with config.turri.<name>.yaml over config.turri.yaml - here and in every command`,
   `  ${"".padEnd(12)} --debug  keep what turri writes for debugging it - agents' logs and sessions - as debug: true does`,
   `  ${"".padEnd(12)} --use-theme <t>  another theme than turri-dark - and every option of pi's own`,
   "",
@@ -129,28 +128,16 @@ const USAGE = [
 ].join("\n");
 
 dropNoise();
-// --stack <name>, for any command and for the conversation: the stack everything is built with (stacks.ts), taken out
-// before the rest is read - a command never sees it. --debug too: TURRI_DEBUG for this run, and the pi it starts.
-const argv = await withoutStack(process.argv.slice(2));
+// --debug, for any command and for the conversation: TURRI_DEBUG for this run, and the pi it starts - taken out before
+// the rest is read, so a command never sees it.
+const argv = withoutDebug(process.argv.slice(2));
 const [command, ...rest] = argv;
 
-async function withoutStack(args: string[]): Promise<string[]> {
+function withoutDebug(args: string[]): string[] {
   const kept: string[] = [];
-  let stack: string | undefined;
-  for (let at = 0; at < args.length; at += 1) {
-    const arg = args[at]!;
-    if (arg === "--stack") stack = args[++at] ?? "";
-    else if (arg.startsWith("--stack=")) stack = arg.slice("--stack=".length);
-    else if (arg === "--debug") process.env.TURRI_DEBUG = "1";
+  for (const arg of args) {
+    if (arg === "--debug") process.env.TURRI_DEBUG = "1";
     else kept.push(arg);
-  }
-  if (stack === undefined) return kept;
-  const { switchStack } = await import("./stacks.ts");
-  try {
-    switchStack(process.cwd(), stack);
-  } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
-    process.exit(1);
   }
   return kept;
 }

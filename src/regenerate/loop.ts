@@ -35,7 +35,7 @@ import {
 import { describeSpecDiffConformance, renderSpecDiffConformance } from "./conform.ts";
 import { conformanceDirFor } from "./conformance.ts";
 import { modulesRoot, projectRootOf } from "./paths.ts";
-import { configForSpec, stackForModule, testDirOf, withStack } from "../config.ts";
+import { configForSpec, configModuleFor, moduleConfigFile, testDirOf, withConfigModule } from "../config.ts";
 import { describeSpecChange } from "./prompt.ts";
 import { resolveTemplateDirs } from "./paths.ts";
 import { builtTips, copyRequiredCode, copyRequiredTests, importingModules, isImportModule, newlyRequired, resolveRequiresChain, startFromScratch, type ChainEntry } from "./requires.ts";
@@ -136,8 +136,8 @@ export interface ModuleStatus {
    * `startOver` does it.
    */
   startOver?: { requires: string[]; codebases: string[]; old?: true };
-  /** The stack it is built with - its config.turri.<stack>.yaml over config.turri.yaml - when one is. */
-  stack?: string;
+  /** The module whose config.turri.<module>.yaml it is built with, over config.turri.yaml - its own, or one it requires - when one is. */
+  configModule?: string;
   /** Pure renames turri makes once the running pulse ends - a func-id or a scenario-id, nothing else with it: nothing regenerated. */
   renames?: string[];
   /**
@@ -155,10 +155,10 @@ interface ModuleState {
   askedFile: string;
   model?: string;
   /**
-   * The stack it is built with, pinned when it was asked for (`stackForModule`) - none, the project's config alone: its
-   * plans, pulses and testing scripts read the config with it, whatever is chosen since.
+   * The module whose config file it is built with (`configModuleFor`) - none, the project's config alone - worked out
+   * each time it is tracked: its plans, pulses and testing scripts read the config with it.
    */
-  stack?: { name: string | undefined };
+  configModule?: { name: string | undefined };
   guidance: string[];
   /** The code's plan: planned again when the spec, where it starts from or the steering it followed changes. */
   plan?: { specKey: string; from: string; steeringKey: string; jobs: PlannedJob[]; notes: string[] };
@@ -293,7 +293,7 @@ export interface WorkLoop {
    */
   bringUp(plainFile: string, options?: { model?: string; guidance?: string }): Promise<ModuleStatus[]>;
   /**
-   * Plan a spec's module as `bringUp` would - the same codebases, its stack pinned, the steering and `guidance` given
+   * Plan a spec's module as `bringUp` would - the same codebases, its config pinned, the steering and `guidance` given
    * to the planner - and start nothing: the plans are kept, and its pulses held until regenerate, conform or /regenerate
    * asks for the module. Then the first pulse of the kept plan starts as it is, planned again only when the ***plain,
    * what it is built from or the steering changed since. A module the person halted stays halted, and a codebase whose
@@ -644,8 +644,8 @@ export function createWorkLoop(options: {
     const tip = tipEntry(state);
     return { project: projectRootOf(tip.buildDir), module: tip.moduleName, job };
   };
-  /** `work` with the codebase's stack chosen - the one it was asked for with - when it has one pinned. */
-  const inStack = <T>(state: ModuleState, work: () => T): T => (state.stack !== undefined ? withStack(state.stack.name, work) : work());
+  /** `work` with the codebase's config pinned - its module's own file, or one it requires - once it is worked out. */
+  const withModuleConfig = <T>(state: ModuleState, work: () => T): T => (state.configModule !== undefined ? withConfigModule(state.configModule.name, work) : work());
   const keyOf = (spec: SpecSnapshot) => serializeTree(codeTree(spec.tree));
 
   /** What a codebase is built from: its record, or - nothing built - what it starts from, the code of the module it requires. */
@@ -698,7 +698,7 @@ export function createWorkLoop(options: {
 
   /**
    * The step of adding tests a codebase skipped - its functional specs have scenarios, and it has no test reqs or no
-   * conformance testing script for its stack: no conformance pulse of it starts, in the loop or from conform, and it
+   * conformance testing script: no conformance pulse of it starts, in the loop or from conform, and it
    * waits on that step until the spec or the scripts change.
    */
   const gapOf = (state: ModuleState, spec: SpecSnapshot) => {
@@ -714,7 +714,7 @@ export function createWorkLoop(options: {
     const tip = tipEntry(state);
     const root = projectRootFor(tip.plainFile, tip.buildDir);
     // Lacking the script, or with one being written over: a pulse started now would run without it, or against the old one.
-    return scriptBeingWritten(root, kind, stackForModule(tip.plainFile));
+    return scriptBeingWritten(root, kind, configModuleFor(tip.plainFile));
   };
 
   /**
@@ -1035,7 +1035,7 @@ export function createWorkLoop(options: {
           }
         }
         // Nothing here yet, and nothing below: the codebase starts from its base folder, when the config names one.
-        if (tip.requires === null && !started(tip)) inStack(state, () => seedFromBaseFolder(tip.buildDir, tip.plainFile, tip.moduleName));
+        if (tip.requires === null && !started(tip)) withModuleConfig(state, () => seedFromBaseFolder(tip.buildDir, tip.plainFile, tip.moduleName));
         // A conformance job is shown the spec whole - its test reqs and scenarios are its to write from.
         const result = await (conformance ? runConformance : run)(
           {
@@ -1310,7 +1310,7 @@ export function createWorkLoop(options: {
         const state = modules.get(key)!;
         // A codebase left behind - built on since - is not looked at, unless a job of it is still running; what it had
         // planned, or waited for, is no longer shown.
-        if (now.has(state) || state.running !== undefined) await inStack(state, () => look(state));
+        if (now.has(state) || state.running !== undefined) await withModuleConfig(state, () => look(state));
         else {
           state.why = "left behind: the code is built on further up the chain, where changes to it are made";
           state.waitsFor = undefined;
@@ -1532,7 +1532,7 @@ export function createWorkLoop(options: {
   };
 
   /** A codebase's status, and beside each job it lists as planned, the planned job it is - none for one being planned or scheduled. */
-  const describe = (state: ModuleState): ReturnType<typeof describeIn> => inStack(state, () => describeIn(state));
+  const describe = (state: ModuleState): ReturnType<typeof describeIn> => withModuleConfig(state, () => describeIn(state));
   const describeIn = (state: ModuleState): { status: ModuleStatus; jobs: Array<PlannedJob | undefined>; ahead: Array<{ title: string; specs: string[] } | undefined> } => {
     // What runs next: the code's jobs, then the conformance tests' - the module's, once its code is built - the running job first.
     const running = state.running?.planned;
@@ -1591,7 +1591,7 @@ export function createWorkLoop(options: {
       plainFile: tip.plainFile,
       ...(base !== undefined ? { base } : {}),
       ...(renames.length > 0 ? { renames: renames.map(renameText) } : {}),
-      ...(state.stack?.name !== undefined ? { stack: state.stack.name } : {}),
+      ...(state.configModule?.name !== undefined ? { configModule: state.configModule.name } : {}),
       ...(state.running !== undefined
         ? {
             running: {
@@ -1611,10 +1611,10 @@ export function createWorkLoop(options: {
   };
 
   /**
-   * Look after a codebase - its chain up to it - from now on; says its state. `pin`: its stack is worked out again - its
-   * tip's (`stackForModule`).
+   * Look after a codebase - its chain up to it - from now on; says its state. Its config is worked out again - its tip's
+   * (`configModuleFor`): `asked`, one that cannot be told refuses the ask; otherwise it keeps the one it had.
    */
-  const track = (chain: ChainEntry[], askedFile: string, request: { model?: string; guidance?: string }, pin = false): ModuleState => {
+  const track = (chain: ChainEntry[], askedFile: string, request: { model?: string; guidance?: string }, asked = false): ModuleState => {
     const tip = tipOf(chain);
     let state = modules.get(tip.buildDir);
     if (state === undefined) {
@@ -1627,9 +1627,13 @@ export function createWorkLoop(options: {
     }
     state.chain = chain;
     state.askedFile = askedFile;
-    if (pin) state.stack = { name: stackForModule(tip.plainFile) };
-    // Its model as its stack has it: a stack's file can name a coding model of its own.
-    const model = request.model ?? inStack(state, () => options.modelFor?.(tip.plainFile));
+    try {
+      state.configModule = { name: configModuleFor(tip.plainFile) };
+    } catch (error) {
+      if (asked) throw error;
+    }
+    // Its model as its config has it: a module's own file can name a coding model of its own.
+    const model = request.model ?? withModuleConfig(state, () => options.modelFor?.(tip.plainFile));
     if (model !== undefined) state.model = model;
     if (request.guidance !== undefined && !state.guidance.includes(request.guidance)) state.guidance.push(request.guidance);
     return state;
@@ -1644,8 +1648,7 @@ export function createWorkLoop(options: {
           asked.set(file, { ...ahead.get(file), ...asked.get(file), ...given });
           ahead.delete(file);
         }
-        // Asked for, it is built with its stack - the one the call names, its own, or the one chosen now - pinned, whatever
-        // is chosen later.
+        // Asked for, its config is worked out - its own file, or one of a module it requires - and pinned to its pulses.
         const states = withParseCache(() =>
           files.flatMap((file) => chainsFor(file).flatMap((chain) => toBuild(chain).map((entry) => track(chain.slice(0, chain.indexOf(entry) + 1), file, given, true)))),
         );
@@ -1666,7 +1669,7 @@ export function createWorkLoop(options: {
       const states = await preparingFor(plainFile, async () => {
         const files = codebasesOf(resolve(options.cwd, plainFile));
         for (const file of files) if (!asked.has(file)) ahead.set(file, { ...ahead.get(file), ...given });
-        // Its stack pinned as an ask pins it: the plan is made, and its pulses run, with the stack regenerate would use.
+        // Its config pinned as an ask pins it: the plan is made, and its pulses run, with the config regenerate would use.
         const tracked = withParseCache(() =>
           files.flatMap((file) => chainsFor(file).flatMap((chain) => toBuild(chain).map((entry) => track(chain.slice(0, chain.indexOf(entry) + 1), file, given, true)))),
         );
@@ -1712,7 +1715,7 @@ export function createWorkLoop(options: {
       if (state.plan === undefined || !state.plan.jobs.includes(job) || state.plan.specKey !== keyOf(spec) || state.plan.steeringKey !== steeringKeyOf(state)) {
         return why("The ***plain or the steering changed since it was planned: regenerate would plan it again. Look ahead again to see the new plan.");
       }
-      const task = await inStack(state, () => promptOf({ plainFile: tip.plainFile, spec: { ...spec, tree: job.step.tree }, planned: job }));
+      const task = await withModuleConfig(state, () => promptOf({ plainFile: tip.plainFile, spec: { ...spec, tree: job.step.tree }, planned: job }));
       return task !== undefined ? { ...pulse, task } : why("It has no prompt to show.");
     },
     async regenerateAgain(plainFile, given, request = {}) {
@@ -1767,7 +1770,7 @@ export function createWorkLoop(options: {
             const tip = tipOf(codebase);
             // The codebase as the loop knows it, or - never asked for - as its records have it.
             const state = modules.get(tip.buildDir) ?? { chain: codebase, askedFile: file, guidance: [] };
-            return inStack(state, (): DriftReport => {
+            return withModuleConfig(state, (): DriftReport => {
               const report: DriftReport = { module: tip.moduleName, plainFile: tip.plainFile, code: undefined, conformance: undefined, ...(conformanceTestsOn(tip.plainFile) ? {} : { conformanceOff: true as const }) };
               let spec: SpecSnapshot;
               try {
@@ -2269,7 +2272,7 @@ function conformanceAskedIn(own: ChainEntry[], funcIds: string[] | undefined): {
       );
     }
   }
-  // A step of adding tests skipped - its test reqs, or the conformance testing script for its stack: refused, naming it.
+  // A step of adding tests skipped - its test reqs, or the conformance testing script: refused, naming it.
   const gap = testingGap({ moduleName: self.moduleName, plainFile: self.plainFile, tree: spec, buildDir: self.buildDir });
   if (gap !== undefined) throw new Error(`${gap.text} Nothing was started.`);
   return { named, spec, withScenarios };
@@ -2352,7 +2355,7 @@ export function describeModules(statuses: ModuleStatus[], options: { for?: "chat
     .map((status) => {
       // Nothing to do there: said in a sentence, not as a status.
       if (isUpToDate(status)) return `${status.module} is up to date: its code is built from the ***plain as it is now in ${basename(status.plainFile)}, so there is nothing to regenerate.`;
-      const lines = [`${status.module} (${basename(status.plainFile)}${status.stack !== undefined ? `, stack ${status.stack}` : ""}):`];
+      const lines = [`${status.module} (${basename(status.plainFile)}${status.configModule !== undefined ? `, built with ${moduleConfigFile(status.configModule)}` : ""}):`];
       if (status.running !== undefined) {
         lines.push(`  running: pulse ${status.running.jobId} - ${status.running.title}`);
         // Steered, not stopped or planned again: what changed went to its agent.

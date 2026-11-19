@@ -6,8 +6,8 @@ const USAGE = `usage: turri parse <file.plain | directory> [options]
 Parses ***plain - its syntax and structure, never its code or tests: each module with its test plain files,
 its imports and required modules, every error reported without regenerating anything - and every test plain file
 outside its module's folder. A functional spec with no test plain file is not tested. A module whose
-functional specs have scenarios but which has no test reqs, or no conformance testing script for its
-stack, is a warning: its conformance tests are not written until it has them. A test plain file or
+functional specs have scenarios but which has no test reqs, or no conformance testing script,
+is a warning: its conformance tests are not written until it has them. A test plain file or
 test folder is refused: name its module.
 
   --template-dir <dir>   extra template directory (repeatable)

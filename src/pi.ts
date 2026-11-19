@@ -12,7 +12,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { installedProviders, runtimeWithProviders } from "./installed-providers.ts";
 import { loadRules, renderRulesBlock } from "./rules.ts";
-import { debugMode, inheritModel, stackOf, readProjectConfig, ROLE_THINKING, roleModel, roleTurnLimitMs, splitModelSpec, type AgentRole, type ProjectConfig } from "./config.ts";
+import { debugMode, inheritModel, configModuleOf, readProjectConfig, ROLE_THINKING, roleModel, roleTurnLimitMs, splitModelSpec, type AgentRole, type ProjectConfig } from "./config.ts";
 import { maskToolResults } from "./regenerate/masking.ts";
 import { withListArguments } from "./regenerate/list-arguments.ts";
 import { checkAgainstScript, ENVIRONMENT_ERROR_TOOL, EnvironmentError, environmentErrorTool, sandboxGapOf } from "./regenerate/environment-error.ts";
@@ -925,11 +925,11 @@ export async function createExecutor(opts: {
   return session;
 }
 
-/** The config an agent working in `cwd` is under: the project's, with the chosen stack's over it. */
+/** The config an agent working in `cwd` is under: the project's, with the pulse's module's own file over it. */
 function configForCwd(cwd: string): ProjectConfig {
   try {
     const root = projectRootOf(cwd);
-    return readProjectConfig(root, stackOf(root));
+    return readProjectConfig(root, configModuleOf(root));
   } catch {
     return {};
   }

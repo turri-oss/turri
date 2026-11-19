@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, extname, join, relative, resolve, sep } from "node:path";
-import { testDirOf } from "../config.ts";
+import { configModuleFor, testDirOf } from "../config.ts";
 import { projectDirOf, resolveTemplateDirs } from "../regenerate/paths.ts";
 import { isImportModule } from "../regenerate/requires.ts";
 import { testingGap } from "../regenerate/testing-steps.ts";
@@ -26,7 +26,7 @@ import {
  * the parser can see without generating anything. The parser's errors come one at a time, the first it meets, as the
  * reference gives them. turri's own checks list everything they find at once: every functional spec without a test
  * plain file, and every test plain file that is not where it belongs. A module whose functional specs have scenarios
- * but which has no test reqs, or no conformance testing script for its stack, passes with a warning.
+ * but which has no test reqs, or no conformance testing script, passes with a warning.
  */
 
 export interface CheckedFunctionalSpec {
@@ -163,6 +163,8 @@ export function checkPlainFile(file: string, templateDirs: string[] = []): Check
       testDir,
       requireTestPlainFiles: false,
     });
+    // Two config files among the modules it requires: which one builds it cannot be told - an error, as a syntax one is.
+    configModuleFor(path);
     // Scenarios with a step of adding tests skipped - the test reqs, or the conformance testing script: a warning, never a failure.
     const gaps = testingGapsOf(moduleName, path, tree, projectDir, templateDirs);
     // A codebase that requires nothing starts from its base folder: one named and not there stops its first pulse.

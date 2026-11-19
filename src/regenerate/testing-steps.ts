@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { conformanceTestsOn } from "../conformance-switch.ts";
-import { stackForModule, stackPinned, testDirOf, withStack } from "../config.ts";
+import { configModuleFor, configModulePinned, testDirOf, withConfigModule } from "../config.ts";
 import { IMPORT_DIRECTIVE, readPlainSourceMetadata } from "../plain/parser.ts";
 import { FUNCTIONAL_REQUIREMENTS, REQUIRED_FUNCTIONAL_SPECS, TEST_REQUIREMENTS, type MarshalledPlainSource } from "../plain/spec.ts";
 import { isStdlibModule, STDLIB_ROOT } from "../plain/stdlib.ts";
@@ -12,7 +12,7 @@ import { findTestScripts, projectRootFor } from "./test-scripts.ts";
 /**
  * The steps of adding tests to a module, and the one it skipped. Nothing about testing exists until the person asks
  * for it; then, in order: its test reqs - the stack's conformance template, or its own - the conformance testing script
- * for its stack, and the scenarios in its test plain files. A module whose functional specs have scenarios but which
+ * for it, and the scenarios in its test plain files. A module whose functional specs have scenarios but which
  * skipped one of the first two has its conformance pulses refused - by the work loop and by `conform` alike - and
  * `parse` and the map say what is missing. A module with no scenarios skipped nothing: it is not tested.
  */
@@ -66,16 +66,16 @@ export function conformanceTemplateOf(plainFile: string): string | undefined {
 }
 
 /**
- * The conformance testing script a module's tests would run with, looked for under its stack - the one pinned, else
- * the one `stackForModule` gives it - or nothing, with why when there is a why.
+ * The conformance testing script a module's tests would run with, looked for with its config - the one pinned, else the
+ * one `configModuleFor` gives it - or nothing, with why when there is a why.
  */
 export function conformanceScriptOf(plainFile: string, buildDir?: string): { script?: string; note?: string } {
-  const stack = stackPinned() ? undefined : stackForModule(plainFile);
+  const configModule = configModulePinned() ? undefined : configModuleFor(plainFile);
   const scripts = () => {
     const root = buildDir !== undefined ? projectRootFor(plainFile, buildDir) : projectDirOf(plainFile);
     return findTestScripts(root, plainFile, buildDir);
   };
-  const found = stackPinned() ? scripts() : withStack(stack, scripts);
+  const found = configModulePinned() ? scripts() : withConfigModule(configModule, scripts);
   return { ...(found.conformance !== undefined ? { script: found.conformance } : {}), ...(found.notes?.conformance !== undefined ? { note: found.notes.conformance } : {}) };
 }
 
@@ -92,9 +92,9 @@ function named(specs: string[]): string {
 
 /**
  * The step of adding tests a module skipped, when its functional specs have scenarios: no test reqs - its own or
- * imported - or no conformance testing script for its stack. `tree` is what its conformance tests would be written from:
+ * imported - or no conformance testing script. `tree` is what its conformance tests would be written from:
  * the codebase's spec, the module's own sections with its imports in, and the functional specs it inherits. The script
- * is looked for under the module's stack - the one pinned, else the one `stackForModule` gives it.
+ * is looked for with the module's config - the one pinned, else the one `configModuleFor` gives it.
  */
 export function testingGap(input: { moduleName: string; plainFile: string; tree: MarshalledPlainSource; buildDir?: string }): TestingGap | undefined {
   const { moduleName, plainFile } = input;
@@ -130,7 +130,7 @@ export function testingGap(input: { moduleName: string; plainFile: string; tree:
 
 /**
  * The steps of adding tests a module still has to take before it has anything to test - in their order: its test reqs,
- * the conformance testing script for its stack, the scenarios - from the first one missing. What is said when conform
+ * its conformance testing script, the scenarios - from the first one missing. What is said when conform
  * finds no scenarios: the whole way there, not the last step alone.
  */
 export function stepsToScenarios(input: { moduleName: string; plainFile: string; tree: MarshalledPlainSource; buildDir?: string }): string {

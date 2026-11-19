@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
-import { DEFAULT_CACHE_KEEP_MB, readProjectConfig, stackOf } from "../config.ts";
+import { DEFAULT_CACHE_KEEP_MB, readProjectConfig, configModuleOf } from "../config.ts";
 import { registerSecrets } from "./masking.ts";
 import { projectRootOf, modulesScratchDir } from "./paths.ts";
 
@@ -277,10 +277,10 @@ function darwinTempSuffix(module: string, name: string): string {
   return `turri-${name.replace(/[^\w.-]/g, "_")}-${createHash("sha256").update(resolve(module)).digest("hex").slice(0, 8)}`;
 }
 
-/** What `agent-env:` - the project's, with the chosen stack's added - passes, and what of it is not there. Reads only. */
+/** What `agent-env:` - the project's, with the pulse's module's own file's added - passes, and what of it is not there. Reads only. */
 export function passedCredentials(module: string, hostEnv: NodeJS.ProcessEnv): { values: Record<string, string>; missing: MissingCredential[] } {
   const root = projectRootOf(module);
-  const setting = readProjectConfig(root, stackOf(root)).agentEnv;
+  const setting = readProjectConfig(root, configModuleOf(root)).agentEnv;
   const values: Record<string, string> = {};
   const missing: MissingCredential[] = [];
   if (setting === undefined) return { values, missing };

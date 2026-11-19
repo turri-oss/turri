@@ -30,22 +30,21 @@ describe("what the chat's agent is told about the project's config.yaml", () => 
     expect(block).toContain("conformance testing script: none found");
   });
 
-  it("shows each stack's file over the project's - its scripts and models - and the stack chosen", async () => {
-    const { chooseStack } = await import("../src/config.ts");
+  it("shows each module's own file over the project's - its scripts and models - and the modules built on it", async () => {
     mkdirSync(join(root, "test_scripts"));
     for (const script of ["run_unittests_python.sh", "run_unittests_typescript.sh"]) writeFileSync(join(root, "test_scripts", script), "#!/bin/bash\n");
     writeFileSync(join(root, "config.turri.yaml"), "harness-model: google/gemini-3.1-pro\ncoding-model: google/gemini-3.1-flash\n");
     writeFileSync(join(root, "config.turri.backend.yaml"), "unittests-script: test_scripts/run_unittests_python.sh\n");
     writeFileSync(join(root, "config.turri.frontend.yaml"), "unittests-script: test_scripts/run_unittests_typescript.sh\ncoding-model: amazon-bedrock/eu.anthropic.claude-sonnet-5\n");
-    chooseStack("backend");
     const block = projectConfigBlock(root);
-    chooseStack(undefined);
-    expect(block).toContain("unit testing script: none for the whole project - each stack's file below names its own");
-    expect(block).toContain("Stacks: backend, frontend - chosen now: backend.");
-    expect(block).toContain("config.turri.backend.yaml, over config.turri.yaml, for everything built while the stack backend is chosen - as it is now:");
+    expect(block).toContain("unit testing script: none for the whole project - each module's file below names its own");
+    expect(block).toContain("config.turri.backend.yaml, over config.turri.yaml, for backend.plain and every module built on it that has no file of its own - what it sets itself, and the testing scripts it builds with; the rest is config.turri.yaml's:");
+    expect(block).toContain("Change a setting with the settings tool");
     const backend = block.slice(block.indexOf("config.turri.backend.yaml, over config.turri.yaml"), block.indexOf("config.turri.frontend.yaml, over"));
     expect(backend).toContain("unit testing script: test_scripts/run_unittests_python.sh");
-    expect(backend).toContain("coding-model: google/gemini-3.1-flash");
+    // What it inherits is not said again under it: it would read as its own.
+    expect(backend).not.toContain("coding-model");
+    expect(backend).not.toContain("review:");
     expect(backend).not.toContain("harness-model");
     const frontend = block.slice(block.indexOf("config.turri.frontend.yaml, over"));
     expect(frontend).toContain("unit testing script: test_scripts/run_unittests_typescript.sh");

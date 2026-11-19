@@ -15,7 +15,7 @@ Under `sentinel: ask`, a tab that starts working on its own is not sprung on you
 
 Nothing goes to the sentinel, or to your chat, until you answer: the pulses that finish meanwhile are held, and go to it - or to their chats - as you say. You are asked once a session: a sentinel closed and opened again by the next pulse is not asked for again, nor one `turri --continue` reopened. Close the chat it was asked in, and it is asked again in the one you look at.
 
-`/sentinel` sets it from the chat - `/sentinel ask`, `/sentinel on`, `/sentinel off`, or `/sentinel` alone to pick - written to `config.turri.yaml` as `/turri-config sentinel` does.
+`/sentinel` sets it from the chat - `/sentinel ask`, `/sentinel on`, `/sentinel off`, or `/sentinel` alone to pick - written to `config.turri.yaml` as `/settings sentinel` does.
 
 ## What you see
 
@@ -63,7 +63,7 @@ Switch to its chat and say how to check your software - *test the sign-up flow a
 
 ## Closing it
 
-It closes like any chat (`/chat close`, `alt+w`, a host's `closeChat`), and that does not turn it off: what it was checking is stopped, the pulses that waited for it are let go, and the next pulse that finishes opens it again, with a fresh conversation - and your guidance. `turri --continue` reopens it with the other chats, with the conversation of the last pulse it was on; the next pulse starts a fresh one. `sentinel: false` - in `config.turri.yaml`, or with `/sentinel off` or `/turri-config` - turns it off: from the next pulse that finishes, a pulse is told to the chat that asked for it, whose agent reacts to it, as without one.
+It closes like any chat (`/chat close`, `alt+w`, a host's `closeChat`), and that does not turn it off: what it was checking is stopped, the pulses that waited for it are let go, and the next pulse that finishes opens it again, with a fresh conversation - and your guidance. `turri --continue` reopens it with the other chats, with the conversation of the last pulse it was on; the next pulse starts a fresh one. `sentinel: false` - in `config.turri.yaml`, or with `/sentinel off` or `/settings` - turns it off: from the next pulse that finishes, a pulse is told to the chat that asked for it, whose agent reacts to it, as without one.
 
 It has a slot of its own: with it on, you open up to eight chats, and the ninth is the sentinel's, open or not.
 

@@ -2,7 +2,7 @@ import { fixMethod } from "./prompt.ts";
 import { randomUUID } from "node:crypto";
 import { accessSync, constants, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, delimiter, dirname, join, resolve, sep } from "node:path";
-import { CONFIG_FILE, CONFIG_KEYS, projectConfigFile, readProjectConfig, stackConfigFile, stackConfigFileIn, stackOf, stacksOf } from "../config.ts";
+import { CONFIG_FILE, CONFIG_KEYS, configModuleFor, configModuleOf, configModulePinned, moduleConfigFile, moduleConfigFileIn, moduleConfigsOf, projectConfigFile, readProjectConfig } from "../config.ts";
 import { reportActivity, reportLogNote, reportNote } from "./activity.ts";
 import { record, signatureHash } from "./ledger.ts";
 import { ensureInModulesScratch, modulesScratchDir } from "./paths.ts";
@@ -119,7 +119,8 @@ function onlyScriptIn(dir: string, kind: ScriptKind | "prepare"): { path?: strin
 /**
  * The project's testing scripts, looked for in this order:
  *
- * 1. `config.turri.yaml` at the project root, with the chosen stack's `config.turri.<stack>.yaml` over it -
+ * 1. `config.turri.yaml` at the project root, with the module's own `config.turri.<module>.yaml` over it - or the one of a
+ *    module it requires (`configModuleFor`) -
  *    `unittests-script:` and `conformance-tests-script:`, paths from the root;
  * 2. the project root itself - the one `run_unittests*.sh` / `run_conformance_tests*.sh` there;
  * 3. `test_scripts/` - the one of each there.
@@ -133,19 +134,19 @@ function onlyScriptIn(dir: string, kind: ScriptKind | "prepare"): { path?: strin
 export function findTestScripts(root: string, plainFile?: string, buildDir?: string): TestScripts {
   const found: TestScripts = {};
   const notes: Partial<Record<ScriptKind | "prepare", string>> = {};
-  // The stack chosen, its file over the project's, when the project has one for it: its scripts.
-  const stack = stackOf(root);
-  const config = readProjectConfig(root, stack);
-  const file = stack !== undefined ? `${stackConfigFileIn(root, stack)} (over ${projectConfigFile(root)})` : projectConfigFile(root);
-  // A project of stacks with none chosen: its scripts are named in the stacks' files.
-  const stacks = stack === undefined ? stacksOf(root) : [];
-  // Where a script is named: the stack's file, once one is chosen - in a project of stacks, the one of the stack that builds it.
+  // The module's own file over the project's - the one pinned, else the one of the module asked about: its scripts.
+  const own = configModulePinned() ? configModuleOf(root) : plainFile !== undefined ? moduleOfSpec(plainFile) : undefined;
+  const config = readProjectConfig(root, own);
+  const file = own !== undefined ? `${moduleConfigFileIn(root, own)} (over ${projectConfigFile(root)})` : projectConfigFile(root);
+  // Modules with files of their own, none of them this one's: its scripts are likely named in theirs.
+  const others = own === undefined ? moduleConfigsOf(root) : [];
+  // Where a script is named: the module's own file - or, where modules have their own, the one of the module that builds it.
   const nameIn =
-    stack !== undefined
-      ? stackConfigFileIn(root, stack)
-      : stacks.length > 0
-        ? "the config.turri.<stack>.yaml of the stack that builds it"
-        : `${CONFIG_FILE} - or, for a project of several stacks, the stack's config.turri.<stack>.yaml`;
+    own !== undefined
+      ? moduleConfigFileIn(root, own)
+      : others.length > 0
+        ? "the module's own config.turri.<module>.yaml"
+        : `${CONFIG_FILE} - or the module's own config.turri.<module>.yaml`;
   if (config.testingScriptsRunOn !== undefined) found.runOn = config.testingScriptsRunOn;
   for (const kind of Object.keys(SCRIPT_KEYS) as ScriptKind[]) {
     const named = kind === "unit" ? config.unittestsScript : config.conformanceTestsScript;
@@ -192,18 +193,18 @@ export function findTestScripts(root: string, plainFile?: string, buildDir?: str
       }
     }
   }
-  // A project of stacks, none chosen: the scripts are likely in a stack's file - the note says which, and how to choose it.
-  if (stacks.length > 0) {
+  // Modules with files of their own, none of them this one's: the note says which name a script, and where its own goes.
+  if (others.length > 0) {
     for (const kind of Object.keys(SCRIPT_KEYS) as ScriptKind[]) {
       if (found[kind] !== undefined) continue;
-      const named = stacks.flatMap((each) => {
+      const named = others.flatMap((each) => {
         const script = kind === "unit" ? readProjectConfig(root, each).unittestsScript : readProjectConfig(root, each).conformanceTestsScript;
-        return script !== undefined ? [`${stackConfigFile(each)} names ${script.trim()}`] : [];
+        return script !== undefined ? [`${moduleConfigFile(each)} names ${script.trim()}`] : [];
       });
       notes[kind] = [
         ...(notes[kind] !== undefined ? [notes[kind]] : []),
-        `No stack is chosen, so ${CONFIG_FILE} alone is read - this project's stacks are ${stacks.join(", ")}${named.length > 0 ? `, and ${named.join("; ")}` : ""}. ` +
-          "Choose the stack that builds this module: stack on regenerate, or /stack, in the chat; --stack <name> on the command line.",
+        `No module config file applies here, so ${CONFIG_FILE} alone is read - the modules' own are ${others.map(moduleConfigFile).join(", ")}${named.length > 0 ? `, and ${named.join("; ")}` : ""}. ` +
+          "A module takes its own config.turri.<module>.yaml, else the one of a module it requires: name its scripts in its own file - in the chat, the settings tool with module.",
       ].join(" ");
     }
   }
@@ -250,7 +251,7 @@ export class MissingTestScriptError extends Error {
         "What to change in the project:",
         `- Add one with the \`${skill}\` skill: it writes \`${SCRIPTS_DIR}/${file}_<language>.sh\`.`,
         `- It is looked for in \`${CONFIG_FILE}\` at the project root (\`${SCRIPT_KEYS[kind]}: <path>\`) - or the module's own`,
-        `  \`config.turri.<stack>.yaml\` beside it, the stack chosen with /stack or --stack, for a project of several stacks - then in the root,`,
+        `  \`config.turri.<module>.yaml\` beside it, or the one of a module it requires - then in the root,`,
         `  then in \`${SCRIPTS_DIR}/\` - one ${file}*.sh in either folder is used.`,
         "",
         "Then build again.",
@@ -414,8 +415,8 @@ function projectOfBuild(buildDir: string): { root: string; inPlace: boolean } {
   const parts = resolve(buildDir).split(sep);
   const index = parts.lastIndexOf("plain_modules");
   const root = index > 0 ? parts.slice(0, index).join(sep) : dirname(resolve(buildDir));
-  // The stack chosen decides, when it says.
-  return { root, inPlace: readProjectConfig(root, stackOf(root)).testingScriptsRunOn !== "copy" };
+  // The module's own file decides, when it says.
+  return { root, inPlace: readProjectConfig(root, configModuleOf(root)).testingScriptsRunOn !== "copy" };
 }
 
 /** The model providers' keys, kept out of what runs on this machine: the tests are agents' code. */
@@ -946,4 +947,13 @@ export function failureSignature(run: ScriptRun): string {
       .replace(/\d+(\.\d+)?/g, "<n>")
       .replace(/\s+/g, " ");
   return [...new Set((telling.length > 0 ? telling : lines.slice(-20)).map(normal))].slice(0, 30).join("\n");
+}
+
+/** The module whose config file builds a module, for finding its scripts - none when it cannot be told: the parse says why. */
+function moduleOfSpec(plainFile: string): string | undefined {
+  try {
+    return configModuleFor(plainFile);
+  } catch {
+    return undefined;
+  }
 }

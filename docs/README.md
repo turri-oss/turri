@@ -21,7 +21,7 @@ turri is the first coding agent with the power of regenerative software: [\*\*\*
 | which model codes, and how to change it | [using](using.md#choosing-a-model), [the project config](config.md#models) |
 | how to run turri on my Claude Pro, Max or Team subscription instead of an API key | [a Claude subscription](claude-subscription.md) |
 | what `config.turri.yaml` can set, and what happens without it | [the project config](config.md) |
-| how a backend and a frontend on different stacks share one project | [the project config](config.md#stacks) |
+| how a backend and a frontend on different stacks share one project | [a module's own config](config.md#a-modules-own-config) |
 | which ready-made stacks \*\*\*plain can import - a FastAPI backend, a React frontend | [the standard library](authoring-plain.md#the-standard-library) |
 | everything an agent was sent and did, to debug it | [using](using.md#agent-logs) |
 | how to regenerate \*\*\*plain overnight, and resume it | [running unattended](headless.md) |
@@ -46,7 +46,7 @@ turri is the first coding agent with the power of regenerative software: [\*\*\*
 | [Chats](chats.md) | several chats in one session: what each keeps and what they share, `/chat` and its keys, `turri --continue` and `.turri/chats.json` |
 | [The sentinel](sentinel.md) | the chat every finished pulse goes to: what it checks and tests, its notices and how to answer them, what it may do, closing it, its model, in a host |
 | [A Claude subscription](claude-subscription.md) | running every agent on a Claude Pro, Max or Team subscription through Claude Code: setting it up, its models, checking it yourself, in turri-desktop, its limits, when it does not work |
-| [The project config](config.md) | `config.turri.yaml` and each stack's `config.turri.<stack>.yaml`: where they are read from, every key, models and their inheritance, conformance, the testing scripts, stacks and choosing one, the old `config.yaml` |
+| [The project config](config.md) | `config.turri.yaml` and a module's own `config.turri.<module>.yaml`: where they are read from, every key, models and their inheritance, conformance, the testing scripts, which file builds a module, the old `config.yaml` |
 | [Deploy](deploy.md) | trying what is built: dist/<module>, the last commit, starting it on your machine, `turri release` |
 | [Running unattended](headless.md) | regenerating overnight or in CI: before you leave it, the command, the results, resuming, rebuilding one functionality |
 | [Authoring \*\*\*plain](authoring-plain.md) | a \*\*\*plain project, what \*\*\*plain is made of, the rules, writing \*\*\*plain with the agent, the skills, checking \*\*\*plain |

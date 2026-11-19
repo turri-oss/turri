@@ -44,7 +44,7 @@ turri does not depend on the extension: it finds it as pi does, once you have in
    coding-model: claude-code/claude-sonnet-5:low      # it writes the code
    ```
 
-   For a project that has a `config.turri.yaml` already, it sets those two and leaves everything else as it was; or change them yourself, or with `/turri-config harness-model claude-code/claude-opus-5-5:medium` in the chat.
+   For a project that has a `config.turri.yaml` already, it sets those two and leaves everything else as it was; or change them yourself, or with `/settings harness-model claude-code/claude-opus-5-5:medium` in the chat.
 
 Two settings of the extension's own, read from the environment: `PI_CLAUDE_CODE_COMMAND`, the Claude Code to run when it is not `claude` on the PATH, and `PI_CLAUDE_CODE_CONFIG_DIR`, a Claude Code configuration folder of its own - another account's sign-in, say.
 
@@ -103,7 +103,7 @@ Each step says what you should see; the first one that does not is where it stop
    turri regenerate app.plain
    ```
 
-   The pulse's coding agent runs on `claude-code/claude-sonnet-5`, and the pulse lands as on any model. To watch it work, run it in [debug mode](config.md#debug-mode) (`--debug`): the pulse's log in `.turri/jobs/` names each agent's model and shows the tools it called. In the chat, `/engine` says which model each kind of work runs on.
+   The pulse's coding agent runs on `claude-code/claude-sonnet-5`, and the pulse lands as on any model. To watch it work, run it in [debug mode](config.md#debug-mode) (`--debug`): the pulse's log in `.turri/jobs/` names each agent's model and shows the tools it called. In the chat, ask which model the code is regenerated on: the `settings` tool says, and where it is set.
 
 ## In turri-desktop
 

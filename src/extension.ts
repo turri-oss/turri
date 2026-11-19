@@ -12,7 +12,7 @@ import { allocateImageId, Box, type Component, getCapabilities, getPngDimensions
 import { defineTool, getMarkdownTheme, UserMessageComponent } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { CODING_MODEL_ENV } from "./chat-models.ts";
-import { AGENT_ROLES, chosenStack, CONFIG_FILE, configForSpec, stackForModule, hasProjectConfig, LEGACY_CONFIG_FILE, projectConfigFile, stackConfigFileIn, stackOf, stacksOf, withStack, modelOnly, modelSpec, projectModels, readProjectConfig, roleModel, splitModelSpec, unknownConfigLines } from "./config.ts";
+import { AGENT_ROLES, CONFIG_FILE, configForSpec, readConfigFile, configModuleFor, hasProjectConfig, LEGACY_CONFIG_FILE, projectConfigFile, moduleConfigFile, moduleConfigFileIn, configModuleOf, moduleConfigsOf, withConfigModule, modelOnly, modelSpec, projectModels, readProjectConfig, roleModel, splitModelSpec, unknownConfigLines } from "./config.ts";
 import { modulesRoot, projectDirOf, skillRunDir } from "./regenerate/paths.ts";
 import { sweepOrphanedGroups } from "./regenerate/shell.ts";
 import { readScript, scriptAgainstMachine, stackOnMachine, toolchainsBlock } from "./stack.ts";
@@ -24,7 +24,7 @@ import { bannerWarnings } from "./turri-versions.ts";
 import { CONFORMANCE_OFF_REFUSAL, conformanceBlock, conformanceTestsOn, conformanceTestsOnIn, turnOnConformanceTests } from "./conformance-switch.ts";
 import { BACKGROUND_NOTE, doneLine, failedTask, ownChanges, runDetails, skillRunDelivery, startedText } from "./background-skills.ts";
 import { createAskUserTool } from "./tools.ts";
-import { asksFromScratch, asksWholeChain, driftTool, endWait, fromWorkingDir, haltTool, loopReply, startWait, toldByWaitingCall, MODEL_PARAM, regenerateTool, STACK_PARAM, stopJob, WAIT_PARAM, withCallStack, WORKING_DIR_PARAM } from "./loop-tools.ts";
+import { asksFromScratch, asksWholeChain, driftTool, endWait, fromWorkingDir, haltTool, loopReply, startWait, toldByWaitingCall, MODEL_PARAM, regenerateTool, stopJob, WAIT_PARAM, whenBuildable, WORKING_DIR_PARAM } from "./loop-tools.ts";
 import { createWebTools } from "./regenerate/web.ts";
 import { describeGates, interruptedRun, runSkill, type SkillMessages } from "./genome.ts";
 import { unqueue } from "./chat-waiting.ts";
@@ -37,7 +37,7 @@ import { runReleaseAgent } from "./release-agent.ts";
 import { createSteeringStore, EVERY_MODULE, moduleNameOf, queueSectionOf, steeringFor } from "./regenerate/steer.ts";
 import { askedForCommandLine, refusal, selfInvocation, TOOLS_NOT_CLI } from "./self-invocation.ts";
 import { NEW_PROJECT } from "./new-project.ts";
-import { describeChoices, describeResolution, type ModelChoices, modelFor, type RenderWork, resolveModel } from "./regenerate/engine.ts";
+import { describeResolution, resolveModel } from "./regenerate/model-names.ts";
 import { checkPlainFile, formatCheckResults } from "./plain/check.ts";
 import { checkPlainTool } from "./parse-tool.ts";
 import { changedFiles, projectFiles } from "./plain-files.ts";
@@ -68,12 +68,11 @@ import { LOADING_PROVIDERS } from "./installed-providers.ts";
 import { machineChange, machineChangeReason, writesPlain } from "./regenerate/command-check.ts";
 import { beginCapture, captureConsole, describeCaptured, dropNoise } from "./quiet.ts";
 import { loadRules, renderRulesBlock } from "./rules.ts";
-import { registerTurriConfig, ruleNames } from "./config-command.ts";
+import { registerSettings, ruleNames } from "./settings.ts";
 import { writeSetting } from "./config-edit.ts";
 import { describeStdlib } from "./stdlib.ts";
 import { DECLINED, peekKeyListener, runAsk, type AskUser, type AskUserIO, type AskUserRequest } from "./ask.ts";
 import { QuestionDialog } from "./question-dialog.ts";
-import { registerStacks } from "./stacks.ts";
 import { catalogueLine, chosenCommand, createCommandGate, startPicked, discoverSkills, leftOutNote, startedByCommandOnly, type SkillCatalogue } from "./skills.ts";
 import { supersededByTurri } from "./chat-skills.ts";
 import { conversationIdentity } from "./identity.ts";
@@ -470,7 +469,7 @@ export function sessionLoop(session: TurriCore): WorkLoop {
 
 /**
  * turri's extension, built into one chat of the session: its tools, commands and handlers run in the chat's scope -
- * its stack, its id on the pulses it asks for - on the session's job registry and work loop.
+ * its id on the pulses it asks for - on the session's job registry and work loop.
  */
 function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
   const pi = scopedToChat(api, link.scope);
@@ -628,7 +627,7 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
   // With them, the instruction to do turri's work with its tools rather than its command
   // line - enforced below, not only asked for.
   const rules = loadRules(join(PACKAGE_ROOT, "genome", "rules"), readProjectConfig(cwd).rulesOff ?? []);
-  // Laid out again once rules-off changes - /turri-config changes it as turri runs - and the same block in between.
+  // Laid out again once rules-off changes - /settings changes it as turri runs - and the same block in between.
   let rulesKept = { off: (readProjectConfig(cwd).rulesOff ?? []).join(","), block: chatRulesBlock(rules) };
   const rulesBlock = (): string => {
     const off = readProjectConfig(cwd).rulesOff ?? [];
@@ -785,11 +784,9 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
   registerRegenerate(pi, cwd, jobs);
   registerDrift(pi, cwd, jobs);
   registerBind(pi, cwd, jobs, (plainFile) => turnOnConformance(session, plainFile));
-  registerRenderModels(pi);
   registerDeploy(pi, cwd, jobs, deployStates.get(jobs) ?? createDeployState());
   registerSteering(pi, cwd);
   registerSideQuestions(pi, cwd, jobs);
-  registerStacks(pi, cwd);
   // More chats beside this one, in the terminal: /chat, alt+n, alt+1…9 (chat-commands.ts).
   if (session.terminal) registerChats(pi, session);
 
@@ -826,17 +823,17 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
     if (backgroundSkillRuns.has(key)) {
       return { text: `${skill.name} is running in the background already; what it does comes back to this chat when it ends. Nothing new was started.`, details: { background: true, started: false } };
     }
-    const model = skill.model === "coding" ? jobModel(ctx, "spec_changes", undefined, plainFile) : conversationModel(ctx);
-    const stack = plainFile !== undefined ? stackForModule(plainFile) : chosenStack();
+    const model = skill.model === "coding" ? jobModel(ctx, undefined, plainFile) : conversationModel(ctx);
+    const configModule = plainFile !== undefined ? configModuleFor(plainFile) : undefined;
     const kind = scriptKindOfSkill(skill.name);
     const shown = plainFile !== undefined ? relative(cwd, plainFile) || basename(plainFile) : undefined;
     // While it writes a testing script, the modules that need it wait for it rather than fail for want of it.
-    const written = kind !== undefined ? writingScript({ project: plainFile !== undefined ? projectDirOf(plainFile) : cwd, kind, ...(stack !== undefined ? { stack } : {}) }) : () => {};
+    const written = kind !== undefined ? writingScript({ project: plainFile !== undefined ? projectDirOf(plainFile) : cwd, kind, ...(configModule !== undefined ? { configModule } : {}) }) : () => {};
     const controller = new AbortController();
     backgroundSkillRuns.set(key, controller);
     const context = [
       conversationContext(ctx, params.context),
-      shown !== undefined ? `It is for ${shown}${stack !== undefined ? `, on the stack ${stack}` : ""}.` : undefined,
+      shown !== undefined ? `It is for ${shown}${configModule !== undefined ? `, built with ${moduleConfigFile(configModule)} over ${CONFIG_FILE}` : ""}.` : undefined,
       BACKGROUND_NOTE,
     ]
       .filter((part) => part !== undefined && part.trim() !== "")
@@ -852,7 +849,7 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
           : { skill: skill.name, ok: false, line: `${skill.name} ${ended.why}.`, task: failedTask(skill.name, ended.why, ended.output, kind), ...about },
       );
     void captureConsole(() =>
-      withStack(stack, () =>
+      withConfigModule(configModule, () =>
         runSkill({
           skillDir: skill.dir,
           signal: controller.signal,
@@ -935,7 +932,7 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
       plainFile: Type.Optional(
         Type.String({
           description:
-            "The module the skill's work is for - its .plain file, e.g. backend.plain: a testing script is written for that module's stack, " +
+            "The module the skill's work is for - its .plain file, e.g. backend.plain: a testing script is written for that module, named in its config, " +
             "on its coding model. Omitted: the project's.",
         }),
       ),
@@ -1099,8 +1096,8 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
       // A testing script being written - here to its end, in print mode - holds the modules it is for, as in the background:
       // a pulse started meanwhile, by a regenerate called beside it, would run against the script as it was.
       const kind = scriptKindOfSkill(skill.name);
-      const stack = plainFile !== undefined ? stackForModule(plainFile) : chosenStack();
-      const written = kind !== undefined ? writingScript({ project: plainFile !== undefined ? projectDirOf(plainFile) : cwd, kind, ...(stack !== undefined ? { stack } : {}) }) : () => {};
+      const configModule = plainFile !== undefined ? configModuleFor(plainFile) : undefined;
+      const written = kind !== undefined ? writingScript({ project: plainFile !== undefined ? projectDirOf(plainFile) : cwd, kind, ...(configModule !== undefined ? { configModule } : {}) }) : () => {};
       const ended = () => {
         written();
         ran_();
@@ -1123,20 +1120,20 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
           push(`  A: ${answer}`);
           recordExchange(pi, { skill: skill.name, question, answer, ...(said !== undefined && said.trim() !== "" ? { said: said.trim() } : {}) });
         }, (question) => askOnTheSide(pi, ctx, cwd, jobs, question), dialogs),
-        model: skill.model === "coding" ? jobModel(ctx, "spec_changes", undefined, plainFile) : conversationModel(ctx),
+        model: skill.model === "coding" ? jobModel(ctx, undefined, plainFile) : conversationModel(ctx),
         // Renders queued by a step land in the same registry as everything else, so
         // pulses sees them without knowing a skill started them.
         // Asked per job as it is queued, so a model chosen mid-interview applies from then on.
         renderQueue: workLoopFor(jobs, cwd, ctx),
         // The person answers the skill's agent while it runs, so it can take "render these with ..." too.
         // parse too: a skill parses what it wrote with the same check the conversation has.
-        sharedTools: [setRenderModelTool(pi, ctx), checkPlainTool(cwd), ...createWebTools()],
+        sharedTools: [checkPlainTool(cwd), ...createWebTools()],
         // The conversation's own regenerate, drift, halt and conform, on its loop: a skill waits for nothing, and regenerates on the model chosen.
         loopTools: [
-          regenerateTool({ cwd, jobs, loop: () => workLoopFor(jobs, cwd, ctx), model: (_skill, plainFile, named, work) => jobModel(ctx, work ?? "spec_changes", named, plainFile), wait: () => false }),
+          regenerateTool({ cwd, jobs, loop: () => workLoopFor(jobs, cwd, ctx), model: (_skill, plainFile, named) => jobModel(ctx, named, plainFile), wait: () => false }),
           driftTool({ cwd, jobs, loop: () => workLoopFor(jobs, cwd, ctx) }),
           haltTool({ jobs, workLoop: () => workLoops.get(jobs)?.loop }),
-          conformTool({ cwd, jobs, loop: () => workLoopFor(jobs, cwd, ctx), model: (_skill, plainFile, named) => jobModel(ctx, "spec_changes", named, plainFile), wait: () => false }),
+          conformTool({ cwd, jobs, loop: () => workLoopFor(jobs, cwd, ctx), model: (_skill, plainFile, named) => jobModel(ctx, named, plainFile), wait: () => false }),
         ],
         // The escalation becomes a real dialog - the host's own, when it has them. Without one there is nobody to ask,
         // so the gate stands.
@@ -1228,7 +1225,7 @@ function registerRegenerate(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
       cwd,
       jobs,
       loop: (ctx) => workLoopFor(jobs, cwd, ctx),
-      model: (ctx, plainFile, named, work) => jobModel(ctx, work ?? "spec_changes", named, plainFile),
+      model: (ctx, plainFile, named) => jobModel(ctx, named, plainFile),
       wait: (ctx, asked) => shouldWait(ctx.mode, asked),
     }),
   );
@@ -1258,7 +1255,7 @@ function registerRegenerate(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
         return;
       }
       const loop = workLoopFor(jobs, cwd, ctx);
-      const model = jobModel(ctx, again.length > 0 ? "functionalities" : "spec_changes", undefined, plainFile);
+      const model = jobModel(ctx, undefined, plainFile);
       const request = { ...(model !== undefined ? { model } : {}), ...(guidance !== "" ? { guidance } : {}) };
       // Said at once, and kept in the chat: what follows takes a while - the planner is an agent - and the person sees it
       // began, not a chat that stays empty until the first pulse starts. The plan is said under it once it is made.
@@ -1276,8 +1273,8 @@ function registerRegenerate(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
       const target = plainFile;
       void (async () => {
         try {
-          // Built with the stack chosen now - pinned to its pulses - or refused, a project of stacks built with none.
-          const statuses = await withCallStack(target, undefined, () =>
+          // Refused when its config cannot be told, or would build it with no testing script.
+          const statuses = await whenBuildable(target, () =>
             scratch
               ? loop.fromScratch(target, { ...request, chain })
               : again.length > 0
@@ -1473,7 +1470,7 @@ function registerBind(pi: ExtensionAPI, cwd: string, jobs: JobRegistry, turnOn: 
       cwd,
       jobs,
       loop: (ctx) => workLoopFor(jobs, cwd, ctx),
-      model: (ctx, plainFile, named) => jobModel(ctx, "spec_changes", named, plainFile),
+      model: (ctx, plainFile, named) => jobModel(ctx, named, plainFile),
       wait: (ctx, asked) => shouldWait(ctx.mode, asked),
     }),
   );
@@ -1522,7 +1519,7 @@ function registerBind(pi: ExtensionAPI, cwd: string, jobs: JobRegistry, turnOn: 
       // ***plain alone, before anything is said.
       let refusal: string | undefined;
       try {
-        refusal = withCallStack(plainFile, undefined, () => conformanceRefusal(plainFile, funcIds.length > 0 ? funcIds : undefined));
+        refusal = whenBuildable(plainFile, () => conformanceRefusal(plainFile, funcIds.length > 0 ? funcIds : undefined));
       } catch (error) {
         refusal = error instanceof Error ? error.message : String(error);
       }
@@ -1531,7 +1528,7 @@ function registerBind(pi: ExtensionAPI, cwd: string, jobs: JobRegistry, turnOn: 
         return;
       }
       const module = basename(plainFile).replace(/\.plain$/, "");
-      const model = jobModel(ctx, "spec_changes", undefined, plainFile);
+      const model = jobModel(ctx, undefined, plainFile);
       const starting =
         scratch !== undefined
           ? `Writing ${module}'s conformance tests${scratch === "chain" ? " and its whole chain's" : ""} again from scratch…`
@@ -1541,7 +1538,7 @@ function registerBind(pi: ExtensionAPI, cwd: string, jobs: JobRegistry, turnOn: 
       // In the background, as /regenerate: a codebase built on the module may be stopped and deleted first.
       void (async () => {
         try {
-          const statuses = await withCallStack(plainFile, undefined, () =>
+          const statuses = await whenBuildable(plainFile, () =>
             workLoopFor(jobs, cwd, ctx).conformance(plainFile, {
               ...(funcIds.length > 0 ? { funcIds } : {}),
               ...(model !== undefined ? { model } : {}),
@@ -1593,7 +1590,7 @@ function conformTool(options: {
       "the tip of each chain it is built in, as regenerate from scratch does its code. A " +
       "functional spec with no scenarios - no test plain file - is refused: there is nothing to test until scenarios " +
       "are written. So is one the spec does not have, and a module with scenarios that skipped a step of adding tests - " +
-      "no test reqs, or no conformance testing script for its stack: the refusal names the next step. While conformance tests " +
+      "no test reqs, or no conformance testing script: the refusal names the next step. While conformance tests " +
       "are off it is refused too: they make each change take about twice as long, and turning them on is the person's - " +
       "with /conform - never yours.",
     promptSnippet: "conform: write and run the conformance tests of functional specs with scenarios",
@@ -1623,7 +1620,6 @@ function conformTool(options: {
       one_by_one: Type.Optional(
         Type.Boolean({ description: "Only when the user asks for it: a pulse a functional spec. Omitted: every functional spec tested in one pulse, as far as the size guardrail lets" }),
       ),
-      stack: STACK_PARAM,
       model: MODEL_PARAM,
       wait: WAIT_PARAM,
     }),
@@ -1631,7 +1627,7 @@ function conformTool(options: {
       const params = fromWorkingDir(cwd, given);
       const plainFile = resolve(params.base, params.plain_file);
       refuseTestPlainFile(plainFile);
-      return withCallStack(plainFile, params.stack, async () => {
+      return whenBuildable(plainFile, async () => {
         // Off: the person's to turn on, never the chat's - it is told to say why it wants them, and they decide.
         if (!conformanceTestsOn(plainFile)) return { content: [{ type: "text" as const, text: CONFORMANCE_OFF_REFUSAL }], details: { refused: true } };
         const model = options.model(ctx, plainFile, params.model);
@@ -1656,9 +1652,9 @@ function conformTool(options: {
   });
 }
 
-/** The config a spec is built with - its project's, with the chosen stack's over it - or, with no spec, the session folder's. */
+/** The config a spec is built with - its project's, with its module's own file over it - or, with no spec, the session folder's. */
 function configOf(plainFile?: string) {
-  return plainFile !== undefined ? configForSpec(resolve(process.cwd(), plainFile)) : readProjectConfig(process.cwd(), stackOf(process.cwd()));
+  return plainFile !== undefined ? configForSpec(resolve(process.cwd(), plainFile)) : readProjectConfig(process.cwd(), configModuleOf(process.cwd()));
 }
 
 /**
@@ -1770,30 +1766,27 @@ export function projectConfigBlock(root: string): string {
   if (projects.length === 0) return "";
 
   const describe = (dir: string): string[] => {
-    const stacks = stacksOf(dir);
-    const chosen = stackOf(dir);
+    const modules = moduleConfigsOf(dir);
     const where = dir === root ? "" : ` (paths relative to ${relative(root, dir)}/)`;
     const at = (name: string) => (dir === root ? name : `${relative(root, dir)}/${name}`);
     return [
       ...settings(
         readProjectConfig(dir),
-        withStack(undefined, () => findTestScripts(dir)),
+        withConfigModule(undefined, () => findTestScripts(dir)),
         dir === root ? `${projectConfigFile(dir)}, for the specs here:` : `${relative(root, dir)}/${projectConfigFile(dir)}, for the specs in ${relative(root, dir)}/ - built in ${relative(root, dir)}/plain_modules:`,
         where,
-        stacks.length > 0 ? "project of stacks" : "project",
+        modules.length > 0 ? "project of module files" : "project",
       ),
-      ...(stacks.length > 0
-        ? ["", `Stacks: ${stacks.join(", ")} - chosen now: ${chosen ?? "none, so the project's file alone"}. Each module is built with the stack of its part, pinned to its pulses whatever is chosen after: a stack named after the module is its own - backend.plain is built with config.turri.backend.yaml - with nothing to choose. For a module whose stack has another name, pass it as stack to regenerate, conform and pulses. Choose one for this chat with the stack tool only when the user asks.`]
-        : []),
-      // A stack: its file over the project's, for everything built while it is chosen.
-      ...stacks.flatMap((stack) => [
+      // A module's own file: over the project's, for it and every module built on it that has no file of its own.
+      ...modules.flatMap((module) => [
         "",
         ...settings(
-          readProjectConfig(dir, stack),
-          withStack(stack, () => findTestScripts(dir)),
-          `${at(stackConfigFileIn(dir, stack))}, over ${projectConfigFile(dir)}, for everything built while the stack ${stack} is chosen${chosen === stack ? " - as it is now" : ""}:`,
+          readProjectConfig(dir, module),
+          withConfigModule(module, () => findTestScripts(dir)),
+          `${at(moduleConfigFileIn(dir, module))}, over ${projectConfigFile(dir)}, for ${module}.plain and every module built on it that has no file of its own - what it sets itself, and the testing scripts it builds with; the rest is ${projectConfigFile(dir)}'s:`,
           where,
-          "stack",
+          "module",
+          readConfigFile(join(dir, moduleConfigFileIn(dir, module))),
         ),
       ]),
     ];
@@ -1804,18 +1797,23 @@ export function projectConfigBlock(root: string): string {
     scripts: ReturnType<typeof findTestScripts>,
     heading: string,
     where: string,
-    /** The project's file, and whether it has stacks - whose scripts are theirs - or a stack's. */
-    of: "project" | "project of stacks" | "stack",
+    /** The project's file, and whether modules have files of their own - whose scripts are theirs - or a module's. */
+    of: "project" | "project of module files" | "module",
+    /** A module's file as written: only what it sets itself is said - an inherited setting said again reads as its own. */
+    own?: ReturnType<typeof readProjectConfig>,
   ): string[] => {
-    const perModule = of === "project of stacks";
+    const perModule = of === "project of module files";
+    const sets = (set: boolean) => own === undefined || set;
     return [
       heading,
       ...[
-        config.module !== undefined && of !== "stack" ? `- module: ${config.module}${where} - the module to build when the user does not name one.` : undefined,
-        of !== "stack"
+        config.module !== undefined && of !== "module" ? `- module: ${config.module}${where} - the module to build when the user does not name one.` : undefined,
+        of !== "module"
           ? "- conformance tests: written for every functional spec with scenarios - the conformance and acceptance scenarios of its test plain file - once the module's code is built, before anything is built on it. A functional spec with an empty test plain file is not tested. To have one tested, write its scenarios with the file tools, then call regenerate."
           : undefined,
-        config.review === true
+        !sets(own?.review !== undefined)
+          ? undefined
+          : config.review === true
           ? "- review: true - the code and its tests are reviewed once they pass: two reviews at most, the arbiter weighing the second."
           : `- review: ${config.review === false ? "false" : "not set, so off"} - the code and its tests are not reviewed: a pulse lands once its tests pass.`,
         ...(() => {
@@ -1823,25 +1821,27 @@ export function projectConfigBlock(root: string): string {
           const models = projectModels(config);
           const shown = (choice: typeof models.coding) => modelSpec(choice) ?? "";
           return [
-            models.coding !== undefined ? `- coding-model: ${shown(models.coding)}${config.codingModel === undefined ? " (from harness-model)" : ""} - what renders run on, unless engine chose another in this session.` : undefined,
-            models.judge !== undefined ? `- judge-model: ${shown(models.judge)}${config.judgeModel === undefined ? " (from coding-model)" : ""} - the judge and the test review in a conformance run.` : undefined,
-            models.harness !== undefined && of !== "stack" ? `- harness-model: ${shown(models.harness)} - the model you start with.` : undefined,
+            models.coding !== undefined && sets(own?.codingModel !== undefined || own?.models?.coding !== undefined || own?.models?.default !== undefined) ? `- coding-model: ${shown(models.coding)}${config.codingModel === undefined ? " (from harness-model)" : ""} - what pulses run on, unless a call names another model.` : undefined,
+            models.judge !== undefined && sets(own?.judgeModel !== undefined || own?.models?.judge !== undefined) ? `- judge-model: ${shown(models.judge)}${config.judgeModel === undefined ? " (from coding-model)" : ""} - the judge and the test review in a conformance run.` : undefined,
+            models.harness !== undefined && of !== "module" ? `- harness-model: ${shown(models.harness)} - the model you start with.` : undefined,
             // The other roles' own, where models: names them.
             ...AGENT_ROLES.filter((role) => role !== "coding" && role !== "chat").flatMap((role) => {
-              const own = roleModel(config, role);
-              return own !== undefined ? [`- models: ${role}: ${shown(own)}`] : [];
+              const named = roleModel(config, role);
+              return named !== undefined && sets(own?.models?.[role] !== undefined) ? [`- models: ${role}: ${shown(named)}`] : [];
             }),
             ...(() => {
               const limits = AGENT_ROLES.flatMap((role) => (config.models?.[role]?.turnLimit !== undefined ? [`${role} ${config.models[role]!.turnLimit}s`] : []));
               const all = config.models?.default?.turnLimit ?? config.turnLimit;
-              return all !== undefined || limits.length > 0 ? [`- turn limits: ${all !== undefined ? `${all}s each` : "two minutes each"}${limits.length > 0 ? `; ${limits.join(", ")}` : ""}.`] : [];
+              return (all !== undefined || limits.length > 0) && sets(own?.turnLimit !== undefined || own?.models !== undefined) ? [`- turn limits: ${all !== undefined ? `${all}s each` : "two minutes each"}${limits.length > 0 ? `; ${limits.join(", ")}` : ""}.`] : [];
             })(),
           ];
         })(),
-        `- unit testing script: ${scripts.unit !== undefined ? relative(root, scripts.unit) : perModule ? "none for the whole project - each stack's file below names its own" : "none found - every build stops until there is one"}`,
-        `- conformance testing script: ${scripts.conformance !== undefined ? relative(root, scripts.conformance) : perModule ? "none for the whole project - see each stack's file" : "none found"}`,
+        `- unit testing script: ${scripts.unit !== undefined ? relative(root, scripts.unit) : perModule ? "none for the whole project - each module's file below names its own" : "none found - every build stops until there is one"}`,
+        `- conformance testing script: ${scripts.conformance !== undefined ? relative(root, scripts.conformance) : perModule ? "none for the whole project - see each module's file" : "none found"}`,
         scripts.prepare !== undefined ? `- prepare script: ${relative(root, scripts.prepare)} - run on the build before every conformance testing script run, which runs only once it passes` : undefined,
-        config.testingScriptsRunOn === "copy"
+        !sets(own?.testingScriptsRunOn !== undefined)
+          ? undefined
+          : config.testingScriptsRunOn === "copy"
           ? "- testing-scripts-run-on: copy - the testing scripts run on this machine, on a fresh copy of each module's code; `testing-scripts-run-on: in-place` (the default) runs them on the code in place."
           : "- testing-scripts-run-on: in-place - the testing scripts run on this machine on the code in place, from the project, against the host codebase; `testing-scripts-run-on: copy` runs them on a fresh copy of each module's code.",
       ].filter((line): line is string => line !== undefined),
@@ -1850,13 +1850,13 @@ export function projectConfigBlock(root: string): string {
 
   return [
     `<project config>`,
-    `A project's ${CONFIG_FILE} sets how its specs are built - and a stack's config.turri.<stack>.yaml, over it, how everything is built`,
-    "while that stack is chosen: its testing scripts, toolchains, models and conformance - a backend and a frontend each with their own scripts.",
-    "One stack is chosen at a time, in each chat for that chat: the render tools follow the project's file with the chosen stack's over it;",
-    `a project with no ${CONFIG_FILE} yet is read from its ${LEGACY_CONFIG_FILE} (and config.<stack>.yaml): to change a setting there, copy`,
-    `${LEGACY_CONFIG_FILE} to ${CONFIG_FILE} - and each config.<stack>.yaml to config.turri.<stack>.yaml - first, then edit the copy; never edit ${LEGACY_CONFIG_FILE}.`,
-    "answer questions about the project's settings from it, and say when a render will differ from it because the user",
-    "asked. Name a spec by its path from here - plain/hubspot.plain - and it is built in its own project.",
+    `A project's ${CONFIG_FILE} sets how its modules are built - and a module's own config.turri.<module>.yaml, over it, how that`,
+    "module is built, and every module built on it that has no file of its own: its testing scripts, toolchains, models and conformance -",
+    "a backend and a frontend each with their own scripts. Nobody chooses it: each module is built with its own file, else the one of",
+    "a module it requires, else the project's alone - two among the modules it requires is an error to fix. A project with no",
+    `${CONFIG_FILE} yet is read from its ${LEGACY_CONFIG_FILE} (and config.<module>.yaml). Change a setting with the settings tool,`,
+    "never by editing these files; answer questions about the project's settings from what follows, and say when a pulse will",
+    "differ from it because the user asked. Name a spec by its path from here - plain/hubspot.plain - and it is built in its own project.",
     ...projects.flatMap((dir) => ["", ...describe(dir)]),
     `</project config>`,
   ].join("\n");
@@ -1880,7 +1880,7 @@ function conversationModel(ctx: ExtensionContext, override?: string): string | u
  */
 /** The model a release runs on - a pulse's last stage, and a check's: the one that regenerated the module. A release follows steps, and a small model thinking little does that well. */
 function releaseModel(ctx: ExtensionContext, plainFile: string): string | undefined {
-  return modelFor(chosenModels, "spec_changes", projectModel(ctx, plainFile) ?? chatModelOf(ctx));
+  return projectModel(ctx, plainFile) ?? chatModelOf(ctx);
 }
 
 function chatModelOf(ctx: ExtensionContext): string | undefined {
@@ -1897,7 +1897,7 @@ let lastChatModel: string | undefined;
 /**
  * Conformance tests turned on, for the session: `conformance-tests: true` written where the module's value comes from
  * (conformance-switch.ts) - what /conform does when they are off, and a host's turnOnConformance. Every chat is told at
- * its next turn. `plainFile`, absolute or from the project, picks the module whose stack's file
+ * its next turn. `plainFile`, absolute or from the project, picks the module whose own file
  * is written when that names the key. Returns the file written, from the project. Starts no conformance pulse.
  */
 export function turnOnConformance(core: TurriCore, plainFile?: string): string {
@@ -1908,25 +1908,14 @@ export function turnOnConformance(core: TurriCore, plainFile?: string): string {
 /** The skills running in the background, by project and skill - one at a time each, whichever chat started it - with what stops them. */
 const backgroundSkillRuns = new Map<string, AbortController>();
 
-/** The models chosen in this session, by kind of work - for every chat. Saved in the chat they were chosen in, so reopening it keeps them. */
-const chosenModels: ModelChoices = {};
-/** When they were last chosen: a chat reopened with older choices of its own leaves them be. */
-let chosenModelsAt = 0;
-const MODEL_CHOICE_ENTRY = "turri_render_models";
-
 /**
- * The model a job's agents run on: the one named on the call, checked now so a wrong name fails
- * here and not minutes later in the background; else the one chosen for its kind of work; else
- * the conversation's.
+ * The model a pulse's agents run on: the one named on the call, checked now so a wrong name fails here and not minutes
+ * later in the background; else the coding model - `--coding-model`, or the module's config - else the conversation's.
  */
-/**
- * The model a render job runs on: the one asked for, or the one chosen in this session for its kind
- * of work, or the project's - `model:` in config.turri.yaml - or the conversation's.
- */
-function jobModel(ctx: ExtensionContext, work: RenderWork, named?: string, plainFile?: string): string | undefined {
-  const model = jobModelOf(ctx, work, named, plainFile);
+function jobModel(ctx: ExtensionContext, named?: string, plainFile?: string): string | undefined {
+  const model = jobModelOf(ctx, named, plainFile);
   // The AWS region worked out again, with every model a job ran on this session: the config's may have changed since,
-  // and one chosen in the session counts as the config's do - two needing two regions are said, not flipped between.
+  // and one named on a call counts as the config's do - two needing two regions are said, not flipped between.
   if (model !== undefined) jobModels.add(model);
   applyBedrockRegion(plainFile !== undefined ? projectDirOf(plainFile) : process.cwd(), { also: [...jobModels] });
   return model;
@@ -1935,13 +1924,13 @@ function jobModel(ctx: ExtensionContext, work: RenderWork, named?: string, plain
 /** Every model a job ran on in this session. */
 const jobModels = new Set<string>();
 
-function jobModelOf(ctx: ExtensionContext, work: RenderWork, named?: string, plainFile?: string): string | undefined {
+function jobModelOf(ctx: ExtensionContext, named?: string, plainFile?: string): string | undefined {
   if (named !== undefined && named.trim() !== "") {
     const resolved = resolveModel(named, ctx.modelRegistry);
     if (!resolved.ok) throw new Error(describeResolution(resolved));
     return resolved.model;
   }
-  return modelFor(chosenModels, work, projectModel(ctx, plainFile) ?? chatModelOf(ctx));
+  return projectModel(ctx, plainFile) ?? chatModelOf(ctx);
 }
 
 /**
@@ -1974,108 +1963,6 @@ function projectModel(ctx: ExtensionContext, plainFile?: string): string | undef
   return modelSpec({ model: resolved.model, thinking });
 }
 
-/** The default coding model for showing, with where it came from - never an error. */
-function projectModelLabel(ctx: ExtensionContext): { model: string; from: string } | undefined {
-  const given = codingModelDefault();
-  if (given === undefined) return undefined;
-  try {
-    return { model: projectModel(ctx)!, from: given.from };
-  } catch {
-    return { model: `${given.named} - which cannot be used here`, from: given.from };
-  }
-}
-
-/**
- * engine, for the conversation's agent and for a skill's agent - whom the person talks
- * to while the skill runs - alike: both write the same choice. `conversation` is the context to
- * read models and the chat's model from; omitted, the one the tool is called with.
- */
-function setRenderModelTool(pi: ExtensionAPI, conversation?: ExtensionContext) {
-  return defineTool({
-    name: "engine",
-    label: "Engine",
-    description:
-      "The engine: which model the agents that regenerate the code run on. With no model, say which it is. With one, choose it " +
-      "for the rest of this session: for spec changes (every pulse the work loop plans, conformance tests included), for " +
-      "functionalities (regenerate with funcIds named), or for everything. By default " +
-      "each runs on the model the project's config.turri.yaml names, or else the conversation's model. The model may be given as provider/model-id or by name as " +
-      "the user said it; a name that fits more than one model, or none with credentials, comes back as a " +
-      "list - ask the user which they meant, never pick one yourself. Pulses already queued keep their model.",
-    promptSnippet: "the engine: show or choose the model that regenerates the code",
-    promptGuidelines: [
-      "When the user says which model should regenerate or build something, call engine with it - once; it holds for the rest of the session. To say which one it is, call engine with no model.",
-      "If engine returns several candidates, ask the user which one with ask_user or in your reply, then call it again with the exact provider/model-id.",
-      "Say which model a pulse will run on when you start one on something other than the conversation's model.",
-    ],
-    parameters: Type.Object({
-      work: Type.Optional(
-        Type.Union([Type.Literal("spec_changes"), Type.Literal("functionalities"), Type.Literal("all")], {
-          description: "spec_changes, functionalities, or all of it. Omitted: all",
-        }),
-      ),
-      model: Type.Optional(
-        Type.String({
-          description: 'provider/model-id, or the model\'s name as the user said it. "chat" goes back to the conversation\'s model. Omitted: say which it is, changing nothing',
-        }),
-      ),
-    }),
-    async execute(_id, given, _signal, _onUpdate, called) {
-      const ctx = conversation ?? called;
-      if (given.model === undefined) {
-        const text = `The engine:\n${describeChoices(chosenModels, chatModelOf(ctx), projectModelLabel(ctx))}`;
-        return { content: [{ type: "text" as const, text }], details: { ...chosenModels } };
-      }
-      const params = { work: given.work ?? ("all" as const), model: given.model };
-      const works: Array<RenderWork | "all"> = params.work === "all" ? ["all", "spec_changes", "functionalities"] : [params.work];
-      if (/^(chat|default|conversation)$/i.test(params.model.trim())) {
-        for (const work of works) delete chosenModels[work];
-      } else {
-        const resolved = resolveModel(params.model, ctx.modelRegistry);
-        if (!resolved.ok) throw new Error(describeResolution(resolved));
-        if (params.work === "all") {
-          delete chosenModels.spec_changes;
-          delete chosenModels.functionalities;
-        }
-        chosenModels[params.work] = resolved.model;
-      }
-      chosenModelsAt = Date.now();
-      pi.appendEntry(MODEL_CHOICE_ENTRY, { ...chosenModels });
-      const text = `The engine now:\n${describeChoices(chosenModels, chatModelOf(ctx), projectModelLabel(ctx))}`;
-      return { content: [{ type: "text" as const, text }], details: { ...chosenModels } };
-    },
-  });
-}
-
-/** Choosing which model renders what, for the rest of the session. */
-function registerRenderModels(pi: ExtensionAPI) {
-  // The session's choices, every chat's: a chat reopened brings back what it chose, when that is newer than what the
-  // session has - and a fresh chat starts with the session's.
-  let started = false;
-  pi.on("session_start", (_event, ctx) => {
-    if (started) return;
-    started = true;
-    const saved = ctx.sessionManager
-      .getBranch()
-      .filter((entry) => entry.type === "custom" && (entry as { customType?: string }).customType === MODEL_CHOICE_ENTRY)
-      .at(-1) as { data?: ModelChoices; timestamp?: string } | undefined;
-    const at = Date.parse(saved?.timestamp ?? "") || 1;
-    if (saved === undefined || at <= chosenModelsAt) return;
-    chosenModelsAt = at;
-    for (const key of Object.keys(chosenModels)) delete chosenModels[key as keyof ModelChoices];
-    Object.assign(chosenModels, saved.data ?? {});
-  });
-
-  pi.registerTool(setRenderModelTool(pi));
-
-  pi.registerCommand("engine", {
-    description: "Show the engine: which model regenerates spec changes and functionalities. To change it, say so in the conversation.",
-    handler: async (_args, ctx) => {
-      const text = `The engine:\n${describeChoices(chosenModels, chatModelOf(ctx), projectModelLabel(ctx))}\n\nTo change it, say so - e.g. "regenerate spec changes with gpt 5.5".`;
-      if (ctx.hasUI) ctx.ui.notify(text, "info");
-    },
-  });
-}
-
 /**
  * Run the work now, or start it as a background job and hand back an id.
  *
@@ -2099,7 +1986,7 @@ function workLoopFor(jobs: JobRegistry, cwd: string, ctx: ExtensionContext): Wor
     const loop = createWorkLoop({
       registry: jobs,
       cwd,
-      modelFor: (plainFile) => modelFor(chosenModels, "spec_changes", projectModel(from.ctx, plainFile) ?? chatModelOf(from.ctx)),
+      modelFor: (plainFile) => projectModel(from.ctx, plainFile) ?? chatModelOf(from.ctx),
       // The planner reasons about the whole of the work: it runs on the chat's model.
       plannerModel: () => chatModelOf(from.ctx),
       // How the work is to be planned: the conversation's steering, and AGENTS.md's - read afresh each plan.
@@ -2245,7 +2132,6 @@ function registerJobTools(pi: ExtensionAPI, jobs: JobRegistry, cwd: string) {
         Type.String({ description: "A look ahead: the .plain file of the module to plan, starting nothing. Not with job_id. Omitted: no look ahead" }),
       ),
       working_dir: WORKING_DIR_PARAM,
-      stack: STACK_PARAM,
       wait: Type.Optional(
         Type.Boolean({ description: "With a pulse started: block until it finishes instead of reporting its current state (default false)" }),
       ),
@@ -2257,7 +2143,7 @@ function registerJobTools(pi: ExtensionAPI, jobs: JobRegistry, cwd: string) {
         const given = fromWorkingDir(cwd, params);
         const plainFile = resolve(given.base, given.plain_file!);
         refuseTestPlainFile(plainFile);
-        return withCallStack(plainFile, params.stack, async () => {
+        return whenBuildable(plainFile, async () => {
           const loop = workLoopFor(jobs, cwd, ctx);
           const statuses = await loop.lookAhead(plainFile);
           return { content: [{ type: "text" as const, text: describeLookAhead(loop, statuses) }], details: { status: "looked ahead" } };
@@ -2400,9 +2286,9 @@ function registerJobTools(pi: ExtensionAPI, jobs: JobRegistry, cwd: string) {
     },
   });
 
-  // /turri-config: every setting of config.turri.yaml from the chat, each taking effect as it says - what turri fixed at its
+  // /settings: every setting of config.turri.yaml from the chat, each taking effect as it says - what turri fixed at its
   // start changed here, as it runs.
-  registerTurriConfig(pi, {
+  registerSettings(pi, {
     cwd,
     rules: ruleNames,
     chatSpec: () => modelSpec(projectModels(readProjectConfig(cwd)).harness),
@@ -2426,11 +2312,6 @@ function registerJobTools(pi: ExtensionAPI, jobs: JobRegistry, cwd: string) {
         if (process.env[CODING_MODEL_ENV] !== undefined) {
           dropped.push(`--coding-model ${process.env[CODING_MODEL_ENV]}`);
           delete process.env[CODING_MODEL_ENV];
-        }
-        chosenModelsAt = Date.now();
-        for (const work of Object.keys(chosenModels) as Array<keyof ModelChoices>) {
-          dropped.push(`the engine's ${work === "all" ? "" : `${work.replace(/_/g, " ")} `}model ${chosenModels[work]}`);
-          delete chosenModels[work];
         }
         return dropped.length === 0 ? undefined : `Chosen this session, and given way to the config: ${dropped.join("; ")}.`;
       },
@@ -3283,7 +3164,7 @@ function registerBranding(pi: ExtensionAPI, skills: SkillCatalogue) {
       ...(data.config ?? []).map((line) => theme.fg("warning", line)),
       `${theme.fg("text", "the first coding agent with the power of ")}${brandPink(theme)("regenerative software")}`,
       // Where the settings are changed, without leaving the chat.
-      theme.fg("muted", "configure with /turri-config"),
+      theme.fg("muted", "configure with /settings"),
       // Only what is wrong: skills that did not load, and agents' commands less fenced than they should be.
       ...(data.pending > 0 ? [theme.fg("warning", `${data.pending} skill${data.pending === 1 ? "" : "s"} failed to load`)] : []),
       ...(data.sandbox !== undefined && data.sandbox.level !== "ok" ? [theme.fg(data.sandbox.level === "limited" ? "warning" : "error", data.sandbox.text)] : []),

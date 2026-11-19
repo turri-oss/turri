@@ -2,8 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { copyFileSync, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { load as loadYaml } from "js-yaml";
-import { currentChat } from "./chat-scope.ts";
-import { projectDirOf } from "./regenerate/paths.ts";
+import { projectDirOf, resolveTemplateDirs } from "./regenerate/paths.ts";
 
 /**
  * The project's `config.turri.yaml`, at its root - the folder that holds `plain_modules` - or, before it had one, its `config.yaml`.
@@ -50,21 +49,20 @@ import { projectDirOf } from "./regenerate/paths.ts";
  * either of which may be left out; a bare string is the model alone. What a model leaves out it takes
  * from the one it inherits: judge-model from coding-model, coding-model from harness-model. They are
  * defaults: `--harness-model` / `--coding-model` / `--judge-model` on the command line win over them,
- * and so does a model chosen during the conversation (pi's /model, engine). `model:` is read
+ * and so does a model chosen during the conversation (pi's /model) or named on a call. `model:` is read
  * as `coding-model`, which it was before there were two.
  *
  * Keys are written with dashes; underscores are read the same (`conformance_tests`). Keys it
  * does not know - another tool's `config.yaml`, read while it is the old file, may carry several - are ignored, and so is a value of
  * the wrong type. Everything is optional, and what is given on the command line wins.
  *
- * A project whose parts do not share a stack - a Python backend and a React frontend beside each other - keeps a
- * stack's own settings in `config.turri.<stack>.yaml` beside `config.turri.yaml`: `config.turri.backend.yaml` for the
- * stack `backend` - its testing scripts, its toolchains. A stack is chosen, never worked out: `/stack` in the chat,
- * `--stack <name>` (or `TURRI_STACK`) on the command line. With one chosen, everything turri builds from then on is
- * built with `config.turri.yaml` and the stack's file over it, key by key - a model it names takes what it leaves out
- * from the project's - and a pulse already running keeps the stack it started with. With none, `config.turri.yaml`
- * alone. `module:` and `harness-model:` are the project's alone - there is one conversation - and are not read from a
- * stack's file.
+ * A module can have settings of its own in `config.turri.<module>.yaml` beside `config.turri.yaml`:
+ * `config.turri.backend.yaml` for `backend.plain` - its testing scripts, its toolchains, its models - laid over
+ * `config.turri.yaml` key by key, a model it names taking what it leaves out from the project's. A module with no file
+ * of its own takes the one of a module it requires - `config.turri.backend.yaml` builds `backend_auth.plain`, which
+ * requires `backend.plain` - and two among the modules it requires is an error (`configModuleFor`). Nobody chooses it:
+ * it is worked out from the module, and a pulse keeps the one it started with. `module:`, `harness-model:` and the
+ * other settings of the whole project are read from `config.turri.yaml` alone.
  */
 
 /** turri's settings for a project, in a file of its own: a `config.yaml` beside it may be another tool's. */
@@ -72,18 +70,18 @@ export const CONFIG_FILE = "config.turri.yaml";
 
 /**
  * Where turri's settings were before they had a file of their own. A project with no `config.turri*.yaml` yet is read
- * from it - and a `config.<name>.yaml` beside it as the stack `<name>` - and turri never writes it: the first setting
+ * from it - and a `config.<name>.yaml` beside it as the module `<name>`'s - and turri never writes it: the first setting
  * turri writes copies them to the new names (`adoptLegacyConfig`), and from then on the old files are not read.
  */
 export const LEGACY_CONFIG_FILE = "config.yaml";
 
-/** A stack's config file's name: `config.turri.backend.yaml` for the stack `backend`. */
-export function stackConfigFile(stack: string): string {
-  return `config.turri.${stack}.yaml`;
+/** A module's config file's name: `config.turri.backend.yaml` for `backend.plain`. */
+export function moduleConfigFile(module: string): string {
+  return `config.turri.${module}.yaml`;
 }
 
-function legacyStackConfigFile(stack: string): string {
-  return `config.${stack}.yaml`;
+function legacyModuleConfigFile(module: string): string {
+  return `config.${module}.yaml`;
 }
 
 /**
@@ -109,19 +107,19 @@ function namesIn(root: string): string[] {
 
 const keptNames = new Map<string, { at: number; names: string[]; readAt: number }>();
 
-/** The stacks in the old naming, `config.<stack>.yaml`. */
-function legacyStacks(root: string): string[] {
+/** The modules with a file of their own in the old naming, `config.<module>.yaml`. */
+function legacyModuleConfigs(root: string): string[] {
   return namesIn(root)
     .map((name) => /^config\.(?!turri(?:\.|$))(.+)\.yaml$/.exec(name)?.[1])
     .filter((name): name is string => name !== undefined)
     .sort();
 }
 
-/** Whether a folder's settings are still in the old files: a config.yaml or a config.<stack>.yaml, and no config.turri*.yaml. */
+/** Whether a folder's settings are still in the old files: a config.yaml or a config.<module>.yaml, and no config.turri*.yaml. */
 export function usesLegacyConfig(root: string): boolean {
   const names = namesIn(root);
   if (names.some((name) => /^config\.turri(?:\..+)?\.yaml$/.test(name))) return false;
-  return names.includes(LEGACY_CONFIG_FILE) || legacyStacks(root).length > 0;
+  return names.includes(LEGACY_CONFIG_FILE) || legacyModuleConfigs(root).length > 0;
 }
 
 /** The file the project's settings are read from, by name: config.turri.yaml, or config.yaml while the folder has only the old files. */
@@ -129,19 +127,19 @@ export function projectConfigFile(root: string): string {
   return usesLegacyConfig(root) ? LEGACY_CONFIG_FILE : CONFIG_FILE;
 }
 
-/** The file a stack's settings are read from, by name - the old name while the folder has only the old files. */
-export function stackConfigFileIn(root: string, stack: string): string {
-  return usesLegacyConfig(root) ? legacyStackConfigFile(stack) : stackConfigFile(stack);
+/** The file a module's own settings are read from, by name - the old name while the folder has only the old files. */
+export function moduleConfigFileIn(root: string, module: string): string {
+  return usesLegacyConfig(root) ? legacyModuleConfigFile(module) : moduleConfigFile(module);
 }
 
-/** Whether a folder holds a project's settings: a config.turri.yaml, a stack's file, or the old files. */
+/** Whether a folder holds a project's settings: a config.turri.yaml, a module's file, or the old files. */
 export function hasProjectConfig(root: string): boolean {
-  return existsSync(join(root, CONFIG_FILE)) || stacksOf(root).length > 0 || usesLegacyConfig(root);
+  return existsSync(join(root, CONFIG_FILE)) || moduleConfigsOf(root).length > 0 || usesLegacyConfig(root);
 }
 
-/** The stacks a project folder has files for, by name. */
-export function stacksOf(root: string): string[] {
-  if (usesLegacyConfig(root)) return legacyStacks(root);
+/** The modules a project folder has config files for, by name. */
+export function moduleConfigsOf(root: string): string[] {
+  if (usesLegacyConfig(root)) return legacyModuleConfigs(root);
   return namesIn(root)
     .map((name) => /^config\.turri\.(.+)\.yaml$/.exec(name)?.[1])
     .filter((name): name is string => name !== undefined)
@@ -150,92 +148,104 @@ export function stacksOf(root: string): string[] {
 
 /**
  * Before turri first writes a setting in a folder whose settings are still in the old files: config.yaml copied to
- * config.turri.yaml, and each config.<stack>.yaml to config.turri.<stack>.yaml, so nothing is lost when the old files
+ * config.turri.yaml, and each config.<module>.yaml to config.turri.<module>.yaml, so nothing is lost when the old files
  * stop being read. The old files are left as they are. Gives back the files written, by name.
  */
 export function adoptLegacyConfig(root: string, options: { projectFile?: boolean } = {}): string[] {
   if (!usesLegacyConfig(root)) return [];
   const copies: Array<[string, string]> = [
-    // `projectFile: false`: the stacks' files alone - turri init-config writes config.turri.yaml itself.
+    // `projectFile: false`: the modules' files alone - turri init-config writes config.turri.yaml itself.
     ...(options.projectFile !== false && existsSync(join(root, LEGACY_CONFIG_FILE)) ? [[LEGACY_CONFIG_FILE, CONFIG_FILE] as [string, string]] : []),
-    ...legacyStacks(root).map((stack) => [legacyStackConfigFile(stack), stackConfigFile(stack)] as [string, string]),
+    ...legacyModuleConfigs(root).map((module) => [legacyModuleConfigFile(module), moduleConfigFile(module)] as [string, string]),
   ];
   for (const [from, to] of copies) copyFileSync(join(root, from), join(root, to));
   return copies.map(([, to]) => to);
 }
 
-/** The stack a pulse runs with: the one chosen as it started, whatever is chosen since. */
-const pinnedStack = new AsyncLocalStorage<{ stack: string | undefined }>();
+/** The module whose config file a pulse runs with: worked out as it was queued, whatever the files say since. */
+const pinnedConfig = new AsyncLocalStorage<{ module: string | undefined }>();
 
-/**
- * The stack chosen now - the chat's own (`/stack` in it), else `--stack` or `TURRI_STACK` - or, inside a pulse, the one
- * it started with.
- */
-export function chosenStack(): string | undefined {
-  const pinned = pinnedStack.getStore();
-  if (pinned !== undefined) return pinned.stack;
-  const chat = currentChat();
-  if (chat !== undefined) return chat.stack;
-  return text(process.env.TURRI_STACK);
+/** Inside a pulse - or work pinned like one - the module whose config file it runs with; none outside. */
+export function pinnedConfigModule(): string | undefined {
+  return pinnedConfig.getStore()?.module;
+}
+
+/** Run `work` with `module`'s config file over the project's, whatever the files say meanwhile: a pulse keeps the one it started with. */
+export function withConfigModule<T>(module: string | undefined, work: () => T): T {
+  return pinnedConfig.run({ module }, work);
+}
+
+/** Whether a module's config file is pinned here - by the pulse it runs in, or the work that plans it. */
+export function configModulePinned(): boolean {
+  return pinnedConfig.getStore() !== undefined;
 }
 
 /**
- * Choose the stack everything is built with from now on - or none, the project's config alone. In a chat, for that
- * chat alone; outside one, kept in TURRI_STACK.
+ * The module whose config file builds a module - its `config.turri.<module>.yaml` laid over `config.turri.yaml` - or
+ * none, `config.turri.yaml` alone. The one pinned, inside a pulse; else the module's own file; else the one file among
+ * the modules it requires, all the way down - a module is built on their code, in one codebase, with their testing
+ * scripts. Two among them is an error: which one builds it cannot be told. Only `requires` counts, not imports.
  */
-export function chooseStack(stack: string | undefined): void {
-  const chosen = stack === undefined || stack.trim() === "" ? undefined : stack.trim();
-  const chat = currentChat();
-  if (chat !== undefined) chat.stack = chosen;
-  else if (chosen === undefined) delete process.env.TURRI_STACK;
-  else process.env.TURRI_STACK = chosen;
-}
-
-/** Run `work` with `stack` as the one chosen, whatever is chosen meanwhile: a pulse keeps the stack it started with. */
-export function withStack<T>(stack: string | undefined, work: () => T): T {
-  return pinnedStack.run({ stack }, work);
-}
-
-/** Whether a stack is pinned here - named by the call that asked for the work, or kept by the pulse it runs in. */
-export function stackPinned(): boolean {
-  return pinnedStack.getStore() !== undefined;
-}
-
-/**
- * The stack a module is built with: the one pinned - named by the call, or kept by the pulse - else the stack named
- * after the module, config.turri.backend.yaml for backend.plain, else the one chosen for the session; none, when none
- * of them is.
- */
-export function stackForModule(plainFile: string): string | undefined {
+export function configModuleFor(plainFile: string): string | undefined {
   const root = projectDirOf(resolve(plainFile));
-  if (stackPinned()) return stackOf(root);
+  if (configModulePinned()) return configModuleOf(root);
   const own = basename(plainFile).replace(/\.plain$/, "");
-  return stacksOf(root).includes(own) ? own : stackOf(root);
+  const files = moduleConfigsOf(root);
+  if (files.length === 0) return undefined;
+  if (files.includes(own)) return own;
+  const below = requiredModulesOf(resolve(plainFile)).filter((name) => files.includes(name));
+  if (below.length > 1) throw new Error(moduleConfigClash(own, below, root));
+  return below[0];
 }
 
-/** The words that choose no stack: the project's config alone. */
-export const NO_STACK = ["none", "off", "base", "-"];
-
-/**
- * The stack `name` names for the project at `root` - undefined for none - refused when the project has no file for
- * it, with the stacks it has.
- */
-export function stackNamed(root: string, name: string): string | undefined {
-  const wanted = name.trim();
-  if (wanted === "" || NO_STACK.includes(wanted.toLowerCase())) return undefined;
-  const stacks = stacksOf(root);
-  if (stacks.includes(wanted)) return wanted;
-  throw new Error(
-    stacks.length > 0
-      ? `There is no stack ${wanted} in ${root}. Its stacks: ${stacks.join(", ")} - or none.`
-      : `${root} has no stacks: a stack is a ${stackConfigFile("<stack>")} beside config.turri.yaml.`,
+/** Why a module's config cannot be told: two or more of the modules it requires have a config file of their own. */
+export function moduleConfigClash(module: string, below: string[], root: string): string {
+  const named = below.map((name) => moduleConfigFileIn(root, name)).join(", ");
+  return (
+    `${module}.plain requires modules that each have a config file of their own - ${named} - and a module built on others ` +
+    `takes theirs, so which builds ${module}.plain cannot be told. Give ${module}.plain its own ${moduleConfigFileIn(root, module)}, ` +
+    `or keep only one of them.`
   );
 }
 
-/** The stack a project folder is built with now: the one chosen, when the folder has a file for it. */
-export function stackOf(root: string): string | undefined {
-  const stack = chosenStack();
-  return stack !== undefined && stacksOf(root).includes(stack) ? stack : undefined;
+/**
+ * Every module a module requires, all the way down, by name - read from each file's frontmatter alone, found as the
+ * parser finds them (the module's folder, its template/ folder, PLAIN_TEMPLATE_DIRS). One that is not there, or does
+ * not read, ends its branch: the parse says what is wrong with it.
+ */
+export function requiredModulesOf(plainFile: string): string[] {
+  const dirs = resolveTemplateDirs(plainFile);
+  const found: string[] = [];
+  const visit = (file: string) => {
+    for (const name of requiresIn(file)) {
+      const bare = basename(name.replace(/^\.\//, ""), ".plain");
+      if (found.includes(bare)) continue;
+      found.push(bare);
+      const next = dirs.map((dir) => join(dir, `${name}.plain`)).find((candidate) => existsSync(candidate));
+      if (next !== undefined) visit(next);
+    }
+  };
+  visit(plainFile);
+  return found;
+}
+
+/** The modules a .plain file's frontmatter says it requires. */
+function requiresIn(file: string): string[] {
+  try {
+    const match = /^-{3,}[ \t]*\n(?:([\s\S]*?)\n)?-{3,}[ \t]*(?:\n|$)/.exec(readFileSync(file, "utf8"));
+    const front = match?.[1] !== undefined ? (loadYaml(match[1]) as { requires?: unknown } | null) : undefined;
+    const requires = front?.requires;
+    const names = typeof requires === "string" ? [requires] : Array.isArray(requires) ? requires : [];
+    return names.filter((name): name is string => typeof name === "string" && name.trim() !== "").map((name) => name.trim());
+  } catch {
+    return [];
+  }
+}
+
+/** The module whose config file is pinned here, when the project folder has that file. */
+export function configModuleOf(root: string): string | undefined {
+  const module = pinnedConfigModule();
+  return module !== undefined && moduleConfigsOf(root).includes(module) ? module : undefined;
 }
 
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
@@ -353,7 +363,7 @@ export function projectModels(config: Pick<ProjectConfig, "harnessModel" | "codi
  * when the project names none.
  */
 export function skillModel(root: string, role: "harness" | "coding" = "harness"): string | undefined {
-  return modelSpec(projectModels(readProjectConfig(root, stackOf(root)))[role]);
+  return modelSpec(projectModels(readProjectConfig(root, configModuleOf(root)))[role]);
 }
 
 /** A role entry's model and thinking alone. */
@@ -512,7 +522,7 @@ export interface ProjectConfig {
    * session through a job is compacted between turns. The project's alone. Unset: 100k.
    */
   compactAt?: number;
-  /** The most functional specs the planner puts in one pulse. Unset: 3. A stack's file wins. */
+  /** The most functional specs the planner puts in one pulse. Unset: 3. A module's own file wins. */
   maxSpecsPerPulse?: number;
   /** The most lines of spec - its functional specs and the definitions they bring - in one pulse; past it, split. Unset: 120. */
   maxLinesPerPulse?: number;
@@ -591,17 +601,17 @@ function text(value: unknown): string | undefined {
 }
 
 /**
- * The project's config - with a stack's over it, when one is named - or nothing of it when there is no file or it does
+ * The project's config - with a module's own file over it, when one is named - or nothing of it when there is no file or it does
  * not parse.
  */
-export function readProjectConfig(root: string, stack?: string): ProjectConfig {
-  return withRunOverrides(readStackedConfig(root, stack));
+export function readProjectConfig(root: string, module?: string): ProjectConfig {
+  return withRunOverrides(readLayeredConfig(root, module));
 }
 
-function readStackedConfig(root: string, stack?: string): ProjectConfig {
+function readLayeredConfig(root: string, module?: string): ProjectConfig {
   const project = readConfigFile(join(root, projectConfigFile(root)));
-  if (stack === undefined) return project;
-  const own = readConfigFile(join(root, stackConfigFileIn(root, stack)));
+  if (module === undefined) return project;
+  const own = readConfigFile(join(root, moduleConfigFileIn(root, module)));
   // The project's alone: one conversation, one module built when none is named.
   const merged: ProjectConfig = { ...project };
   for (const key of Object.keys(CONFIG_KEYS) as Array<keyof ProjectConfig>) {
@@ -698,15 +708,23 @@ function withoutUndefined(config: ProjectConfig): ProjectConfig {
 /** Where the test plain files are when `test-dir:` does not say. */
 export const DEFAULT_TEST_DIR = "tests";
 
-/** The folder of a module's project's test plain files: `test-dir:` - its stack's over the project's - from the project's folder. */
+/** The folder of a module's project's test plain files: `test-dir:` - its own file's over the project's - from the project's folder. */
 export function testDirOf(plainFile: string): string {
   return resolve(projectDirOf(resolve(plainFile)), configForSpec(plainFile).testDir ?? DEFAULT_TEST_DIR);
 }
 
-/** The config a spec is built with: its project's, with its module's stack over it (`stackForModule`). */
+/** The config a spec is built with: its project's, with its module's own file over it - or a required module's (`configModuleFor`). */
 export function configForSpec(plainFile: string): ProjectConfig {
   const root = projectDirOf(resolve(plainFile));
-  return readProjectConfig(root, stackForModule(plainFile));
+  // Two module files among the modules it requires: the project's alone, read as anything reads it - the parse, and
+  // every call that would build the module, refuse it with why (`configModuleFor`).
+  let module: string | undefined;
+  try {
+    module = configModuleFor(plainFile);
+  } catch {
+    module = undefined;
+  }
+  return readProjectConfig(root, module);
 }
 
 /**
@@ -799,7 +817,7 @@ function readConfigFileNow(path: string): ProjectConfig {
 const OLDER_KEYS = ["model", "turn_limit"];
 
 /**
- * The keys of the project's own config files - config.turri.yaml and each stack's - that turri reads nothing of: a setting
+ * The keys of the project's own config files - config.turri.yaml and each module's - that turri reads nothing of: a setting
  * turri no longer has (`test-advisor`), or one misspelt. Said as turri starts, so a setting the person thinks is on is
  * not silently ignored. config.yaml is left out: it may be another tool's, with keys of its own.
  */

@@ -10,8 +10,8 @@ export interface ScriptBeingWritten {
   /** The project's folder. */
   project: string;
   kind: ScriptKind;
-  /** The stack it is written for, when the run was for one. */
-  stack?: string;
+  /** The module whose config file it is named in, when the run was for one: its own, or one it requires. */
+  configModule?: string;
 }
 
 interface Writing {
@@ -38,10 +38,10 @@ export function writingScript(run: ScriptBeingWritten): () => void {
   };
 }
 
-/** Whether a script of this kind is being written for a module of this project on this stack - one written for no stack is anyone's. */
-export function scriptBeingWritten(project: string, kind: ScriptKind, stack?: string): boolean {
+/** Whether a script of this kind is being written for a module of this project built with this module's config file - one written for none is anyone's. */
+export function scriptBeingWritten(project: string, kind: ScriptKind, configModule?: string): boolean {
   const folder = resolve(project);
-  return [...writing().runs].some((run) => run.project === folder && run.kind === kind && (run.stack === undefined || stack === undefined || run.stack === stack));
+  return [...writing().runs].some((run) => run.project === folder && run.kind === kind && (run.configModule === undefined || configModule === undefined || run.configModule === configModule));
 }
 
 /** Told each time a run writing a script ends. Returns what stops it. */

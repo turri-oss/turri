@@ -8,7 +8,7 @@ as module:func-id, or every one with scenarios - on the code as it is built, as 
 exactly their conformance and acceptance scenarios, following the spec's test reqs, with the whole suite
 the module inherits, a failure fixed in the test or the code, whichever is wrong. A functional spec with
 no scenarios is refused: write them first. So is a module with no test reqs, or no conformance testing
-script for its stack: the refusal names the next step. Every functional spec tested goes in one pulse,
+script: the refusal names the next step. Every functional spec tested goes in one pulse,
 as far as the size guardrail lets. A functional spec named whose tests are written has them written
 again: deleted and written anew from its scenarios, its code untouched.
 

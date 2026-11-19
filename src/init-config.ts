@@ -678,7 +678,7 @@ export async function initConfig(dir: string, options: InitConfigOptions = {}): 
   if ("problem" in chosen) return { written: false, message: chosen.problem };
   const { vendor, bedrock, models, given } = chosen;
   const folder = resolve(dir);
-  // The old stacks' files, config.<stack>.yaml, copied to their new names; config.turri.yaml is written below.
+  // The modules' old files, config.<module>.yaml, copied to their new names; config.turri.yaml is written below.
   adoptLegacyConfig(folder, { projectFile: false });
   const path = join(folder, CONFIG_FILE);
   const existing = existsSync(path) && options.force !== true;

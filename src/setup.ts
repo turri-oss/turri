@@ -10,7 +10,7 @@ import { fetchLatest, newerThan, turrisOnPath, versionFindings } from "./turri-v
 import { sandboxAvailable, sandboxWithAsync, type Wall } from "./regenerate/os-sandbox.ts";
 import { findTestScripts, onThisMachine } from "./regenerate/test-scripts.ts";
 import { configKeyOptions, parseArgs } from "./cli-options.ts";
-import { CONFIG_FILE, hasProjectConfig, readProjectConfig, stackConfigFile, stackOf, stacksOf } from "./config.ts";
+import { CONFIG_FILE, hasProjectConfig, readProjectConfig, moduleConfigFile, configModuleOf, moduleConfigsOf } from "./config.ts";
 import { checkModels, modelsInUse, piModelAccess, type ModelAccess } from "./model-check.ts";
 import { bedrockRegionFor, describeBedrockRegion, regionInGeography, type BedrockRegion } from "./bedrock-region.ts";
 import { baseFilesAsync } from "./regenerate/base-folder.ts";
@@ -213,11 +213,11 @@ function checkGlobal(): Check[] {
 }
 
 /**
- * In a project: each model its config names - with the stack chosen, that stack's over it - tried with one short
+ * In a project: each model its config.turri.yaml names - or the module config pinned, its file's over it - tried with one short
  * request. A model that answers is ready; one that does not says what the provider said, and what to do about it.
  */
 export async function checkProjectModels(project: string, access?: ModelAccess): Promise<Check[]> {
-  const used = modelsInUse(readProjectConfig(project, stackOf(project)));
+  const used = modelsInUse(readProjectConfig(project, configModuleOf(project)));
   if (used.length === 0) {
     return [{ level: "missing", name: "Models", detail: "config.turri.yaml names none", fix: "turri init-config writes the two models - or name them here: --harness-model, --coding-model" }];
   }
@@ -318,7 +318,7 @@ const claudeCodeProbe = (project: string): ClaudeCodeProbe => ({
  * Max subscription, and nothing in the environment it refuses. Nothing when no model is a claude-code one.
  */
 export async function checkClaudeSubscription(project: string, env: NodeJS.ProcessEnv = process.env, probe: ClaudeCodeProbe = claudeCodeProbe(project)): Promise<Check[]> {
-  const configs = [readProjectConfig(project), ...stacksOf(project).map((stack) => readProjectConfig(project, stack))];
+  const configs = [readProjectConfig(project), ...moduleConfigsOf(project).map((module) => readProjectConfig(project, module))];
   const named = [...new Set(configs.flatMap((config) => modelsInUse(config)).filter((used) => used.spec.startsWith("claude-code/")).map((used) => used.spec))];
   if (named.length === 0) return [];
   const name = "Claude subscription";
@@ -345,14 +345,14 @@ export async function checkClaudeSubscription(project: string, env: NodeJS.Proce
 }
 
 /**
- * The base folders the project's config names - its own, and each stack's - each there with its files, or not: a codebase
+ * The base folders the project's config names - its own, and each module's own file's - each there with its files, or not: a codebase
  * that requires nothing starts from one, and its first pulse stops when it is not there. Nothing when none is named.
  */
 export async function checkBaseFolders(project: string): Promise<Check[]> {
   const named = new Map<string, string[]>();
-  for (const [stack, config] of [[undefined, readProjectConfig(project)] as const, ...stacksOf(project).map((stack) => [stack, readProjectConfig(project, stack)] as const)]) {
+  for (const [module, config] of [[undefined, readProjectConfig(project)] as const, ...moduleConfigsOf(project).map((module) => [module, readProjectConfig(project, module)] as const)]) {
     if (config.baseFolder === undefined) continue;
-    named.set(config.baseFolder, [...(named.get(config.baseFolder) ?? []), stack === undefined ? CONFIG_FILE : stackConfigFile(stack)]);
+    named.set(config.baseFolder, [...(named.get(config.baseFolder) ?? []), module === undefined ? CONFIG_FILE : moduleConfigFile(module)]);
   }
   return Promise.all([...named].map(async ([folder, files]): Promise<Check> => {
     const path = resolve(project, folder);

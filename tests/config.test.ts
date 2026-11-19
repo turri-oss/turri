@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AGENT_ROLES, modelOnly, projectModels, readProjectConfig, ROLE_THINKING, roleModel, roleTurnLimitMs, skillModel, stacksOf, unknownConfigKeys, unknownConfigLines } from "../src/config.ts";
+import { AGENT_ROLES, modelOnly, projectModels, readProjectConfig, ROLE_THINKING, roleModel, roleTurnLimitMs, skillModel, moduleConfigsOf, unknownConfigKeys, unknownConfigLines } from "../src/config.ts";
 
 let root: string;
 beforeEach(() => {
@@ -209,7 +209,7 @@ describe("models: and turn-limit:", () => {
     expect(projectModels(config).harness).toEqual({ model: lite });
   });
 
-  it("lays a stack's models: over the project's, role by role - but never the chat's", () => {
+  it("lays a module's own models: over the project's, role by role - but never the chat's", () => {
     writeFileSync(join(root, "config.turri.yaml"), ["models:", `  default: { model: ${luna}, turn-limit: 120 }`, `  chat: ${opus}`].join("\n"));
     writeFileSync(join(root, "config.turri.backend.yaml"), ["models:", "  default: { thinking: high }", `  explorer: ${lite}`, `  chat: ${lite}`, "turn-limit: 200"].join("\n"));
     const config = readProjectConfig(root, "backend");
@@ -218,7 +218,7 @@ describe("models: and turn-limit:", () => {
   });
 });
 
-describe("a stack's config file", () => {
+describe("a module's own config file", () => {
   /** cognio: a Python backend and a React frontend side by side, each with its own testing scripts. */
   beforeEach(() => {
     writeFileSync(join(root, "config.turri.yaml"), ["harness-model: anthropic/claude-opus-5-5", "coding-model: google/gemini-3.1-flash:low", "review: true"].join("\n"));
@@ -237,28 +237,22 @@ describe("a stack's config file", () => {
         "module: frontend.plain",
       ].join("\n"),
     );
-    writeFileSync(join(root, "backend.plain"), "***functional specs***\n\n- Serve.\n");
-  });
-  afterEach(async () => {
-    const { chooseStack } = await import("../src/config.ts");
-    chooseStack(undefined);
+    writeFileSync(join(root, "backend.plain"), "***implementation reqs***\n\n- :Implementation: is Python.\n\n***functional specs***\n\n# serve\nServe.\n");
+    writeFileSync(join(root, "frontend.plain"), "***implementation reqs***\n\n- :Implementation: is React.\n\n***functional specs***\n\n# show\nShow.\n");
   });
 
-  it("is laid over config.turri.yaml once its stack is chosen - a model it names taking what it leaves out from the project's - and with none chosen, the project's file alone", async () => {
-    const { chooseStack, configForSpec, stacksOf } = await import("../src/config.ts");
-    expect(stacksOf(root)).toEqual(["backend", "frontend"]);
-    // A module named after no stack: the stack chosen for the session builds it.
+  it("is laid over config.turri.yaml for its module - a model it names taking what it leaves out from the project's - and a module with none is built with the project's file alone", async () => {
+    const { configForSpec, moduleConfigsOf } = await import("../src/config.ts");
+    expect(moduleConfigsOf(root)).toEqual(["backend", "frontend"]);
     const project = { harnessModel: { model: "anthropic/claude-opus-5-5" }, codingModel: { model: "google/gemini-3.1-flash", thinking: "low" }, review: true };
     expect(configForSpec(join(root, "app.plain"))).toEqual(project);
-    chooseStack("backend");
-    expect(configForSpec(join(root, "app.plain"))).toEqual({
+    expect(configForSpec(join(root, "backend.plain"))).toEqual({
       ...project,
       unittestsScript: "test_scripts/run_unittests_python.sh",
       conformanceTestsScript: "test_scripts/run_conformance_tests_python.sh",
     });
     // The conversation's model, and the module built when none is named, are the project's alone.
-    chooseStack("frontend");
-    expect(configForSpec(join(root, "app.plain"))).toEqual({
+    expect(configForSpec(join(root, "frontend.plain"))).toEqual({
       harnessModel: { model: "anthropic/claude-opus-5-5" },
       codingModel: { model: "google/gemini-3.1-flash", thinking: "high" },
       review: false,
@@ -266,33 +260,51 @@ describe("a stack's config file", () => {
     });
   });
 
-  it("named after a module builds it, with nothing chosen and over the stack chosen - a call's or a pulse's own winning", async () => {
-    const { chooseStack, configForSpec, withStack } = await import("../src/config.ts");
-    const backend = { unittestsScript: "test_scripts/run_unittests_python.sh", conformanceTestsScript: "test_scripts/run_conformance_tests_python.sh" };
-    expect(configForSpec(join(root, "backend.plain"))).toMatchObject(backend);
-    chooseStack("frontend");
-    expect(configForSpec(join(root, "backend.plain"))).toMatchObject(backend);
-    expect(withStack("frontend", () => configForSpec(join(root, "backend.plain")).unittestsScript)).toBe("test_scripts/run_unittests_typescript.sh");
-    expect(withStack(undefined, () => configForSpec(join(root, "backend.plain")).unittestsScript)).toBeUndefined();
+  it("builds every module built on its module that has no file of its own, all the way up the requires chain", async () => {
+    const { configForSpec, configModuleFor } = await import("../src/config.ts");
+    writeFileSync(join(root, "backend_auth.plain"), "---\nrequires: [backend]\n---\n\n***functional specs***\n\n- Log in.\n");
+    writeFileSync(join(root, "backend_billing.plain"), "---\nrequires: [backend_auth]\n---\n\n***functional specs***\n\n- Bill.\n");
+    expect(configModuleFor(join(root, "backend_auth.plain"))).toBe("backend");
+    expect(configModuleFor(join(root, "backend_billing.plain"))).toBe("backend");
+    expect(configForSpec(join(root, "backend_billing.plain")).unittestsScript).toBe("test_scripts/run_unittests_python.sh");
+    // Its own file wins over the one below.
+    writeFileSync(join(root, "config.turri.backend_billing.yaml"), "review: false\n");
+    expect(configModuleFor(join(root, "backend_billing.plain"))).toBe("backend_billing");
   });
 
-  it("is chosen for the session, and a pulse keeps the stack it started with whatever is chosen while it runs", async () => {
-    const { chooseStack, chosenStack, stackOf, withStack } = await import("../src/config.ts");
-    chooseStack("backend");
-    await withStack(chosenStack(), async () => {
-      chooseStack("frontend");
+  it("cannot be told when two of the modules a module requires have one - an error, as the parse says it", async () => {
+    const { configForSpec, configModuleFor } = await import("../src/config.ts");
+    const { checkPlainFile } = await import("../src/plain/check.ts");
+    // A chain is one line: app on frontend, frontend on backend - each of them with a file of its own.
+    writeFileSync(join(root, "frontend.plain"), "---\nrequires: [backend]\n---\n\n***implementation reqs***\n\n- :Implementation: is React.\n\n***functional specs***\n\n# show\nShow.\n");
+    writeFileSync(join(root, "app.plain"), "---\nrequires: [frontend]\n---\n\n***implementation reqs***\n\n- :Implementation: is Python.\n\n***functional specs***\n\n# both\nBoth.\n");
+    expect(() => configModuleFor(join(root, "app.plain"))).toThrow(/config\.turri\.frontend\.yaml, config\.turri\.backend\.yaml[\s\S]*Give app\.plain its own config\.turri\.app\.yaml/);
+    // Read as anything reads the config, it is the project's alone; parsed, it is an error.
+    expect(configForSpec(join(root, "app.plain")).unittestsScript).toBeUndefined();
+    const check = checkPlainFile(join(root, "app.plain"));
+    expect(check.ok).toBe(false);
+    expect(check.error).toContain("which builds app.plain cannot be told");
+    // Its own file settles it.
+    writeFileSync(join(root, "config.turri.app.yaml"), "review: true\n");
+    expect(configModuleFor(join(root, "app.plain"))).toBe("app");
+  });
+
+  it("is pinned to a pulse: what it runs reads the config it started with, whatever module is asked about", async () => {
+    const { configForSpec, configModuleOf, pinnedConfigModule, withConfigModule } = await import("../src/config.ts");
+    expect(pinnedConfigModule()).toBeUndefined();
+    expect(configModuleOf(root)).toBeUndefined();
+    await withConfigModule("frontend", async () => {
       await Promise.resolve();
-      expect(stackOf(root)).toBe("backend");
+      expect(configModuleOf(root)).toBe("frontend");
+      expect(configForSpec(join(root, "backend.plain")).unittestsScript).toBe("test_scripts/run_unittests_typescript.sh");
     });
-    expect(stackOf(root)).toBe("frontend");
-    // A stack the folder has no file for is no stack there.
-    chooseStack("mobile");
-    expect(stackOf(root)).toBeUndefined();
+    expect(withConfigModule(undefined, () => configForSpec(join(root, "backend.plain")).unittestsScript)).toBeUndefined();
+    // A module the folder has no file for is no module config there.
+    expect(withConfigModule("mobile", () => configModuleOf(root))).toBeUndefined();
   });
 
-  it("is a stack the testing scripts are found for, and without one chosen the project cannot say which of two it means - and says where to name it", async () => {
+  it("names the testing scripts its module is built with - and a module with none of its own says where to name them", async () => {
     const { mkdirSync } = await import("node:fs");
-    const { chooseStack } = await import("../src/config.ts");
     const { projectDirOf } = await import("../src/regenerate/paths.ts");
     const { findTestScripts } = await import("../src/regenerate/test-scripts.ts");
     rmSync(join(root, "config.turri.yaml"));
@@ -300,38 +312,35 @@ describe("a stack's config file", () => {
     writeFileSync(join(root, "config.turri.backend.yaml"), "unittests-script: test_scripts/run_unittests_python.sh\n");
     mkdirSync(join(root, "test_scripts"));
     for (const script of ["run_unittests_python.sh", "run_unittests_typescript.sh"]) writeFileSync(join(root, "test_scripts", script), "#!/bin/bash\n");
-    // A stack's file alone makes its folder a project.
+    // A module's file alone makes its folder a project.
     expect(projectDirOf(join(root, "backend.plain"))).toBe(root);
-    chooseStack("backend");
     expect(findTestScripts(root, join(root, "backend.plain")).unit).toBe(join(root, "test_scripts", "run_unittests_python.sh"));
-    chooseStack("frontend");
-    expect(findTestScripts(root, join(root, "backend.plain")).unit).toBe(join(root, "test_scripts", "run_unittests_typescript.sh"));
-    chooseStack(undefined);
-    const project = findTestScripts(root);
-    expect(project.unit).toBeUndefined();
-    expect(project.notes?.unit).toContain("config.turri.<stack>.yaml");
+    expect(findTestScripts(root, join(root, "frontend.plain")).unit).toBe(join(root, "test_scripts", "run_unittests_typescript.sh"));
+    const app = findTestScripts(root, join(root, "app.plain"));
+    expect(app.unit).toBeUndefined();
+    expect(app.notes?.unit).toContain("config.turri.backend.yaml, config.turri.frontend.yaml");
+    expect(app.notes?.unit).toContain("name its scripts in its own file");
   });
 });
 
 describe("config.yaml, before turri had a file of its own", () => {
-  it("is read, with config.<stack>.yaml as stacks, while the folder has no config.turri*.yaml - and never once it has", async () => {
-    const { chooseStack, projectConfigFile, readProjectConfig, stacksOf } = await import("../src/config.ts");
+  it("is read, with config.<module>.yaml as modules' own files, while the folder has no config.turri*.yaml - and never once it has", async () => {
+    const { projectConfigFile, readProjectConfig, moduleConfigsOf } = await import("../src/config.ts");
     writeFileSync(join(root, "config.yaml"), "review: false\nunittests-script: run_unittests_python.sh\n");
     writeFileSync(join(root, "config.backend.yaml"), "review: true\n");
     expect(projectConfigFile(root)).toBe("config.yaml");
     expect(readProjectConfig(root).review).toBe(false);
-    expect(stacksOf(root)).toEqual(["backend"]);
+    expect(moduleConfigsOf(root)).toEqual(["backend"]);
     expect(readProjectConfig(root, "backend").review).toBe(true);
     writeFileSync(join(root, "config.turri.yaml"), "mutation-testing: false\n");
     expect(projectConfigFile(root)).toBe("config.turri.yaml");
     expect(readProjectConfig(root)).toEqual({ mutationTesting: false });
-    expect(stacksOf(root)).toEqual([]);
-    chooseStack(undefined);
+    expect(moduleConfigsOf(root)).toEqual([]);
   });
 
-  it("is copied to config.turri.yaml - each config.<stack>.yaml to config.turri.<stack>.yaml - before turri first writes a setting, and left as it was", async () => {
+  it("is copied to config.turri.yaml - each config.<module>.yaml to config.turri.<module>.yaml - before turri first writes a setting, and left as it was", async () => {
     const { readFileSync } = await import("node:fs");
-    const { readProjectConfig, stacksOf } = await import("../src/config.ts");
+    const { readProjectConfig, moduleConfigsOf } = await import("../src/config.ts");
     const { writeSetting } = await import("../src/config-edit.ts");
     writeFileSync(join(root, "config.yaml"), "# another tool's\nunittests-script: run_unittests_python.sh\n");
     writeFileSync(join(root, "config.backend.yaml"), "review: true\n");
@@ -340,12 +349,12 @@ describe("config.yaml, before turri had a file of its own", () => {
     expect(readFileSync(join(root, "config.turri.yaml"), "utf8")).toContain("unittests-script: run_unittests_python.sh");
     expect(readFileSync(join(root, "config.turri.backend.yaml"), "utf8")).toBe("review: true\n");
     expect(readProjectConfig(root)).toEqual({ unittestsScript: "run_unittests_python.sh", review: false });
-    expect(stacksOf(root)).toEqual(["backend"]);
+    expect(moduleConfigsOf(root)).toEqual(["backend"]);
   });
 });
 
 describe("the config, read again and again", () => {
-  it("is read afresh once a file is edited or a stack's file added - and each caller is given its own copy", () => {
+  it("is read afresh once a file is edited or a module's file added - and each caller is given its own copy", () => {
     writeFileSync(join(root, "config.turri.yaml"), "coding-model: p/small\n");
     const first = readProjectConfig(root);
     expect(first.codingModel).toEqual({ model: "p/small" });
@@ -353,9 +362,9 @@ describe("the config, read again and again", () => {
     expect(readProjectConfig(root).codingModel).toEqual({ model: "p/small" });
     writeFileSync(join(root, "config.turri.yaml"), "coding-model: p/smallest\n");
     expect(readProjectConfig(root).codingModel).toEqual({ model: "p/smallest" });
-    expect(stacksOf(root)).toEqual([]);
+    expect(moduleConfigsOf(root)).toEqual([]);
     writeFileSync(join(root, "config.turri.web.yaml"), "coding-model: p/web\n");
-    expect(stacksOf(root)).toEqual(["web"]);
+    expect(moduleConfigsOf(root)).toEqual(["web"]);
     expect(readProjectConfig(root, "web").codingModel).toEqual({ model: "p/web" });
   });
 
@@ -373,7 +382,7 @@ describe("the config, read again and again", () => {
 });
 
 describe("keys turri does not read", () => {
-  it("are named, by file, for config.turri.yaml and each stack's - a removed setting and a misspelt one - never config.yaml's", () => {
+  it("are named, by file, for config.turri.yaml and each module's - a removed setting and a misspelt one - never config.yaml's", () => {
     writeFileSync(join(root, "config.turri.yaml"), "coding-model: p/small\ntest-advisor: true\nturn_limit: 3\n");
     writeFileSync(join(root, "config.turri.web.yaml"), "unittest-script: run.sh\n");
     writeFileSync(join(root, "config.yaml"), "another-tools-key: 1\n");

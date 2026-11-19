@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { readProjectConfig, stacksOf } from "./config.ts";
+import { readProjectConfig, moduleConfigsOf } from "./config.ts";
 import { bedrockAwsRegion, bedrockNeedsAwsRegion, bedrockPlaceOf } from "./init-config.ts";
 import { modelsInUse } from "./model-check.ts";
 
@@ -89,9 +89,9 @@ export function profileRegion(profile: string, env: NodeJS.ProcessEnv = process.
   return undefined;
 }
 
-/** The Bedrock models a project uses: every model its config names - each stack's too - and those given. */
+/** The Bedrock models a project uses: every model its config names - each module's own file's too - and those given. */
 function bedrockModels(projectDir: string, also: string[]): string[] {
-  const configs = [readProjectConfig(projectDir), ...stacksOf(projectDir).map((stack) => readProjectConfig(projectDir, stack))];
+  const configs = [readProjectConfig(projectDir), ...moduleConfigsOf(projectDir).map((module) => readProjectConfig(projectDir, module))];
   const specs = [...configs.flatMap((config) => modelsInUse(config).map((used) => used.spec)), ...also];
   return [...new Set(specs.filter((spec) => spec.startsWith("amazon-bedrock/")))];
 }

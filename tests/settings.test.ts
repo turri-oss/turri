@@ -2,25 +2,32 @@ import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { registerTurriConfig, type LiveHooks } from "../src/config-command.ts";
+import { registerSettings, type LiveHooks } from "../src/settings.ts";
 import { modelSpec, projectModels, readProjectConfig } from "../src/config.ts";
 import { createJobRegistry } from "../src/regenerate/jobs.ts";
 
 let dir: string;
 beforeEach(() => {
-  dir = realpathSync(mkdtempSync(join(tmpdir(), "turri-config-command-")));
+  dir = realpathSync(mkdtempSync(join(tmpdir(), "turri-settings-")));
 });
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-/** /turri-config registered on a stand-in pi, with a chat that answers its dialogs from `answers` in turn. */
+/** What the settings tool gives back. */
+type ToolResult = { content: Array<{ text: string }> };
+
+/** /settings and the settings tool registered on a stand-in pi, with a chat that answers its dialogs from `answers` in turn. */
 function setUp(answers: string[] = []) {
   let command: { handler: (args: string, ctx: never) => Promise<void>; getArgumentCompletions?: (prefix: string) => unknown } | undefined;
+  let tool: { execute: (id: string, params: unknown, signal: undefined, onUpdate: undefined, ctx: never) => Promise<ToolResult> } | undefined;
   const pi = {
     on: () => {},
-    registerCommand: (_name: string, options: typeof command) => {
-      command = options;
+    registerCommand: (name: string, options: typeof command) => {
+      if (name === "settings") command = options;
+    },
+    registerTool: (options: typeof tool) => {
+      tool = options;
     },
   };
   const said: string[] = [];
@@ -28,23 +35,28 @@ function setUp(answers: string[] = []) {
   const live: Array<[string, unknown]> = [];
   const hooks: LiveHooks = {
     chatModel: async (spec) => (live.push(["chat", spec]), `The conversation runs on ${spec} now.`),
-    codingModel: () => (live.push(["coding", undefined]), "Chosen this session, and given way to the config: the engine's model x."),
+    codingModel: () => (live.push(["coding", undefined]), "Chosen this session, and given way to the config: --coding-model x."),
     parallelJobs: (count) => (live.push(["parallel", count]), `Up to ${count} pulses run at once now.`),
   };
-  registerTurriConfig(pi as never, { cwd: dir, rules: () => ["concise-specs", "integrations"], chatSpec: () => modelSpec(projectModels(readProjectConfig(dir)).harness), live: hooks });
+  registerSettings(pi as never, { cwd: dir, rules: () => ["concise-specs", "integrations"], chatSpec: () => modelSpec(projectModels(readProjectConfig(dir)).harness), live: hooks });
+  const models = [
+    { provider: "openai", id: "gpt-6-astra", name: "GPT-6 Astra" },
+    { provider: "openai", id: "gpt-6-luna", name: "GPT-6 Luna" },
+  ];
   const ctx = {
     hasUI: true,
-    modelRegistry: { getAvailable: () => [{ provider: "openai", id: "gpt-6-astra" }, { provider: "openai", id: "gpt-6-luna" }] },
+    modelRegistry: { getAvailable: () => models, getAll: () => models, hasConfiguredAuth: () => true },
     ui: {
       notify: (message: string) => said.push(message),
       select: async (title: string, options: string[]) => (asked.push({ title, options }), answers.shift()),
       input: async (title: string) => (asked.push({ title }), answers.shift()),
     },
   };
-  return { run: (args: string) => command!.handler(args, ctx as never), complete: (prefix: string) => command!.getArgumentCompletions!(prefix), said, asked, live };
+  const call = async (params: { key?: string; value?: string; module?: string }) => (await tool!.execute("id", params, undefined, undefined, ctx as never)).content[0]!.text;
+  return { run: (args: string) => command!.handler(args, ctx as never), complete: (prefix: string) => command!.getArgumentCompletions!(prefix), call, said, asked, live };
 }
 
-describe("/turri-config", () => {
+describe("/settings", () => {
   it("sets a setting given whole, in config.turri.yaml, and says when it takes effect", async () => {
     const { run, said } = setUp();
     await run("review false");
@@ -69,7 +81,8 @@ describe("/turri-config", () => {
     const { run, asked, said } = setUp(["testing-scripts-run-on: (unset - in-place)", "copy"]);
     await run("");
     expect(asked[0]!.options).toContain("review: false");
-    expect(asked[0]!.options!.at(-1)).toContain("models.<role>");
+    expect(asked[0]!.options!.at(-2)).toContain("models.<role>");
+    expect(asked[0]!.options!.at(-1)).toContain("pi's own settings");
     expect(asked[1]!.options).toEqual(["in-place", "copy", "unset - in-place"]);
     expect(readProjectConfig(dir).testingScriptsRunOn).toBe("copy");
     expect(said[0]).toContain("in effect from the next test run");
@@ -120,9 +133,61 @@ describe("/turri-config", () => {
   it("says when there is no such setting, and which it may have meant", async () => {
     const { run, said } = setUp();
     await run("reviews false");
-    expect(said[0]).toBe("No setting reviews. /turri-config alone lists them.");
+    expect(said[0]).toBe("No setting reviews. /settings alone lists them.");
     await run("model false");
     expect(said[1]).toContain("Did you mean harness-model, coding-model, judge-model");
+  });
+});
+
+describe("the settings tool", () => {
+  it("sets the coding model by the name the user said it, checked as it is written, and says when it takes effect", async () => {
+    const { call, live } = setUp();
+    const said = await call({ key: "coding-model", value: "gpt 6 luna:high" });
+    expect(readFileSync(join(dir, "config.turri.yaml"), "utf8")).toBe("coding-model: openai/gpt-6-luna:high\n");
+    expect(said).toContain("written to config.turri.yaml, in effect from the next pulse");
+    expect(live).toEqual([["coding", undefined]]);
+  });
+
+  it("asks which model was meant when a name fits several, and writes nothing", async () => {
+    const { call } = setUp();
+    await expect(call({ key: "coding-model", value: "gpt 6" })).rejects.toThrow(/Nothing was written[\s\S]*openai\/gpt-6-astra[\s\S]*openai\/gpt-6-luna/);
+    expect(() => readFileSync(join(dir, "config.turri.yaml"))).toThrow();
+  });
+
+  it("refuses what is the user's alone - conformance tests, credentials, folders past the sandbox, the sentinel - and points to /settings", async () => {
+    const { call } = setUp();
+    for (const key of ["conformance-tests", "agent-env.vars", "toolchains", "sentinel", "rules-off", "ledger-keep"]) {
+      await expect(call({ key, value: "true" })).rejects.toThrow(`/settings ${key}`);
+    }
+    expect(() => readFileSync(join(dir, "config.turri.yaml"))).toThrow();
+  });
+
+  it("writes into a module's own file when one is named, and refuses there what is the whole project's", async () => {
+    writeFileSync(join(dir, "config.turri.yaml"), "review: true\n");
+    const { call } = setUp();
+    const said = await call({ key: "unittests-script", value: "test_scripts/run_unittests_python.sh", module: "backend.plain" });
+    expect(readFileSync(join(dir, "config.turri.backend.yaml"), "utf8")).toBe("unittests-script: test_scripts/run_unittests_python.sh\n");
+    expect(said).toContain("written to config.turri.backend.yaml");
+    expect(said).toContain("backend.plain and every module built on it");
+    await expect(call({ key: "parallel-jobs", value: "2", module: "backend" })).rejects.toThrow("the whole project's");
+  });
+
+  it("keeps a path inside the project", async () => {
+    const { call } = setUp();
+    await expect(call({ key: "base-folder", value: "../elsewhere" })).rejects.toThrow("inside the project");
+    await expect(call({ key: "base-folder", value: "/etc" })).rejects.toThrow("inside the project");
+  });
+
+  it("says every setting and what each module's file sets over it, or one setting and what it takes", async () => {
+    writeFileSync(join(dir, "config.turri.yaml"), "review: false\n");
+    writeFileSync(join(dir, "config.turri.frontend.yaml"), "coding-model: openai/gpt-6-luna\n");
+    const { call } = setUp();
+    const all = await call({});
+    expect(all).toContain("review: false");
+    expect(all).toContain("conformance-tests: (unset - false) - the user's to change");
+    expect(all).toContain("config.turri.frontend.yaml, over it for frontend.plain and the modules built on it: coding-model: openai/gpt-6-luna");
+    const one = await call({ key: "coding-model" });
+    expect(one).toContain("config.turri.yaml: unset; config.turri.frontend.yaml: openai/gpt-6-luna.");
   });
 });
 

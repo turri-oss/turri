@@ -6,6 +6,7 @@ import "./terminal-images.ts";
 import { withoutResumeLine } from "./resume-line.ts";
 import { lastRun, type RunRecord } from "./chat-records.ts";
 import { driveTerminal } from "./chat-terminal.ts";
+import { takeOverSettings } from "./pi-settings.ts";
 import turri, { createTurriCore, processSession } from "./extension.ts";
 
 /**
@@ -40,6 +41,9 @@ ProcessTerminal.prototype.setTitle = function (title: string) {
 // is answered for this run as `quietStartup` is; the line it prints instead, to resume the session, is left out too:
 // `turri --continue` opens the last run again.
 SettingsManager.prototype.getFullscreenExitOutput = () => "resume-hint";
+
+// /settings is turri's, pi's own menu the last entry of it (pi-settings.ts).
+takeOverSettings();
 const write = process.stdout.write.bind(process.stdout) as (chunk: unknown, ...rest: unknown[]) => boolean;
 process.stdout.write = ((chunk: unknown, ...rest: unknown[]) =>
   write(typeof chunk === "string" ? withoutResumeLine(chunk) : chunk, ...rest)) as typeof process.stdout.write;

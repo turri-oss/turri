@@ -5,7 +5,7 @@ import { describeEnvironmentError, EnvironmentError, missingCredentials } from "
 import { addAgentReport, describeAgents, JobStoppedError, withActivity, type AgentReport, type AgentTally, type BuildingSpec, type SpecConflict, type TranscriptEntry, type UsageReport } from "./activity.ts";
 import { projectOfLanes, startJobLog, type JobLog } from "./job-log.ts";
 import { firstLine, healing, record, type LedgerPlace } from "./ledger.ts";
-import { chosenStack, debugMode, withStack } from "../config.ts";
+import { debugMode, moduleConfigFile, pinnedConfigModule, withConfigModule } from "../config.ts";
 import { currentChat } from "../chat-scope.ts";
 import { pulseEnded, pulseWrote } from "./pulse-files.ts";
 import { keepFailureReport } from "./failure-reports.ts";
@@ -61,8 +61,8 @@ export interface Job {
   note?: string;
   /** "provider/model-id" its agents run on, when known. */
   model?: string;
-  /** The stack it is built with - its config.turri.<stack>.yaml over config.turri.yaml - as chosen when it was queued. */
-  stack?: string;
+  /** The module whose config.turri.<module>.yaml it is built with, over config.turri.yaml - as worked out when it was queued. */
+  configModule?: string;
   /** The chat it was asked for in (chat-scope.ts): the one told how it went. */
   chat?: string;
   status: JobStatus;
@@ -255,9 +255,9 @@ export function createJobRegistry(options?: {
     },
     start(input) {
       const id = randomUUID().slice(0, 8);
-      // The stack chosen as it is queued - or pinned for the work that queues it - not as it starts: a job that waits
-      // for a slot is built with the stack it was asked for, whatever is chosen meanwhile.
-      const stack = chosenStack();
+      // The config pinned for the work that queues it, as it is queued - not as it starts: a job that waits for a slot is
+      // built with the config it was planned with, whatever the files say meanwhile.
+      const configModule = pinnedConfigModule();
       const chat = currentChat()?.id;
       const claimed = [...new Set(input.lanes ?? [])];
       const blockers = [
@@ -281,7 +281,7 @@ export function createJobRegistry(options?: {
         ...(input.diffWhere !== undefined ? { diffWhere: input.diffWhere } : {}),
         ...(input.cases !== undefined ? { cases: input.cases } : {}),
         model: input.model,
-        ...(stack !== undefined ? { stack } : {}),
+        ...(configModule !== undefined ? { configModule } : {}),
         ...(chat !== undefined ? { chat } : {}),
         ...(input.follows !== undefined ? { follows: input.follows } : {}),
         status: blockers.length > 0 || (limit !== undefined && active >= limit) ? "queued" : "running",
@@ -308,7 +308,7 @@ export function createJobRegistry(options?: {
           ...(input.pulse !== undefined ? { pulse: input.pulse } : {}),
           ...(input.title !== undefined ? { title: input.title } : {}),
           ...(input.model !== undefined ? { model: input.model } : {}),
-          ...(stack !== undefined ? { stack } : {}),
+          ...(configModule !== undefined ? { configModule } : {}),
           ...(input.cases !== undefined ? { cases: input.cases } : {}),
           waitingOn: blockers,
           ...(input.follows !== undefined ? { follows: input.follows } : {}),
@@ -525,9 +525,9 @@ export function createJobRegistry(options?: {
           // Its log is named only where it is kept: otherwise it goes as the pulse ends.
           const named = log !== undefined && project !== undefined && debugMode(project);
           record({ kind: "job.started", waitedMs: job.startedAt - job.queuedAt, ...(named ? { logFile: log!.file } : {}) }, place);
-          // What the job's agents start runs until it ends, and no longer (withPulse) - with the stack it was queued
-          // with, whatever is chosen while it waits or runs.
-          return withStack(stack, () => (guarded ? runGuarded() : runOnce()));
+          // What the job's agents start runs until it ends, and no longer (withPulse) - with the config it was queued
+          // with, whatever the files say while it waits or runs.
+          return withConfigModule(configModule, () => (guarded ? runGuarded() : runOnce()));
         })
         .then(
           (outcome) => {
@@ -687,7 +687,7 @@ export function pulseName(job: Job): string {
 
 /** What the agent is told when it checks on a job. */
 export function describeJob(job: Job): string {
-  const name = `${pulseName(job)}${job.stack !== undefined ? ` (stack ${job.stack})` : ""}`;
+  const name = `${pulseName(job)}${job.configModule !== undefined ? ` (built with ${moduleConfigFile(job.configModule)})` : ""}`;
   if (job.status === "queued") {
     return `${name}: queued behind ${job.waitingOn.map((id) => `pulse ${id}`).join(" and ")}. It starts when that finishes.`;
   }

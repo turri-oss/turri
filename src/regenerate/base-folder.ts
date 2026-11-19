@@ -10,7 +10,7 @@ import { BASE_RECORD_FILE, projectDirOf } from "./paths.ts";
 export { BASE_RECORD_FILE };
 
 /**
- * A base folder (`base-folder:` in config.turri.yaml, a stack's own in its file): what a codebase that requires no other
+ * A base folder (`base-folder:` in config.turri.yaml, a module's own in its file): what a codebase that requires no other
  * module starts from instead of nothing - an existing codebase to build on, files to use (images, animations, fonts), or
  * both. It is copied in once, before the codebase's first pulse, and never written to; what was copied is recorded beside
  * the code record, and goes up the chain with the code, so every coding agent of the chain is told where its codebase
@@ -45,7 +45,7 @@ export class MissingBaseFolderError extends Error {
   }
 }
 
-/** The base folder a module's codebase starts from - its stack's over the project's - as named and as a path; none when the config names none. */
+/** The base folder a module's codebase starts from - its own file's over the project's - as named and as a path; none when the config names none. */
 export function baseFolderOf(plainFile: string): { named: string; path: string } | undefined {
   const named = configForSpec(plainFile).baseFolder;
   if (named === undefined) return undefined;

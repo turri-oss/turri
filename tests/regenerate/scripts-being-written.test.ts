@@ -96,11 +96,11 @@ describe("a module whose unit testing script is being written in the background"
     expect(text).not.toContain("which is being written");
   });
 
-  it("is not held by a script written for another stack", async () => {
+  it("is not held by a script written for a module with another config file", async () => {
     writeFileSync(join(dir, "config.turri.app.yaml"), "");
     const { ran, run } = runner();
     const loop = createWorkLoop({ registry: createJobRegistry({ maxRunning: 1 }), cwd: dir, planner: false, run });
-    const written = writingScript({ project: dir, kind: "unit", stack: "web" });
+    const written = writingScript({ project: dir, kind: "unit", configModule: "web" });
     try {
       await loop.bringUp("app.plain");
       await loop.drain();
@@ -184,7 +184,7 @@ describe("a testing script being written", () => {
     expect(scriptKindOfSkill("implement-unit-testing-script")).toBe("unit");
     expect(scriptKindOfSkill("implement-conformance-testing-script")).toBe("conformance");
     expect(scriptKindOfSkill("analyze-func-specs")).toBeUndefined();
-    const written = writingScript({ project: dir, kind: "conformance", stack: "backend" });
+    const written = writingScript({ project: dir, kind: "conformance", configModule: "backend" });
     expect(scriptBeingWritten(dir, "conformance", "backend")).toBe(true);
     expect(scriptBeingWritten(dir, "conformance")).toBe(true);
     expect(scriptBeingWritten(dir, "conformance", "frontend")).toBe(false);

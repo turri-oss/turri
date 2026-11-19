@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { writePlain } from "../test-plain.ts";
 import { createJobRegistry } from "../../src/regenerate/jobs.ts";
-import { type CatalogModel, describeChoices, type ModelChoices, modelFor, resolveModel } from "../../src/regenerate/engine.ts";
+import { type CatalogModel, resolveModel } from "../../src/regenerate/model-names.ts";
 import { createWorkLoop, type JobRunner } from "../../src/regenerate/loop.ts";
 import { writeCodeRecord } from "../../src/regenerate/records.ts";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -67,27 +67,14 @@ describe("resolving what the person called a model", () => {
 });
 
 describe("the model a job runs on", () => {
-  it("is the one chosen for its kind of work, else for everything, else the chat's", () => {
-    const chosen: ModelChoices = {};
-    expect(modelFor(chosen, "spec_changes", "openai/gpt-5.5")).toBe("openai/gpt-5.5");
-    chosen.all = "openai/gpt-4o-mini";
-    expect(modelFor(chosen, "spec_changes", "openai/gpt-5.5")).toBe("openai/gpt-4o-mini");
-    chosen.spec_changes = "google/gemini-3.6-flash";
-    expect(modelFor(chosen, "spec_changes", "openai/gpt-5.5")).toBe("google/gemini-3.6-flash");
-    expect(modelFor(chosen, "functionalities", "openai/gpt-5.5")).toBe("openai/gpt-4o-mini");
-    expect(describeChoices({ spec_changes: "google/gemini-3.6-flash" }, "openai/gpt-5.5")).toBe(
-      "- spec changes: google/gemini-3.6-flash\n- functionalities: openai/gpt-5.5 (the chat's model)",
-    );
-  });
-
-  it("is settled when a module is brought up: a job keeps its model when the choice changes, and the next one asked for gets the new one", async () => {
+  it("is settled when a module is brought up: a job keeps its model when the config changes, and the next one asked for gets the new one", async () => {
     const dir = mkdtempSync(join(tmpdir(), "turri-models-"));
     const cwd = process.cwd();
     process.chdir(dir);
     try {
       writeFileSync(join(dir, "config.yaml"), "conformance-tests: false\n");
       writePlain(dir, "app.plain", "***implementation reqs***\n\n- :Implementation: is Python.\n\n***functional specs***\n\n# one\nOne.\n");
-      const chosen: ModelChoices = {};
+      let coding = "openai/gpt-5.5";
       const ranOn: Array<string | undefined> = [];
       const run: JobRunner = async (job) => {
         ranOn.push(job.model);
@@ -97,9 +84,9 @@ describe("the model a job runs on", () => {
         return { landed: true, report: "done" };
       };
       const registry = createJobRegistry();
-      const loop = createWorkLoop({ registry, cwd: dir, planner: false, run, modelFor: () => modelFor(chosen, "spec_changes", "openai/gpt-5.5") });
+      const loop = createWorkLoop({ registry, cwd: dir, planner: false, run, modelFor: () => coding });
       const [first] = await loop.bringUp("app.plain");
-      chosen.spec_changes = "google/gemini-3.6-flash";
+      coding = "google/gemini-3.6-flash";
       await loop.drain();
       writePlain(dir, "app.plain", "***implementation reqs***\n\n- :Implementation: is Python.\n\n***functional specs***\n\n# one\nOne.\n\n# two\nTwo.\n");
       const [second] = await loop.bringUp("app.plain");
@@ -110,18 +97,5 @@ describe("the model a job runs on", () => {
       process.chdir(cwd);
       rmSync(dir, { recursive: true, force: true });
     }
-  });
-});
-
-describe("the project's model, from config.yaml", () => {
-  it("is what renders run on when nothing was chosen in the session, and says where it came from", async () => {
-    const { describeChoices, modelFor } = await import("../../src/regenerate/engine.ts");
-    const project = "amazon-bedrock/eu.anthropic.claude-sonnet-5";
-    expect(modelFor({}, "functionalities", project ?? "google/gemini-3.1-flash")).toBe(project);
-    expect(modelFor({ functionalities: "openai/gpt-5.5" }, "functionalities", project)).toBe("openai/gpt-5.5");
-    expect(describeChoices({ spec_changes: "openai/gpt-5.5" }, "google/gemini-3.1-flash", { model: project, from: "config.yaml" })).toBe(
-      `- spec changes: openai/gpt-5.5\n- functionalities: ${project} (config.yaml)`,
-    );
-    expect(describeChoices({}, "google/gemini-3.1-flash")).toContain("google/gemini-3.1-flash (the chat's model)");
   });
 });
