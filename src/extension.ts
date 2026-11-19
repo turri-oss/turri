@@ -66,7 +66,7 @@ import { doctorTool } from "./doctor-tool.ts";
 import { describeSpecConflict } from "./regenerate/stop-report.ts";
 import { inheritProviders, inheritThinkingLevel } from "./pi.ts";
 import { LOADING_PROVIDERS } from "./installed-providers.ts";
-import { machineChange, machineChangeReason, writesPlain } from "./regenerate/command-check.ts";
+import { machineChange, machineChangeReason, runsBuiltCode, writesPlain } from "./regenerate/command-check.ts";
 import { beginCapture, captureConsole, describeCaptured, dropNoise } from "./quiet.ts";
 import { loadRules, renderRulesBlock } from "./rules.ts";
 import { registerSettings, ruleNames } from "./settings.ts";
@@ -719,6 +719,14 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
       // The sentinel's write and edit reach its tooling alone: a host's command does not write ***plain for it.
       const plain = isSentinel ? writesPlain(command) : undefined;
       if (plain !== undefined) return { block: true, reason: `${plain} is ***plain: the sentinel never changes it - put what it needs to the person with notify_person.` };
+      // Nor does a host's terminal start the code in plain_modules for it: what it tests is what is launched.
+      const built = isSentinel && event.toolName !== "bash" ? runsBuiltCode(command) : undefined;
+      if (built !== undefined) {
+        return {
+          block: true,
+          reason: `${built} is in plain_modules - the code a pulse may be writing, which nobody launched: the sentinel never runs it, nor starts a server of its own. Test what is launched, from where its brief says; a server that should run and does not is your finding.`,
+        };
+      }
     }
     if (event.toolName === "bash" && typeof command === "string") {
       const what = selfInvocation(command);

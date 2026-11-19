@@ -208,6 +208,42 @@ export function writesPlain(command: string): string | undefined {
   return undefined;
 }
 
+/** Programs that only read what they are pointed at: run on built code, they start nothing of it. */
+const READERS = new Set(["ls", "cat", "head", "tail", "less", "more", "grep", "rg", "find", "git", "wc", "diff", "tree", "file", "stat", "du", "jq", "echo", "pwd", "true", "test", "["]);
+
+/**
+ * The path in plain_modules a command line runs in or from - `cd` there and run something, a program or its arguments
+ * there, an environment variable pointing there - or nothing when it only reads there, or does not go there. The code in
+ * plain_modules is what a pulse may be writing, and nobody launched it.
+ */
+export function runsBuiltCode(command: string): string | undefined {
+  let inBuilt: string | undefined;
+  for (const part of command.split(/&&|\|\||[;|\n]/)) {
+    const words = part.trim().split(/\s+/).filter((word) => word !== "").map((word) => word.replace(/^["']|["']$/g, ""));
+    let at = 0;
+    while (at < words.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[at]!)) {
+      if (words[at]!.includes("plain_modules")) return words[at]!.slice(words[at]!.indexOf("=") + 1);
+      at += 1;
+    }
+    const program = words[at];
+    if (program === undefined) continue;
+    const args = words.slice(at + 1);
+    if (program === "cd" || program === "pushd") {
+      const to = args[0];
+      if (to !== undefined && to.includes("plain_modules")) inBuilt = to;
+      else if (to !== undefined) inBuilt = undefined;
+      continue;
+    }
+    const name = program.split("/").pop()!;
+    if (program.includes("plain_modules")) return program;
+    if (READERS.has(name)) continue;
+    const there = args.find((arg) => arg.includes("plain_modules"));
+    if (there !== undefined) return there;
+    if (inBuilt !== undefined) return inBuilt;
+  }
+  return undefined;
+}
+
 /** What turri says when a command would change the machine: what it does instead. */
 export function machineChangeReason(why: string): string {
   return (

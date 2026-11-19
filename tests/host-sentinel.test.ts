@@ -253,6 +253,13 @@ describe("the sentinel in a host", () => {
     expect(await call(sessions[1]!, "sed -i 's/hello/hi/' app.plain")).toMatchObject({ block: true, reason: expect.stringContaining("app.plain is ***plain: the sentinel never changes it") });
     expect(await call(sessions[1]!, "./dist/app/todo add milk")).toBeUndefined();
     expect(await call(sessions[0]!, "sed -i 's/hello/hi/' app.plain")).toBeUndefined();
+    // Nor starts the code in plain_modules - what nobody launched - though it reads it.
+    expect(await call(sessions[1]!, "cd plain_modules/app/code && .venv/bin/uvicorn app.main:app --port 8765")).toMatchObject({
+      block: true,
+      reason: expect.stringContaining("plain_modules/app/code is in plain_modules - the code a pulse may be writing, which nobody launched"),
+    });
+    expect(await call(sessions[1]!, "cat plain_modules/app/code/app.py")).toBeUndefined();
+    expect(await call(sessions[0]!, "cd plain_modules/app/code && .venv/bin/uvicorn app.main:app")).toBeUndefined();
   });
 
   it("leaves an ignorable notice as the build has it when the person ignores it - kept in the guidance, and carried into the next pulse's conversation", async () => {

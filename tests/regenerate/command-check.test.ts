@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkCommand, machineChange, type CommandFence } from "../../src/regenerate/command-check.ts";
+import { checkCommand, machineChange, runsBuiltCode, type CommandFence } from "../../src/regenerate/command-check.ts";
 
 /**
  * The check every agent command passes before it runs, on every platform: a command is refused - not run - when its
@@ -297,5 +297,24 @@ describe("on Windows", () => {
     ["a program in Program Files", '"C:\\Program Files\\nodejs\\node.exe" --version'],
   ])("lets %s through", (_what, command) => {
     expect(refused(command, win)).toBeUndefined();
+  });
+});
+
+describe("a command that runs the code in plain_modules", () => {
+  it("is found when it starts a server there, runs a program from there, passes it a path there or points the environment there", () => {
+    expect(runsBuiltCode("cd plain_modules/shorty/code && .venv/bin/uvicorn app.main:app --port 8765")).toBe("plain_modules/shorty/code");
+    expect(runsBuiltCode("plain_modules/shorty/code/.venv/bin/uvicorn app.main:app")).toBe("plain_modules/shorty/code/.venv/bin/uvicorn");
+    expect(runsBuiltCode("node plain_modules/web/code/server.js")).toBe("plain_modules/web/code/server.js");
+    expect(runsBuiltCode("PYTHONPATH=plain_modules/shorty/code python -m app")).toBe("plain_modules/shorty/code");
+    expect(runsBuiltCode("cd '/p/plain_modules/shorty/code'; npm start")).toBe("/p/plain_modules/shorty/code");
+  });
+
+  it("is not found when it only reads there, or runs what is launched", () => {
+    expect(runsBuiltCode("cat plain_modules/shorty/code/app/main.py")).toBeUndefined();
+    expect(runsBuiltCode("cd plain_modules/shorty/code && git log --oneline | head")).toBeUndefined();
+    expect(runsBuiltCode("grep -rn route plain_modules/shorty/code")).toBeUndefined();
+    expect(runsBuiltCode("cd dist/shorty && .venv/bin/python -m app")).toBeUndefined();
+    expect(runsBuiltCode("curl -s http://127.0.0.1:8000/")).toBeUndefined();
+    expect(runsBuiltCode("cd plain_modules/x && cd /p/dist/x && npm start")).toBeUndefined();
   });
 });
