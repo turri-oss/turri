@@ -1,5 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
 import { dirname, join, relative } from "node:path";
 import { HISTORY_DIR } from "./lineage.ts";
@@ -172,7 +172,138 @@ export interface LaunchedProcess {
   exited?: { code: number | null; signal: string | null };
 }
 
-const processes = new Map<string, { info: LaunchedProcess; child: ChildProcess }>();
+const processes = new Map<string, { info: LaunchedProcess; child: ChildProcess; record?: string }>();
+
+/**
+ * What a launch started, written down as it starts - `.turri/launch/running/<pid>.json` - and taken out as it ends: a turri
+ * that dies without stopping what it started leaves it findable, for the next session to stop (`stopLeftBehind`).
+ */
+export interface LaunchRecord {
+  pid: number;
+  /** Its process group: the pid, as it was started as the leader of a group of its own. */
+  pgid: number;
+  name: string;
+  moduleName: string;
+  command: string;
+  dir: string;
+  url?: string;
+  startedAt: number;
+  /** The turri process that started it. */
+  turri: number;
+}
+
+const RUNNING_DIR = "running";
+
+function writeRecord(logDir: string, record: LaunchRecord): string | undefined {
+  try {
+    const dir = join(logDir, RUNNING_DIR);
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, `${record.pid}.json`);
+    writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`);
+    return file;
+  } catch {
+    // Unrecorded, it is still stopped by this turri - only a turri that dies leaves it.
+    return undefined;
+  }
+}
+
+function dropRecord(file: string | undefined): boolean {
+  if (file === undefined) return false;
+  try {
+    unlinkSync(file);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const alive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // Alive, but another user's: it is not one turri started.
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+};
+
+/**
+ * The processes of the group a launch started, as `ps` says them now - none when it has none left, or ps cannot say
+ * (Windows): what cannot be told to be turri's is never stopped. Theirs only when the group is the one the record names:
+ * its leader started when the record says, or - the leader gone - every one of them started after it. A pid is not given
+ * again while a group of that id has a process left.
+ */
+function groupOf(record: LaunchRecord): number[] {
+  const listed = spawnSync("ps", ["-A", "-o", "pid=,pgid=,lstart="], { encoding: "utf8", env: { ...process.env, LC_ALL: "C" } });
+  if (listed.status !== 0) return [];
+  const members: Array<{ pid: number; started: number }> = [];
+  for (const line of listed.stdout.split("\n")) {
+    const match = /^\s*(\d+)\s+(\d+)\s+(.+?)\s*$/.exec(line);
+    if (match === null || Number(match[2]) !== record.pgid) continue;
+    members.push({ pid: Number(match[1]), started: Date.parse(match[3]!) });
+  }
+  if (members.length === 0) return [];
+  const slack = 5000;
+  const leader = members.find((member) => member.pid === record.pgid);
+  const theirs =
+    leader !== undefined
+      ? Number.isFinite(leader.started) && Math.abs(leader.started - record.startedAt) <= slack
+      : members.every((member) => Number.isFinite(member.started) && member.started >= record.startedAt - slack);
+  return theirs ? members.map((member) => member.pid) : [];
+}
+
+const groupAlive = (pgid: number): boolean => {
+  try {
+    process.kill(-pgid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+};
+
+/**
+ * Stop what launches of an earlier turri left running in the project - the codebase's, or every one's - as stopLaunched
+ * stops this session's: its process group, politely, then not. Only what turri's own records name, whose turri has ended
+ * (another turri still running keeps its own), and only when the process is still the one recorded: a process turri did
+ * not start is never stopped. Records of what has ended are taken out. Returns what was stopped.
+ */
+export async function stopLeftBehind(projectDir: string, codebase?: string): Promise<LaunchRecord[]> {
+  const dir = join(projectDir, ".turri", "launch", RUNNING_DIR);
+  let names: string[];
+  try {
+    names = readdirSync(dir).filter((name) => name.endsWith(".json"));
+  } catch {
+    return [];
+  }
+  const stopping: LaunchRecord[] = [];
+  for (const name of names) {
+    const file = join(dir, name);
+    let record: LaunchRecord;
+    try {
+      record = JSON.parse(readFileSync(file, "utf8")) as LaunchRecord;
+    } catch {
+      continue;
+    }
+    if (codebase !== undefined && record.moduleName !== codebase) continue;
+    // This turri's own are stopLaunched's; another turri still running keeps its own.
+    if (record.turri === process.pid || alive(record.turri)) continue;
+    const group = groupOf(record);
+    // Taken by whoever takes the record out first: a sweep at the session's start and one before a launch never both stop it.
+    if (!dropRecord(file) || group.length === 0) continue;
+    signalGroup(record.pgid, "SIGTERM");
+    stopping.push(record);
+  }
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline && stopping.some((record) => groupAlive(record.pgid))) await sleep(100);
+  for (const record of stopping) if (groupAlive(record.pgid)) signalGroup(record.pgid, "SIGKILL");
+  return stopping;
+}
+
+/** What was stopped of an earlier session's, in a line - for a launch's summary. */
+export function describeLeftBehind(stopped: LaunchRecord[]): string {
+  const each = stopped.map((record) => `${record.name} (pid ${record.pid}${record.url !== undefined ? `, ${record.url}` : ""})`);
+  return `Stopped what an earlier turri session left running of ${[...new Set(stopped.map((record) => record.moduleName))].join(", ")}: ${each.join(", ")}.`;
+}
 
 /** Everything a launch started, running or ended, oldest first. */
 export function listLaunched(): LaunchedProcess[] {
@@ -365,10 +496,22 @@ export async function startLaunched(input: { name: string; command: string; dir:
   }
   const started: LaunchedProcess = { name: input.name, moduleName: input.moduleName, command: input.command, dir: input.dir, log, pid: child.pid, startedAt: Date.now(), ...(input.url !== undefined ? { url: input.url } : {}) };
   info = started;
+  const record = writeRecord(input.logDir, {
+    pid: child.pid,
+    pgid: child.pid,
+    name: input.name,
+    moduleName: input.moduleName,
+    command: input.command,
+    dir: input.dir,
+    ...(input.url !== undefined ? { url: input.url } : {}),
+    startedAt: started.startedAt,
+    turri: process.pid,
+  });
   child.on("exit", (code, signal) => {
     started.exited = { code, signal };
+    dropRecord(record);
   });
-  processes.set(input.name, { info: started, child });
+  processes.set(input.name, { info: started, child, ...(record !== undefined ? { record } : {}) });
   stopOnExit();
 
   const failed = (why: string): StartResult => {

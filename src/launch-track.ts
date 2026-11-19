@@ -1,5 +1,6 @@
-import { dirname } from "node:path";
-import { codeTreeOf, exportModule, holdsCommit, hostDirOf, launchTarget, listLaunched, runningLaunched, stopLaunched, type ExportedCode, type LaunchedProcess } from "./regenerate/launch.ts";
+import { dirname, join } from "node:path";
+import { codeTreeOf, describeLeftBehind, exportModule, holdsCommit, hostDirOf, launchTarget, listLaunched, runningLaunched, stopLaunched, stopLeftBehind, type ExportedCode, type LaunchedProcess, type LaunchRecord } from "./regenerate/launch.ts";
+import { projectDirOf } from "./regenerate/paths.ts";
 import { record } from "./regenerate/ledger.ts";
 
 /**
@@ -108,6 +109,11 @@ export interface LaunchTrack {
    */
   halted(codebase?: string): string[];
   list(): Launch[];
+  /**
+   * Stop what launches of an earlier turri left running in the project - as a session starts. Said in the ledger, and in
+   * the summary of the next launch of each codebase it stopped something of. A launch does it for its codebase too.
+   */
+  sweep(): Promise<LaunchRecord[]>;
   /** What the codebase's last launch started, still running. */
   running(codebase: string): LaunchedProcess[];
 }
@@ -164,6 +170,13 @@ export function createLaunchTrack(options: {
       place(launch),
     );
   const place = (launch: Launch) => ({ project: options.cwd, module: launch.codebase });
+  /** What an earlier session left running and was stopped, by codebase, not yet said in a launch's summary. */
+  const leftBehind = new Map<string, LaunchRecord[]>();
+  const noteLeftBehind = (stopped: LaunchRecord[]) => {
+    if (stopped.length === 0) return;
+    record({ kind: "launch.left-behind", stopped: stopped.map((each) => ({ name: each.name, pid: each.pid, module: each.moduleName, ...(each.url !== undefined ? { url: each.url } : {}) })) }, { project: options.cwd });
+    for (const each of stopped) leftBehind.set(each.moduleName, [...(leftBehind.get(each.moduleName) ?? []), each]);
+  };
 
   /**
    * What runs for the codebase is the commit's code: the same code, nothing it started has ended. Guidance is not
@@ -231,7 +244,9 @@ export function createLaunchTrack(options: {
     const halted = new Promise<never>((_, reject) => abort.signal.addEventListener("abort", () => reject(new Error("stopped")), { once: true }));
     halted.catch(() => undefined);
     try {
-      // What the last launch started runs from what is about to be replaced.
+      // What the last launch started runs from what is about to be replaced - and what an earlier session's left, which
+      // would hold its ports.
+      noteLeftBehind(await stopLeftBehind(projectDirOf(launch.plainFile), launch.codebase));
       await stopLaunched({ moduleName: launch.codebase });
       const code = exportModule(launch.plainFile, { ...(launch.inModule !== undefined ? { inModule: launch.inModule } : {}), commit: launch.commit });
       launch.code = code;
@@ -245,6 +260,11 @@ export function createLaunchTrack(options: {
     } catch (error) {
       launch.status = abort.signal.aborted ? "stopped" : "failed";
       launch.summary = abort.signal.aborted ? "Stopped on request." : error instanceof Error ? error.message : String(error);
+    }
+    const left = leftBehind.get(launch.codebase);
+    if (left !== undefined) {
+      leftBehind.delete(launch.codebase);
+      launch.summary = `${describeLeftBehind(left)}\n${launch.summary ?? ""}`.trim();
     }
     launch.finishedAt = Date.now();
     // What runs is this launch's - or, stopped, nothing of it.
@@ -392,6 +412,11 @@ export function createLaunchTrack(options: {
       return stopped;
     },
     list: () => [...launches],
+    async sweep() {
+      const stopped = await stopLeftBehind(projectDirOf(join(options.cwd, "turri.plain")));
+      noteLeftBehind(stopped);
+      return stopped;
+    },
     running: (codebase) => runningLaunched(codebase),
   };
   return track;

@@ -70,6 +70,8 @@ export function createSessionLaunches(options: {
     },
     onChange: options.onChange,
   });
+  // What an earlier session's launches left running holds the ports this one's need: stopped as the session starts.
+  void track.sweep().catch(() => undefined);
 
   /** Whether the pulse's module launches what lands: its config as the pulse was queued with it. */
   const launchesAfter = (job: Job) => {

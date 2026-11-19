@@ -71,6 +71,8 @@ export type LedgerEvent =
   // A launch of a codebase (launch-track.ts), from started to its end: its id, the commit, the pulse that landed it.
   | { kind: "launch.started"; launch: string; commit: string; pulse?: string }
   | { kind: "launch.finished"; launch: string; commit: string; status: string; ms: number }
+  // What an earlier turri's launches left running, stopped before this session's launch of its codebase - or as it started.
+  | { kind: "launch.left-behind"; stopped: Array<{ name: string; pid: number; module: string; url?: string }> }
   // The sentinel done with a pulse or a check: whether what it checked holds - `unchecked`, a check that never ran.
   | { kind: "sentinel.concluded"; verdict: string; module?: string; check?: string }
   | { kind: "chat.closed" }

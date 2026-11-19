@@ -1,11 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { writePlain } from "../test-plain.ts";
 import { lastCommit, recordHistory } from "../../src/regenerate/lineage.ts";
-import { exportModule, holdsCommit, listLaunched, runningLaunched, startLaunched, stopLaunched } from "../../src/regenerate/launch.ts";
+import { exportModule, holdsCommit, listLaunched, runningLaunched, startLaunched, stopLaunched, stopLeftBehind, type LaunchRecord } from "../../src/regenerate/launch.ts";
 import { activateTool, projectNotes } from "../../src/launch-agent.ts";
 import { createLaunchTrack, type Launch, type LaunchOutcome } from "../../src/launch-track.ts";
 import { haltLaunched } from "../../src/loop-tools.ts";
@@ -523,4 +524,81 @@ describe("what the chat is told of a launch", () => {
   it("says a launch that ended up where it runs", () => {
     expect(launchedNote(launch({ summary: "http://localhost:8001" }))).toContain("greet at abcdef0 is launched.\n\nhttp://localhost:8001");
   });
+});
+
+describe("what an earlier session left running", () => {
+  /** A server a turri that has since ended started: its own process group, and turri's record of it. */
+  function leftRunning(over: Partial<LaunchRecord> = {}): { pid: number; record: string } {
+    const child = spawn("sleep", ["30"], { detached: true, stdio: "ignore" });
+    child.unref();
+    // A turri that ended: a process that has exited.
+    const ended = spawnSync("true");
+    const record: LaunchRecord = { pid: child.pid!, pgid: child.pid!, name: "backend", moduleName: "app", command: "sleep 30", dir: join(dir, "dist", "app"), url: "http://127.0.0.1:8000", startedAt: Date.now(), turri: ended.pid!, ...over };
+    const file = join(dir, ".turri", "launch", "running", `${child.pid}.json`);
+    mkdirSync(join(file, ".."), { recursive: true });
+    writeFileSync(file, JSON.stringify(record));
+    return { pid: child.pid!, record: file };
+  }
+  const isAlive = (pid: number) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const left: number[] = [];
+  afterEach(() => {
+    for (const pid of left.splice(0)) {
+      try {
+        process.kill(-pid, "SIGKILL");
+      } catch {
+        /* gone */
+      }
+    }
+  });
+
+  it("is stopped - its record taken out - when the turri that started it has ended", async () => {
+    const { pid, record } = leftRunning();
+    left.push(pid);
+    const stopped = await stopLeftBehind(dir, "app");
+    expect(stopped.map((each) => each.pid)).toEqual([pid]);
+    expect(isAlive(pid)).toBe(false);
+    expect(existsSync(record)).toBe(false);
+  });
+
+  it("is left alone when its turri still runs, when it is another codebase's, and when its pid is now another process's", async () => {
+    const theirs = leftRunning({ turri: process.ppid });
+    const other = leftRunning({ moduleName: "web" });
+    // The pid given again since: the process there started long after the record says.
+    const reused = leftRunning({ startedAt: Date.now() - 3_600_000 });
+    left.push(theirs.pid, other.pid, reused.pid);
+    expect(await stopLeftBehind(dir, "app")).toEqual([]);
+    for (const each of [theirs, other, reused]) expect(isAlive(each.pid)).toBe(true);
+    expect(existsSync(theirs.record)).toBe(true);
+    expect(existsSync(other.record)).toBe(true);
+    // Not turri's: its record goes, the process stays.
+    expect(existsSync(reused.record)).toBe(false);
+  });
+
+  it("is stopped before the codebase's next launch, which says so in its summary - and what this session starts is recorded until it ends", async () => {
+    built("app", { "app.py": "one\n" });
+    spec("app");
+    const { pid } = leftRunning();
+    left.push(pid);
+    let recorded: string[] = [];
+    const { launches } = track(async (launch, exported) => {
+      const started = await startLaunched({ name: "backend", command: "sleep 30", dir: exported.dir, moduleName: launch.codebase, logDir: join(dir, ".turri", "launch") });
+      recorded = readdirSync(join(dir, ".turri", "launch", "running"));
+      return { launched: started.ok, summary: "backend runs." };
+    });
+    const { launch } = launches.request({ plainFile: join(dir, "app.plain"), cause: {} });
+    const ended = await launches.done(launch.id);
+    expect(isAlive(pid)).toBe(false);
+    expect(ended.summary).toBe(`Stopped what an earlier turri session left running of app: backend (pid ${pid}, http://127.0.0.1:8000).\nbackend runs.`);
+    expect(recorded).toEqual([`${runningLaunched("app")[0]!.pid}.json`]);
+    await stopLaunched();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(readdirSync(join(dir, ".turri", "launch", "running"))).toEqual([]);
+  }, 30_000);
 });
