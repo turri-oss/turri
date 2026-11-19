@@ -6,8 +6,9 @@ import { adoptRun, forgetChat, forgetSessionFile, recordRun, type ChatRecord, ty
 import { createChatUi, type ChatUi } from "./chat-ui.ts";
 import { debugMode, type SentinelSetting } from "./config.ts";
 import type { AskUserIO } from "./ask.ts";
-import { record } from "./regenerate/ledger.ts";
+import { firstLine, record } from "./regenerate/ledger.ts";
 import type { Job, JobRegistry } from "./regenerate/jobs.ts";
+import type { Launch } from "./launch-track.ts";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { newNotice, noticeTask, SENTINEL, sentinelStartChoice, wentWrong, type ChatRole, type Conclusion, type Notice, type NoticeAnswer, type NoticeInput, type SentinelCheck } from "./notice.ts";
 
@@ -17,7 +18,7 @@ import { newNotice, noticeTask, SENTINEL, sentinelStartChoice, wentWrong, type C
  * One turri process is one session on one project, and holds up to MAX_CHATS chats: conversations, each with its own
  * history, model, thinking level and questions, each working while another is shown. What they share is the
  * session's: the one job registry and work loop the project's pulses run in - a pulse any chat starts is in every
- * chat's side panel - the coding model, steering, releases and the ledger.
+ * chat's side panel - the coding model, steering, launches and the ledger.
  *
  * A chat is a pi session with turri's extension in it. The extension, built once for each, links itself to its chat
  * here (`attach`); its tools, commands and handlers then run inside the chat's scope (chat-scope.ts), so a pulse knows
@@ -86,13 +87,19 @@ export interface TurriHost {
    * not say it again in the conversation. Unset, it says both, as in the terminal.
    */
   pulseEndsShown?: boolean;
+  /**
+   * A launch was asked for, started, or ended (docs/launch.md): what the host shows of what runs is drawn again. One that
+   * ended with a newer launch waiting has `replacedBy` - stopped the next moment - and one whose servers were halted on
+   * request comes again, `stopped`.
+   */
+  onLaunch?(launch: Launch): void;
   /** What the sentinel puts to the person - and, `kind: "sentinel-start"`, whether to start it: the host draws it in the chat it names, and answers it with `answer`. */
   onNotice?(notice: Notice): void;
   /** A notice is over - answered, dismissed, or superseded by a newer one about its module: the host takes its card down. */
   onNoticeOver?(notice: Notice): void;
   /**
    * The sentinel's own tools beside turri's - a host's browser, say - and its surface: where the person watches it use
-   * them, in the host's words. Given, the sentinel tries a release with those tools, keeping its shell for what they
+   * them, in the host's words. Given, the sentinel tries what is launched with those tools, keeping its shell for what they
    * cannot show; absent, the person does not watch it, and the tools are only to test with as well.
    */
   sentinel?: { tools?: ToolDefinition[]; surface?: string };
@@ -109,12 +116,15 @@ export interface ChatInstance {
   landed(job: Job, options?: { tell?: boolean }): void;
   /** The sentinel's: a pulse ended - its agent, in a conversation of its own for this pulse, told of it. */
   brief(job: Job, context: { asked?: string; focused?: string }): Promise<void>;
+  /** The sentinel's: functional specs a host asked it to check - its agent told, in a conversation of its own for the check, in what is launched of the module. */
+  briefCheck(check: SentinelCheck, context: { focused?: string }): Promise<void>;
   /**
-   * The sentinel's: functional specs a host asked it to check - the module released first, unless what runs is its last
-   * commit, then its agent told, in a conversation of its own for the check. Why not, when the release failed: then its
-   * agent is told nothing.
+   * The sentinel's: its check of a pulse - or a host's check - paused while the codebase was launched again, carried on in
+   * the launch that holds it: its agent told so, in the conversation it was in. Throws when what runs no longer holds it.
    */
-  briefCheck(check: SentinelCheck, context: { focused?: string }): Promise<string | undefined>;
+  resume(work: { job: Job } | { check: SentinelCheck }): Promise<void>;
+  /** A launch this chat is to hear of ended - one it asked for, or one after a pulse of its with the sentinel off: its agent told how it went. */
+  launched(launch: Launch): void;
   /** A notice put in the chat: drawn, and - in the terminal - put to the person once the chat is idle. */
   notice(notice: Notice): void;
   /** A notice is over: its dialog closed, if it is open. */
@@ -217,6 +227,12 @@ export interface TurriCore {
   showing(chat: ChatState): void;
   /** For the extension: a pulse ended - told to the chat that asked for it, or, with the sentinel on, to the sentinel. */
   jobFinished(job: Job): void;
+  /**
+   * For the extension: a launch started, or ended. Started, the sentinel's check of a pulse or a check of its codebase is
+   * paused, to carry on once the codebase's launches are settled. Ended, one after a pulse, with the sentinel off: told to
+   * the chat that asked for the pulse, or the one shown.
+   */
+  launchChanged(launch: Launch): void;
   /** Whether finished pulses go to the sentinel now: it is on, and there is somewhere to open it. */
   sentinelOn(): boolean;
   /** A notice put to the person, in the chat they look at - the sentinel's, or turri's own. Undefined: no chat to put it in. */
@@ -263,6 +279,21 @@ export interface CoreOptions {
   setSentinel?: (on: boolean) => void;
   /** The person ignored a notice for good: kept in the sentinel's guidance, for every conversation after. */
   ignored?: (notice: Notice) => void;
+  /** The launch track, as the sentinel waits on it (docs/sentinel.md). Not given: the sentinel waits for nothing. */
+  launches?: SentinelLaunches;
+}
+
+/**
+ * What the sentinel waits on of the launch track: a pulse is tested only in a launch whose commit holds the pulse's, and
+ * a check only in what runs of its module - each told once its codebase's launches are settled.
+ */
+export interface SentinelLaunches {
+  /** Resolves once what runs can be tested for the pulse, or there is nothing running to test it in. Throws when what runs cannot hold it - turri got it wrong. */
+  readyFor(job: Job): Promise<void>;
+  /** Resolves once what runs of the check's module is settled. Throws when nothing of it runs. */
+  readyForCheck(check: SentinelCheck): Promise<void>;
+  /** Resolves once nothing of the codebase's is launching or waiting to. */
+  settled(codebase: string): Promise<void>;
 }
 
 /** A chat's session, as stopping what it does reaches it. */
@@ -325,8 +356,10 @@ export function createChats(options: CoreOptions): TurriCore {
   let notices: Array<[string, "info" | "warning" | "error"]> = [];
   /** What the sentinel put to the person, and turri itself, this session: open until answered or superseded. */
   const open: Notice[] = [];
-  /** The work the sentinel's conversation is on, from its brief until its agent is done: a newer pulse of the same module replaces a check of one that went well. */
-  let checking: { work: SentinelWork; wrong: boolean } | undefined;
+  /** The work the sentinel's conversation is on, from its brief until its agent is done - `concluded` once it said so. */
+  let checking: { work: SentinelWork; concluded?: true } | undefined;
+  /** Its check paused while its codebase is launched again: carried on once the codebase's launches are settled. */
+  let paused: { work: SentinelWork } | undefined;
   /** Pulses that finished, and checks asked for, while the sentinel was at work: each taken in turn, in a conversation of its own. */
   const waiting: SentinelWork[] = [];
   /** The checks hosts asked for this session, by id: what a notice or a conclusion about one is about. */
@@ -419,8 +452,11 @@ export function createChats(options: CoreOptions): TurriCore {
         if (shownId !== chat.id) chat.unread = true;
         persist();
         changed();
+      } else if (event.type === "agent_settled") {
         // Done with its pulse - or with what the person said to it: the next pulse waiting, in a conversation of its own.
-        if (chat.role === SENTINEL && (event as { willRetry?: boolean }).willRetry !== true) {
+        // Settled, not at agent_end: pi's session still streams while agent_end's listeners run, and a retry comes after
+        // it. Paused for a launch, it is not done: it carries on once the launch is settled.
+        if (chat.role === SENTINEL && paused === undefined) {
           checking = undefined;
           toSentinel(() => nextWork(chat));
         }
@@ -504,6 +540,7 @@ export function createChats(options: CoreOptions): TurriCore {
       // Closed, the sentinel is let go with what it had to check: the next pulse that finishes opens it again.
       if (chat.role === SENTINEL) {
         checking = undefined;
+        paused = undefined;
         // A check a host asked for ends all the same: it is told it was not done.
         for (const work of waiting.splice(0)) if ("check" in work) unchecked(work.check, "the sentinel was closed before it got to it");
       }
@@ -617,6 +654,27 @@ export function createChats(options: CoreOptions): TurriCore {
       toAsker(job);
     },
 
+    launchChanged(launch) {
+      if (launch.status === "running") {
+        pauseFor(launch);
+        return;
+      }
+      // One after a pulse, ended, with the sentinel off: its chat is told - the sentinel, on, tests it with the pulse. One a
+      // newer launch replaced as it ended is not: what it started is stopped the next moment, and the newer one is told.
+      if (!("pulse" in launch.cause) || (launch.status !== "launched" && launch.status !== "failed") || launch.replacedBy !== undefined || core.sentinelOn()) return;
+      const job = jobs.get(launch.cause.pulse);
+      const asked = chats.find((chat) => chat.id === job?.chat && chat.role !== SENTINEL && chat.instance !== undefined);
+      const where = asked ?? personFacing();
+      if (where === undefined) return;
+      if (where.id !== shownId) where.unread = true;
+      try {
+        where.instance?.launched(launch);
+      } catch {
+        /* a chat let go as it ended: the host still hears of it */
+      }
+      changed();
+    },
+
     check(prepare) {
       if (driver === undefined) return { refused: "There is nowhere to open the sentinel in this session." };
       // The question was settled in config.turri.yaml while it was open: what it held goes as the file now says.
@@ -681,6 +739,9 @@ export function createChats(options: CoreOptions): TurriCore {
     notices: () => open.filter((notice) => notice.state === "open"),
 
     concluded(conclusion) {
+      // The sentinel's work concluded: a launch from now on does not pause it - it is only saying so.
+      const work = checking?.work;
+      if (work !== undefined && ("pulse" in work ? conclusion.job === work.pulse.id : conclusion.check === work.check.id)) checking = { ...checking!, concluded: true };
       const job = conclusion.job !== undefined ? jobs.get(conclusion.job) : undefined;
       const check = conclusion.check !== undefined ? checks.get(conclusion.check) : undefined;
       const target = personFacing(chats.find((chat) => chat.id === job?.chat));
@@ -917,26 +978,16 @@ export function createChats(options: CoreOptions): TurriCore {
     });
   }
 
-  /** Whether the sentinel is at work: on a pulse - its turn starts as it is told of one - or on what the person said to it. */
-  const sentinelBusy = (sentinel: ChatState) => sentinel.session?.isStreaming === true;
-
   /**
-   * A finished pulse or a host's check, for the sentinel: taken now when it is free. Busy, a newer pulse of a module
-   * replaces a check of the module's last pulse that went well - and a pulse of it that went well and waits - and one that
-   * went wrong is looked into to its end; the rest, checks among them, wait their turn.
+   * Whether the sentinel is at work: on a pulse - its turn starts as it is told of one - or on what the person said to it;
+   * or its check is paused while its codebase is launched again.
    */
+  const sentinelBusy = (sentinel: ChatState) => sentinel.session?.isStreaming === true || paused !== undefined;
+
+  /** A finished pulse or a host's check, for the sentinel: taken now when it is free, else after what waits - every one, in order. */
   function takeWork(sentinel: ChatState, work: SentinelWork): Promise<void> | void {
     if (!sentinelBusy(sentinel)) return begin(sentinel, work);
-    if (!("pulse" in work)) {
-      waiting.push(work);
-      return;
-    }
-    const job = work.pulse;
-    const sameModule = (other: SentinelWork) => job.module !== undefined && "pulse" in other && other.pulse.module === job.module;
-    if (checking !== undefined && !checking.wrong && sameModule(checking.work) && "pulse" in checking.work) return check(sentinel, job, checking.work.pulse);
-    const older = waiting.findIndex((other) => sameModule(other) && "pulse" in other && !wentWrong(other.pulse));
-    if (older !== -1) waiting.splice(older, 1, work);
-    else waiting.push(work);
+    waiting.push(work);
   }
 
   /** The sentinel free again: the next pulse or check that waits, taken. */
@@ -950,41 +1001,69 @@ export function createChats(options: CoreOptions): TurriCore {
     return "pulse" in work ? check(sentinel, work.pulse) : checkSpecs(sentinel, work.check);
   }
 
+  /** The codebase a piece of the sentinel's work is tested in: the pulse's, or the check's module's. */
+  const codebaseOf = (work: SentinelWork): string | undefined => ("pulse" in work ? work.pulse.module : work.check.module);
+
   /**
-   * The sentinel on a host's check, from scratch, as on a pulse: a conversation of its own, the module released first
-   * unless what runs is its last commit. A release that fails ends the check - a conclusion of its own - and the next
-   * waiting is taken.
+   * What runs cannot be tested for a pulse or a check: recorded, and concluded as unchecked; the next waiting taken. For a
+   * pulse turri got it wrong - what runs cannot hold its commit - and that is said as an error where the person is too. A
+   * host's check with nothing launched to test it in is an answer, not an error: its conclusion says it alone.
+   */
+  async function refuse(sentinel: ChatState, work: SentinelWork, why: string): Promise<void> {
+    const module = codebaseOf(work);
+    inChat(sentinel.scope, () =>
+      record({ kind: "sentinel.refused", ...(module !== undefined ? { module } : {}), ...("check" in work ? { check: work.check.id } : {}), why: firstLine(why, 300) }, { project: cwd, ...("pulse" in work ? { job: work.pulse.id } : {}) }),
+    );
+    if ("pulse" in work) core.notify(`The sentinel cannot check pulse ${work.pulse.id}: ${why}`, "error");
+    core.concluded({
+      ...("pulse" in work ? { job: work.pulse.id } : { check: work.check.id }),
+      ...(module !== undefined ? { module } : {}),
+      verdict: "unchecked",
+      summary: `Not checked: ${why}`,
+    });
+    checking = undefined;
+    changed();
+    await nextWork(sentinel);
+  }
+
+  /**
+   * The sentinel on a host's check, from scratch, as on a pulse: a conversation of its own, once what runs of the module
+   * is settled - nothing launched for it, and the check ends unchecked.
    */
   async function checkSpecs(sentinel: ChatState, check: SentinelCheck): Promise<void> {
-    checking = { work: { check }, wrong: false };
+    try {
+      await options.launches?.readyForCheck(check);
+    } catch (error) {
+      return refuse(sentinel, { check }, error instanceof Error ? error.message : String(error));
+    }
+    checking = { work: { check } };
     inChat(sentinel.scope, () => record({ kind: "sentinel.checking", module: check.module, check: check.id }, { project: cwd }));
     const session = sentinel.session;
     if (session !== undefined && (session.messages.length > 0 || session.isStreaming)) await freshConversation(sentinel);
     if (sentinel.id !== shownId) sentinel.unread = true;
     const where = personFacing();
-    let why: string | undefined;
     try {
-      why = await sentinel.instance!.briefCheck(check, where !== undefined ? { focused: titleFor(where) } : {});
+      await sentinel.instance!.briefCheck(check, where !== undefined ? { focused: titleFor(where) } : {});
     } catch (error) {
-      why = error instanceof Error ? error.message : String(error);
+      core.notify(`The sentinel could not be told of check ${check.id}: ${error instanceof Error ? error.message : String(error)}`, "warning");
+      checking = undefined;
     }
     changed();
-    if (why === undefined) return;
-    checking = undefined;
-    core.concluded({ check: check.id, module: check.module, verdict: "wrong", summary: `Not tested: ${check.module} could not be released - ${why}` });
-    await nextWork(sentinel);
   }
 
   /**
    * The sentinel on a pulse, from scratch: a conversation of its own - its prompt, the project's guidance and this
-   * pulse's brief, nothing of the pulses before it - in place of the one it had, stopped when it was on `replacing`.
+   * pulse's brief, nothing of the pulses before it - once what runs holds the pulse's commit (`readyFor`).
    */
-  async function check(sentinel: ChatState, job: Job, replacing?: Job): Promise<void> {
-    checking = { work: { pulse: job }, wrong: wentWrong(job) };
+  async function check(sentinel: ChatState, job: Job): Promise<void> {
+    try {
+      await options.launches?.readyFor(job);
+    } catch (error) {
+      return refuse(sentinel, { pulse: job }, error instanceof Error ? error.message : String(error));
+    }
+    checking = { work: { pulse: job } };
     const module = job.module;
-    inChat(sentinel.scope, () =>
-      record({ kind: "sentinel.checking", ...(module !== undefined ? { module } : {}), ...(replacing !== undefined ? { replaced: replacing.id } : {}) }, { project: cwd, job: job.id }),
-    );
+    inChat(sentinel.scope, () => record({ kind: "sentinel.checking", ...(module !== undefined ? { module } : {}) }, { project: cwd, job: job.id }));
     const session = sentinel.session;
     if (session !== undefined && (session.messages.length > 0 || session.isStreaming)) await freshConversation(sentinel);
     if (sentinel.id !== shownId) sentinel.unread = true;
@@ -1000,6 +1079,38 @@ export function createChats(options: CoreOptions): TurriCore {
       checking = undefined;
     }
     changed();
+  }
+
+  /**
+   * A launch of a codebase started while the sentinel checks a pulse or a check of it: its turn stopped - its conversation
+   * kept - until the codebase's launches are settled, then carried on in the launch that holds it.
+   */
+  function pauseFor(launch: Launch): void {
+    const sentinel = sentinelChat();
+    const now = checking;
+    // Concluded, it is only saying so: nothing to carry on.
+    if (sentinel === undefined || now === undefined || now.concluded === true || paused !== undefined || codebaseOf(now.work) !== launch.codebase) return;
+    paused = now;
+    inChat(sentinel.scope, () => record({ kind: "sentinel.paused", module: launch.codebase, launch: launch.id }, { project: cwd, ...("pulse" in now.work ? { job: now.work.pulse.id } : {}) }));
+    void sentinel.session?.abort().catch(() => undefined);
+    changed();
+    void (async () => {
+      await options.launches?.settled(launch.codebase);
+      // Let go meanwhile - closed, or given another conversation: nothing to carry on.
+      if (paused !== now || !chats.includes(sentinel) || sentinel.instance === undefined) {
+        if (paused === now) paused = undefined;
+        return;
+      }
+      paused = undefined;
+      const resumed = "pulse" in now.work ? { job: now.work.pulse } : { check: now.work.check };
+      try {
+        await sentinel.instance.resume(resumed);
+        inChat(sentinel.scope, () => record({ kind: "sentinel.resumed", module: launch.codebase, launch: launch.id }, { project: cwd, ...("pulse" in now.work ? { job: now.work.pulse.id } : {}) }));
+      } catch (error) {
+        toSentinel(() => refuse(sentinel, now.work, error instanceof Error ? error.message : String(error)));
+      }
+      changed();
+    })();
   }
 
   /**

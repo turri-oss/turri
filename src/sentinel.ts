@@ -11,7 +11,8 @@ import { formatDuration, pulseName, type Job } from "./regenerate/jobs.ts";
 import { readLedger } from "./regenerate/ledger.ts";
 import { describePulseView, pulseView } from "./regenerate/ledger-view.ts";
 import { MODULES_DIR, ensureInScratch } from "./regenerate/paths.ts";
-import type { DeployedProcess } from "./regenerate/release.ts";
+import type { LaunchedProcess } from "./regenerate/launch.ts";
+import { whatRuns, type PulseLaunch } from "./launch-session.ts";
 import { SENTINEL, SENTINEL_START, wentWrong, type Conclusion, type Notice, type NoticeInput, type SentinelCheck } from "./notice.ts";
 import type { CheckedSpec } from "./sentinel-check.ts";
 
@@ -19,7 +20,7 @@ export * from "./notice.ts";
 
 /**
  * The sentinel: a chat of the session's own that every finished pulse goes to (docs/sentinel.md). It checks how each
- * pulse went - and, with `release-after-pulse` on, tests what was released - finds out why when something is wrong, and
+ * pulse went - and, with `launch-after-pulse` on, tests what was launched - finds out why when something is wrong, and
  * puts it to the person as a notice in the chat they look at, with what they can do about it. It changes nothing: its
  * file tools only read, its shell runs with the project read only, and it has none of the tools that change ***plain or
  * start work. The chat the person talks to is never interrupted for a pulse that went well.
@@ -40,13 +41,13 @@ export function sentinelSetting(cwd: string): SentinelSetting {
  * - and whether to start it.
  */
 export function sentinelStartNotice(about: Job | SentinelCheck, cwd: string): NoticeInput {
-  let released = false;
+  let launched = false;
   try {
-    released = readProjectConfig(cwd).releaseAfterPulse === true;
+    launched = readProjectConfig(cwd).launchAfterPulse === true;
   } catch {
-    /* a config that cannot be read releases nothing */
+    /* a config that cannot be read launches nothing */
   }
-  const what = `a background tab that reviews each finished pulse${released ? " and tries to use what was released" : ""}`;
+  const what = `a background tab that reviews each finished pulse${launched ? " and tries to use what was launched" : ""}`;
   if (!("kind" in about)) {
     return {
       kind: "sentinel-start",
@@ -128,7 +129,7 @@ export function pulseEndsBlock(sentinel: boolean): string {
   return sentinel
     ? [
         "<pulse-ends>",
-        "The sentinel - a chat of my own, beside this one - checks every pulse that finishes and tests what was released.",
+        "The sentinel - a chat of my own, beside this one - checks every pulse that finishes and tests what was launched.",
         "When a pulse lands, the chat the person is in is told, to tell them it landed and what the sentinel does with it -",
         "and nothing more: the pulse is the sentinel's. A pulse that went wrong you are not told of. What needs the person, the",
         "sentinel puts to them as a notice in the chat they are in: what is wrong, and what can be done. When they accept",
@@ -140,11 +141,11 @@ export function pulseEndsBlock(sentinel: boolean): string {
 
 /**
  * What the chat the person is in is told of a pulse that landed, with the sentinel on: that it landed, what the sentinel
- * does with it - and to tell the person so, and do nothing else about it.
+ * does with it - and to tell the person so, and do nothing else about it. `launching`: launch-after-pulse is on - it is
+ * launched in the background, and the sentinel tests it once it runs.
  */
-export function landedNote(job: Job, released: DeployedProcess[], options: { shown?: boolean } = {}): string {
-  const wasReleased = (job.details as { released?: unknown } | undefined)?.released === true;
-  const where = released.map((item) => `${item.name} at ${item.url ?? item.command}`).join(", ");
+export function landedNote(job: Job, options: { shown?: boolean; launching?: boolean } = {}): string {
+  const launching = options.launching === true;
   // The host showed the person the pulse's end itself: what happened, for when they ask - nobody is told anything now.
   if (options.shown === true) {
     return [
@@ -152,7 +153,7 @@ export function landedNote(job: Job, released: DeployedProcess[], options: { sho
       "",
       (job.report ?? "").trim(),
       "",
-      `The sentinel - a chat of my own beside this one - checked it after it landed${wasReleased ? `, and tested what was released${where !== "" ? ` (${where})` : ""}` : ""}; the person was shown that it landed. The pulse is the sentinel's: nothing is to be tested, released, opened or run for it here.`,
+      `The sentinel - a chat of my own beside this one - checks it${launching ? ", once it is launched, in the background, and tests what runs" : ""}; the person was shown that it landed. The pulse is the sentinel's: nothing is to be tested, launched, opened or run for it here.`,
     ].join("\n");
   }
   return [
@@ -160,15 +161,15 @@ export function landedNote(job: Job, released: DeployedProcess[], options: { sho
     "",
     (job.report ?? "").trim(),
     "",
-    `The sentinel - a chat of my own beside this one - is checking it now${wasReleased ? `, and testing what was released${where !== "" ? ` (${where})` : ""}` : ""}. If it finds something wrong, it puts it to the person in the chat they are in, with what can be done; when it is done, you are told.`,
+    `${launching ? "It is being launched in the background, and the sentinel" : "The sentinel"} - a chat of my own beside this one - checks it${launching ? " and tests what runs once it is up" : " now"}. If it finds something wrong, it puts it to the person in the chat they are in, with what can be done; when it is done, you are told.`,
     "",
-    `Tell the person, in a line or two, what landed and that the sentinel is checking it${wasReleased ? " and testing the release" : ""}. Do nothing else about it: the pulse is the sentinel's now. Do not test it, release it, open it, run anything for it, or start other work because of it - whatever the project's guidance says to do when a pulse finishes.`,
+    `Tell the person, in a line or two, what landed and that the sentinel is checking it${launching ? " - and tests it once it is launched" : ""}. Do nothing else about it: the pulse is the sentinel's now. Do not test it, launch it, open it, run anything for it, or start other work because of it - whatever the project's guidance says to do when a pulse finishes.`,
   ].join("\n");
 }
 
 /**
  * Its identity and its task, in its system prompt in place of the conversation's. A host's `surface` - where the person
- * watches it, in the host's words - stands in place of their not watching, and has it try a release with the host's tools.
+ * watches it, in the host's words - stands in place of their not watching, and has it try what is launched with the host's tools.
  */
 export function sentinelPrompt(cwd: string, options: { extraTools?: string[]; surface?: string } = {}): string {
   const guidance = readGuidance(cwd);
@@ -182,22 +183,24 @@ export function sentinelPrompt(cwd: string, options: { extraTools?: string[]; su
     "asks you to check. This conversation is for the pulse, or the check, in the message turri writes first. For a pulse:",
     "what it was, how it ended,",
     ...(surface === ""
-      ? ["its ***plain diff, its log, and what was released. The person does not watch you: they are in another chat, and", "hear from you only through notify_person."]
+      ? ["its ***plain diff, its log, and what was launched. The person does not watch you: they are in another chat, and", "hear from you only through notify_person."]
       : [
-          "its ***plain diff, its log, and what was released. The person can watch you try a release, where the host shows it;",
+          "its ***plain diff, its log, and what was launched. The person can watch you try it, where the host shows it;",
           "they talk to you in another chat, and hear what you find only through notify_person.",
         ]),
     "",
     "For the pulse:",
     "1. Check how it went, from what turri tells you - and, when that is not enough, the pulse in full (pulses with its id),",
     "   its log, and the code and the ***plain, which you read.",
-    "2. When it was released (the message says so - release-after-pulse is on), test what was released: it is running",
-    "   where the message says. How far you test is yours to judge, from what the pulse changed and what the ***plain says",
+    "2. When it was launched (the message says so - launch-after-pulse is on), test it: it is running where the message",
+    "   says - a launch that holds the pulse's commit, and the pulses after it the message names. Test what the message",
+    "   says this pulse changed - what a later pulse changed again is that pulse's to test. How far you test is yours to",
+    "   judge, from what the pulse changed and what the ***plain says",
     "   it should do: that it came up, answers, and does what its ***plain diff says it now does. Where the ***plain picks",
     "   one way among several - which of a tie comes first, how a default is chosen - try an input on which the ways give",
     "   different answers, so a pass shows the ***plain's way and no other: a tie whose first word is also first",
     "   alphabetically tells \"first in the file\" from nothing.",
-    "3. When something is wrong - the pulse failed or stopped, it did not pass, the release did not come up, the software",
+    "3. When something is wrong - the pulse failed or stopped, it did not pass, the launch did not come up, the software",
     "   does not do what its ***plain says - find out why. Then:",
     "   - When it is the project's tooling - a testing script, or where config.turri.yaml says the scripts are and which",
     "     toolchain folders the agents may read (toolchains:) - fix it yourself, with edit: a script calling python3 where",
@@ -212,19 +215,19 @@ export function sentinelPrompt(cwd: string, options: { extraTools?: string[]; su
     "     the person runs themselves (`brew install node`), and make the action resuming once they have.",
     "   When it is a gap in the ***plain the build settled with an assumption - something the person may reasonably leave",
     "   as it is - say so with ignorable: the gap in the summary, what the build does in the evidence. Never for",
-    "   something broken, a pulse that went wrong, or a release that did not come up.",
+    "   something broken, a pulse that went wrong, or a launch that did not come up.",
     "4. When all is well, notify no one.",
     "5. Last, call conclude once for it - holds or wrong, and in a line or two what you checked and what you found:",
     "   the chat the person is in is told, whether all is well or not. Then say the same here, in a line or two.",
     "",
-    "For a check: the person picked functional specs of a module for you to test in its release, which runs where the",
+    "For a check: the person picked functional specs of a module for you to test in what is launched of it, which runs where the",
     "message says. Test those - what each says and its scenarios - not the module's other functional specs. Notify the",
     "person of what does not do what its ***plain says, as for a pulse, and call conclude once for the check, by its id.",
     "",
     "You fix the project's tooling and nothing else. Your file tools read the whole project; write and edit reach only the",
     "testing scripts and config.turri.yaml - and in it only where the scripts are, and toolchains:. Your shell runs with",
-    "the project read only; the files you try a release with go in $TMPDIR - /tmp is outside what it may write. You never change ***plain - it is the person's intent, never yours to fix - and never steer,",
-    "release, or regenerate but by resume after a fix of yours. You install nothing on this machine and change none of",
+    "the project read only; the files you try a launch with go in $TMPDIR - /tmp is outside what it may write. You never change ***plain - it is the person's intent, never yours to fix - and never steer,",
+    "launch, or regenerate but by resume after a fix of yours. You install nothing on this machine and change none of",
     "its settings, nor the person's shell - under no circumstances: that is always the person's, said in a notice. You",
     "never ask the person questions - a notice is how you reach them.",
     "",
@@ -239,7 +242,7 @@ export function sentinelPrompt(cwd: string, options: { extraTools?: string[]; su
           "<surface>",
           surface,
           "</surface>",
-          `Try a release with ${theirs}, where the person can watch. Keep your shell for what those cannot show - logs, exit`,
+          `Try what is launched with ${theirs}, where the person can watch. Keep your shell for what those cannot show - logs, exit`,
           "codes, files.",
         ]
       : tools.length > 0
@@ -250,11 +253,8 @@ export function sentinelPrompt(cwd: string, options: { extraTools?: string[]; su
   ].join("\n");
 }
 
-/** What the sentinel is told of one finished pulse: the ledger's facts, the chats, and what was released. */
-export function sentinelBrief(
-  job: Job,
-  context: { project: string; asked?: string; focused?: string; released: DeployedProcess[]; releaseAfterPulse: boolean; reaction: string },
-): string {
+/** What the sentinel is told of one finished pulse: the ledger's facts, the chats, and what runs of it. */
+export function sentinelBrief(job: Job, context: { project: string; asked?: string; focused?: string; launch: PulseLaunch; reaction: string }): string {
   const view = (() => {
     try {
       const entries = readLedger(context.project, { job: job.id });
@@ -279,12 +279,7 @@ export function sentinelBrief(
   if (view !== undefined) lines.push("", "What the ledger has of it:", view);
   else if (job.diff !== undefined && job.diff.trim() !== "") lines.push("", "Its ***plain diff:", job.diff.trimEnd());
   if (job.logFile !== undefined) lines.push("", `Its log: ${job.logFile}`);
-  const released = (job.details as { released?: unknown } | undefined)?.released === true;
-  if (released) {
-    lines.push("", "It was released, as its last stage (release-after-pulse). What runs now:", ...whatRuns(context.released), "Test it.");
-  } else if (job.status === "succeeded" && !didNotPass(job)) {
-    lines.push("", context.releaseAfterPulse ? "Nothing was released after it." : "release-after-pulse is off: nothing was released, and you test nothing running - check the pulse alone.");
-  }
+  if (job.status === "succeeded" && !didNotPass(job)) lines.push("", ...launchLines(job, context.launch));
   if (job.specConflict !== undefined) {
     lines.push("", "It stopped on two functional specs that contradict each other: turri has put that to the person itself. Notify no one about it.");
   } else if (wentWrong(job)) {
@@ -301,31 +296,56 @@ export function sentinelBrief(
   return lines.join("\n");
 }
 
-/** What runs of a release, a line each: where, from where, its output - or that nothing was left running. */
-function whatRuns(released: DeployedProcess[]): string[] {
-  if (released.length === 0) return ["  nothing is running for it: the release did not leave anything running."];
-  return released.map((item) => `  ${item.name}: ${item.url ?? item.command} - in ${item.dir}, its output in ${item.log}`);
+/** What runs for a pulse that landed, as the sentinel is told it: the launch that holds its commit, or why there is none to test. */
+function launchLines(job: Job, launch: PulseLaunch): string[] {
+  const spec = (each: { module: string; funcId: string }) => `${each.module}:${each.funcId}`;
+  if (launch.off === true) return [`${launch.commit !== undefined ? `Its commit is ${launch.commit.slice(0, 7)}. ` : ""}launch-after-pulse is off: nothing was launched, and you test nothing running - check the pulse alone.`];
+  if (launch.commit === undefined) return ["Nothing was launched for it: turri has no commit it landed - check the pulse alone."];
+  const commit = launch.commit.slice(0, 7);
+  if (launch.notAsked !== undefined) return [`Its commit is ${commit}. Its launch could not be asked for: ${launch.notAsked}`, "That is what you find out about: the launch did not come up."];
+  if (launch.stopped === true || launch.launch === undefined) return [`Its commit is ${commit}. The person stopped its launch: nothing of it runs - check the pulse alone.`];
+  const what = launch.launch;
+  const later = launch.later.map((other) => `${other.id} (${pulseName(other)})`);
+  const lines = [
+    `Its commit is ${commit}. It was launched in the background (launch-after-pulse): what runs is ${what.codebase} at ${what.short} (${what.id}), which holds it${later.length > 0 ? ` and the pulses that landed after it - ${later.join(", ")}` : ""}.`,
+  ];
+  if (what.status === "failed") {
+    lines.push(
+      `That launch did not come up: ${what.summary ?? "the launch agent did not say why"}`,
+      "That is what you find out about: the launch did not come up. Test nothing in its place - never the code in plain_modules, where a pulse may be writing, nor a server of your own: what would pass there is not what the person tries.",
+    );
+    return lines;
+  }
+  lines.push("What runs now:", ...whatRuns(launch.running));
+  if (launch.laterSpecs.length > 0) {
+    lines.push(`Test what this pulse changed - but not ${launch.laterSpecs.map(spec).join(", ")}: a later pulse changed ${launch.laterSpecs.length === 1 ? "it" : "them"} again, and its check tests ${launch.laterSpecs.length === 1 ? "it" : "them"}.`);
+  } else lines.push("Test what this pulse changed.");
+  return lines;
 }
 
 /**
- * What the sentinel is told of a host's check: the module and its release - what runs, and where - and the functional
- * specs to test, with what each says and its scenarios, as turri reads them now.
+ * What the sentinel is told of a host's check: what is launched of the module - what runs, and where - and the
+ * functional specs to test, with what each says and its scenarios, as turri reads them now.
  */
 export function sentinelCheckBrief(
   check: SentinelCheck,
-  context: { specs: CheckedSpec[]; released: DeployedProcess[]; commit?: string; releasedNow: boolean; focused?: string },
+  context: { specs: CheckedSpec[]; running: LaunchedProcess[]; commit?: string; failed?: { id: string; summary?: string }; focused?: string },
 ): string {
   const lines = [
-    `Check ${check.id}: the person asked you to check ${check.funcIds.length === 1 ? "a functional spec" : `${check.funcIds.length} functional specs`} of ${check.module}, in its release.`,
+    `Check ${check.id}: the person asked you to check ${check.funcIds.length === 1 ? "a functional spec" : `${check.funcIds.length} functional specs`} of ${check.module}, in what is launched of it.`,
   ];
   if (context.focused !== undefined) lines.push(`The person is in the chat "${context.focused}": a notice goes there.`);
   lines.push(
     "",
-    `${check.module}'s release holds its code and that of every module its requires chain builds on: its last commit${context.commit !== undefined ? `, ${context.commit}` : ""}, which landed whole - never what a pulse is writing now.`,
-    context.releasedNow ? "It was released for this check. What runs now:" : "What runs was released from that commit already, and is left as it is. What runs now:",
-    ...whatRuns(context.released),
+    `What is launched of ${check.module} holds its code and that of every module its requires chain builds on${context.commit !== undefined ? `, at its commit ${context.commit}` : ""} - a commit that landed whole, never what a pulse is writing now.${context.failed !== undefined ? "" : " What runs now:"}`,
+    ...(context.failed !== undefined
+      ? [
+          `Its last launch, ${context.failed.id}, did not come up: ${context.failed.summary ?? "the launch agent did not say why"}`,
+          "That is what you find out about: the launch did not come up. Test nothing in its place - never the code in plain_modules, where a pulse may be writing, nor a server of your own: what would pass there is not what the person tries.",
+        ]
+      : whatRuns(context.running)),
     "",
-    `Test these functional specs of ${check.module} - only these, not its others, though they are in the release too:`,
+    `Test these functional specs of ${check.module} - only these, not its others, though they run too:`,
   );
   for (const spec of context.specs) {
     lines.push("", `# ${spec.funcId}`, spec.text);
@@ -479,7 +499,7 @@ export function notifyTool(notify: (input: NoticeInput) => Notice | undefined): 
           description:
             "true when the person may reasonably leave it as the build has it, for good: chiefly a gap in the ***plain the build settled with an " +
             "assumption - then say the gap in the summary and what the build does in the evidence (the ***plain does not say what happens to " +
-            "passwords over 72 bytes; the build refuses them with 422). Never for something broken, a pulse that went wrong, or a release that did not come up.",
+            "passwords over 72 bytes; the build refuses them with 422). Never for something broken, a pulse that went wrong, or a launch that did not come up.",
         }),
       ),
     }),

@@ -45,7 +45,7 @@ export interface NoticeInput {
   check?: string;
   /**
    * The person may leave it as the build has it, for good (`{ ignore: true }`): a gap in the ***plain the build settled
-   * with an assumption - never something broken, a pulse that went wrong, a release that did not come up, nor the
+   * with an assumption - never something broken, a pulse that went wrong, a launch that did not come up, nor the
    * question whether to start the sentinel.
    */
   ignorable?: boolean;
@@ -128,8 +128,9 @@ export function wentWrong(job: Job): boolean {
 
 /**
  * The sentinel done with a pulse - or a check a host asked for: whether what it checked holds, and what it checked and
- * found, in a line or two. `unchecked`: a check that never ran - the person did not start the sentinel, or it could not
- * be opened - turri's own word, never the sentinel's.
+ * found, in a line or two. `unchecked`: a pulse or a check that was never checked - the person did not start the
+ * sentinel, it could not be opened, nothing of the module is launched to test a check in, or what runs cannot hold a
+ * pulse's commit - turri's own word, never the sentinel's.
  */
 export interface Conclusion {
   /** The pulse: its job id. Undefined for a check. */
@@ -143,12 +144,12 @@ export interface Conclusion {
 }
 
 /**
- * Functional specs of a module a host asked the sentinel to check, in the module's release: its last commit, released,
- * and every module its requires chain builds on with it. Queued with the pulses, in a conversation of its own.
+ * Functional specs of a module a host asked the sentinel to check, in what is launched of the module: its codebase's code,
+ * which holds every module its requires chain builds on. Queued with the pulses, in a conversation of its own.
  */
 export interface SentinelCheck {
   id: string;
-  /** The module released and tested, by name. */
+  /** The module whose launch is tested, by name. */
   module: string;
   plainFile: string;
   /** The functional specs to test, each `module:func-id` - of the module, or of a module its requires chain builds on. */

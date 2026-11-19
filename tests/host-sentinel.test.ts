@@ -94,19 +94,15 @@ vi.mock("@earendil-works/pi-coding-agent", async (actual) => {
   };
 });
 
-/** The releases the release agent was asked for - and, `fails` set, what it says without releasing. */
-const releases: Array<{ module?: string; forCheck?: unknown }> = [];
-const release = { fails: undefined as string | undefined };
+/** The launches the launch agent was given - and, `fails` set, what it says as it does not come up. */
+const launches: Array<{ codebase: string; commit: string }> = [];
+const launch = { fails: undefined as string | undefined };
 
-// The release agent, as its release tool leaves things: the module's last commit exported to dist, and shipped.
-vi.mock("../src/release-agent.ts", () => ({
-  runReleaseAgent: async (input: { plainFile: string; inModule?: string; forCheck?: unknown; state: { released: Map<string, unknown> } }) => {
-    releases.push({ module: input.inModule, forCheck: input.forCheck });
-    if (release.fails !== undefined) return release.fails;
-    const { exportModule } = await import("../src/regenerate/release.ts");
-    const deployment = exportModule(input.plainFile, input.inModule);
-    input.state.released.set(deployment.moduleName, { ...deployment, at: Date.now() });
-    return `Released ${deployment.moduleName} to dist.`;
+// The launch agent: the code is in dist already - it says how it went.
+vi.mock("../src/launch-agent.ts", () => ({
+  runLaunchAgent: async (input: { launch: { codebase: string; short: string } }) => {
+    launches.push({ codebase: input.launch.codebase, commit: input.launch.short });
+    return launch.fails !== undefined ? { launched: false, summary: launch.fails } : { launched: true, summary: `${input.launch.codebase} runs from dist.` };
   },
 }));
 
@@ -191,11 +187,11 @@ describe("the sentinel in a host", () => {
     expect(sessions[1]!.thinking).toBe("high");
   });
 
-  it("tries a release with the host's tools where the person watches, given the host's surface, its shell kept for what they cannot show", async () => {
+  it("tries what is launched with the host's tools where the person watches, given the host's surface, its shell kept for what they cannot show", async () => {
     const surface = "The preview pane beside the chat shows the page you open with browser_open.";
     const prompt = await systemPrompt(await sentinelOf({ sentinel: { tools: [browser as never], surface } }));
     expect(prompt).toContain(`<surface>\n${surface}\n</surface>`);
-    expect(prompt).toContain("Try a release with browser_open, where the person can watch");
+    expect(prompt).toContain("Try what is launched with browser_open, where the person can watch");
     expect(prompt).not.toContain("The person does not watch you");
     expect(prompt).not.toContain("to test with as well");
   });
@@ -391,8 +387,8 @@ describe("a check a host asks of the sentinel", () => {
   const cwd = process.cwd();
   beforeEach(() => {
     sessions.length = 0;
-    releases.length = 0;
-    release.fails = undefined;
+    launches.length = 0;
+    launch.fails = undefined;
     process.chdir(mkdtempSync(join(tmpdir(), "turri-sentinel-check-")));
     writeFileSync("config.turri.yaml", "sentinel: true\n");
   });
@@ -438,44 +434,44 @@ describe("a check a host asks of the sentinel", () => {
     expect(turri.chats().find((chat) => chat.role === SENTINEL)).toBeUndefined();
   });
 
-  it("releases the module's last commit first, then has the sentinel test it - not again while what runs is that commit, again once a newer one lands", async () => {
+  /** The chat's launch tool, called in the person's chat: the module launched in the background, waited for. */
+  async function launched(plainFile = "app.plain") {
+    await sessions[0]!.tools.get("launch")!.execute("call", { plain_file: plainFile }, undefined, undefined, {});
+    await settled();
+  }
+
+  it("has the sentinel test what is launched of the module - launching nothing itself, nor again for a second check", async () => {
     await built(["add-task", "remove-task"]);
     const { turri, heard } = await host();
+    await launched();
+    expect(launches).toHaveLength(1);
     const first = turri.check({ module: "app", funcIds: ["add-task"] });
     expect(first).toEqual({ check: expect.any(String) });
     await settled();
-    expect(releases).toEqual([{ module: "app", forCheck: { moduleName: "app" } }]);
     expect(sessions[1]!.sent).toEqual(["turri_sentinel_check"]);
     // Concluded by the sentinel, by the check's id: the host hears it, the person's chat is told.
     const id = (first as { check: string }).check;
     await sessions[1]!.tools.get("conclude")!.execute("call", { check: id, verdict: "holds", summary: "adding a task lists it" }, undefined, undefined, {});
     expect(heard).toEqual([{ check: id, job: undefined, module: "app", verdict: "holds", summary: "adding a task lists it" }]);
-    expect(sessions[0]!.sent).toEqual(["turri_sentinel_concluded"]);
+    expect(sessions[0]!.sent).toContain("turri_sentinel_concluded");
 
-    // What runs is its last commit: not released again - a conversation of its own all the same.
     turri.check({ module: "app", funcIds: ["remove-task"] });
     await settled();
-    expect(releases).toHaveLength(1);
+    expect(launches).toHaveLength(1);
     expect(sessions[2]!.sent).toEqual(["turri_sentinel_check"]);
-
-    // A newer commit landed: released again.
-    await built(["add-task", "remove-task"], "print(2)\n");
-    turri.check({ module: "app", funcIds: ["add-task", "remove-task"] });
-    await settled();
-    expect(releases).toHaveLength(2);
   });
 
-  it("ends a check whose release fails as a conclusion of its own, the sentinel told nothing", async () => {
+  it("ends a check of a module nothing of which is launched as unchecked - the sentinel told nothing, and nothing launched for it", async () => {
     await built(["add-task"]);
-    release.fails = "Nothing was released: port 5173 is taken by another app.";
     const { turri, heard } = await host();
     const asked = turri.check({ module: "app", funcIds: ["add-task"] }) as { check: string };
     await settled();
-    expect(heard).toEqual([{ check: asked.check, job: undefined, module: "app", verdict: "wrong", summary: "Not tested: app could not be released - Nothing was released: port 5173 is taken by another app." }]);
-    expect(sessions[1]!.sent).toEqual([]);
+    expect(heard).toEqual([{ check: asked.check, job: undefined, module: "app", verdict: "unchecked", summary: "Not checked: nothing of app is launched to test it in - ask the chat to try it first, which launches it." }]);
+    expect(launches).toEqual([]);
+    expect(sessions[1]?.sent ?? []).toEqual([]);
   });
 
-  it("tests a functional spec of a module the chain builds on in the release of the module asked for - and refuses a name outside that chain, saying which", async () => {
+  it("tests a functional spec of a module the chain builds on in what is launched of the module asked for - and refuses a name outside that chain, saying which", async () => {
     const { resolveRequiresChain } = await import("../src/regenerate/requires.ts");
     const { chainSpec } = await import("../src/regenerate/loop.ts");
     const { writeCodeRecord } = await import("../src/regenerate/records.ts");
@@ -483,21 +479,22 @@ describe("a check a host asks of the sentinel", () => {
     writeFileSync("depths.plain", APP(["gene-fragments"]));
     writeFileSync("predators.plain", `---\nrequires:\n  - depths\n---\n\n${APP(["the-sting"])}`);
     writeFileSync("arena.plain", APP(["waves"]));
-    // predators built on depths, in its own codebase: its release holds both.
+    // predators built on depths, in its own codebase: its code holds both.
     const chain = resolveRequiresChain(join(process.cwd(), "predators.plain"), [], undefined, { allowNoFunctionalities: true });
     writeCodeRecord(chain.at(-1)!.buildDir, chainSpec(chain).tree);
     writeFileSync(join(chain.at(-1)!.buildDir, "game.py"), "print(1)\n");
     landWork(chain.at(-1)!.buildDir, "a pulse landed");
     const { turri } = await host();
+    await launched("predators.plain");
 
     expect(turri.check({ module: "predators", funcIds: ["arena:waves", "depths:gene-fragments", "web:login"] })).toEqual({
-      refused: "Not in predators' release: arena:waves, web:login - arena, web are not predators or a module its requires chain builds on (depths).",
+      refused: "Not in predators' codebase: arena:waves, web:login - arena, web are not predators or a module its requires chain builds on (depths).",
     });
     expect(turri.check({ module: "predators", funcIds: ["depths:no-such"] })).toEqual({ refused: "No such functional spec: depths has no no-such." });
     const asked = turri.check({ module: "predators", funcIds: ["depths:gene-fragments", "predators:the-sting"] });
     expect(asked).toEqual({ check: expect.any(String) });
     await settled();
-    expect(releases).toEqual([{ module: "predators", forCheck: { moduleName: "predators" } }]);
+    expect(launches.map((each) => each.codebase)).toEqual(["predators"]);
     expect(sessions[1]!.sent).toEqual(["turri_sentinel_check"]);
   });
 

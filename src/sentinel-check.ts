@@ -7,8 +7,8 @@ import { builtTips, isImportModule, projectPlainFiles, resolveRequiresChain, typ
 import type { SentinelCheck } from "./notice.ts";
 
 /**
- * A check a host asks the sentinel for (docs/sentinel.md): functional specs of one module, tested in the module's release -
- * its own codebase's last commit, which holds the code of every module its requires chain builds on. Refused before it is
+ * A check a host asks the sentinel for (docs/sentinel.md): functional specs of one module, tested in what is launched of
+ * it - its own codebase's code, which holds the code of every module its requires chain builds on. Refused before it is
  * queued when there is nothing to test: a module that is not there or does not parse, a func-id it does not have, one
  * not built in its codebase as its ***plain has it now.
  */
@@ -18,7 +18,7 @@ export interface CheckRequest {
   module: string;
   /**
    * The functional specs to test, each `module:func-id` - of the module, or of any module its requires chain builds on,
-   * whose code its release holds. A bare func-id is the module's own.
+   * whose code its codebase holds. A bare func-id is the module's own.
    */
   funcIds: string[];
 }
@@ -29,7 +29,7 @@ export function prepareCheck(project: string, request: CheckRequest): SentinelCh
     const name = (request.module ?? "").trim();
     const file = projectPlainFiles(project).find((path) => basename(path, PLAIN_SOURCE_FILE_EXTENSION) === name);
     if (name === "" || file === undefined) return { refused: `There is no module ${name === "" ? "named" : name} in the project: no .plain file of its folder is ${name || "<module>"}.plain.` };
-    if (isImportModule(file)) return { refused: `${name} is an import module: it has no codebase of its own to release. Check a module that imports it.` };
+    if (isImportModule(file)) return { refused: `${name} is an import module: it has no codebase of its own to launch. Check a module that imports it.` };
     let chain: ChainEntry[];
     try {
       chain = resolveRequiresChain(file, [], undefined, { allowNoFunctionalities: true });
@@ -47,14 +47,14 @@ export function prepareCheck(project: string, request: CheckRequest): SentinelCh
       const id = colon === -1 ? funcId : funcId.slice(colon + 1).trim();
       return { module, id, label: `${module}:${id}` };
     });
-    // Only what its release holds: the module and the modules its requires chain builds on.
+    // Only what its codebase holds: the module and the modules its requires chain builds on.
     const inChain = new Map(chain.map((entry) => [entry.moduleName, entry]));
     const outside = named.filter(({ module }) => !inChain.has(module));
     if (outside.length > 0) {
       const below = chain.slice(0, -1).map((entry) => entry.moduleName);
       return {
         refused:
-          `Not in ${whose(name)} release: ${outside.map((spec) => spec.label).join(", ")} - ${[...new Set(outside.map((spec) => spec.module))].join(", ")} ${new Set(outside.map((spec) => spec.module)).size === 1 ? "is" : "are"} not ${name} or a module its requires chain builds on` +
+          `Not in ${whose(name)} codebase: ${outside.map((spec) => spec.label).join(", ")} - ${[...new Set(outside.map((spec) => spec.module))].join(", ")} ${new Set(outside.map((spec) => spec.module)).size === 1 ? "is" : "are"} not ${name} or a module its requires chain builds on` +
           `${below.length > 0 ? ` (${below.join(", ")})` : ` - it builds on none`}.`,
       };
     }
