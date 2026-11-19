@@ -32,7 +32,7 @@ import type { Reporter } from "./graph.ts";
 import { loadSkill, skillStatus, type Skill } from "./skill.ts";
 import { runningLaunched, stopLaunched } from "./regenerate/launch.ts";
 import { launchTool } from "./launch-tools.ts";
-import { createSessionLaunches, launchedNote, replacedNote, type SessionLaunches } from "./launch-session.ts";
+import { createSessionLaunches, launchedDir, launchedNote, replacedNote, type SessionLaunches } from "./launch-session.ts";
 import { describeLaunchLine, type Launch } from "./launch-track.ts";
 import { checkedSpecs } from "./sentinel-check.ts";
 import { createSteeringStore, EVERY_MODULE, moduleNameOf, queueSectionOf, steeringFor } from "./regenerate/steer.ts";
@@ -577,6 +577,7 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
       running: runningLaunched(check.module),
       ...(commit !== undefined ? { commit } : {}),
       ...(current?.status === "failed" ? { failed: { id: current.id, ...(current.summary !== undefined ? { summary: current.summary } : {}) } } : {}),
+      ...(current !== undefined ? { dir: launchedDir(current) } : {}),
       ...(context.focused !== undefined ? { focused: context.focused } : {}),
     });
     void pi.sendMessage(

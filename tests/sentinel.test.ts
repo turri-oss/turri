@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { inChat } from "../src/chat-scope.ts";
 import { createChats, MAX_CHATS, type ChatLink, type SentinelLaunches, type TurriCore, type TurriHost } from "../src/chats.ts";
 import { createJobRegistry, type Job } from "../src/regenerate/jobs.ts";
+import { LAUNCHED_ONLY } from "../src/launch-session.ts";
 import { describeNotice, noticeTask, SENTINEL, SENTINEL_TOOLS, sentinelBrief, sentinelCheckBrief, sentinelFileTools, sentinelPrompt, type Notice, type SentinelCheck } from "../src/sentinel.ts";
 
 /**
@@ -707,6 +708,31 @@ describe("what the sentinel is told of a pulse", () => {
     expect(text).toContain("When you are done with it, call conclude for p1 - whether all is well or not.");
   });
 
+  it("names where to try it from when its launch left nothing running, and never plain_modules nor a server of its own", () => {
+    const text = sentinelBrief(job({ passed: true, landed: true }), {
+      project: process.cwd(),
+      launch: { commit: "abcdef1234", launch: { ...launched, code: { dir: "/p/dist/app" } } as never, later: [], laterSpecs: [], running: [] },
+      reaction: "",
+    });
+    expect(text).toContain("What runs now:\n  nothing is left running. It is in place in /p/dist/app: try it from there - a CLI or a library as its README and entry points say.");
+    expect(text).toContain("Never run the code in plain_modules, where a pulse may be writing, nor start a server of your own - not in your shell, not with a host's terminal");
+    expect(text).toContain("A server that should run and does not is your finding.");
+    expect(text).not.toContain("a CLI or a library is tried from its folder");
+  });
+
+  it("says the rule against plain_modules and a server of its own whatever was launched - off, stopped, not asked for, failed", () => {
+    const base = { commit: "abcdef1234", later: [], laterSpecs: [], running: [] };
+    for (const launch of [
+      { ...base, off: true },
+      { ...base, stopped: true },
+      { ...base, notAsked: "no module to launch" },
+      { ...base, launch: { ...launched, status: "failed", summary: "port 8000 is held by PID 66816" } as never },
+      { ...base, launch: launched as never },
+    ]) {
+      expect(sentinelBrief(job({ passed: true, landed: true }), { project: process.cwd(), launch, reaction: "" })).toContain(LAUNCHED_ONLY);
+    }
+  });
+
   it("tells a launch that did not come up as what to find out about", () => {
     const text = sentinelBrief(job({ passed: true, landed: true }), {
       project: process.cwd(),
@@ -902,9 +928,20 @@ describe("what the sentinel is told of a check", () => {
       { specs: [{ funcId: "app:add-task", text: "Adding a task lists it.", conformance: [], acceptance: [] }], running: [], commit: "abc1234", failed: { id: "launch-2", summary: "port 8080 is taken" } },
     );
     expect(brief).toContain("Its last launch, launch-2, did not come up: port 8080 is taken");
-    expect(brief).toContain("Test nothing in its place - never the code in plain_modules");
+    expect(brief).toContain("Test nothing in its place.");
+    expect(brief).toContain(LAUNCHED_ONLY);
     expect(brief).not.toContain("What runs now:");
-    expect(brief).not.toContain("a CLI or a library is tried from its folder");
+    expect(brief).not.toContain("nothing is left running");
+  });
+
+  it("names the folder to try it from when its launch left nothing running - and never plain_modules, nor a server of its own", () => {
+    const brief = sentinelCheckBrief(
+      { id: "c3", module: "app", plainFile: "/p/app.plain", funcIds: ["app:add-task"], at: "" },
+      { specs: [{ funcId: "app:add-task", text: "Adding a task lists it.", conformance: [], acceptance: [] }], running: [], commit: "abc1234", dir: "/p/dist/app" },
+    );
+    expect(brief).toContain("What runs now:\n  nothing is left running. It is in place in /p/dist/app: try it from there");
+    expect(brief).toContain("Something there that should serve and does not is what you find out about.");
+    expect(brief).toContain(LAUNCHED_ONLY);
   });
 
   it("names its functional specs - what each says and its scenarios - to test those alone, in what runs, and to conclude for the check", () => {

@@ -3,6 +3,7 @@ import type { SentinelLaunches } from "./chats.ts";
 import { createLaunchTrack, type Launch, type LaunchTrack } from "./launch-track.ts";
 import { runLaunchAgent } from "./launch-agent.ts";
 import { holdsCommit, runningLaunched, type LaunchedProcess } from "./regenerate/launch.ts";
+import { distDirFor, projectDirOf } from "./regenerate/paths.ts";
 import { pulseName, type Job, type JobRegistry, type PulseSpec } from "./regenerate/jobs.ts";
 import type { SentinelCheck } from "./notice.ts";
 
@@ -185,8 +186,9 @@ export function createSessionLaunches(options: {
         return [
           `What you were testing was launched again: ${launch.codebase} at ${launch.short} (${launch.id}${launch.status === "failed" ? ", which did not come up" : ""}). It still holds pulse ${work.job.id}'s commit, ${short(landing.commit)}.`,
           launch.status === "failed" ? `It did not come up: ${launch.summary ?? "the launch agent did not say why"}. That is what you find out about now.` : "What runs now:",
-          ...(launch.status === "failed" ? [] : whatRuns(runningLaunched(launch.codebase))),
+          ...(launch.status === "failed" ? [] : whatRuns(runningLaunched(launch.codebase), launchedDir(launch))),
           "",
+          LAUNCHED_ONLY,
           "Carry on the check where you were. Do again what you were doing as it restarted: what failed then may have failed for that alone.",
         ].join("\n");
       }
@@ -194,8 +196,9 @@ export function createSessionLaunches(options: {
       if (track.current(work.check.module) === undefined && running.length === 0) throw new Error(`nothing of ${work.check.module} runs any more to test check ${work.check.id} in.`);
       return [
         `What you were testing was launched again: ${work.check.module}${track.current(work.check.module) !== undefined ? ` at ${track.current(work.check.module)!.short}` : ""}. What runs now:`,
-        ...whatRuns(running),
+        ...whatRuns(running, track.current(work.check.module) !== undefined ? launchedDir(track.current(work.check.module)!) : undefined),
         "",
+        LAUNCHED_ONLY,
         "Carry on the check where you were. Do again what you were doing as it restarted: what failed then may have failed for that alone.",
       ].join("\n");
     },
@@ -208,9 +211,30 @@ function specsOf(job: Job): PulseSpec[] {
   return cases === undefined ? [] : [...cases.add, ...cases.patch, ...cases.again, ...cases.delete];
 }
 
-/** What runs of a launch, a line each: where, from where, its output - or that nothing was left running. */
-export function whatRuns(running: LaunchedProcess[]): string[] {
-  if (running.length === 0) return ["  nothing is left running: a CLI or a library is tried from its folder."];
+/**
+ * What the sentinel tests in, whatever is launched: what turri launched, and nothing it starts itself. Said in every
+ * brief - a server it starts from plain_modules would pass on code nobody launched.
+ */
+export const LAUNCHED_ONLY =
+  "Never run the code in plain_modules, where a pulse may be writing, nor start a server of your own - not in your shell, not with a host's terminal: what would pass there is not what the person tries. A server that should run and does not is your finding.";
+
+/** The folder a launch's code is in: dist/<module>, where it is tried from. */
+export function launchedDir(launch: Pick<Launch, "code" | "plainFile" | "codebase">): string {
+  return launch.code?.dir ?? distDirFor(projectDirOf(launch.plainFile), launch.codebase);
+}
+
+/**
+ * What runs of a launch, a line each: where, from where, its output - or that nothing was left running, and the folder it
+ * is tried from.
+ */
+export function whatRuns(running: LaunchedProcess[], from?: string): string[] {
+  if (running.length === 0) {
+    return [
+      from !== undefined
+        ? `  nothing is left running. It is in place in ${from}: try it from there - a CLI or a library as its README and entry points say. Something there that should serve and does not is what you find out about.`
+        : "  nothing is left running.",
+    ];
+  }
   return running.map((item) => `  ${item.name}: ${item.url ?? item.command} - in ${item.dir}, its output in ${item.log}`);
 }
 

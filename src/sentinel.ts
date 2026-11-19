@@ -12,7 +12,7 @@ import { readLedger } from "./regenerate/ledger.ts";
 import { describePulseView, pulseView } from "./regenerate/ledger-view.ts";
 import { MODULES_DIR, ensureInScratch } from "./regenerate/paths.ts";
 import type { LaunchedProcess } from "./regenerate/launch.ts";
-import { whatRuns, type PulseLaunch } from "./launch-session.ts";
+import { LAUNCHED_ONLY, launchedDir, whatRuns, type PulseLaunch } from "./launch-session.ts";
 import { SENTINEL, SENTINEL_START, wentWrong, type Conclusion, type Notice, type NoticeInput, type SentinelCheck } from "./notice.ts";
 import type { CheckedSpec } from "./sentinel-check.ts";
 
@@ -299,11 +299,11 @@ export function sentinelBrief(job: Job, context: { project: string; asked?: stri
 /** What runs for a pulse that landed, as the sentinel is told it: the launch that holds its commit, or why there is none to test. */
 function launchLines(job: Job, launch: PulseLaunch): string[] {
   const spec = (each: { module: string; funcId: string }) => `${each.module}:${each.funcId}`;
-  if (launch.off === true) return [`${launch.commit !== undefined ? `Its commit is ${launch.commit.slice(0, 7)}. ` : ""}launch-after-pulse is off: nothing was launched, and you test nothing running - check the pulse alone.`];
-  if (launch.commit === undefined) return ["Nothing was launched for it: turri has no commit it landed - check the pulse alone."];
+  if (launch.off === true) return [`${launch.commit !== undefined ? `Its commit is ${launch.commit.slice(0, 7)}. ` : ""}launch-after-pulse is off: nothing was launched, and you test nothing running - check the pulse alone.`, LAUNCHED_ONLY];
+  if (launch.commit === undefined) return ["Nothing was launched for it: turri has no commit it landed - check the pulse alone.", LAUNCHED_ONLY];
   const commit = launch.commit.slice(0, 7);
-  if (launch.notAsked !== undefined) return [`Its commit is ${commit}. Its launch could not be asked for: ${launch.notAsked}`, "That is what you find out about: the launch did not come up."];
-  if (launch.stopped === true || launch.launch === undefined) return [`Its commit is ${commit}. The person stopped its launch: nothing of it runs - check the pulse alone.`];
+  if (launch.notAsked !== undefined) return [`Its commit is ${commit}. Its launch could not be asked for: ${launch.notAsked}`, "That is what you find out about: the launch did not come up.", LAUNCHED_ONLY];
+  if (launch.stopped === true || launch.launch === undefined) return [`Its commit is ${commit}. The person stopped its launch: nothing of it runs - check the pulse alone.`, LAUNCHED_ONLY];
   const what = launch.launch;
   const later = launch.later.map((other) => `${other.id} (${pulseName(other)})`);
   const lines = [
@@ -312,11 +312,12 @@ function launchLines(job: Job, launch: PulseLaunch): string[] {
   if (what.status === "failed") {
     lines.push(
       `That launch did not come up: ${what.summary ?? "the launch agent did not say why"}`,
-      "That is what you find out about: the launch did not come up. Test nothing in its place - never the code in plain_modules, where a pulse may be writing, nor a server of your own: what would pass there is not what the person tries.",
+      "That is what you find out about: the launch did not come up. Test nothing in its place.",
+      LAUNCHED_ONLY,
     );
     return lines;
   }
-  lines.push("What runs now:", ...whatRuns(launch.running));
+  lines.push("What runs now:", ...whatRuns(launch.running, launchedDir(what)), LAUNCHED_ONLY);
   if (launch.laterSpecs.length > 0) {
     lines.push(`Test what this pulse changed - but not ${launch.laterSpecs.map(spec).join(", ")}: a later pulse changed ${launch.laterSpecs.length === 1 ? "it" : "them"} again, and its check tests ${launch.laterSpecs.length === 1 ? "it" : "them"}.`);
   } else lines.push("Test what this pulse changed.");
@@ -329,7 +330,7 @@ function launchLines(job: Job, launch: PulseLaunch): string[] {
  */
 export function sentinelCheckBrief(
   check: SentinelCheck,
-  context: { specs: CheckedSpec[]; running: LaunchedProcess[]; commit?: string; failed?: { id: string; summary?: string }; focused?: string },
+  context: { specs: CheckedSpec[]; running: LaunchedProcess[]; commit?: string; failed?: { id: string; summary?: string }; focused?: string; dir?: string },
 ): string {
   const lines = [
     `Check ${check.id}: the person asked you to check ${check.funcIds.length === 1 ? "a functional spec" : `${check.funcIds.length} functional specs`} of ${check.module}, in what is launched of it.`,
@@ -341,9 +342,10 @@ export function sentinelCheckBrief(
     ...(context.failed !== undefined
       ? [
           `Its last launch, ${context.failed.id}, did not come up: ${context.failed.summary ?? "the launch agent did not say why"}`,
-          "That is what you find out about: the launch did not come up. Test nothing in its place - never the code in plain_modules, where a pulse may be writing, nor a server of your own: what would pass there is not what the person tries.",
+          "That is what you find out about: the launch did not come up. Test nothing in its place.",
         ]
-      : whatRuns(context.running)),
+      : whatRuns(context.running, context.dir)),
+    LAUNCHED_ONLY,
     "",
     `Test these functional specs of ${check.module} - only these, not its others, though they run too:`,
   );
