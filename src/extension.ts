@@ -1483,7 +1483,7 @@ function registerBind(pi: ExtensionAPI, cwd: string, jobs: JobRegistry, turnOn: 
   // them is asking for them on: off, they are turned on first. What would start nothing is found before anything is
   // said, and the chat's agent answers it at once.
   pi.registerCommand("conform", {
-    description: "Write and run a module's conformance tests now - the functional specs named, or every one with scenarios - in one pulse, or one a functional spec when asked; turned on first when they are off: /conform [module | file.plain] [module:func-id ...] [one by one]",
+    description: "Write and run a module's conformance tests now - the functional specs named, or every one with scenarios - in one pulse, or one a functional spec when asked; those written already written again, named, or from scratch - the tests folder at the tip of its chain taken out, started again from the module it requires, or from nothing with whole chain; turned on first when they are off: /conform [module | file.plain] [module:func-id ...] [from scratch [whole chain]] [one by one]",
     handler: async (args, ctx) => {
       const command = `/conform ${args.trim()}`.trim();
       await echoCommand(pi, command);
@@ -1498,9 +1498,15 @@ function registerBind(pi: ExtensionAPI, cwd: string, jobs: JobRegistry, turnOn: 
       const { funcIds, rest } = funcIdsNamedFirst(picked.rest);
       const words = rest.join(" ").trim();
       const separately = asksOneByOne(words);
-      // Nothing but the functional specs and one by one: no planner reads guidance here, so other words are not dropped unsaid.
-      if (words !== "" && !separately) {
-        refuse(`/conform takes functional specs, each as module:func-id, and "one by one" - not "${words}". Nothing was started.`);
+      // From scratch - the tests written again, the code untouched - asked in the person's words; the whole chain's with it.
+      const scratch = asksFromScratch(words) ? (asksWholeChain(words) ? "chain" : "module") : undefined;
+      // Nothing but the functional specs, from scratch and one by one: no planner reads guidance here, so other words are not dropped unsaid.
+      if (words !== "" && !separately && scratch === undefined) {
+        refuse(`/conform takes functional specs, each as module:func-id, "from scratch" with "whole chain" and "one by one" - not "${words}". Nothing was started.`);
+        return;
+      }
+      if (scratch !== undefined && funcIds.length > 0) {
+        refuse("Name functional specs or ask for the conformance tests from scratch, not both: from scratch writes every one of them again. Nothing was started.");
         return;
       }
       // Off: turned on - written where the module's value comes from, every chat's tools switched - and said with what follows.
@@ -1526,7 +1532,11 @@ function registerBind(pi: ExtensionAPI, cwd: string, jobs: JobRegistry, turnOn: 
       }
       const module = basename(plainFile).replace(/\.plain$/, "");
       const model = jobModel(ctx, "spec_changes", undefined, plainFile);
-      shownAfterCommand(pi, ctx, command, withTurnedOn(`Starting ${funcIds.length > 0 ? `the conformance tests of ${funcIds.join(", ")}` : `${module}'s conformance tests`}…`), "info", true);
+      const starting =
+        scratch !== undefined
+          ? `Writing ${module}'s conformance tests${scratch === "chain" ? " and its whole chain's" : ""} again from scratch…`
+          : `Starting ${funcIds.length > 0 ? `the conformance tests of ${funcIds.join(", ")}` : `${module}'s conformance tests`}…`;
+      shownAfterCommand(pi, ctx, command, withTurnedOn(starting), "info", true);
       await nextFrame();
       // In the background, as /regenerate: a codebase built on the module may be stopped and deleted first.
       void (async () => {
@@ -1536,6 +1546,7 @@ function registerBind(pi: ExtensionAPI, cwd: string, jobs: JobRegistry, turnOn: 
               ...(funcIds.length > 0 ? { funcIds } : {}),
               ...(model !== undefined ? { model } : {}),
               ...(separately ? { separately: true } : {}),
+              ...(scratch !== undefined ? { fromScratch: scratch } : {}),
             }),
           );
           // Nothing to write: said in the loop's words - "up to date" alone speaks of the code, not its tests.
@@ -1576,7 +1587,10 @@ function conformTool(options: {
       "conformance and acceptance scenarios, at least one test each, by the spec's test reqs, runs them with the whole suite " +
       "the module inherits, and, where one fails, fixes the test or the code, whichever is wrong. What they are written for is " +
       "recorded apart from the code. The work loop starts these pulses by itself for every functional spec with scenarios whose " +
-      "tests are behind, once the module's code is built; conform starts them now, or for the functional specs named - those alone: the module's others stay behind until conform names none, or the module is regenerated. A " +
+      "tests are behind, once the module's code is built; conform starts them now, or for the functional specs named - those alone: the module's others stay behind until conform names none, or the module is regenerated. " +
+      "A functional spec named whose tests are written already has them written again - deleted and written anew from its " +
+      "scenarios, its code untouched; with from_scratch, the module's whole tests folder is taken out and written again, at " +
+      "the tip of each chain it is built in, as regenerate from scratch does its code. A " +
       "functional spec with no scenarios - no test plain file - is refused: there is nothing to test until scenarios " +
       "are written. So is one the spec does not have, and a module with scenarios that skipped a step of adding tests - " +
       "no test reqs, or no conformance testing script for its stack: the refusal names the next step. While conformance tests " +
@@ -1588,11 +1602,24 @@ function conformTool(options: {
       "Call conform when the user asks for the conformance tests to be written or run now, for a module or some of its functional specs with scenarios.",
       "What the user asks for comes first: for a module already regenerated, while a module built on it is being regenerated, conform stops that pulse, deletes the codebase built on it, writes the tests, and the module above is regenerated from it after - say so. For a module not regenerated yet, its tests are written once its code is built, before anything is built on it.",
       "Conformance tests go in one pulse for all the functional specs tested. Set one_by_one only when the user asks for a pulse a functional spec - one at a time, separately, or the like.",
+      "Name a functional spec whose tests are written only when the user asks for its tests to be written again: they are deleted and written anew. Set from_scratch only when the user asks for a module's conformance tests - or its whole chain's - to be written again from scratch, never to fix tests that did not pass. Name funcIds or set from_scratch, not both.",
+      'from_scratch works where the module\'s code lives - the tip of each chain it is built in, never a module in the middle - and takes that codebase\'s whole tests folder out, committed first so its lineage keeps it. "module" starts it again from a copy of the tests of the module the tip requires, and writes the tip\'s own tests anew on them; "chain" starts it from nothing, every functional spec of the chain written anew. Neither touches the code, nor any other codebase.',
     ],
     parameters: Type.Object({
       plain_file: Type.String({ description: "A .plain file of the module" }),
       working_dir: WORKING_DIR_PARAM,
-      funcIds: Type.Optional(Type.Array(Type.String(), { description: "The functional specs to test, each as module:func-id (todo:add-task) - each with scenarios. Omitted: every one with scenarios" })),
+      funcIds: Type.Optional(
+        Type.Array(Type.String(), {
+          description: "The functional specs to test, each as module:func-id (todo:add-task) - each with scenarios; one whose tests are written has them written again. Omitted: every one with scenarios",
+        }),
+      ),
+      from_scratch: Type.Optional(
+        Type.Union([Type.Literal("module"), Type.Literal("chain")], {
+          description:
+            "Only when the user asks for it: the tests folder where the module's code lives - the tip of its chain - taken out, committed first so its lineage keeps it, and written again from a copy of the tests of the module the tip requires; the code untouched. " +
+            '"chain": written again from nothing - every functional spec of the chain\'s tests',
+        }),
+      ),
       one_by_one: Type.Optional(
         Type.Boolean({ description: "Only when the user asks for it: a pulse a functional spec. Omitted: every functional spec tested in one pulse, as far as the size guardrail lets" }),
       ),
@@ -1617,6 +1644,7 @@ function conformTool(options: {
             ...(params.funcIds !== undefined ? { funcIds: params.funcIds } : {}),
             ...(model !== undefined ? { model } : {}),
             ...(params.one_by_one === true ? { separately: true } : {}),
+            ...(params.from_scratch !== undefined ? { fromScratch: params.from_scratch } : {}),
           });
         } catch (error) {
           if (waiting !== undefined) endWait(waiting.jobs, waiting.wait);

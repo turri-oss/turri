@@ -108,6 +108,7 @@ function scenarioCasesLines(specs: ScenarioCases[], module: string): string[] {
     lines.push(`- \`${spec.module ?? module}:${spec.funcId}\` (${spec.text}):`);
     if (spec.added.length > 0) lines.push(`  - added - write a test for each: ${labelled(spec, spec.added, module)}.`);
     if (spec.changed.length > 0) lines.push(`  - changed - rewrite its tests to the scenario as it reads now: ${labelled(spec, spec.changed, module)}.`);
+    if (spec.rewritten.length > 0) lines.push(`  - written anew - delete every test labelled with it, then write its tests again from the scenario: ${labelled(spec, spec.rewritten, module)}.`);
     if (spec.removed.length > 0) lines.push(`  - removed - delete every test labelled with it, and its label, and nothing else: ${labelled(spec, spec.removed, module)}.`);
     if (spec.unchanged.length > 0) {
       lines.push(
@@ -126,6 +127,14 @@ function scenarioCasesLines(specs: ScenarioCases[], module: string): string[] {
       "  the scenario and the specification leave open - a path, a field, a message, a format the old code chose - is the",
       "  new code's choice now: rewrite that check to what the new code does, or take it out. No test may hold the new code",
       "  to what only the old code did.",
+    );
+  }
+  if (specs.some((spec) => spec.rewritten.length > 0)) {
+    lines.push(
+      "- Written anew: the person asked for these tests to be written again from scratch - their code did not change.",
+      "  Delete every test labelled with the scenario first, and what only those tests used, then write the scenario's",
+      "  tests from the scenario and the functional spec's text - never from the old tests, and never copying them back.",
+      "  A test that comes out as it was has not been written anew. Helpers the other tests use stay as they are.",
     );
   }
   lines.push("- The tests of every other functional spec stay as they are.");
@@ -181,8 +190,10 @@ export function conformanceReviewCasesBlock(cases: JobCases, module = ""): strin
     const kept = all((spec) => (spec.codeChanged === undefined ? spec.unchanged : []));
     const rerun = all((spec) => (spec.codeChanged !== undefined ? spec.unchanged : []));
     const removed = all((spec) => spec.removed);
+    const rewritten = all((spec) => spec.rewritten);
     return [
       "What this job does to the tests, scenario by scenario - hold it to that:",
+      ...(rewritten !== "" ? [`- Written anew, as the person asked - their old tests deleted and written again from the scenario, none left as it was: ${rewritten}.`] : []),
       ...(kept !== "" ? [`- Unchanged - their tests come out exactly as they were, not rewritten or reworded: ${kept}.`] : []),
       ...(rerun !== "" ? [`- Unchanged, the code changed under them - a test changed only where it failed on the new code, and only to what its scenario says: ${rerun}.`] : []),
       ...(removed !== "" ? [`- Removed - no test labelled with them is left: ${removed}.`] : []),

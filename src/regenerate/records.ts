@@ -48,6 +48,24 @@ export function marksRegenerateAgain(item: unknown): boolean {
   return typeof item === "object" && item !== null && (item as Record<string, unknown>)[REGENERATE_AGAIN] === true;
 }
 
+/**
+ * A functional spec in the tests record marked to have its conformance tests written again: they are written, and are
+ * to be written anew all the same - `conform` with functional specs named, or a module's from scratch. Its code is
+ * untouched. The mark makes the tests record differ from what the tests are to be written for at that item, so the
+ * work loop plans a conformance pulse for it, and the pulse that writes them writes the item back without it.
+ */
+export const CONFORM_AGAIN = "conform_again";
+
+/** Whether a tests record's item is marked to have its conformance tests written again. */
+export function marksConformAgain(item: unknown): boolean {
+  return typeof item === "object" && item !== null && (item as Record<string, unknown>)[CONFORM_AGAIN] === true;
+}
+
+/** Whether a tests record's item is not written for the code as it is now: marked with its code to regenerate again, or to be written again. */
+export function marksTestsAgain(item: unknown): boolean {
+  return marksRegenerateAgain(item) || marksConformAgain(item);
+}
+
 type Item = SpecificationItem & { id?: string; module?: string; [CONFORMANCE_TESTS]?: unknown[]; [ACCEPTANCE_TESTS]?: unknown[] };
 
 const itemsOf = (tree: MarshalledPlainSource | null | undefined, heading: string): Item[] => ((tree?.[heading] as Item[] | undefined) ?? []).slice();

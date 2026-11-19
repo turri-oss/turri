@@ -266,12 +266,12 @@ function plainFileOf(cwd: string, given: { plain_file?: string; working_dir?: st
   return plainFile;
 }
 
-/** Whether a /regenerate's words ask for the module from scratch: its code deleted, and all of it regenerated again. */
+/** Whether a /regenerate's words ask for the module from scratch - its code deleted, and all of it regenerated again - or a /conform's, for its conformance tests written again. */
 export function asksFromScratch(words: string): boolean {
   return FROM_SCRATCH.test(words);
 }
 
-/** Whether a /regenerate asking for its module from scratch asks for its whole requires chain with it. */
+/** Whether a /regenerate or /conform asking for its module from scratch asks for its whole requires chain with it. */
 export function asksWholeChain(words: string): boolean {
   return /\bchain\b|\bevery module\b|\ball (the )?modules\b/i.test(words);
 }

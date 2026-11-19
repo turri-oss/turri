@@ -4,7 +4,7 @@ import { ACCEPTANCE_TESTS, CONFORMANCE_TESTS, FUNCTIONAL_REQUIREMENTS, REQUIRED_
 import { reportActivity } from "./activity.ts";
 import { record, type LedgerPlace } from "./ledger.ts";
 import { abandonWork, landWork, moduleDirOf, startWork } from "./lineage.ts";
-import { hasScenarios, marksRegenerateAgain, writeCodeRecord, writeTestsRecord } from "./records.ts";
+import { hasScenarios, marksRegenerateAgain, marksTestsAgain, writeCodeRecord, writeTestsRecord } from "./records.ts";
 import { listFiles } from "./testing.ts";
 
 /**
@@ -53,7 +53,7 @@ function stable(value: unknown): string {
 
 /** What of a functional spec the code is built from, but its func-id: its text, its links. */
 function codeOf(item: Item): string {
-  const { id: _id, [CONFORMANCE_TESTS]: _conformance, [ACCEPTANCE_TESTS]: _acceptance, regenerate_again: _again, ...rest } = item;
+  const { id: _id, [CONFORMANCE_TESTS]: _conformance, [ACCEPTANCE_TESTS]: _acceptance, regenerate_again: _again, conform_again: _conform, ...rest } = item;
   return stable({ ...rest, markdown: String(rest.markdown ?? "").trim() });
 }
 
@@ -92,7 +92,7 @@ export function pureRenames(code: MarshalledPlainSource | null, tests: Marshalle
     for (const gone of built.filter((item) => !inSpec.has(key(item)) && !marksRegenerateAgain(item))) {
       const testedItem = tested.find((item) => key(item) === key(gone));
       // Its tests, when it has them, written for it as it is built: the same text, not marked to be written again.
-      if (testedItem !== undefined && (marksRegenerateAgain(testedItem) || codeOf(testedItem) !== codeOf(gone))) continue;
+      if (testedItem !== undefined && (marksTestsAgain(testedItem) || codeOf(testedItem) !== codeOf(gone))) continue;
       const match = fresh.find(
         (item) =>
           !taken.has(item) &&
@@ -118,7 +118,7 @@ export function pureRenames(code: MarshalledPlainSource | null, tests: Marshalle
     const testedNow = sectionOf(testsNow, heading).map((item) => {
       const current = nowByKey.get(key(item));
       const have = builtNow.get(key(item));
-      if (current === undefined || have === undefined || marksRegenerateAgain(item) || marksRegenerateAgain(have)) return item;
+      if (current === undefined || have === undefined || marksTestsAgain(item) || marksRegenerateAgain(have)) return item;
       if (codeOf(item) !== codeOf(current) || codeOf(have) !== codeOf(current)) return item;
       const pairs: PureRename[] = [];
       for (const [kind, scenarioKey] of KINDS) {

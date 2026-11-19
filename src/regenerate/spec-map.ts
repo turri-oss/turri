@@ -18,7 +18,7 @@ import { conformanceDirFor } from "./conformance.ts";
 import { chainSpec, type MapCodebase, type MapPlan, type MapPulse } from "./loop.ts";
 import { modulesRoot, projectDirOf } from "./paths.ts";
 import { HISTORY_DIR } from "./lineage.ts";
-import { codeTree, hasScenarios, marksRegenerateAgain, readRecord, RECORD_FILE } from "./records.ts";
+import { codeTree, hasScenarios, marksTestsAgain, readRecord, RECORD_FILE } from "./records.ts";
 import { pureRenames } from "./renames.ts";
 import { specFilesOf } from "./regenerate.ts";
 import { builtTips, resolveRequiresChain, type ChainEntry } from "./requires.ts";
@@ -243,7 +243,7 @@ export function pageItems(input: { module: string; own: boolean; spec: Marshalle
 
   // Conformance tests: of the functional specs, by func-id, those the tests record has as they read now - their text and
   // their scenarios - as they read before, or taken out. Tests marked to regenerate again were written against code since
-  // replaced: written for an earlier build, not now.
+  // replaced, and those marked to be written again are to be written anew: written for an earlier build, not now.
   const testedItems = new Map(itemsOf(input.tested ?? null, FUNCTIONAL_REQUIREMENTS).map((item) => [item.id ?? "", item]));
   const asNow = new Map(itemsOf(now, FUNCTIONAL_REQUIREMENTS).map((item) => [item.id ?? "", item]));
   const reads = (item: Item) => JSON.stringify({ markdown: item.markdown.trim(), scenarios: scenarioViews(item) });
@@ -253,7 +253,7 @@ export function pageItems(input: { module: string; own: boolean; spec: Marshalle
     if (tested === undefined) continue;
     const current = asNow.get(item.funcId);
     if (item.state === "removed") item.tests = "removed";
-    else item.tests = !marksRegenerateAgain(tested) && current !== undefined && reads(tested) === reads(current) ? "now" : "older";
+    else item.tests = !marksTestsAgain(tested) && current !== undefined && reads(tested) === reads(current) ? "now" : "older";
   }
   return keyed(items);
 }

@@ -8,7 +8,7 @@ import type { JobCases } from "../../src/regenerate/drift.ts";
 import { moduleLanes } from "../../src/regenerate/lanes.ts";
 import { conformanceRefusal, createWorkLoop, describeDrift, describeModules, skipsReview, UP_TO_DATE, type JobRunner } from "../../src/regenerate/loop.ts";
 import { codeTree, readRecord, writeCodeRecord, writeTestsRecord } from "../../src/regenerate/records.ts";
-import { recordHistory } from "../../src/regenerate/lineage.ts";
+import { historyLog, recordHistory } from "../../src/regenerate/lineage.ts";
 import { copyRequiredCode } from "../../src/regenerate/requires.ts";
 import { snapshotSpec } from "../../src/regenerate/regenerate.ts";
 import { testPlainFile, writePlain } from "../test-plain.ts";
@@ -666,11 +666,16 @@ describe("the work loop", () => {
       await loop.drain();
       expect(tests.ran.map((job) => job.add)).toEqual([["say-goodbye"]]);
       expect(JSON.stringify(readRecord(testsDir()))).not.toContain("Say hello.");
-      // Asked again, there is nothing to write: it says so, and starts nothing.
-      const [status] = await loop.conformance("app.plain", { funcIds: ["app:say-goodbye"] });
+      // Asked again with none named, there is nothing to write: it says so, and starts nothing.
+      const [status] = await loop.conformance("app.plain");
       await loop.drain();
       expect(tests.ran).toHaveLength(1);
-      expect(status!.conformanceNote).toBe("the conformance tests of app:say-goodbye are written for it as built: there is nothing to write");
+      expect(status!.conformanceNote).toBe("the conformance tests of app are written for every functional spec with scenarios, as built: there is nothing to write");
+      // Named, they are written again - and the one with no test plain file still has none.
+      await loop.conformance("app.plain", { funcIds: ["app:say-goodbye"] });
+      await loop.drain();
+      expect(tests.ran).toHaveLength(2);
+      expect(JSON.stringify(readRecord(testsDir()))).not.toContain("Say hello.");
     });
 
     it("are written for the functional specs conform names alone - the others left behind, as drift says, until the module is asked for again", async () => {
@@ -700,6 +705,127 @@ describe("the work loop", () => {
       await loop.drain();
       expect(tests.ran.map((job) => job.add)).toEqual([["say-hello"], ["say-thanks"], ["say-goodbye"]]);
       expect(describeDrift(loop.drift("app.plain"))).toContain("conformance tests: written for what is built - no drift");
+    });
+
+    describe("asked for again", () => {
+      const top = "---\nrequires:\n  - base\n---\n\n***implementation reqs***\n\n- :Implementation: is Python.\n\n***test reqs***\n\n- :ConformanceTests: use pytest.\n\n***functional specs***\n\n# home-page\nThe home page says hello.\n";
+      /** Each conformance pulse, by its module and what it adds and writes anew - each functional spec with its module. */
+      function recordingTests() {
+        const tests = conformanceRunner();
+        const pulses: Array<{ module: string; add: string[]; anew: string[] }> = [];
+        const named = (specs: Array<{ module?: string; funcId: string }>, module: string) => specs.map((spec) => `${spec.module ?? module}:${spec.funcId}`);
+        const runConformance: JobRunner = async (job, onDelta) => {
+          const anew = (job.planned.cases.scenarios ?? []).filter((spec) => spec.rewritten.length > 0);
+          pulses.push({ module: job.moduleName, add: named(job.planned.cases.add, job.moduleName), anew: named(anew, job.moduleName) });
+          return tests.runConformance(job, onDelta);
+        };
+        return { pulses, runConformance };
+      }
+
+      it("are written anew for a functional spec conform names whose tests are written - only its tests, its code untouched, the mark gone once they land", async () => {
+        writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye."]));
+        scenariosIn("say-hello");
+        scenariosIn("say-goodbye");
+        const code = runner();
+        const { pulses, runConformance } = recordingTests();
+        const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run: code.run, runConformance });
+        await loop.bringUp("app.plain");
+        await loop.drain();
+        const built = code.ran.length;
+        pulses.length = 0;
+
+        // Marked, committed - the pulse that writes them anew may land at once, the stub being instant.
+        await loop.conformance("app.plain", { funcIds: ["app:say-hello"] });
+        expect(historyLog(codeDir())).toContain("the conformance tests of app:say-hello to write again");
+        await loop.drain();
+        expect(pulses).toEqual([{ module: "app", add: [], anew: ["app:say-hello"] }]);
+        expect(code.ran).toHaveLength(built);
+        expect(JSON.stringify(readRecord(testsDir()))).not.toContain("conform_again");
+        expect(describeDrift(loop.drift("app.plain"))).toContain("conformance tests: written for what is built - no drift");
+      });
+
+      /** base, and top built on it - each functional spec with a scenario - built, its tests written; a stray file in top's tests. */
+      async function builtChain() {
+        writePlain(dir, "base.plain", app(["Say hello."]));
+        writePlain(dir, "top.plain", top);
+        scenariosIn("say-hello", "base");
+        scenariosIn("home-page", "top");
+        const code = runner();
+        const recorded = recordingTests();
+        const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run: code.run, runConformance: recorded.runConformance });
+        await loop.bringUp("top.plain");
+        await loop.drain();
+        writeFileSync(join(testsDir("top"), "test_stale.py"), "# written before\n");
+        const built = code.ran.length;
+        recorded.pulses.length = 0;
+        return { code, built, loop, pulses: recorded.pulses };
+      }
+
+      it("from scratch, have the module's tests folder taken out, kept in its history, and written again from a copy of the tests of the module it requires", async () => {
+        const { code, built, loop, pulses } = await builtChain();
+        await loop.conformance("top.plain", { fromScratch: "module" });
+        expect(historyLog(codeDir("top"))).toContain("conformance tests from scratch: asked to be written again from scratch, starting from base's");
+        await loop.drain();
+        // base's tests copied in are up to date: only top's own are written.
+        expect(pulses).toEqual([{ module: "top", add: ["top:home-page"], anew: [] }]);
+        expect(existsSync(join(testsDir("top"), "test_stale.py"))).toBe(false);
+        expect(JSON.stringify(readRecord(testsDir("top"))?.["required functional specs"] ?? [])).toContain("It works.");
+        expect(code.ran).toHaveLength(built);
+      });
+
+      it("are written anew in the tip's suite for a functional spec of a module below, where its tests are kept", async () => {
+        writePlain(dir, "base.plain", app(["Say hello."]));
+        writePlain(dir, "top.plain", top);
+        scenariosIn("say-hello", "base");
+        scenariosIn("home-page", "top");
+        const code = runner();
+        const { pulses, runConformance } = recordingTests();
+        const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run: code.run, runConformance });
+        await loop.bringUp("top.plain");
+        await loop.drain();
+        pulses.length = 0;
+
+        await loop.conformance("base.plain", { funcIds: ["base:say-hello"] });
+        await loop.drain();
+        expect(pulses).toEqual([{ module: "top", add: [], anew: ["base:say-hello"] }]);
+        expect(historyLog(codeDir("top"))).toContain("the conformance tests of base:say-hello to write again");
+      });
+
+      it("from scratch with the whole chain, have the module's tests folder taken out and every functional spec of the chain written again from nothing - nothing below touched", async () => {
+        const { code, built, loop, pulses } = await builtChain();
+        await loop.conformance("top.plain", { fromScratch: "chain" });
+        expect(historyLog(codeDir("top"))).toContain("conformance tests from scratch: asked to be written again from scratch, with its whole chain's");
+        await loop.drain();
+        expect(pulses).toEqual([{ module: "top", add: ["base:say-hello", "top:home-page"], anew: [] }]);
+        expect(existsSync(join(testsDir("top"), "test_stale.py"))).toBe(false);
+        expect(code.ran).toHaveLength(built);
+        // base's own codebase, in the middle of the chain, is left as it was.
+        expect(historyLog(codeDir("base"))).not.toContain("conformance tests from scratch");
+        expect(existsSync(join(testsDir("base"), "test_app.py"))).toBe(true);
+      });
+
+      it("from scratch, for a module another is built on, are written again at the tip of the chain - never in the codebase in the middle, and nothing built on it deleted", async () => {
+        const { code, built, loop, pulses } = await builtChain();
+        await loop.conformance("base.plain", { fromScratch: "module" });
+        await loop.drain();
+        expect(historyLog(codeDir("top"))).toContain("conformance tests from scratch: asked to be written again from scratch, starting from base's");
+        expect(historyLog(codeDir("base"))).not.toContain("conformance tests from scratch");
+        expect(pulses).toEqual([{ module: "top", add: ["top:home-page"], anew: [] }]);
+        expect(code.ran).toHaveLength(built);
+        expect(JSON.stringify(readRecord(codeDir("top")))).toContain("The home page says hello.");
+      });
+
+      it("are refused from scratch with functional specs named too, and nothing is touched", async () => {
+        writePlain(dir, "app.plain", app(["Say hello."]));
+        scenariosIn("say-hello");
+        const code = runner();
+        const { runConformance } = recordingTests();
+        const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run: code.run, runConformance });
+        await loop.bringUp("app.plain");
+        await loop.drain();
+        await expect(loop.conformance("app.plain", { funcIds: ["app:say-hello"], fromScratch: "module" })).rejects.toThrow("not both");
+        expect(JSON.stringify(readRecord(testsDir()))).not.toContain("conform_again");
+      });
     });
 
     it("write none in a module whose functional specs have no scenarios", async () => {
@@ -1450,15 +1576,23 @@ describe("the work loop", () => {
         expect(JSON.stringify(readRecord(codeDir("top")))).toContain("The home page says hello.");
       });
 
-      it("touch nothing built on it when they are written already", async () => {
-        const { loop } = await builtBelow();
+      it("touch nothing built on it when they are written already - named again, they are written anew in its suite, where they are kept", async () => {
+        const { code, tests, loop } = await builtBelow();
         scenariosIn("say-goodbye");
         const work = loop();
         await work.conformance("app.plain", { funcIds: ["app:say-goodbye"] });
         await work.drain();
+        // The suite they are kept in is top's: run by its test reqs.
+        writePlain(dir, "top.plain", top.replace("***functional specs***", "***test reqs***\n\n- :ConformanceTests: use pytest.\n\n***functional specs***"));
         await work.bringUp("top.plain");
         await work.drain();
-        await expect(work.conformance("app.plain", { funcIds: ["app:say-goodbye"] })).rejects.toThrow("app's conformance tests for app:say-goodbye are written already. Nothing was started.");
+        const built = code.ran.length;
+        const written = tests.ran.length;
+        await work.conformance("app.plain", { funcIds: ["app:say-goodbye"] });
+        await work.drain();
+        expect(code.ran).toHaveLength(built);
+        expect(tests.ran).toHaveLength(written + 1);
+        expect(historyLog(codeDir("top"))).toContain("the conformance tests of app:say-goodbye to write again");
         expect(JSON.stringify(readRecord(codeDir("top")))).toContain("The home page says hello.");
       });
 

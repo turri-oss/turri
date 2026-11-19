@@ -17,7 +17,8 @@ import {
   chainTree,
   codeTree,
   conformanceTarget,
-  marksRegenerateAgain,
+  CONFORM_AGAIN,
+  marksTestsAgain,
   REGENERATE_AGAIN,
   inheritedRecord,
   isOldRecord,
@@ -37,7 +38,7 @@ import { modulesRoot, projectRootOf } from "./paths.ts";
 import { configForSpec, stackForModule, testDirOf, withStack } from "../config.ts";
 import { describeSpecChange } from "./prompt.ts";
 import { resolveTemplateDirs } from "./paths.ts";
-import { builtTips, copyRequiredCode, importingModules, isImportModule, newlyRequired, resolveRequiresChain, startFromScratch, type ChainEntry } from "./requires.ts";
+import { builtTips, copyRequiredCode, copyRequiredTests, importingModules, isImportModule, newlyRequired, resolveRequiresChain, startFromScratch, type ChainEntry } from "./requires.ts";
 import { describeSpecDiff, renderSpecDiff, specFilesOf, type SpecSnapshot } from "./regenerate.ts";
 import { locateDiffLines, type DiffWhere } from "./diff-view.ts";
 import { agentChanges, changeDiffInFiles } from "./change-view.ts";
@@ -322,8 +323,16 @@ export interface WorkLoop {
    * Write and run the conformance tests of a spec's module - of the functional specs named, or of every one - on the
    * code as it is built, in the codebases where its code lives: for this session, whatever the config says. Asked
    * again, it clears a halt. Says what it planned.
+   *
+   * A functional spec named whose tests are written already has them written again: marked in the tests record of
+   * every codebase it is tested in - committed - and written anew there, its code untouched. `fromScratch` works where
+   * its code lives, as regenerating it from scratch does - the tip of each chain it is built in, never a codebase in the
+   * middle: the tip's tests folder taken out - committed first, so its history keeps it - and the tests written again
+   * there: `"module"` starting from a copy of the tests of the module the tip requires, `"chain"` from nothing, every
+   * functional spec of the chain written anew. The code is untouched, and nothing else is. Destructive: asked for only
+   * when the person asked for it. Not both: from scratch writes every one of them again.
    */
-  conformance(plainFile: string, options?: { funcIds?: string[]; model?: string; separately?: boolean }): Promise<ModuleStatus[]>;
+  conformance(plainFile: string, options?: { funcIds?: string[]; model?: string; separately?: boolean; fromScratch?: "module" | "chain" }): Promise<ModuleStatus[]>;
   /**
    * Start over the codebases of a spec's module that now require a module their code was not built on (see
    * `ModuleStatus.startOver`): their code and conformance tests taken out - committed, so their history keeps
@@ -578,9 +587,10 @@ export function codebaseCompletion(chain: ChainEntry[]): { codebase: string; mod
     codebase.forEach((entry, index) => {
       const count = counts[index]!;
       const completed = entry.funcIds.filter((funcId) => !touched.has(`${entry.moduleName}:${funcId}`));
-      // Tests marked to regenerate again were written against code since replaced: not conformance tested until rewritten.
+      // Tests marked to regenerate again were written against code since replaced, and those marked to be written again
+      // are to be written anew: not conformance tested until rewritten.
       const tested = ownItems(testsRecord ?? undefined, entry.moduleName, entry.moduleName === tip.moduleName).filter(
-        (item) => item.id !== undefined && !marksRegenerateAgain(item) && reads(item as Record<string, unknown>) === specText(entry.moduleName, item.id),
+        (item) => item.id !== undefined && !marksTestsAgain(item) && reads(item as Record<string, unknown>) === specText(entry.moduleName, item.id),
       );
       count.completed = completed.length;
       count.tested = completed.filter((funcId) => tested.some((item) => item.id === funcId));
@@ -753,14 +763,89 @@ export function createWorkLoop(options: {
     return narrowed;
   };
 
-  /** The functional specs conform named - its own module's func-ids - and every functional spec as it reads now, to tell a change to one after. */
-  const namedOnly = (state: ModuleState, funcIds: string[]): NonNullable<ModuleState["conformanceOnly"]> => {
+  /**
+   * The functional specs conform named - func-ids of `module` - and every functional spec as it reads now, to tell a
+   * change to one after. In a codebase built on `module`, they are among the functional specs it requires.
+   */
+  const namedOnly = (state: ModuleState, funcIds: string[], module: string): NonNullable<ModuleState["conformanceOnly"]> => {
     const tree = chainSpec(state.chain).tree;
     const read = new Map<string, string>();
     for (const section of [FUNCTIONAL_REQUIREMENTS, REQUIRED_FUNCTIONAL_SPECS]) {
       for (const item of (tree[section] as Array<{ id?: string; module?: string }> | undefined) ?? []) read.set(identityOf(item), JSON.stringify(item));
     }
-    return { specs: new Set(funcIds.map((id) => identityOf({ id }))), read };
+    const own = tipEntry(state).moduleName === module;
+    return { specs: new Set(funcIds.map((id) => identityOf(own ? { id } : { id, module }))), read };
+  };
+
+  /**
+   * Conformance tests written already, to be written again as conform names them - their code untouched: the functional
+   * specs named, func-ids of `self`, marked in the tests record of every codebase where its code lives - the tips of its
+   * chains, whose suite holds the chain's tests, among the functional specs required there for a module below - each
+   * committed. Refused while a pulse runs in one it marks. Says which functional specs were marked.
+   */
+  const conformAgain = (file: string, self: ChainEntry, funcIds: string[]): string[] => {
+    const codebases = [...new Map(chainsFor(file).map(tipOf).map((entry) => [entry.buildDir, entry])).values()];
+    // What is marked, worked out before anything is: a codebase that has none of them is not touched, nor refused.
+    const touching = codebases.flatMap((entry) => {
+      const testsDir = conformanceDirFor(entry.moduleName, modulesRoot(projectDirOf(entry.plainFile)));
+      const tests = readRecord(testsDir);
+      if (tests === null) return [];
+      const section = entry.moduleName === self.moduleName ? FUNCTIONAL_REQUIREMENTS : REQUIRED_FUNCTIONAL_SPECS;
+      const items = (tests[section] as Array<{ module?: string; id?: string }> | undefined) ?? [];
+      const funcIdOf = (item: { module?: string; id?: string }) => (section === FUNCTIONAL_REQUIREMENTS || item.module === self.moduleName ? (item.id ?? "") : "");
+      const taken = items.flatMap((item) => (funcIds.includes(funcIdOf(item)) ? [funcIdOf(item)] : []));
+      if (taken.length === 0) return [];
+      const marked = items.map((item) => (funcIds.includes(funcIdOf(item)) ? { ...item, [CONFORM_AGAIN]: true } : item));
+      return [{ entry, testsDir, taken, record: { ...tests, [section]: marked } as MarshalledPlainSource }];
+    });
+    for (const { entry } of touching) {
+      if (modules.get(entry.buildDir)?.running !== undefined) throw new Error(`${entry.moduleName} has a pulse running: halt it, or ask again once it is done. Nothing was started.`);
+    }
+    const found = new Set<string>();
+    for (const { entry, testsDir, taken, record } of touching) {
+      writeTestsRecord(testsDir, record);
+      recordHistory(entry.buildDir, `the conformance tests of ${namesOf(self.moduleName, taken)} to write again`);
+      for (const funcId of taken) found.add(funcId);
+      const state = modules.get(entry.buildDir);
+      if (state === undefined) continue;
+      state.conformancePlan = undefined;
+      state.conformanceHalted = undefined;
+    }
+    return [...found];
+  };
+
+  /**
+   * A module's conformance tests from scratch, where its code lives - the tip of each chain it is built in, as
+   * `fromScratch` regenerates its code there, never a codebase in the middle - the code untouched: each tip's tests folder
+   * taken out whole, committed so its history keeps it; then, `fromBelow`, the tests of the module the tip requires copied
+   * in, as the codebase started from them - its own tests written anew on them, those it inherits brought up to date.
+   * Without, nothing: every functional spec of the chain is written anew there. Nothing below a tip is touched. Refused
+   * while a pulse runs in one. Says which codebases' tests were taken out.
+   */
+  const testsFromScratch = (file: string, fromBelow: boolean): string[] => {
+    const chains = chainsFor(file);
+    const tips = [...new Map(chains.map((chain) => [tipOf(chain).buildDir, chain])).values()].flatMap((chain) => {
+      const tip = tipOf(chain);
+      const testsDir = conformanceDirFor(tip.moduleName, modulesRoot(projectDirOf(tip.plainFile)));
+      // Nothing built and no tests: there is nothing to start again - they are written once the code is.
+      return started(tip) || existsSync(testsDir) ? [{ chain, tip, testsDir }] : [];
+    });
+    for (const { tip } of tips) {
+      if (modules.get(tip.buildDir)?.running !== undefined) throw new Error(`${tip.moduleName} has a pulse running: halt it, or ask again once it is done. Nothing was started.`);
+    }
+    for (const { chain, tip, testsDir } of tips) {
+      rmSync(testsDir, { recursive: true, force: true });
+      const below = fromBelow ? chain.find((entry) => entry.moduleName === tip.requires) : undefined;
+      if (below !== undefined) copyRequiredTests(below.buildDir, tip.buildDir, below.moduleName);
+      const why = below !== undefined ? `asked to be written again from scratch, starting from ${below.moduleName}'s` : "asked to be written again from scratch, with its whole chain's";
+      recordHistory(tip.buildDir, `conformance tests from scratch: ${why}`);
+      reportActivity(`  ${tip.moduleName}: its conformance tests are taken out${below !== undefined ? `, and ${below.moduleName}'s copied in` : ""} - ${why}`);
+      const state = modules.get(tip.buildDir);
+      if (state === undefined) continue;
+      state.conformancePlan = undefined;
+      state.conformanceHalted = undefined;
+    }
+    return tips.map(({ tip }) => tip.moduleName);
   };
 
   /** The work of a track, from where it is built from to what it is to be - for the conformance tests, as conform narrowed them unless `narrowed` is false. */
@@ -1748,10 +1833,19 @@ export function createWorkLoop(options: {
       }
       // Refused before anything is touched: a functional spec not there, nothing to test, or a step of adding tests skipped.
       const { named, spec: ownSpec, withScenarios } = conformanceAskedIn(own, request.funcIds);
+      const scratch = request.fromScratch;
+      if (scratch !== undefined && named !== undefined && named.length > 0) {
+        throw new Error("Name functional specs or ask for the conformance tests from scratch, not both: from scratch writes every one of them again. Nothing was started.");
+      }
+      // Written already, and asked for again: the named ones written anew where they are tested; from scratch, the module's
+      // tests folder taken out - and started again from the module it requires, unless the whole chain's are asked for.
+      const again = named !== undefined && named.length > 0 ? conformAgain(file, self, named) : [];
+      if (scratch !== undefined) testsFromScratch(file, scratch === "module");
       const tested = new Set(((readRecord(conformanceDirFor(self.moduleName, modulesRoot(projectDirOf(self.plainFile))))?.[FUNCTIONAL_REQUIREMENTS] as Array<{ id?: string }> | undefined) ?? []).map((item) => item.id));
       const toWrite = (named !== undefined && named.length > 0 ? named : withScenarios).some((funcId) => !tested.has(funcId));
       let wentBack = false;
-      if (readRecord(self.buildDir) !== null && toWrite) {
+      // From scratch, the tests are written again at the tips, where they were: nothing built on the module is touched.
+      if (scratch === undefined && readRecord(self.buildDir) !== null && toWrite) {
         const why = `${self.moduleName}'s conformance tests were asked for, and they come before anything is built on it`;
         for (const chain of builtTips(file)) {
           const above = chain.slice(chain.findIndex((entry) => entry.buildDir === self.buildDir) + 1);
@@ -1786,7 +1880,7 @@ export function createWorkLoop(options: {
       for (const state of tracked) state.lookedAhead = undefined;
       const asks = named !== undefined && named.length > 0 ? named : undefined;
       // Its tests are written already, and a codebase built on it holds its code: nothing to write, nothing touched.
-      if (asking === undefined && asks !== undefined && tip !== undefined) {
+      if (asking === undefined && asks !== undefined && tip !== undefined && again.length === 0) {
         throw new Error(`${self.moduleName}'s conformance tests for ${namesOf(self.moduleName, asks)} are written already. Nothing was started.`);
       }
       // Only the module asked for: one job for all of its tests, or one a functional spec, as this request asks; a halt cleared.
@@ -1795,7 +1889,7 @@ export function createWorkLoop(options: {
         if ((state.conformanceSeparately === true) !== separately) state.conformancePlan = undefined;
         state.conformanceSeparately = separately;
         // Named: their tests alone - the others left as they are until the module is asked for again, or conform names none.
-        state.conformanceOnly = asks !== undefined ? namedOnly(state, asks) : undefined;
+        state.conformanceOnly = asks !== undefined ? namedOnly(state, asks, self.moduleName) : undefined;
         state.conformancePlan = undefined;
         state.conformanceHalted = undefined;
         state.halted = undefined;
@@ -2100,6 +2194,7 @@ function conformanceLines(module: string, cases: JobCases): string[] {
       ...(spec.added.length > 0 ? [`${spec.added.length} added`] : []),
       ...(spec.changed.length > 0 ? [`${spec.changed.length} changed`] : []),
       ...(spec.removed.length > 0 ? [`${spec.removed.length} removed`] : []),
+      ...(spec.rewritten.length > 0 ? [`written again from scratch - ${spec.rewritten.length} to write anew`] : []),
       ...(spec.codeChanged !== undefined ? [`${why[spec.codeChanged]} - ${spec.unchanged.length} to run on it`] : []),
     ];
     return parts.length > 0 ? parts.join(", ") : "its text changed";

@@ -340,25 +340,31 @@ export function copyRequiredCode(
   const recordStart = () => recordHistory(to, `start from ${source}${at ? ` at ${at}` : ""}`);
 
   // So do the conformance tests: they check the code that was just copied, and the new
-  // module's regression suite has to keep them passing. They sit beside the code, in the
-  // module's `tests` directory.
-  const testsFrom = join(dirname(from), "tests");
-  const testsTo = join(dirname(to), "tests");
-  if (existsSync(testsFrom)) {
-    for (const file of listFiles(testsFrom)) {
-      const target = join(testsTo, file);
-      mkdirSync(dirname(target), { recursive: true });
-      copyFileSync(join(testsFrom, file), target);
-    }
-    // And their notes, which listFiles leaves out as it does the code's.
-    if (existsSync(notesPath(testsFrom)) && !existsSync(notesPath(testsTo))) copyFileSync(notesPath(testsFrom), notesPath(testsTo));
-    // What they are written for comes with them, as what the new module inherits: its conformance suite is the chain's,
-    // kept up to date here from now on.
-    const tested = readRecord(testsFrom);
-    if (tested !== null) writeTestsRecord(testsTo, inheritedTestsRecord(tested, fromModule));
-  }
+  // module's regression suite has to keep them passing.
+  copyRequiredTests(from, to, fromModule);
   recordStart();
   return copied;
+}
+
+/**
+ * Copy a required module's conformance tests beside a codebase's code - into its `tests` directory, beside the code -
+ * as a codebase built on that module starts from them: their files and notes, and what they are written for as what
+ * the module inherits - its conformance suite is the chain's, kept up to date there from then on. `from` and `to` are
+ * the two codebases' code folders. Nothing, when the required module has no tests.
+ */
+export function copyRequiredTests(from: string, to: string, fromModule: string): void {
+  const testsFrom = join(dirname(from), "tests");
+  const testsTo = join(dirname(to), "tests");
+  if (!existsSync(testsFrom)) return;
+  for (const file of listFiles(testsFrom)) {
+    const target = join(testsTo, file);
+    mkdirSync(dirname(target), { recursive: true });
+    copyFileSync(join(testsFrom, file), target);
+  }
+  // And their notes, which listFiles leaves out as it does the code's.
+  if (existsSync(notesPath(testsFrom)) && !existsSync(notesPath(testsTo))) copyFileSync(notesPath(testsFrom), notesPath(testsTo));
+  const tested = readRecord(testsFrom);
+  if (tested !== null) writeTestsRecord(testsTo, inheritedTestsRecord(tested, fromModule));
 }
 
 /**

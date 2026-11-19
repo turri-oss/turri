@@ -324,7 +324,9 @@ The unit tests are written by the agent that wrote the code. Conformance tests a
 
 ```bash
 turri conform <file.plain>                  # every functional spec with scenarios
-turri conform <file.plain> app:add-task     # one, named module:func-id
+turri conform <file.plain> app:add-task     # one, named module:func-id - written again when its tests are written
+turri conform <file.plain> --from-scratch   # the tests folder at the tip taken out, written again from the module it requires
+turri conform <file.plain> --from-scratch-chain   # the same, from nothing: every functional spec of the chain written again
 ```
 
 They follow the code: a functional spec's scenarios get their tests once its code is built, for modules with `***test reqs***` and a conformance testing script. Once a codebase has conformance tests, they are always run and kept passing, and they are carried up to the modules built on top of it.
@@ -345,6 +347,8 @@ A conformance job is a \*\*\*plain diff's conformance run: the tests of its chan
 
 **`conform`.** The loop starts conformance pulses by itself; `conform` starts them now - every functional spec of the module with scenarios, or those named as `module:func-id`. Named, it writes their tests alone: the module's other functional specs whose tests are behind are left as they are - `drift` lists them, saying conform asked for the named ones alone - until `conform` names none or the module is asked for again (`regenerate`); one of them whose text or scenarios change meanwhile joins those named. A module none of whose functional specs has scenarios, a functional spec \*\*\*plain does not have, one with no scenarios ("write them first") or a module that skipped a step of adding tests ([above](#the-steps-of-adding-tests)) is refused, and nothing is started. `conform` changes the module named alone, never the modules below it. For a module not regenerated yet, its tests are written once its code is built, before anything is built on it. For a module already regenerated whose tests are not written, while a module above it was started from it - its first pulse running, or code of its own built - the codebase above is disposable: a pulse running there is stopped, whatever `allow-to-stop-jobs` says, as the person asked; the codebase is deleted whole, its history with it; the tests are written in the module's own codebase; and the module above is regenerated from it once they pass. With every test written for what is built, it says so, and nothing is touched.
 
+**Written again.** `conform` asks for tests written already to be written again - as `regenerate` does code - and touches no code. A functional spec it names whose tests are written has them written anew: marked `conform_again` in the tests record of every codebase where its code lives - the tips of its chains, whose suite holds the chain's tests, among the functional specs required there for a module below - committed, so the mark differs from what the tests are to be written for and the work loop plans a conformance pulse for it; one named whose tests are not written is written, as before. The pulse deletes every test labelled with each of its scenarios, and what only those tests used, and writes them again from the scenario and the functional spec's text, never from the old tests; it lands the tests record without the mark. **From scratch** (`from_scratch`, `/conform … from scratch`, `turri conform --from-scratch`) works where the module's code lives, as `regenerate` from scratch does - the tip of each chain it is built in, never a codebase in the middle: the tip's whole tests folder - its tests, their notes and their record - is taken out, committed first so its lineage keeps it, and the tests of the module the tip requires are copied in, as the codebase started from them; the tip's own tests are written anew on them, and those it inherits are brought up to date. `"chain"` (`from scratch, whole chain`, `--from-scratch-chain`) copies nothing in: every functional spec of the chain with scenarios has its tests written anew at the tip. Neither touches the code, a codebase below the tip or one built on the module. Functional specs named and from scratch are not asked for together, and a pulse running in a codebase it would touch refuses it, as `regenerate` from scratch does.
+
 **`turri drift`** lists the conformance work one functional spec a line, its scenarios counted by case, and why else its tests are behind:
 
 ```
@@ -353,6 +357,7 @@ A conformance job is a \*\*\*plain diff's conformance run: the tests of its chan
     todo:edit-task     1 added, 1 changed, 1 removed
     todo:list-tasks    its code was regenerated again - 3 to run on it
     todo:delete-task   taken out - its tests go (2 removed)
+    todo:log-in        written again from scratch - 2 to write anew
 ```
 
 A functional spec with no scenarios is not listed: `parse` shows it as "no scenarios - not tested".
@@ -372,6 +377,7 @@ A conformance job goes down to the scenarios. For each functional spec it touche
 | removed | deleted, every test labelled with it - and nothing else |
 | unchanged | left exactly as they are |
 | unchanged, its functional spec's code changed - its text or a file it links patched, it was regenerated again, or a concept it uses changed | run on the new code: those that pass stay as they are, and one that fails is fixed against its scenario, read with the functional spec's text - no test holds the new code to what only the old code did |
+| written anew - its functional spec's tests asked for again (`conform`, [above](#conformance-tests-in-the-work-loop)) | deleted, every test labelled with it, and written again from the scenario - none left as it was; a scenario it no longer has is removed |
 
 A scenario given another scenario-id, and nothing else with it, is relabelled by turri itself, its tests not rewritten (see [a pure rename](#what-a-job-is-given-and-what-it-records)); renamed with any other change of its functional spec's, it is one removed and one added, and so is one moved between `***conformance tests***` and `***acceptance tests***`, as its label changes; one moved between two test plain files of the same functional spec is nothing. A functional spec whose text and scenarios both changed gets both cases. The tests record stores nothing new for it: each scenario's `{id, text}`, as written. The reviewer holds the agent to the cases: the tests of an unchanged scenario come out unchanged - unless the code changed under it and a test failed on it - and none labelled with a removed scenario is left.
 

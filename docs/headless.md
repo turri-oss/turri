@@ -65,6 +65,7 @@ Useful options - `turri regenerate --help` lists all of them:
 | `--stack <name>` | build with the stack's `config.turri.<name>.yaml` over `config.turri.yaml`; default, `TURRI_STACK`, else none |
 | `--from-scratch` | delete the module's code and conformance tests (its lineage keeps them) and regenerate all of it |
 | `--from-scratch-chain` | the same for every module of its requires chain, the base's included, built again from the bottom |
+| `turri conform --from-scratch` | take out the tests folder at the tip of the module's chain (its lineage keeps it) and write the tests again from a copy of the tests of the module the tip requires, the code untouched; `--from-scratch-chain`, from nothing |
 | `--start-over` | start over, unasked, a codebase built without a module it now requires - without a terminal, a run that needs it and lacks it stops |
 | `--build-dir <dir>` | as the run ends, export the code there - see below |
 | `--report <file.json>` | write [the run report](#the-run-report) there |

@@ -121,7 +121,7 @@ That is what regenerative software asks of software, and what **turri** does:
 | Every cell can become another, and it is still the same jellyfish. | Every line of code can be replaced, and it is still the same software - because what it is never lived in the code. |
 | It can do it again and again, for as long as it lives. | The code can be regenerated whenever \*\*\*plain changes or a model gets better, for as long as \*\*\*plain is kept. |
 
-So the tools speak its language: **`regenerate`** regenerates the code from \*\*\*plain as it is now - or the functionalities you name, though nothing changed, or all of it from scratch - **`drift`** says how far the code has moved from it, and **`lineage`** shows every generation of a module and what each was regenerated from.
+So the tools speak its language: **`regenerate`** regenerates the code from \*\*\*plain as it is now - or the functionalities you name, though nothing changed, or all of it from scratch - **`drift`** says how far the code has moved from it, and **`/lineage`** shows every generation of a module and what each was regenerated from.
 
 ## Models
 

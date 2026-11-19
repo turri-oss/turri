@@ -1,6 +1,6 @@
 import { DEFAULT_CONCEPTS, extractConceptsFromDefinition, extractConceptsFromSpecText } from "../plain/concepts.ts";
 import { ACCEPTANCE_TESTS, CONFORMANCE_TESTS, DEFINITIONS, FUNCTIONAL_REQUIREMENTS, REQUIRED_FUNCTIONAL_SPECS, type MarshalledPlainSource } from "../plain/spec.ts";
-import { codeTree, conformanceTarget, marksRegenerateAgain } from "./records.ts";
+import { codeTree, conformanceTarget, marksConformAgain, marksRegenerateAgain } from "./records.ts";
 import { applyChanges, changesBetween, isMove, parseTree, resourcesChanged, serializeTree, type SpecChange } from "./spec-steps.ts";
 
 /**
@@ -87,12 +87,16 @@ export interface ScenarioRef {
  * - `codeChanged`: the functional spec's code moved under its unchanged scenarios - its text or a file it links changed
  *   (`text`), it was regenerated again (`again`), or a concept it uses changed (`concept`): their tests are run on the
  *   new code, and those that fail are fixed against the scenario.
+ * - rewritten: its tests are to be written anew - `conform` named it, or asked for its module from scratch: every one
+ *   labelled with the scenario deleted and written again from it. A functional spec marked so has every scenario it has
+ *   now rewritten, and those it no longer has removed.
  */
 export interface ScenarioCases extends TouchedSpec {
   added: ScenarioRef[];
   changed: ScenarioRef[];
   removed: ScenarioRef[];
   unchanged: ScenarioRef[];
+  rewritten: ScenarioRef[];
   codeChanged?: "text" | "again" | "concept";
 }
 
@@ -115,16 +119,24 @@ function scenariosIn(item: ScenarioCarrier | undefined): Map<string, ScenarioRef
 /** What of a functional spec the code is built from: everything but its scenarios. */
 function codeOf(item: FunctionalItem | undefined): string {
   if (item === undefined) return "";
-  const { [CONFORMANCE_TESTS]: _conformance, [ACCEPTANCE_TESTS]: _acceptance, regenerate_again: _again, ...rest } = item as ScenarioCarrier & { regenerate_again?: unknown };
+  const { [CONFORMANCE_TESTS]: _conformance, [ACCEPTANCE_TESTS]: _acceptance, regenerate_again: _again, conform_again: _conform, ...rest } = item as ScenarioCarrier & { regenerate_again?: unknown; conform_again?: unknown };
   return JSON.stringify({ ...rest, markdown: rest.markdown.trim() });
 }
 
-/** A functional spec's scenarios by case, from the item its tests were written for to the one they are to be. */
-function scenarioCasesOf(spec: TouchedSpec, was: FunctionalItem | undefined, is: FunctionalItem | undefined, code?: ScenarioCases["codeChanged"]): ScenarioCases {
+/**
+ * A functional spec's scenarios by case, from the item its tests were written for to the one they are to be. `anew`: its
+ * tests are written again, every scenario it has now rewritten.
+ */
+function scenarioCasesOf(spec: TouchedSpec, was: FunctionalItem | undefined, is: FunctionalItem | undefined, code?: ScenarioCases["codeChanged"], anew = false): ScenarioCases {
   const before = scenariosIn(was);
   const after = scenariosIn(is);
   const plain = ({ kind, id, text }: ScenarioRef & { line: string }): ScenarioRef => ({ kind, id, text });
-  const cases: ScenarioCases = { ...spec, added: [], changed: [], removed: [], unchanged: [] };
+  const cases: ScenarioCases = { ...spec, added: [], changed: [], removed: [], unchanged: [], rewritten: [] };
+  if (anew) {
+    for (const scenario of after.values()) cases.rewritten.push(plain(scenario));
+    for (const [key, scenario] of before) if (!after.has(key)) cases.removed.push(plain(scenario));
+    return cases;
+  }
   for (const [key, scenario] of after) {
     const old = before.get(key);
     if (old === undefined) cases.added.push(plain(scenario));
@@ -205,6 +217,8 @@ export function casesOf(before: MarshalledPlainSource, changes: SpecChange[], op
   const patch: TouchedSpec[] = [];
   const again: TouchedSpec[] = [];
   const removed: TouchedSpec[] = [];
+  /** Of those regenerated again, the ones whose conformance tests are written anew: conform asked for them again. */
+  const anew = new Set<string>();
   /** Each functional spec touched, as the tests record has it and as it is to be: its scenarios' cases are worked out from them. */
   const items = new Map<string, { was?: FunctionalItem; is?: FunctionalItem }>();
   const keyOf = (spec: TouchedSpec) => `${spec.module ?? ""}:${spec.funcId}`;
@@ -218,6 +232,13 @@ export function casesOf(before: MarshalledPlainSource, changes: SpecChange[], op
     const required = change.section === REQUIRED_FUNCTIONAL_SPECS;
     const was = itemOfLine(change.before);
     const is = itemOfLine(change.after);
+    // Its conformance tests marked to be written again: written anew, whatever else changed - its code untouched.
+    if (change.kind === "change" && is !== undefined && marksConformAgain(was)) {
+      const touched = seen(touchedOf(is, required), was, is);
+      again.push(touched);
+      anew.add(keyOf(touched));
+      continue;
+    }
     // Marked to regenerate again: regenerated again, whatever else changed in its text - its own or, required, another module's.
     if (change.kind === "change" && is !== undefined && marksRegenerateAgain(was)) {
       again.push(seen(touchedOf(is, required), was, is));
@@ -270,7 +291,7 @@ export function casesOf(before: MarshalledPlainSource, changes: SpecChange[], op
           const { was, is } = items.get(keyOf(spec)) ?? {};
           return scenarioCasesOf(spec, was, is, was === is ? "concept" : undefined);
         }),
-        ...again.map((spec) => scenarioCasesOf(spec, items.get(keyOf(spec))?.was, items.get(keyOf(spec))?.is, "again")),
+        ...again.map((spec) => scenarioCasesOf(spec, items.get(keyOf(spec))?.was, items.get(keyOf(spec))?.is, "again", anew.has(keyOf(spec)))),
         ...removed.map((spec) => scenarioCasesOf(spec, items.get(keyOf(spec))?.was, undefined)),
       ]
     : undefined;
