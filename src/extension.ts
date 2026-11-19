@@ -56,7 +56,7 @@ import { createSpecMapSource, defaultMapFiles } from "./regenerate/spec-map.ts";
 import { createSpecMapState } from "./regenerate/spec-map-view.ts";
 import { createJobsTreeState, selectJob } from "./regenerate/jobs-tree.ts";
 import { describeDiagnosis, diagnoseFailure } from "./regenerate/diagnose.ts";
-import { HISTORY_DIR, historyLog, historyShow } from "./regenerate/lineage.ts";
+import { HISTORY_DIR, historyLog } from "./regenerate/lineage.ts";
 import { defaultBuildDir } from "./regenerate/paths.ts";
 import { describeTurnIncident, describeUsage, JobStoppedError, onModelEvent, type SpecConflict } from "./regenerate/activity.ts";
 import { ledgerWanted, startLedger } from "./regenerate/ledger.ts";
@@ -2200,7 +2200,8 @@ function registerJobTools(pi: ExtensionAPI, jobs: JobRegistry, cwd: string) {
       "of its codebase - the whole prompt its coding agent will get, from the plan regenerate runs. With plain_file, a look " +
       "ahead: that module's work planned as regenerate plans it, steering and all, and kept - nothing started, its pulses waiting " +
       "for regenerate, which then runs this plan unless the ***plain or the steering changed - and what is planned listed. " +
-      "What is left to regenerate, without a plan, is drift's.",
+      "What is left to regenerate, without a plan, is drift's. Every generation of a module's code and tests is a commit in its " +
+      "history, read with git: git --git-dir=plain_modules/<module>/.plaingit log, and show <commit>.",
     promptSnippet: "pulses: every pulse or one - earlier, running or planned - why one did not land, and with plain_file what will run next and its prompt",
     promptGuidelines: [
       "When a pulse failed or did not land, call pulses with its id before you explain it or change the spec: go by what happened, not by the report alone.",
@@ -2325,25 +2326,6 @@ function registerJobTools(pi: ExtensionAPI, jobs: JobRegistry, cwd: string) {
         if (name === "") return;
       }
       pi.appendEntry(HISTORY_ENTRY, { module: name, text: historyLog(defaultBuildDir(name, cwd)) });
-    },
-  });
-
-  pi.registerTool({
-    name: "lineage",
-    label: "Lineage",
-    description:
-      "Read a module's lineage: every generation of its code and tests - each regeneration, conformance run and spec change, " +
-      "with what it was regenerated from - as git commits. Without a commit, the log; with one, that commit in full - its message and " +
-      "the change it made.",
-    promptSnippet: "a module's lineage: what was regenerated into it, and when",
-    parameters: Type.Object({
-      module: Type.String({ description: "The module's name" }),
-      commit: Type.Optional(Type.String({ description: "A commit from the log, to see in full" })),
-    }),
-    async execute(_id, params) {
-      const buildDir = defaultBuildDir(params.module, cwd);
-      const text = params.commit ? historyShow(buildDir, params.commit) : historyLog(buildDir);
-      return { content: [{ type: "text" as const, text }], details: {} };
     },
   });
 
