@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import { defineTool, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { refuseTestPlainFile } from "./test-plain-files.ts";
-import type { Launch, LaunchTrack } from "./launch-track.ts";
+import { launchText, type Launch, type LaunchTrack } from "./launch-track.ts";
 
 /**
  * The chat's launch tool (docs/launch.md): it asks the launch track for a launch of a codebase's last commit and returns
@@ -33,7 +33,9 @@ export function launchTool(options: {
       "on this machine - or, with guidance, follows it from the host codebase: an integration a host application loads, " +
       "say, put in place with the host's scripts. Before you call it, ask yourself whether there is guidance for launching " +
       "this project - in what the person said, AGENTS.md, a skill - and pass it in full. It returns at once; you are told " +
-      "where it runs, or why it did not come up, once it ends. When what is launched is that code already, it does nothing " +
+      "where it runs, or why it did not come up, once it ends. It replaces what launches of the modules below it started, " +
+      "and takes a port or anything else turri's launches of other modules hold that it needs - its summary says what it " +
+      "stopped; guidance never tells it to leave one of those running. When what is launched is that code already, it does nothing " +
       "and says so. Under launch-after-pulse turri launches what each pulse lands itself: never call it for that.",
     promptSnippet: "launch the regenerated code for the person to try, in the background - as the project's guidance says, or from dist/<module>",
     parameters: Type.Object({
@@ -60,7 +62,7 @@ export function launchTool(options: {
       const details = { launch: launch.id, module: launch.codebase, commit: launch.short, already };
       if (already) {
         return {
-          content: [{ type: "text" as const, text: `Out already: what runs of ${launch.codebase} is its code at ${launch.short} - nothing was done, and what runs is left running.${launch.summary !== undefined ? `\n${launch.summary}` : ""}\nSay so in a line.` }],
+          content: [{ type: "text" as const, text: `Out already: what runs of ${launch.codebase} is its code at ${launch.short} - nothing was done, and what runs is left running.${launchText(launch) !== "" ? `\n${launchText(launch)}` : ""}\nSay so in a line.` }],
           details,
         };
       }
@@ -69,7 +71,7 @@ export function launchTool(options: {
         const ended = await options.track.done(launch.id);
         const where = ended.status === "launched" ? `${ended.codebase} at ${ended.short} is launched` : ended.status === "stopped" ? `The launch of ${ended.codebase} was stopped` : `The launch of ${ended.codebase} at ${ended.short} did not come up`;
         return {
-          content: [{ type: "text" as const, text: `${where} (${ended.id}).\n${(ended.summary ?? "").trim()}\nTell the person where it runs, or why it did not come up.` }],
+          content: [{ type: "text" as const, text: `${where} (${ended.id}).\n${launchText(ended)}\nTell the person where it runs, or why it did not come up.` }],
           details: { ...details, status: ended.status },
         };
       }
