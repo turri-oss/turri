@@ -2,7 +2,7 @@ import { closeSync, openSync, readSync, statSync } from "node:fs";
 import { refuseTestPlainFile } from "./test-plain-files.ts";
 import { join, resolve } from "node:path";
 import { configForSpec, modelSpec, projectModels, readProjectConfig } from "./config.ts";
-import { createLaunchTrack } from "./launch-track.ts";
+import { createLaunchTrack, launchText } from "./launch-track.ts";
 import { runLaunchAgent } from "./launch-agent.ts";
 import { listLaunched, runningLaunched, stopLaunched } from "./regenerate/launch.ts";
 import { c } from "./module-report.ts";
@@ -105,12 +105,13 @@ async function main() {
   let streamed = "";
   const track = createLaunchTrack({
     cwd: process.cwd(),
-    run: (launch, code, signal) =>
+    run: (launch, code, signal, freed) =>
       runLaunchAgent({
         launch,
         code,
         cwd: process.cwd(),
         signal,
+        freed,
         ...(model !== undefined ? { model } : {}),
         onDelta: (delta: string) => {
           streamed += delta;
@@ -125,8 +126,10 @@ async function main() {
     cause: {},
   });
   const ended = await track.done(launch.id);
-  // What the agent said as it went is on the screen already: its summary only when it said nothing.
-  const said = streamed.trim() === "" ? `\n${ended.summary ?? ""}` : "";
+  // What the agent said as it went is on the screen already: its summary only when it said nothing - what turri stopped
+  // for it, always.
+  const text = launchText(streamed.trim() === "" ? ended : { ...ended, summary: undefined });
+  const said = text !== "" ? `\n${text}` : "";
   console.log(`\n\n${ended.status === "launched" ? c.success(`Launched.${said}`) : c.error(`It did not come up.${said}`)}`);
   if (ended.status !== "launched") console.log(`\n${c.dim(PROBLEMS)}`);
 

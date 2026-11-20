@@ -8,7 +8,7 @@
 // The session and its chats.
 export { createTurri, type Turri, type TurriOptions } from "./host-session.ts";
 export { MAX_CHATS, type ChatInfo, type ChatStatus, type TurriHost } from "./chats.ts";
-export type { Launch, LaunchCause, LaunchStatus } from "./launch-track.ts";
+export { launchText, type Launch, type LaunchCause, type LaunchStatus, type LaunchStopped } from "./launch-track.ts";
 export type { ConfigLine, ConfigLineKind } from "./config.ts";
 // The sentinel's notices: what it puts to the person, and how they answer - and the checks a host asks of it.
 export { SENTINEL, SENTINEL_START, type Conclusion, type Notice, type NoticeAction, type NoticeAnswer, type NoticeSeverity, type NoticeState, type SentinelCheck } from "./notice.ts";
