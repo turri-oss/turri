@@ -12,7 +12,22 @@ import {
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { describeExport, holderOf, launchLogDir, runningLaunched, shortPath, startLaunched, type ExportedCode } from "./regenerate/launch.ts";
+import {
+  describeExport,
+  describeFreed,
+  describeHolder,
+  freeHeld,
+  howToFree,
+  launchLogDir,
+  listenersOf,
+  runningLaunched,
+  shortPath,
+  startLaunched,
+  turriFrees,
+  whoHolds,
+  type ExportedCode,
+  type Freed,
+} from "./regenerate/launch.ts";
 import { machineChange, machineChangeReason } from "./regenerate/command-check.ts";
 import { projectDirOf } from "./regenerate/paths.ts";
 import { ask, BEGIN, createExecutor } from "./pi.ts";
@@ -102,18 +117,26 @@ function inside(root: string, dir: string | undefined): string {
   return target;
 }
 
+/** The launch an agent works for, as its tools need it: its id and commit say whose what it starts is. */
+type ForLaunch = Pick<Launch, "codebase" | "plainFile" | "hostDir"> & Partial<Pick<Launch, "id" | "short">>;
+
+const launchOf = (launch: ForLaunch) => (launch.id !== undefined && launch.short !== undefined ? { launch: { id: launch.id, commit: launch.short } } : {});
+
 /**
  * activate: start what keeps running - a backend, a frontend's dev server - owned by the harness: in its own process
- * group, its output kept, stopped on the codebase's next launch, on /halt and when turri exits.
+ * group, its output kept, stopped on the codebase's next launch, on /halt and when turri exits. A port held by what
+ * turri's own launches started is taken - what held it stopped, and `freed` told.
  */
-export function activateTool(launch: Pick<Launch, "codebase" | "plainFile" | "hostDir">, code: Pick<ExportedCode, "dir">): AnyTool {
+export function activateTool(launch: ForLaunch, code: Pick<ExportedCode, "dir">, freed?: (freed: Freed[]) => void): AnyTool {
   return defineTool({
     name: "activate",
     label: "Activate",
     description:
       "Start something that keeps running - a backend, a frontend's dev server - on this machine: in the background, its " +
       "output kept, stopped on the next launch, on /halt and when turri exits. With `url`, waits until something answers " +
-      "there and says so, or shows the end of its output. A port something else holds is said, and nothing is started.",
+      "there and says so, or shows the end of its output. A port held by a server turri's own launches started - another " +
+      "module's, an earlier session's - is taken: turri stops that server and says so. A port anything else holds is said - " +
+      "what holds it, whose it is, how to free it - and nothing is started.",
     promptSnippet: "start a server of the launched code, and wait for it to answer",
     parameters: Type.Object({
       name: Type.String({ description: "A short name for it: backend, frontend, app" }),
@@ -136,10 +159,60 @@ export function activateTool(launch: Pick<Launch, "codebase" | "plainFile" | "ho
         moduleName: launch.codebase,
         logDir: launchLogDir(projectDirOf(launch.plainFile)),
         ...(params.url !== undefined ? { url: params.url } : {}),
+        ...launchOf(launch),
+        ...(freed !== undefined ? { freed } : {}),
       });
       return text(started.text, { ok: started.ok, ...(started.process !== undefined ? { pid: started.process.pid, log: started.process.log } : {}) });
     },
   });
+}
+
+/**
+ * stop_launched: free what a server turri's own launches started holds that this launch needs - a socket, a lock or pid
+ * file, a container name, a port - by any process of it. Stopped only when turri's records say a launch of turri started
+ * it - this session's for another module, or a turri that has ended; anything else is refused, saying whose it is.
+ */
+export function stopLaunchedTool(launch: ForLaunch, freed?: (freed: Freed[]) => void): AnyTool {
+  return defineTool({
+    name: "stop_launched",
+    label: "Stop launched",
+    description:
+      "Stop a server an earlier launch of turri's started - another module's, an earlier session's - that holds something " +
+      "this launch needs: a socket, a lock or pid file, a container name, a database it keeps open. Give any pid of it - " +
+      "from the error, lsof, ps - and what it holds. turri stops it only when its records say a launch of turri's " +
+      "started it, and says so in the launch's summary itself; a process turri did not start, or another turri's still " +
+      "running, is never stopped: you are told whose it is and how the person frees it. A port activate takes itself.",
+    promptSnippet: "stop an earlier launch's server that holds what this launch needs",
+    parameters: Type.Object({
+      pid: Type.Integer({ description: "A process of the server that holds it" }),
+      holds: Type.String({ description: "What it holds that this launch needs, in a few words: the socket /tmp/app.sock, the lock on data/app.db" }),
+    }),
+    async execute(_id, params) {
+      const holder = whoHolds(params.pid, launchLogDir(projectDirOf(launch.plainFile)));
+      if (holder.kind === "this" && holder.process.launch !== undefined && holder.process.launch === launch.id) {
+        throw new Error(`Not stopped: ${describeHolder(holder)} - this launch started it itself. activate it again under the same name to restart it.`);
+      }
+      if (!turriFrees(holder)) throw new Error(`Not stopped: ${describeHolder(holder)}. ${howToFree(holder)} Say so in submit_launch.`);
+      const stopped = await freeHeld([holder], params.holds.trim() || "what this launch needs");
+      freed?.(stopped);
+      if (stopped.length === 0) return text(`Nothing stopped: ${describeHolder(holder)} has ended already.`);
+      return text(`${stopped.map((each) => describeFreed(each, launch.codebase)).join("\n")}\nturri says so in the launch's summary: start what needs it now.`);
+    },
+  });
+}
+
+/** What holds each port a summary names, said with whose it is - none for a port nothing listens on. */
+function heldPorts(ports: number[], logDir: string): string[] {
+  const lines: string[] = [];
+  for (const port of ports) {
+    const pids = listenersOf(port);
+    if (pids === undefined || pids.length === 0) continue;
+    for (const pid of pids) {
+      const holder = whoHolds(pid, logDir);
+      lines.push(`port ${port}: ${describeHolder(holder)}. ${howToFree(holder)}`);
+    }
+  }
+  return lines;
 }
 
 /** The ports of the URLs a summary names. */
@@ -161,21 +234,21 @@ function portsIn(summary: string): number[] {
  * launch started with activate still runs. Something else answering there - an earlier build left running, another
  * program - is not this launch. Undefined when it holds.
  */
-export function notBacked(launch: Pick<Launch, "codebase" | "serversSince">, outcome: { launched: boolean; summary: string; serves?: boolean }): string | undefined {
+export function notBacked(launch: Pick<Launch, "codebase" | "serversSince" | "plainFile">, outcome: { launched: boolean; summary: string; serves?: boolean }): string | undefined {
   if (!outcome.launched) return undefined;
   const ports = portsIn(outcome.summary);
   if (outcome.serves !== true && ports.length === 0) return undefined;
   const since = launch.serversSince ?? 0;
   if (runningLaunched(launch.codebase).some((item) => item.startedAt >= since)) return undefined;
-  const holders = ports.map((port) => ({ port, holder: holderOf(port) })).filter((each) => each.holder !== "");
+  const held = heldPorts(ports, launchLogDir(projectDirOf(launch.plainFile)));
   return [
-    `nothing this launch started with activate is running, so what answers${ports.length > 0 ? ` at port ${ports.join(", ")}` : ""} is not this launch's code${holders.length > 0 ? " - it is held by something else:" : "."}`,
-    ...holders.map((each) => `port ${each.port}:\n${each.holder}`),
+    `nothing this launch started with activate is running, so what answers${ports.length > 0 ? ` at port ${ports.join(", ")}` : ""} is not this launch's code${held.length > 0 ? " - it is held by:" : "."}`,
+    ...held,
   ].join("\n");
 }
 
 /** submit_launch: how the launch went, once, last - the harness reads its arguments, never the agent's prose. */
-function submitLaunchTool(launch: Pick<Launch, "codebase" | "serversSince">, submitted: { outcome?: LaunchOutcome & { serves?: boolean } }): AnyTool {
+function submitLaunchTool(launch: Pick<Launch, "codebase" | "serversSince" | "plainFile">, submitted: { outcome?: LaunchOutcome & { serves?: boolean } }): AnyTool {
   return defineTool({
     name: "submit_launch",
     label: "Submit launch",
@@ -194,7 +267,7 @@ function submitLaunchTool(launch: Pick<Launch, "codebase" | "serversSince">, sub
       const why = notBacked(launch, params);
       if (why !== undefined) {
         throw new Error(
-          `Not taken: you say it runs, but ${why}\nStart it with activate - stopping nothing turri did not start - or call submit_launch with launched false, saying what holds the port.`,
+          `Not taken: you say it runs, but ${why}\nStart it with activate - stopping nothing turri did not start - or call submit_launch with launched false, saying what holds the port and whose it is, as said here.`,
         );
       }
       submitted.outcome = { launched: params.launched, summary: params.summary, serves: params.serves };
@@ -225,13 +298,23 @@ export function launchGuide(code: ExportedCode, hostDir: string): string {
     "3. Run the project's scripts and install what it needs into the project yourself, in your shell. A toolchain or system tool the machine lacks you never install, nor change a setting of the machine's: say the command the person runs themselves.",
     "4. Start what keeps running - a start script, a dev server - with activate (from: host when it runs in the host codebase), with the URL it serves at - never in the shell with & or nohup.",
     "",
-    `Either way, never change ${built} or ${dist}: they are what was built, and a fix belongs in the ***plain. A config file it needs made from its example (a .env from .env.example) is fine. A port that is taken: say which and by what, and do not move the app to another.`,
+    `Either way, never change ${built} or ${dist}: they are what was built, and a fix belongs in the ***plain. A config file it needs made from its example (a .env from .env.example) is fine.`,
+    "",
+    "Something it needs held already: a port, activate takes itself when a server turri's own launches started holds it, and",
+    "says so. Anything else - a socket, a lock or pid file, a container name - held by a server one of turri's launches",
+    "started (listed below, when any runs): free it with stop_launched. This launch is the newest: it always takes what",
+    "turri's own earlier launches hold - never leave it unstarted to keep one of theirs running, whatever the reason, even",
+    "to compare the two; turri tells the person what it stopped. Never decide from lsof yourself: call activate, and it says",
+    "what holds the port and whose it is. What turri did not start, or another turri still",
+    "running started, is never stopped and the app is never moved to another port: say what holds it, whose it is and how",
+    "the person frees it, as the tools said it - never that turri did not start something its tools say it did.",
     "",
     "Last, call submit_launch once: launched, whether it serves, and in a line or three where to open it - the frontend's URL,",
     "and the API's in one line when there is one - or, a CLI or a library, a few commands to paste, run from its folder, with",
     "what they print; or why it did not come up. Where the guidance does not fit what you find, say so, and do not guess past it.",
-    "Something answering at the app's port that you did not start with activate - an earlier build left running, another",
-    "program - is not this launch: it is not launched, and you say what holds the port. Never stop a process you did not start.",
+    "Something answering at the app's port that this launch did not start with activate is not this launch: it is not",
+    "launched, and you say what holds the port and whose it is. Stop a process only with activate or stop_launched, never in",
+    "your shell.",
   ].join("\n");
 }
 
@@ -245,6 +328,15 @@ export interface LaunchAgentInput {
   model?: string;
   signal?: AbortSignal;
   onDelta?: (delta: string) => void;
+  /** What turri's own launches started and this one stopped, to take what it held: told to the launch track. */
+  freed?: (freed: Freed[]) => void;
+}
+
+/** What turri's launches of other modules run now, a line each with its pid - what stop_launched frees. */
+function otherLaunches(codebase: string): string[] {
+  return runningLaunched()
+    .filter((item) => item.moduleName !== codebase)
+    .map((item) => `- ${item.name}: pid ${item.pid}, ${item.moduleName}'s launch${item.launch !== undefined ? ` ${item.launch}` : ""}${item.commit !== undefined ? ` at ${item.commit}` : ""} - ${item.url ?? item.command}, in ${shortPath(item.dir)}`);
 }
 
 /** Run the launch agent to its end: how it went, as it submitted it - or, never submitted, its last words as a failure. */
@@ -262,7 +354,8 @@ export async function runLaunchAgent(input: LaunchAgentInput): Promise<LaunchOut
     outsideBuiltCode(createWriteToolDefinition(dir), dir),
   ];
   const submitted: { outcome?: LaunchOutcome & { serves?: boolean } } = {};
-  const tools = [activateTool(launch, code), submitLaunchTool(launch, submitted)];
+  const tools = [activateTool(launch, code, input.freed), stopLaunchedTool(launch, input.freed), submitLaunchTool(launch, submitted)];
+  const others = otherLaunches(launch.codebase);
   const executor = await createExecutor({
     // Its sessions are kept in the project, not in the folder it launches.
     cwd: projectDirOf(launch.plainFile),
@@ -284,6 +377,7 @@ export async function runLaunchAgent(input: LaunchAgentInput): Promise<LaunchOut
       launchGuide(code, dir),
       ...(launch.inModule !== undefined ? ["", `It is the codebase of module ${launch.inModule}.`] : []),
       ...(launch.guidance !== undefined ? ["", "What the person said of how to launch it:", launch.guidance] : []),
+      ...(others.length > 0 ? ["", "What turri's launches of other modules run now - each its own module's, left running unless it holds what this launch needs:", ...others] : []),
       ...(notes.length > 0 ? ["", "The project's notes and skills:", ...notes] : []),
     ].join("\n"),
   });

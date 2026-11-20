@@ -73,6 +73,10 @@ export type LedgerEvent =
   | { kind: "launch.finished"; launch: string; commit: string; status: string; ms: number }
   // What an earlier turri's launches left running, stopped before this session's launch of its codebase - or as it started.
   | { kind: "launch.left-behind"; stopped: Array<{ name: string; pid: number; module: string; url?: string }> }
+  // What a launch stopped of turri's own launches' servers: those of the modules below it (`held: "below"`), or one that
+  // held what it needs - "port 5173". And a launch whose servers a newer launch of another module stopped: replaced by it.
+  | { kind: "launch.freed"; launch: string; held: string; stopped: Array<{ name: string; pid: number; module: string; url?: string; launch?: string }> }
+  | { kind: "launch.replaced"; launch: string; by: string; byModule: string }
   // The sentinel done with a pulse or a check: whether what it checked holds - `unchecked`, a check that never ran.
   | { kind: "sentinel.concluded"; verdict: string; module?: string; check?: string }
   | { kind: "chat.closed" }

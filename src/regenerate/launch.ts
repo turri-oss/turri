@@ -73,21 +73,68 @@ export function holdsCommit(moduleDir: string, ancestor: string, commit: string)
 }
 
 /**
+ * Where a codebase's history started: the module below it whose code it started from, and that module's commit - what
+ * its first commit says (`start from <module> at <commit>`, copyRequiredCode). None for a codebase that started from
+ * nothing.
+ */
+export function startedFrom(moduleDir: string): { module: string; commit: string } | undefined {
+  const roots = git(moduleDir, ["log", "--max-parents=0", "--format=%s", "HEAD"]);
+  if (roots.status !== 0) return undefined;
+  for (const subject of roots.stdout.trim().split("\n")) {
+    const match = /^start from (\S+) at (\w+)$/.exec(subject.trim());
+    if (match !== null) return { module: match[1]!, commit: match[2]! };
+  }
+  return undefined;
+}
+
+/**
+ * Whether a codebase's code holds a commit of another module - one below it in its requires chain, whose code it started
+ * from: the commit is that module's, or held by the one it started from - down the chain, as far as it goes.
+ */
+export function heldUpChain(moduleDir: string, module: string, commit: string): boolean {
+  let dir = moduleDir;
+  const seen = new Set<string>();
+  while (!seen.has(dir)) {
+    seen.add(dir);
+    const from = startedFrom(dir);
+    if (from === undefined) return false;
+    const fromDir = join(dirname(dir), from.module);
+    if (from.module === module) return holdsCommit(fromDir, commit, from.commit);
+    dir = fromDir;
+  }
+  return false;
+}
+
+/**
+ * Whether `to` - a codebase at a commit - holds `from`'s commit: the same codebase, the commit or one built on it; a
+ * codebase above `from`'s in its requires chain, built from code that held it.
+ */
+export function holdsAcross(from: { codebase: string; commit: string }, to: { codebase: string; moduleDir: string; commit: string }): boolean {
+  if (from.codebase === to.codebase) return holdsCommit(to.moduleDir, from.commit, to.commit);
+  return heldUpChain(to.moduleDir, from.codebase, from.commit);
+}
+
+/**
  * Which codebase to launch for a spec, and at which commit: the tip of its codebase - code accumulates up a requires
  * chain, so the top module holds everything below it - at `commit`, or its last. Before the tip has anything committed,
  * the nearest module below it that has.
  */
-export function launchTarget(plainFile: string, options: { inModule?: string; commit?: string } = {}): { entry: ChainEntry; commit: string; instead?: string } {
+export function launchTarget(plainFile: string, options: { inModule?: string; commit?: string } = {}): { entry: ChainEntry; commit: string; instead?: string; below: string[] } {
   const { tip, chain } = findCodebaseTip(plainFile, { allowNoFunctionalities: true, ...(options.inModule !== undefined ? { inModule: options.inModule } : {}) });
+  // The modules below the one launched, in its requires chain: their code is in it.
+  const belowOf = (entry: ChainEntry) => {
+    const at = chain.findIndex((each) => each.moduleName === entry.moduleName);
+    return (at === -1 ? chain : chain.slice(0, at)).map((each) => each.moduleName).filter((name) => name !== entry.moduleName);
+  };
   if (options.commit !== undefined) {
     const commit = committedCode(dirname(tip.buildDir), options.commit);
     if (commit === undefined) throw new Error(`${tip.moduleName} has no commit ${options.commit} with code in it: nothing to launch.`);
-    return { entry: tip, commit };
+    return { entry: tip, commit, below: belowOf(tip) };
   }
   const candidates = [tip, ...[...chain].reverse().filter((entry) => entry.moduleName !== tip.moduleName)];
   for (const entry of candidates) {
     const commit = committedCode(dirname(entry.buildDir));
-    if (commit !== undefined) return { entry, commit, ...(entry.moduleName !== tip.moduleName ? { instead: tip.moduleName } : {}) };
+    if (commit !== undefined) return { entry, commit, below: belowOf(entry), ...(entry.moduleName !== tip.moduleName ? { instead: tip.moduleName } : {}) };
   }
   throw new Error(`Nothing is built yet for ${tip.moduleName}${candidates.length > 1 ? " or the modules it requires" : ""}: there is no code to launch. Regenerate it first.`);
 }
@@ -168,11 +215,16 @@ export interface LaunchedProcess {
   log: string;
   pid: number;
   startedAt: number;
+  /** The launch that started it, and that launch's commit, short: whose it is, as the person is told. */
+  launch?: string;
+  commit?: string;
   /** Set once it has ended. */
   exited?: { code: number | null; signal: string | null };
 }
 
+/** What this turri's launches started, by module and name: two modules' servers may have the same name. */
 const processes = new Map<string, { info: LaunchedProcess; child: ChildProcess; record?: string }>();
+const keyOf = (moduleName: string, name: string) => `${moduleName}\u0000${name}`;
 
 /**
  * What a launch started, written down as it starts - `.turri/launch/running/<pid>.json` - and taken out as it ends: a turri
@@ -188,6 +240,9 @@ export interface LaunchRecord {
   dir: string;
   url?: string;
   startedAt: number;
+  /** The launch that started it, and that launch's commit, short. */
+  launch?: string;
+  commit?: string;
   /** The turri process that started it. */
   turri: number;
 }
@@ -267,7 +322,8 @@ const groupAlive = (pgid: number): boolean => {
  * (another turri still running keeps its own), and only when the process is still the one recorded: a process turri did
  * not start is never stopped. Records of what has ended are taken out. Returns what was stopped.
  */
-export async function stopLeftBehind(projectDir: string, codebase?: string): Promise<LaunchRecord[]> {
+export async function stopLeftBehind(projectDir: string, codebase?: string | string[]): Promise<LaunchRecord[]> {
+  const codebases = codebase === undefined ? undefined : typeof codebase === "string" ? [codebase] : codebase;
   const dir = join(projectDir, ".turri", "launch", RUNNING_DIR);
   let names: string[];
   try {
@@ -284,7 +340,7 @@ export async function stopLeftBehind(projectDir: string, codebase?: string): Pro
     } catch {
       continue;
     }
-    if (codebase !== undefined && record.moduleName !== codebase) continue;
+    if (codebases !== undefined && !codebases.includes(record.moduleName)) continue;
     // This turri's own are stopLaunched's; another turri still running keeps its own.
     if (record.turri === process.pid || alive(record.turri)) continue;
     const group = groupOf(record);
@@ -300,7 +356,7 @@ export async function stopLeftBehind(projectDir: string, codebase?: string): Pro
 }
 
 /** What was stopped of an earlier session's, in a line - for a launch's summary. */
-export function describeLeftBehind(stopped: LaunchRecord[]): string {
+export function describeLeftBehind(stopped: Array<Pick<LaunchRecord, "name" | "pid" | "url" | "moduleName">>): string {
   const each = stopped.map((record) => `${record.name} (pid ${record.pid}${record.url !== undefined ? `, ${record.url}` : ""})`);
   return `Stopped what an earlier turri session left running of ${[...new Set(stopped.map((record) => record.moduleName))].join(", ")}: ${each.join(", ")}.`;
 }
@@ -346,16 +402,189 @@ function signalGroup(pid: number, signal: NodeJS.Signals): void {
 
 const sleep = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
 
-/** Stop one launched process, or every one of a module, or every one: politely, then not. Returns the names stopped. */
-export async function stopLaunched(which: { name?: string; moduleName?: string } = {}): Promise<string[]> {
+/** Which of this turri's launched processes: by name, by module (or modules), by process group. Each given must match. */
+export interface LaunchedFilter {
+  name?: string;
+  moduleName?: string;
+  modules?: string[];
+  pid?: number;
+}
+
+/** Stop launched processes - those the filter names, or every one: politely, then not. Returns what was stopped. */
+export async function stopLaunchedProcesses(which: LaunchedFilter = {}): Promise<LaunchedProcess[]> {
   const targets = [...processes.values()].filter(
-    ({ info }) => info.exited === undefined && (which.name === undefined || info.name === which.name) && (which.moduleName === undefined || info.moduleName === which.moduleName),
+    ({ info }) =>
+      info.exited === undefined &&
+      (which.name === undefined || info.name === which.name) &&
+      (which.moduleName === undefined || info.moduleName === which.moduleName) &&
+      (which.modules === undefined || which.modules.includes(info.moduleName)) &&
+      (which.pid === undefined || info.pid === which.pid),
   );
   for (const { info } of targets) signalGroup(info.pid, "SIGTERM");
   const deadline = Date.now() + 5000;
   while (Date.now() < deadline && targets.some(({ info }) => info.exited === undefined)) await sleep(100);
   for (const { info } of targets) if (info.exited === undefined) signalGroup(info.pid, "SIGKILL");
-  return targets.map(({ info }) => info.name);
+  return targets.map(({ info }) => info);
+}
+
+/** Stop one launched process, or every one of a module, or every one: politely, then not. Returns the names stopped. */
+export async function stopLaunched(which: LaunchedFilter = {}): Promise<string[]> {
+  return (await stopLaunchedProcesses(which)).map((info) => info.name);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Whose a process is: what holds something a launch needs - a port, a socket, a lock or pid file, a container name.
+
+/**
+ * A process, as turri's records say it: started by this turri's launches; by an earlier turri's, which has ended - left
+ * behind; by another turri still running, which keeps it; or by nothing turri's records of the project name.
+ */
+export type Holder =
+  | { kind: "this"; pid: number; process: LaunchedProcess }
+  | { kind: "left"; pid: number; record: LaunchRecord; file: string }
+  | { kind: "turri"; pid: number; record: LaunchRecord }
+  | { kind: "unknown"; pid: number; command: string };
+
+/** What a launch of this turri stopped to take what it held, said where the launch's summary says it. */
+export interface Freed {
+  name: string;
+  moduleName: string;
+  pid: number;
+  url?: string;
+  launch?: string;
+  commit?: string;
+  /** An earlier turri, ended, started it - not this one. */
+  earlier?: true;
+  /** What it held that this launch needs, as it is said: "port 5173". */
+  held: string;
+}
+
+function psField(pid: number, field: string): string | undefined {
+  const found = spawnSync("ps", ["-o", `${field}=`, "-p", String(pid)], { encoding: "utf8", env: { ...process.env, LC_ALL: "C" } });
+  if (found.status !== 0) return undefined;
+  const value = found.stdout.trim();
+  return value === "" ? undefined : value;
+}
+
+function readRecords(logDir: string): Array<{ record: LaunchRecord; file: string }> {
+  const dir = join(logDir, RUNNING_DIR);
+  let names: string[];
+  try {
+    names = readdirSync(dir).filter((name) => name.endsWith(".json"));
+  } catch {
+    return [];
+  }
+  const records: Array<{ record: LaunchRecord; file: string }> = [];
+  for (const name of names) {
+    const file = join(dir, name);
+    try {
+      records.push({ record: JSON.parse(readFileSync(file, "utf8")) as LaunchRecord, file });
+    } catch {
+      /* half-written, or not one */
+    }
+  }
+  return records;
+}
+
+/**
+ * Whose a process is - any process of the group a launch started: what this turri started, what turri's records of the
+ * project (`logDir`, its `.turri/launch`) name, or neither. Only a record whose group is still the one it names counts:
+ * a pid given to another process since is not turri's.
+ */
+export function whoHolds(pid: number, logDir: string): Holder {
+  const group = Number(psField(pid, "pgid") ?? Number.NaN);
+  if (Number.isFinite(group)) {
+    const own = [...processes.values()].find(({ info }) => info.exited === undefined && info.pid === group);
+    if (own !== undefined) return { kind: "this", pid, process: own.info };
+    for (const { record, file } of readRecords(logDir)) {
+      if (record.pgid !== group || !groupOf(record).includes(pid)) continue;
+      if (record.turri !== process.pid && alive(record.turri)) return { kind: "turri", pid, record };
+      return { kind: "left", pid, record, file };
+    }
+  }
+  return { kind: "unknown", pid, command: psField(pid, "command") ?? "a process ps cannot name" };
+}
+
+/** The processes listening on a TCP port, as lsof says them - undefined when it cannot say (no lsof). */
+export function listenersOf(port: number): number[] | undefined {
+  const found = spawnSync("lsof", ["-t", "-nP", `-iTCP:${port}`, "-sTCP:LISTEN"], { encoding: "utf8" });
+  if (found.error !== undefined) return undefined;
+  return [...new Set(found.stdout.split("\n").map((line) => Number(line.trim())).filter((pid) => Number.isInteger(pid) && pid > 0))];
+}
+
+/** A holder in a line: what it is, and whose - the launch and module a turri started it for. */
+export function describeHolder(holder: Holder): string {
+  const at = (commit: string | undefined) => (commit !== undefined ? ` at ${commit}` : "");
+  switch (holder.kind) {
+    case "this": {
+      const item = holder.process;
+      return `${item.name} (pid ${item.pid}${item.url !== undefined ? `, ${item.url}` : ""}), which this turri started for ${item.moduleName}'s launch${item.launch !== undefined ? ` ${item.launch}` : ""}${at(item.commit)}, from ${shortPath(item.dir)}`;
+    }
+    case "left": {
+      const record = holder.record;
+      return `${record.name} (pid ${record.pid}${record.url !== undefined ? `, ${record.url}` : ""}), which an earlier turri session (pid ${record.turri}, ended) started for a launch of ${record.moduleName}${at(record.commit)}, from ${shortPath(record.dir)}`;
+    }
+    case "turri": {
+      const record = holder.record;
+      return `${record.name} (pid ${record.pid}${record.url !== undefined ? `, ${record.url}` : ""}), which another turri still running (pid ${record.turri}) started for its launch of ${record.moduleName}${at(record.commit)}, from ${shortPath(record.dir)}`;
+    }
+    case "unknown":
+      return `pid ${holder.pid} (${holder.command}), which turri did not start - none of its records of this project names it`;
+  }
+}
+
+/** How the person frees what a holder holds, from the chat - or that turri frees it itself. */
+export function howToFree(holder: Holder): string {
+  switch (holder.kind) {
+    case "this":
+      return `It is this turri's: \`/halt launched ${holder.process.moduleName}\` in the chat stops it, then ask for the launch again.`;
+    case "left":
+      return `Its turri has ended: turri stops it before the next launch of ${holder.record.moduleName}, or ask the chat to launch again.`;
+    case "turri":
+      return `It is that turri's, and this one never stops it: \`/halt launched ${holder.record.moduleName}\` in that turri's chat stops it, or quit that turri - then ask the chat here to launch again.`;
+    case "unknown":
+      return `turri never stops a process it did not start: if it is the person's to stop, they can stop it or ask the chat to (\`kill ${holder.pid}\`) - then ask the chat to launch again.`;
+  }
+}
+
+/** Whether turri frees what a holder holds for a launch itself: what its own launches started, this session's or a dead turri's. */
+export const turriFrees = (holder: Holder): holder is Extract<Holder, { kind: "this" | "left" }> => holder.kind === "this" || holder.kind === "left";
+
+/**
+ * Stop what turri's own launches started - this session's, or an ended turri's - for a launch that needs what it holds
+ * (`held`, "port 5173"). Returns what was stopped; the rest is never touched.
+ */
+export async function freeHeld(holders: Holder[], held: string): Promise<Freed[]> {
+  const freed: Freed[] = [];
+  const seen = new Set<number>();
+  for (const holder of holders) {
+    if (holder.kind === "this") {
+      if (seen.has(holder.process.pid)) continue;
+      seen.add(holder.process.pid);
+      const stopped = await stopLaunchedProcesses({ moduleName: holder.process.moduleName, name: holder.process.name, pid: holder.process.pid });
+      for (const item of stopped) {
+        freed.push({ name: item.name, moduleName: item.moduleName, pid: item.pid, held, ...(item.url !== undefined ? { url: item.url } : {}), ...(item.launch !== undefined ? { launch: item.launch } : {}), ...(item.commit !== undefined ? { commit: item.commit } : {}) });
+      }
+    } else if (holder.kind === "left") {
+      const record = holder.record;
+      if (seen.has(record.pgid)) continue;
+      seen.add(record.pgid);
+      // Taken by whoever takes the record out first, as stopLeftBehind does.
+      if (!dropRecord(holder.file)) continue;
+      signalGroup(record.pgid, "SIGTERM");
+      const deadline = Date.now() + 5000;
+      while (Date.now() < deadline && groupAlive(record.pgid)) await sleep(100);
+      if (groupAlive(record.pgid)) signalGroup(record.pgid, "SIGKILL");
+      freed.push({ name: record.name, moduleName: record.moduleName, pid: record.pid, held, earlier: true, ...(record.url !== undefined ? { url: record.url } : {}), ...(record.commit !== undefined ? { commit: record.commit } : {}) });
+    }
+  }
+  return freed;
+}
+
+/** What was freed for a launch, in a line - for its summary. */
+export function describeFreed(freed: Freed, forName: string): string {
+  const whose = freed.earlier === true ? `an earlier turri session's launch of ${freed.moduleName}` : `${freed.moduleName}'s launch${freed.launch !== undefined ? ` ${freed.launch}` : ""}`;
+  return `Stopped ${freed.name} (pid ${freed.pid}${freed.url !== undefined ? `, ${freed.url}` : ""}), from ${whose}${freed.commit !== undefined ? ` at ${freed.commit}` : ""}: it held ${freed.held}, which ${forName} needs.`;
 }
 
 /** Stop everything at once, without waiting: for when turri itself is going. */
@@ -389,12 +618,6 @@ function portTaken(host: string, port: number): Promise<boolean> {
   });
 }
 
-/** What holds a port, as lsof says it - or nothing when it cannot say. */
-export function holderOf(port: number): string {
-  const found = spawnSync("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN"], { encoding: "utf8" });
-  return found.status === 0 ? found.stdout.trim().split("\n").slice(0, 4).join("\n") : "";
-}
-
 async function answers(url: string): Promise<boolean> {
   try {
     await fetch(url, { redirect: "manual", signal: AbortSignal.timeout(2000) });
@@ -424,6 +647,39 @@ export interface StartResult {
  * nothing is started: an app moved to a port of the harness's choosing would not be the one the
  * person was told about. With no URL, it only has to still be running a few seconds on.
  */
+/**
+ * A port the server needs is held: by what turri's own launches started - this session's for another module, a dead
+ * turri's - it is stopped, said, and the port taken; by anything else - another turri still running, a program turri did
+ * not start - nothing is stopped and nothing started, and what holds it is said, whose it is, and how the person frees it.
+ */
+async function takePort(port: number, host: string, input: { name: string; moduleName: string; logDir: string; launch?: { id: string; commit: string }; freed?: (freed: Freed[]) => void }): Promise<{ ok: boolean; text: string }> {
+  const notStarted = `so ${input.name} was not started. Do not move the app to another port: tell the person what holds it, whose it is and how to free it, as said here.`;
+  const pids = listenersOf(port);
+  if (pids === undefined || pids.length === 0) {
+    return { ok: false, text: `Port ${port} is in use already, and turri cannot tell what holds it here${pids === undefined ? " (there is no lsof)" : ""} - ${notStarted}` };
+  }
+  const holders = pids.map((pid) => whoHolds(pid, input.logDir));
+  // This launch's own: two of its servers on one port is the agent's to sort out, not turri's to stop.
+  const own = holders.filter((holder) => holder.kind === "this" && holder.process.launch !== undefined && holder.process.launch === input.launch?.id);
+  const others = holders.filter((holder) => !own.includes(holder) && !turriFrees(holder));
+  if (own.length > 0 || others.length > 0) {
+    const lines = [...own, ...others].map((holder) => `- ${describeHolder(holder)}.${own.includes(holder) ? " This launch started it itself: activate it again under the same name to restart it." : ` ${howToFree(holder)}`}`);
+    return { ok: false, text: [`Port ${port} is held by:`, ...lines, notStarted].join("\n") };
+  }
+  const freed = await freeHeld(holders, `port ${port}`);
+  input.freed?.(freed);
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline && (await portTaken(host, port))) await sleep(200);
+  if (await portTaken(host, port)) {
+    const still = (listenersOf(port) ?? []).map((pid) => whoHolds(pid, input.logDir));
+    return {
+      ok: false,
+      text: [`Port ${port} is still held, after turri stopped what its own launches had there:`, ...still.map((holder) => `- ${describeHolder(holder)}. ${howToFree(holder)}`), notStarted].join("\n"),
+    };
+  }
+  return { ok: true, text: freed.map((each) => describeFreed(each, input.name)).join("\n") };
+}
+
 /** A folder's entries as a listing says them - folders with a slash - or that it is empty. */
 function listing(dir: string): string {
   try {
@@ -439,7 +695,19 @@ function listing(dir: string): string {
  * Start what keeps running, in `dir` - the folder `root` it is named from, or one inside it. A folder that is not there
  * starts nothing: said, with what `root` holds, so the agent can name the right one.
  */
-export async function startLaunched(input: { name: string; command: string; dir: string; moduleName: string; logDir: string; url?: string; root?: string }): Promise<StartResult> {
+export async function startLaunched(input: {
+  name: string;
+  command: string;
+  dir: string;
+  moduleName: string;
+  logDir: string;
+  url?: string;
+  root?: string;
+  /** The launch it is started for, and its commit, short: recorded, to say whose it is. */
+  launch?: { id: string; commit: string };
+  /** What turri's own launches started and this one stopped, to take what it held - told to the launch track. */
+  freed?: (freed: Freed[]) => void;
+}): Promise<StartResult> {
   let isFolder = false;
   try {
     isFolder = statSync(input.dir).isDirectory();
@@ -456,8 +724,10 @@ export async function startLaunched(input: { name: string; command: string; dir:
           : `${input.name} was not started: ${shortPath(input.dir)} ${why}.`,
     };
   }
-  await stopLaunched({ name: input.name });
+  // One already running under the name - of this module - is restarted.
+  await stopLaunched({ name: input.name, moduleName: input.moduleName });
   let url: URL | undefined;
+  let before = "";
   if (input.url !== undefined) {
     try {
       url = new URL(input.url);
@@ -466,11 +736,9 @@ export async function startLaunched(input: { name: string; command: string; dir:
     }
     const port = portOf(url);
     if (await portTaken(url.hostname, port)) {
-      const holder = holderOf(port);
-      return {
-        ok: false,
-        text: `Port ${port} is in use already - by something turri did not start - so ${input.name} was not started.${holder !== "" ? `\n${holder}` : ""}\nTell the person which port and what holds it; do not move the app to another port.`,
-      };
+      const taken = await takePort(port, url.hostname, input);
+      if (!taken.ok) return { ok: false, text: taken.text };
+      before = taken.text;
     }
   }
 
@@ -494,7 +762,17 @@ export async function startLaunched(input: { name: string; command: string; dir:
     await spawned;
     return { ok: false, text: `${input.name} could not be started in ${shortPath(input.dir)}: ${spawnError?.message ?? "no process was made"}.` };
   }
-  const started: LaunchedProcess = { name: input.name, moduleName: input.moduleName, command: input.command, dir: input.dir, log, pid: child.pid, startedAt: Date.now(), ...(input.url !== undefined ? { url: input.url } : {}) };
+  const started: LaunchedProcess = {
+    name: input.name,
+    moduleName: input.moduleName,
+    command: input.command,
+    dir: input.dir,
+    log,
+    pid: child.pid,
+    startedAt: Date.now(),
+    ...(input.url !== undefined ? { url: input.url } : {}),
+    ...(input.launch !== undefined ? { launch: input.launch.id, commit: input.launch.commit } : {}),
+  };
   info = started;
   const record = writeRecord(input.logDir, {
     pid: child.pid,
@@ -505,30 +783,34 @@ export async function startLaunched(input: { name: string; command: string; dir:
     dir: input.dir,
     ...(input.url !== undefined ? { url: input.url } : {}),
     startedAt: started.startedAt,
+    ...(input.launch !== undefined ? { launch: input.launch.id, commit: input.launch.commit } : {}),
     turri: process.pid,
   });
   child.on("exit", (code, signal) => {
     started.exited = { code, signal };
     dropRecord(record);
   });
-  processes.set(input.name, { info: started, child, ...(record !== undefined ? { record } : {}) });
+  processes.set(keyOf(input.moduleName, input.name), { info: started, child, ...(record !== undefined ? { record } : {}) });
   stopOnExit();
 
+  // The log's path is said whole: the agent works from dist/<module> or the host codebase, and a path relative to the
+  // project read from there points nowhere.
+  const said = (text: string) => (before !== "" ? `${before}\n${text}` : text);
   const failed = (why: string): StartResult => {
     const tail = logTail(log);
-    return { ok: false, text: `${input.name} ${why}.${tail !== "" ? `\nThe end of its output (${shortPath(log)}):\n${tail}` : ""}`, process: started };
+    return { ok: false, text: said(`${input.name} ${why}.${tail !== "" ? `\nThe end of its output (${log}):\n${tail}` : ""}`), process: started };
   };
   const ended = () => `exited${started.exited?.code !== null && started.exited?.code !== undefined ? ` with ${started.exited.code}` : ""} before it was ready`;
 
   if (url === undefined) {
     await sleep(ALIVE_AFTER_MS);
     if (started.exited !== undefined) return failed(ended());
-    return { ok: true, text: `${input.name} is running (pid ${started.pid}); its output is in ${shortPath(log)}.`, process: started };
+    return { ok: true, text: said(`${input.name} is running (pid ${started.pid}); its output is in ${log}.`), process: started };
   }
   const deadline = Date.now() + READY_TIMEOUT_MS;
   while (Date.now() < deadline) {
     if (started.exited !== undefined) return failed(ended());
-    if (await answers(url.href)) return { ok: true, text: `${input.name} is up at ${url.href} (pid ${started.pid}); its output is in ${shortPath(log)}.`, process: started };
+    if (await answers(url.href)) return { ok: true, text: said(`${input.name} is up at ${url.href} (pid ${started.pid}); its output is in ${log}.`), process: started };
     await sleep(1000);
   }
   return failed(`is running, but nothing answered at ${url.href} in ${Math.round(READY_TIMEOUT_MS / 1000)}s`);
