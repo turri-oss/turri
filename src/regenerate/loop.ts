@@ -2240,6 +2240,12 @@ export function funcIdsNamed(module: string, names: string[]): string[] {
 }
 
 /**
+ * Why conform starts nothing when a step of adding tests is still to take - the test reqs, the conformance testing
+ * script, the scenarios: not a failure but what conform needs first, each step one the chat takes itself.
+ */
+export class TestingStepsMissing extends Error {}
+
+/**
  * What conform is asked for in a module, checked from its ***plain alone - quick, before anything is said or touched: the
  * functional specs named, as func-ids, and the module's spec and those of its functional specs with scenarios. Throws,
  * saying why nothing was started, when a functional spec named is not there or has no scenarios, when none has any, or
@@ -2254,7 +2260,7 @@ function conformanceAskedIn(own: ChainEntry[], funcIds: string[] | undefined): {
   // No scenarios: the steps still to take, from the first one missing - the test reqs and the script come before them.
   const toScenarios = () => stepsToScenarios({ moduleName: self.moduleName, plainFile: self.plainFile, tree: spec, buildDir: self.buildDir });
   if (withScenarios.length === 0) {
-    throw new Error(
+    throw new TestingStepsMissing(
       `No functional spec of ${self.moduleName} has scenarios - none has a test plain file - so there is nothing to test. ${toScenarios()} ` +
         "Their tests are written once the code is built. Nothing was started.",
     );
@@ -2265,7 +2271,7 @@ function conformanceAskedIn(own: ChainEntry[], funcIds: string[] | undefined): {
     if (unknown.length > 0) throw new Error(`${self.moduleName} has no functional spec ${namesOf(self.moduleName, unknown)}. Nothing was started.`);
     const untested = named.filter((funcId) => !hasScenarios(items.find((item) => item.id === funcId)));
     if (untested.length > 0) {
-      throw new Error(
+      throw new TestingStepsMissing(
         `${namesOf(self.moduleName, untested)} ${untested.length === 1 ? "has" : "have"} no scenarios - no test plain file - so there is nothing to test. ${toScenarios()} ` +
           "Their tests are written once the code is built. Nothing was started.",
       );
@@ -2273,20 +2279,21 @@ function conformanceAskedIn(own: ChainEntry[], funcIds: string[] | undefined): {
   }
   // A step of adding tests skipped - its test reqs, or the conformance testing script: refused, naming it.
   const gap = testingGap({ moduleName: self.moduleName, plainFile: self.plainFile, tree: spec, buildDir: self.buildDir });
-  if (gap !== undefined) throw new Error(`${gap.text} Nothing was started.`);
+  if (gap !== undefined) throw new TestingStepsMissing(`${gap.text} Nothing was started.`);
   return { named, spec, withScenarios };
 }
 
 /**
  * Why conform would start nothing for a module, from its ***plain alone (`conformanceAskedIn`): undefined when it would
- * go on. What /conform checks before it says anything.
+ * go on. What /conform checks before it says anything. `stepsMissing`: what is missing is a step of adding tests - the
+ * test reqs, the conformance testing script, the scenarios - guidance for the chat, not an error for the person.
  */
-export function conformanceRefusal(plainFile: string, funcIds?: string[]): string | undefined {
+export function conformanceRefusal(plainFile: string, funcIds?: string[]): { text: string; stepsMissing: boolean } | undefined {
   try {
     conformanceAskedIn(resolveRequiresChain(resolve(plainFile), [], undefined, { allowNoFunctionalities: true }), funcIds);
     return undefined;
   } catch (error) {
-    return error instanceof Error ? error.message : String(error);
+    return { text: error instanceof Error ? error.message : String(error), stepsMissing: error instanceof TestingStepsMissing };
   }
 }
 

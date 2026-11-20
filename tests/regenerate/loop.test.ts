@@ -839,13 +839,15 @@ describe("the work loop", () => {
       it("name every step still to take, in their order, for a module with nothing set up yet - the test reqs, the script, then the scenarios", () => {
         noScript();
         writePlain(dir, "app.plain", noTestReqs(["Say hello."]));
-        expect(conformanceRefusal(join(dir, "app.plain"))).toBe(
+        expect(conformanceRefusal(join(dir, "app.plain"))).toEqual({
+          stepsMissing: true,
+          text:
           "No functional spec of app has scenarios - none has a test plain file - so there is nothing to test. " +
             "Adding tests is three steps, in this order: the test reqs, the conformance testing script, the scenarios. " +
             "Next step: write the module's own ***test reqs***; then write the conformance testing script with the implement-conformance-testing-script skill; " +
             "then write the scenarios, each functional spec's in tests/app/<func-id>.plain, then regenerate. " +
             "Their tests are written once the code is built. Nothing was started.",
-        );
+        });
       });
 
       it("are refused for a module with scenarios but no test reqs - its code built, the step named, waiting on it until the ***plain has them", async () => {
@@ -1183,11 +1185,12 @@ describe("the work loop", () => {
     it("are refused from the ***plain alone, before any loop is asked, as conform refuses them", () => {
       writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye."]));
       const file = join(dir, "app.plain");
-      expect(conformanceRefusal(file)).toMatch(/^No functional spec of app has scenarios - none has a test plain file - so there is nothing to test/);
+      // A step of adding tests still to take - guidance for the chat; anything else, a refusal for the person.
+      expect(conformanceRefusal(file)).toEqual({ stepsMissing: true, text: expect.stringMatching(/^No functional spec of app has scenarios - none has a test plain file - so there is nothing to test/) });
       scenariosIn("say-hello");
-      expect(conformanceRefusal(file, ["app:say-goodbye"])).toMatch(/^app:say-goodbye has no scenarios - no test plain file.*Nothing was started\.$/);
-      expect(conformanceRefusal(file, ["app:say-thanks"])).toBe("app has no functional spec app:say-thanks. Nothing was started.");
-      expect(conformanceRefusal(file, ["say-hello"])).toMatch(/^Name the functional spec as app:say-hello/);
+      expect(conformanceRefusal(file, ["app:say-goodbye"])).toEqual({ stepsMissing: true, text: expect.stringMatching(/^app:say-goodbye has no scenarios - no test plain file.*Nothing was started\.$/) });
+      expect(conformanceRefusal(file, ["app:say-thanks"])).toEqual({ stepsMissing: false, text: "app has no functional spec app:say-thanks. Nothing was started." });
+      expect(conformanceRefusal(file, ["say-hello"])).toEqual({ stepsMissing: false, text: expect.stringMatching(/^Name the functional spec as app:say-hello/) });
       expect(conformanceRefusal(file)).toBeUndefined();
       expect(conformanceRefusal(file, ["app:say-hello"])).toBeUndefined();
     });

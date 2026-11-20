@@ -44,7 +44,7 @@ import { checkPlainTool } from "./parse-tool.ts";
 import { changedFiles, projectFiles } from "./plain-files.ts";
 import { whyFailed } from "./regenerate/diagnose-job.ts";
 import { didNotLand } from "./regenerate/failure-reports.ts";
-import { conformanceRefusal, createWorkLoop, describeModules, isUpToDate, type ModuleStatus, type PlannedPulse, type WorkLoop } from "./regenerate/loop.ts";
+import { conformanceRefusal, createWorkLoop, TestingStepsMissing, describeModules, isUpToDate, type ModuleStatus, type PlannedPulse, type WorkLoop } from "./regenerate/loop.ts";
 import { brandNeon, brandPink, plainPaint } from "./regenerate/plain-palette.ts";
 import { halfBlocks, JELLYFISH_FRAME_MS, JELLYFISH_REST, JELLYFISH_SEQUENCE, JELLYFISH_TEXT_FRAMES } from "./jellyfish.ts";
 import { createJobPanel, didNotPass, keyPressed, PANEL_KEY, spinner } from "./regenerate/job-panel.ts";
@@ -1407,6 +1407,15 @@ export function shownAfterCommand(
 }
 
 /**
+ * What a slash command found for the agent alone - guidance the person need not see: put in the conversation unseen,
+ * and the agent started on it - at once when it is idle, else once its turn ends - told what to do with it.
+ */
+export function toldAfterCommand(pi: ExtensionAPI, command: string, text: string, react: string): void {
+  const content = `The person ran ${command}. Not shown to them:\n${text}\n\n${react}`;
+  void pi.sendMessage({ customType: COMMAND_OUTCOME, content, display: false }, { triggerTurn: true, deliverAs: "followUp" });
+}
+
+/**
  * What the agent does once /regenerate or /conform has started pulses: a command's output alone leaves the chat silent,
  * and the person wondering whether to wait. It says what runs, and that they need not - and starts nothing itself.
  */
@@ -1416,20 +1425,28 @@ export const COMMAND_STARTED_REACTION =
   "not wait for it. Start nothing for it: no regenerate, no check, no launch - its end is told when it comes.";
 
 /**
- * What the agent does when /conform started nothing: answers it at once - why, and what would let it start - and offers
- * to do that, rather than leave the person with a refusal and a silent chat.
+ * What the agent does when /conform found a step of adding tests still to take: takes it at once, asking nothing - the
+ * /conform was the person's yes - and says what it writes as the way there, never as a failure: the person saw none.
+ */
+export const CONFORM_STEPS_REACTION =
+  "That is what conform needs before it can start - the steps of adding tests still to take - not an error: nothing " +
+  "failed, and the person saw none of it. Their /conform is their yes to conformance tests here, so take the steps now, " +
+  "in that order and only what is missing, asking nothing: the test reqs first; then the conformance testing script, " +
+  "started with its skill before anything else - it runs in the background, so the scenarios are written while it does; " +
+  "then the scenarios of the functional specs they named, or, naming none, of each functional spec that needs them by " +
+  "the rules on test plain files. Then call regenerate for the module: the work loop writes and runs their tests once the " +
+  "code is built. Tell the person in a line or two, as the way to their conformance tests and not as a refusal, what you " +
+  "are writing, and for each functional spec why it needs scenarios - or, when none does, that and why.";
+
+/**
+ * What the agent does when /conform started nothing for a reason that is not a step of adding tests - a functional spec
+ * named that is not there, words it does not take: answers it at once - why, and what would let it start - rather than
+ * leave the person with a refusal and a silent chat.
  */
 export const CONFORM_REFUSED_REACTION =
-  "Nothing was started from the person's /conform, for the reason shown - and their /conform is their yes to conformance " +
-  "tests here. Where what is missing is yours to write - the test reqs, the conformance testing script, the scenarios - " +
-  "write it now, in that order and only what is missing, asking nothing: the test reqs first; then the conformance testing " +
-  "script, started with its skill before anything else - it runs in the background, so the scenarios are written while it " +
-  "does; then the scenarios of the functional specs they named, " +
-  "or, naming none, of each functional spec that needs them by the rules on test plain files. Then call regenerate for the " +
-  "module: the work loop writes and runs their tests once the code is built. Say in a line or two what you wrote, and for " +
-  "each functional spec why it needs scenarios - or, when none does, that and why. Where it is not yours to settle - a " +
-  "functional spec they named that is not there, ***plain that would have to change its meaning to be tested - tell them " +
-  "why nothing started and what would let it, and start nothing.";
+  "Nothing was started from the person's /conform, for the reason shown. Tell them in a line or two why, and what would " +
+  "let it start - a functional spec they named that is not there, ***plain that does not parse or would have to change its " +
+  "meaning to be tested - and offer to do what is yours to do; start nothing.";
 
 export const COMMAND_OUTCOME = "turri_command_outcome";
 
@@ -1542,14 +1559,21 @@ function registerBind(pi: ExtensionAPI, cwd: string, jobs: JobRegistry, turnOn: 
       const withTurnedOn = (text: string) => (turnedOn !== undefined ? `${turnedOn}\n${text}` : text);
       // What would start nothing - no scenarios, a functional spec not there, a step of adding tests skipped - read from the
       // ***plain alone, before anything is said.
-      let refusal: string | undefined;
+      let refusal: { text: string; stepsMissing: boolean } | undefined;
       try {
         refusal = whenBuildable(plainFile, () => conformanceRefusal(plainFile, funcIds.length > 0 ? funcIds : undefined));
       } catch (error) {
-        refusal = error instanceof Error ? error.message : String(error);
+        refusal = { text: error instanceof Error ? error.message : String(error), stepsMissing: false };
+      }
+      // A step of adding tests still to take - the test reqs, the script, the scenarios: the chat's to take, so told to it
+      // alone, as what conform needs first. The person sees it take them, and conformance turned on, if it was.
+      if (refusal?.stepsMissing === true) {
+        if (turnedOn !== undefined) shownAfterCommand(pi, ctx, command, turnedOn, "info", true);
+        toldAfterCommand(pi, command, refusal.text, CONFORM_STEPS_REACTION);
+        return;
       }
       if (refusal !== undefined) {
-        refuse(withTurnedOn(refusal));
+        refuse(withTurnedOn(refusal.text));
         return;
       }
       const module = basename(plainFile).replace(/\.plain$/, "");
@@ -1577,7 +1601,8 @@ function registerBind(pi: ExtensionAPI, cwd: string, jobs: JobRegistry, turnOn: 
           const text = upToDate ? `${(note ?? `the conformance tests of ${module} are written for it as built: there is nothing to write`).replace(/^./, (c) => c.toUpperCase())}.` : describeModules(statuses);
           shownAfterCommand(pi, ctx, command, text, "info", true, upToDate ? undefined : COMMAND_STARTED_REACTION);
         } catch (error) {
-          refuse(error instanceof Error ? error.message : String(error));
+          if (error instanceof TestingStepsMissing) toldAfterCommand(pi, command, error.message, CONFORM_STEPS_REACTION);
+          else refuse(error instanceof Error ? error.message : String(error));
         }
       })().catch(() => {
         // The chat let go meanwhile: there is nobody to say it to.

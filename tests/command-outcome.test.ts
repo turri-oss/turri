@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { asksOneByOne, COMMAND_OUTCOME, COMMAND_STARTED_REACTION, CONFORM_REFUSED_REACTION, echoCommand, funcIdsNamedFirst, moduleNamedFirst, shownAfterCommand } from "../src/extension.ts";
+import { asksOneByOne, COMMAND_OUTCOME, COMMAND_STARTED_REACTION, CONFORM_REFUSED_REACTION, CONFORM_STEPS_REACTION, echoCommand, funcIdsNamedFirst, moduleNamedFirst, shownAfterCommand, toldAfterCommand } from "../src/extension.ts";
 
 function fakes(options: { appendFails?: boolean } = {}) {
   const notified: Array<{ text: string; level: string }> = [];
@@ -122,24 +122,43 @@ describe("a /conform asking for a pulse a functional spec", () => {
   });
 });
 
-describe("what the agent does when /conform started nothing", () => {
-  it("writes what is missing at once, asking nothing - the /conform was the person's yes - and regenerates", () => {
-    expect(CONFORM_REFUSED_REACTION).toContain("their /conform is their yes to conformance tests here");
-    expect(CONFORM_REFUSED_REACTION).toContain("write it now, in that order and only what is missing, asking nothing");
-    expect(CONFORM_REFUSED_REACTION).toContain("of each functional spec that needs them by the rules on test plain files");
-    // The script's skill runs in the background: started before the scenarios, it is written while they are.
-    expect(CONFORM_REFUSED_REACTION).toContain("the test reqs first; then the conformance testing script, started with its skill before anything else");
-    expect(CONFORM_REFUSED_REACTION).toContain("Then call regenerate for the module");
+describe("what the agent does when /conform found a step of adding tests still to take", () => {
+  it("is told it alone, as what conform needs first - nothing shown to the person, and nothing called an error", () => {
+    const { pi, notified, entries, sent } = fakes();
+    toldAfterCommand(pi, "/conform app.plain", "app has scenarios to test - app:say-hello - and ***test reqs*** but no conformance testing script.", CONFORM_STEPS_REACTION);
+    expect(entries).toEqual([]);
+    expect(notified).toEqual([]);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.message.display).toBe(false);
+    expect(sent[0]!.message.content).toContain("The person ran /conform app.plain. Not shown to them:\napp has scenarios to test");
+    expect(CONFORM_STEPS_REACTION).toContain("not an error: nothing failed, and the person saw none of it");
   });
 
-  it("starts nothing where what is missing is the person's to settle", () => {
+  it("takes the steps at once, asking nothing - the /conform was the person's yes - and regenerates", () => {
+    expect(CONFORM_STEPS_REACTION).toContain("Their /conform is their yes to conformance tests here");
+    expect(CONFORM_STEPS_REACTION).toContain("in that order and only what is missing, asking nothing");
+    expect(CONFORM_STEPS_REACTION).toContain("of each functional spec that needs them by the rules on test plain files");
+    // The script's skill runs in the background: started before the scenarios, it is written while they are.
+    expect(CONFORM_STEPS_REACTION).toContain("the test reqs first; then the conformance testing script, started with its skill before anything else");
+    expect(CONFORM_STEPS_REACTION).toContain("Then call regenerate for the module");
+  });
+
+  it("starts a turn, as a follow-up, so the chat takes them without the person typing", () => {
+    const { pi, sent } = fakes();
+    toldAfterCommand(pi, "/conform app.plain", "No functional spec of app has scenarios.", CONFORM_STEPS_REACTION);
+    expect(sent[0]!.options).toEqual({ triggerTurn: true, deliverAs: "followUp" });
+  });
+});
+
+describe("what the agent does when /conform started nothing for another reason", () => {
+  it("says why and what would let it start, and starts nothing", () => {
     expect(CONFORM_REFUSED_REACTION).toContain("a functional spec they named that is not there");
-    expect(CONFORM_REFUSED_REACTION).toContain("tell them why nothing started and what would let it, and start nothing");
+    expect(CONFORM_REFUSED_REACTION).toContain("start nothing");
   });
 
   it("starts a turn, as a follow-up, so the chat replies without the person typing", () => {
     const { pi, ctx, sent } = fakes();
-    shownAfterCommand(pi, ctx, "/conform app.plain", "No functional spec of app has scenarios.", "error", true, CONFORM_REFUSED_REACTION);
+    shownAfterCommand(pi, ctx, "/conform app.plain app:nope", "app has no functional spec app:nope. Nothing was started.", "error", true, CONFORM_REFUSED_REACTION);
     expect(sent[0]!.options).toEqual({ triggerTurn: true, deliverAs: "followUp" });
   });
 });
