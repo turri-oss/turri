@@ -71,6 +71,39 @@ describe("what the sentinel is told runs for a pulse", () => {
     expect(launches.resumeText({ job: first.job })).toContain(`It still holds pulse p1's commit, ${first.commit.slice(0, 7)}.`);
   });
 
+  it("tests a pulse of the module below in the launch of the module built on it, which replaced its own - waiting for that one", async () => {
+    const jobs: Job[] = [];
+    const launches = createSessionLaunches({ cwd: dir, jobs: { list: () => jobs } as unknown as JobRegistry, model: () => undefined, onChange: () => {} });
+    const below = landed("p1", 1, ["greet"]);
+    jobs.push(below.job);
+    launches.landed({ job: below.job, plainFile: join(dir, "app.plain"), moduleName: "app", commit: below.commit, title: "p1" });
+    // The module above starts from the code of app's last commit, and a pulse of it lands while app's launch runs.
+    const top = join(dir, "plain_modules", "game", "code");
+    mkdirSync(top, { recursive: true });
+    writeFileSync(join(top, "app.py"), "# p1\n");
+    recordHistory(top, `start from app at ${below.commit.slice(0, 7)}`);
+    writeFileSync(join(top, "game.py"), "# p2\n");
+    recordHistory(top, "p2");
+    writePlain(dir, "game.plain", "---\nrequires:\n    - app\n---\n\n***implementation reqs***\n\n- Python.\n\n***functional specs***\n\n# play\ngame plays.\n");
+    const job = { id: "p2", sequence: 2, status: "succeeded", module: "game", details: { landed: true }, cases: { add: [{ module: "game", funcId: "play" }], patch: [], again: [], delete: [] } } as unknown as Job;
+    jobs.push(job);
+    launches.landed({ job, plainFile: join(dir, "game.plain"), moduleName: "game", commit: lastCommit(top)!, title: "p2" });
+    let ready = false;
+    void launches.readyFor(below.job).then(() => (ready = true));
+    await settle();
+    // app's launch ends; game's waited for it, and replaces it.
+    held.shift()!();
+    await settle();
+    expect(ready).toBe(false);
+    held.shift()!();
+    await settle();
+    expect(ready).toBe(true);
+    const told = launches.forPulse(below.job);
+    expect(told.launch?.codebase).toBe("game");
+    expect(told.later.map((each) => each.id)).toEqual(["p2"]);
+    expect(launches.resumeText({ job: below.job })).toContain(`It still holds pulse p1's commit, ${below.commit.slice(0, 7)} - built on app, it holds its code.`);
+  });
+
   it("says launch-after-pulse was off, and waits for nothing, for a pulse of a project that does not launch", async () => {
     writeFileSync(join(dir, "config.turri.yaml"), "module: app.plain\n");
     const launches = createSessionLaunches({ cwd: dir, jobs: { list: () => [] } as unknown as JobRegistry, model: () => undefined, onChange: () => {} });

@@ -7,7 +7,8 @@ import { inChat } from "../src/chat-scope.ts";
 import { createChats, MAX_CHATS, type ChatLink, type SentinelLaunches, type TurriCore, type TurriHost } from "../src/chats.ts";
 import { createJobRegistry, type Job } from "../src/regenerate/jobs.ts";
 import { LAUNCHED_ONLY } from "../src/launch-session.ts";
-import { describeNotice, noticeTask, SENTINEL, SENTINEL_TOOLS, sentinelBrief, sentinelCheckBrief, sentinelFileTools, sentinelPrompt, type Notice, type SentinelCheck } from "../src/sentinel.ts";
+import { describeNotice, noticeTask, SENTINEL, SENTINEL_TOOLS, sentinelBrief, sentinelCheckBrief, sentinelFileTools, sentinelPrompt, whoHoldsTool, type Notice, type SentinelCheck } from "../src/sentinel.ts";
+import { createServer } from "node:net";
 
 /**
  * A pi session as the session follows it: its events sent by the test, whether its agent is at work, what it was told,
@@ -777,7 +778,24 @@ describe("the sentinel's tools", () => {
     expect(names).toEqual(expect.arrayContaining(["read", "ls", "grep", "find", "bash", "write", "edit"]));
     for (const name of names) expect(SENTINEL_TOOLS, name).toContain(name);
     expect(SENTINEL_TOOLS).toContain("resume");
-    for (const name of ["regenerate", "steer", "launch", "activate", "conform"]) expect(SENTINEL_TOOLS).not.toContain(name);
+    for (const name of ["regenerate", "steer", "launch", "activate", "conform", "stop_launched"]) expect(SENTINEL_TOOLS).not.toContain(name);
+  });
+
+  it("say what holds a port and whose it is - its shell sees no other process - and stop nothing", async () => {
+    const holder = createServer();
+    await new Promise<void>((done) => holder.listen(0, "127.0.0.1", () => done()));
+    const port = (holder.address() as { port: number }).port;
+    try {
+      const tool = whoHoldsTool(mkdtempSync(join(tmpdir(), "turri-sentinel-holds-")));
+      expect(SENTINEL_TOOLS).toContain(tool.name);
+      const held = await tool.execute("t", { port }, undefined, undefined, undefined as never);
+      expect(held.content[0]!.text).toContain(`Port ${port} is held by:\n- pid ${process.pid} (`);
+      expect(held.content[0]!.text).toContain("which turri did not start");
+    } finally {
+      await new Promise((done) => holder.close(done));
+    }
+    const free = await whoHoldsTool(mkdtempSync(join(tmpdir(), "turri-sentinel-holds-"))).execute("t", { port }, undefined, undefined, undefined as never);
+    expect(free.content[0]!.text).toBe(`Nothing listens on port ${port}.`);
   });
 
   it("fix a testing script and where the config says the scripts are - and put back any other change to the config, and refuse ***plain", async () => {

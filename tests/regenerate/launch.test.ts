@@ -6,9 +6,9 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { writePlain } from "../test-plain.ts";
 import { lastCommit, recordHistory } from "../../src/regenerate/lineage.ts";
-import { exportModule, holdsCommit, listLaunched, runningLaunched, startLaunched, stopLaunched, stopLeftBehind, type LaunchRecord } from "../../src/regenerate/launch.ts";
-import { activateTool, projectNotes } from "../../src/launch-agent.ts";
-import { createLaunchTrack, type Launch, type LaunchOutcome } from "../../src/launch-track.ts";
+import { exportModule, holdsCommit, listLaunched, runningLaunched, startLaunched, stopLaunched, stopLeftBehind, type Freed, type LaunchRecord } from "../../src/regenerate/launch.ts";
+import { activateTool, projectNotes, stopLaunchedTool } from "../../src/launch-agent.ts";
+import { createLaunchTrack, launchText, type Launch, type LaunchOutcome } from "../../src/launch-track.ts";
 import { haltLaunched } from "../../src/loop-tools.ts";
 import { launchedNote, replacedNote } from "../../src/launch-session.ts";
 import type { ExportedCode } from "../../src/regenerate/launch.ts";
@@ -33,6 +33,21 @@ function spec(name: string, requires?: string): string {
   const file = join(dir, `${name}.plain`);
   writePlain(dir, `${name}.plain`, `${requires !== undefined ? `---\nrequires:\n    - ${requires}\n---\n\n` : ""}***implementation reqs***\n\n- Python.\n\n***functional specs***\n\n# greet\n${name} greets.\n`);
   return file;
+}
+
+/** Where a project's launches write their output and records: its scratch. */
+const launchLogDirOf = () => join(dir, ".turri", "launch");
+
+/** A module built on `below`, started from its last commit - as copyRequiredCode leaves it - then regenerated. */
+function builtOn(moduleName: string, below: string, files: Record<string, string>): string {
+  const from = join(dir, "plain_modules", below, "code");
+  const code = join(dir, "plain_modules", moduleName, "code");
+  mkdirSync(code, { recursive: true });
+  for (const file of readdirSync(from)) writeFileSync(join(code, file), readFileSync(join(from, file)));
+  recordHistory(code, `start from ${below} at ${lastCommit(from)!.slice(0, 7)}`);
+  for (const [file, content] of Object.entries(files)) writeFileSync(join(code, file), content);
+  recordHistory(code, `render ${moduleName}:greet`);
+  return code;
 }
 
 /** A port nothing listens on. */
@@ -154,22 +169,110 @@ describe("what a launch starts", () => {
     const started = await startLaunched({ name: "web", command: `exec python3 -m http.server ${port} --bind 127.0.0.1`, dir: join(dir, "site"), moduleName: "app", logDir: join(dir, "logs"), url: `http://127.0.0.1:${port}/` });
     expect(started.ok).toBe(true);
     expect(started.text).toContain(`is up at http://127.0.0.1:${port}/`);
+    // Its log said whole: the agent reads it from dist or the host codebase, not the project.
+    expect(started.text).toContain(`its output is in ${join(dir, "logs", "app-web.log")}.`);
     expect(runningLaunched("app").map((item) => item.name)).toEqual(["web"]);
 
     expect(await stopLaunched({ name: "web" })).toEqual(["web"]);
     expect(runningLaunched()).toEqual([]);
   }, 30_000);
 
-  it("starts nothing on a port something else holds, and says so", async () => {
+  const serve = (port: number) => `exec python3 -m http.server ${port} --bind 127.0.0.1`;
+
+  it("starts nothing on a port a program turri did not start holds - saying so, its pid, and how the person frees it", async () => {
+    const holder = createServer();
+    await new Promise<void>((done) => holder.listen(0, "127.0.0.1", () => done()));
+    const port = (holder.address() as { port: number }).port;
+    try {
+      mkdirSync(join(dir, "site"));
+      const started = await startLaunched({ name: "web", command: serve(port), dir: join(dir, "site"), moduleName: "app", logDir: join(dir, "logs"), url: `http://127.0.0.1:${port}/` });
+      expect(started.ok).toBe(false);
+      expect(started.text).toContain(`Port ${port} is held by:\n- pid ${process.pid} (`);
+      expect(started.text).toContain("which turri did not start");
+      expect(started.text).toContain(`kill ${process.pid}`);
+      expect(started.text).toContain("Do not move the app to another port");
+      expect(runningLaunched().map((item) => item.name)).not.toContain("web");
+    } finally {
+      await new Promise((done) => holder.close(done));
+    }
+  }, 30_000);
+
+  it("takes a port a server turri started for another module's launch holds - stopping it, saying whose it was, and telling who listens", async () => {
     const port = await freePort();
     mkdirSync(join(dir, "site"));
     const url = `http://127.0.0.1:${port}/`;
-    const first = await startLaunched({ name: "one", command: `exec python3 -m http.server ${port} --bind 127.0.0.1`, dir: join(dir, "site"), moduleName: "app", logDir: join(dir, "logs"), url });
+    const first = await startLaunched({ name: "one", command: serve(port), dir: join(dir, "site"), moduleName: "base", logDir: join(dir, "logs"), url, launch: { id: "launch-1", commit: "abc1234" } });
     expect(first.ok).toBe(true);
-    const second = await startLaunched({ name: "two", command: `exec python3 -m http.server ${port} --bind 127.0.0.1`, dir: join(dir, "site"), moduleName: "app", logDir: join(dir, "logs"), url });
-    expect(second.ok).toBe(false);
-    expect(second.text).toContain(`Port ${port} is in use already`);
-    expect(listLaunched().map((item) => item.name)).not.toContain("two");
+    const freed: Freed[] = [];
+    const second = await startLaunched({ name: "two", command: serve(port), dir: join(dir, "site"), moduleName: "app", logDir: join(dir, "logs"), url, launch: { id: "launch-2", commit: "def5678" }, freed: (each) => freed.push(...each) });
+    expect(second.ok).toBe(true);
+    expect(second.text).toContain(`Stopped one (pid ${first.process!.pid}, ${url}), from base's launch launch-1 at abc1234: it held port ${port}, which two needs.`);
+    expect(second.text).toContain(`two is up at ${url}`);
+    expect(freed.map((each) => [each.moduleName, each.launch, each.held])).toEqual([["base", "launch-1", `port ${port}`]]);
+    expect(runningLaunched().map((item) => item.name)).toEqual(["two"]);
+  }, 30_000);
+
+  it("leaves a port its own launch holds already to the agent, and one another turri still running holds to that turri - saying whose", async () => {
+    const port = await freePort();
+    mkdirSync(join(dir, "site"));
+    const url = `http://127.0.0.1:${port}/`;
+    const logDir = join(dir, ".turri", "launch");
+    const first = await startLaunched({ name: "one", command: serve(port), dir: join(dir, "site"), moduleName: "app", logDir, url, launch: { id: "launch-1", commit: "abc1234" } });
+    expect(first.ok).toBe(true);
+    const own = await startLaunched({ name: "two", command: serve(port), dir: join(dir, "site"), moduleName: "app", logDir, url, launch: { id: "launch-1", commit: "abc1234" } });
+    expect(own.ok).toBe(false);
+    expect(own.text).toContain("This launch started it itself");
+    await stopLaunched();
+
+    // Another turri, still running - this test's parent - started it, as its record says.
+    const theirs = spawn("python3", ["-m", "http.server", String(port), "--bind", "127.0.0.1"], { cwd: join(dir, "site"), detached: true, stdio: "ignore" });
+    theirs.unref();
+    try {
+      const record: LaunchRecord = { pid: theirs.pid!, pgid: theirs.pid!, name: "web", moduleName: "base", command: "python3 -m http.server", dir: join(dir, "site"), url, startedAt: Date.now(), commit: "fed4321", turri: process.ppid };
+      mkdirSync(join(logDir, "running"), { recursive: true });
+      writeFileSync(join(logDir, "running", `${theirs.pid}.json`), JSON.stringify(record));
+      for (let tries = 0; tries < 50; tries++) {
+        if ((await fetch(url).then(() => true, () => false)) === true) break;
+        await new Promise((done) => setTimeout(done, 100));
+      }
+      const blocked = await startLaunched({ name: "two", command: serve(port), dir: join(dir, "site"), moduleName: "app", logDir, url, launch: { id: "launch-2", commit: "def5678" } });
+      expect(blocked.ok).toBe(false);
+      expect(blocked.text).toContain(`web (pid ${theirs.pid}, ${url}), which another turri still running (pid ${process.ppid}) started for its launch of base at fed4321`);
+      expect(blocked.text).toContain("`/halt launched base` in that turri's chat");
+      expect(blocked.text).not.toContain("did not start");
+    } finally {
+      process.kill(-theirs.pid!, "SIGKILL");
+    }
+  }, 30_000);
+
+  it("keeps two modules' servers of the same name apart - starting one stops nothing of the other's", async () => {
+    mkdirSync(join(dir, "site"));
+    await startLaunched({ name: "frontend", command: "sleep 30", dir: join(dir, "site"), moduleName: "base", logDir: join(dir, "logs") });
+    await startLaunched({ name: "frontend", command: "sleep 30", dir: join(dir, "site"), moduleName: "app", logDir: join(dir, "logs") });
+    expect(runningLaunched().map((item) => item.moduleName).sort()).toEqual(["app", "base"]);
+    expect(await stopLaunched({ moduleName: "app" })).toEqual(["frontend"]);
+    expect(runningLaunched().map((item) => item.moduleName)).toEqual(["base"]);
+  }, 30_000);
+
+  it("stops what another module's launch started when the agent says it holds what this launch needs - and never a process turri did not start", async () => {
+    mkdirSync(join(dir, "site"));
+    const logDir = launchLogDirOf();
+    const theirs = await startLaunched({ name: "db", command: "sleep 30", dir: join(dir, "site"), moduleName: "base", logDir, launch: { id: "launch-1", commit: "abc1234" } });
+    const freed: Freed[] = [];
+    const tool = stopLaunchedTool({ codebase: "app", plainFile: join(dir, "app.plain"), hostDir: dir, id: "launch-2", short: "def5678" }, (each) => freed.push(...each));
+    const result = await tool.execute("t", { pid: theirs.process!.pid, holds: "the lock on data/app.db" }, undefined, undefined, undefined as never);
+    expect(result.content[0]!.text).toContain(`Stopped db (pid ${theirs.process!.pid}), from base's launch launch-1 at abc1234: it held the lock on data/app.db, which app needs.`);
+    expect(freed.map((each) => each.moduleName)).toEqual(["base"]);
+    expect(runningLaunched()).toEqual([]);
+
+    const stranger = spawn("sleep", ["30"], { detached: true, stdio: "ignore" });
+    stranger.unref();
+    try {
+      await expect(tool.execute("t", { pid: stranger.pid!, holds: "the socket" }, undefined, undefined, undefined as never)).rejects.toThrow(/Not stopped: pid \d+ \(sleep 30\), which turri did not start/);
+      expect(() => process.kill(stranger.pid!, 0)).not.toThrow();
+    } finally {
+      process.kill(-stranger.pid!, "SIGKILL");
+    }
   }, 30_000);
 
   it("starts nothing in a folder that is not there - saying so, and what the folder it is named from holds - and the process lives on", async () => {
@@ -203,15 +306,17 @@ describe("what a launch starts", () => {
 });
 
 /** A launch track whose agent is scripted: what each launch was given, and what it does. */
-function track(agent: (launch: Launch, code: ExportedCode) => Promise<LaunchOutcome> = async (launch) => ({ launched: true, summary: `${launch.codebase} runs.` })) {
+function track(
+  agent: (launch: Launch, code: ExportedCode, freed: (freed: Freed[]) => void) => Promise<LaunchOutcome> = async (launch) => ({ launched: true, summary: `${launch.codebase} runs.` }),
+) {
   const runs: Array<{ id: string; commit: string; app: string }> = [];
   /** What the track told, as onChange was called: each launch as it stood then. */
   const told: Launch[] = [];
   const launches = createLaunchTrack({
     cwd: dir,
-    run: async (launch, code) => {
+    run: async (launch, code, _signal, freed) => {
       runs.push({ id: launch.id, commit: launch.short, app: readFileSync(join(code.dir, "app.py"), "utf8") });
-      return agent(launch, code);
+      return agent(launch, code, freed);
     },
     onChange: (launch) => told.push({ ...launch }),
   });
@@ -449,6 +554,116 @@ describe("the launch track", () => {
   });
 });
 
+describe("launches across a requires chain", () => {
+  /** An agent that serves the code on one port, as every module of a chain does - the same command copied up. */
+  const serving = (port: number) => async (launch: Launch, exported: ExportedCode) => {
+    const started = await startLaunched({
+      name: launch.codebase,
+      command: `exec python3 -m http.server ${port} --bind 127.0.0.1`,
+      dir: exported.dir,
+      moduleName: launch.codebase,
+      logDir: launchLogDirOf(),
+      url: `http://127.0.0.1:${port}/`,
+      launch: { id: launch.id, commit: launch.short },
+    });
+    return { launched: started.ok, summary: started.ok ? `Open http://127.0.0.1:${port}/` : started.text };
+  };
+
+  it("replaces what the module below's launch started - its code is in this one - says so, and tests the module below's commits in it", async () => {
+    const port = await freePort();
+    const base = built("base", { "app.py": "base\n" });
+    spec("base");
+    const { launches, told } = track(serving(port));
+    const first = launches.request({ plainFile: join(dir, "base.plain"), commit: lastCommit(base)!, cause: { pulse: "p1", title: "base" } }).launch;
+    expect((await launches.done(first.id)).status).toBe("launched");
+    const basePid = runningLaunched("base")[0]!.pid;
+
+    builtOn("app", "base", { "app.py": "app\n" });
+    spec("app", "base");
+    const second = launches.request({ plainFile: join(dir, "app.plain"), cause: { pulse: "p2", title: "app" } }).launch;
+    const ended = await launches.done(second.id);
+    expect(ended.status).toBe("launched");
+    // The agent's words alone in its summary; what turri stopped, apart, field by field - and the two together as the person reads them.
+    expect(ended.summary).toBe(`Open http://127.0.0.1:${port}/`);
+    expect(ended.stopped).toEqual([{ why: "below", module: "base", launch: first.id, commit: first.short, name: "base", pid: basePid, url: `http://127.0.0.1:${port}/` }]);
+    expect(launchText(ended)).toBe(
+      `Stopped what base's launch ${first.id} at ${first.short} started - base (pid ${basePid}, http://127.0.0.1:${port}/): app is built on base and holds its code, so this launch takes its place.\nOpen http://127.0.0.1:${port}/`,
+    );
+    // The host heard it as it happened, before the launch ended.
+    expect(told.some((each) => each.id === second.id && each.status === "running" && each.stopped?.length === 1)).toBe(true);
+    expect(runningLaunched().map((item) => item.moduleName)).toEqual(["app"]);
+    expect(await (await fetch(`http://127.0.0.1:${port}/app.py`)).text()).toBe("app\n");
+    // The host hears the module below's launch replaced: not what runs any more.
+    expect(told.filter((each) => each.id === first.id).at(-1)?.replacedBy).toBe(second.id);
+    expect(launches.current("base")).toBeUndefined();
+    expect(launches.runs("base")?.id).toBe(second.id);
+    expect(launches.holds("base", lastCommit(base)!)).toBe(true);
+    expect(launches.replacing(second)).toEqual(["app", "base"]);
+  }, 30_000);
+
+  it("waits for a launch of the module below under way, then replaces it - and supersedes one of it waiting", async () => {
+    const base = built("base", { "app.py": "base\n" });
+    spec("base");
+    let release!: () => void;
+    const held = new Promise<void>((done) => (release = done));
+    const { launches, runs } = track(async (launch) => {
+      if (runs.length === 1) await held;
+      return { launched: true, summary: `${launch.codebase} runs.` };
+    });
+    const first = launches.request({ plainFile: join(dir, "base.plain"), commit: lastCommit(base)!, cause: { pulse: "p1", title: "one" } }).launch;
+    writeFileSync(join(base, "app.py"), "base two\n");
+    recordHistory(base, "spec diff: base two");
+    const waiting = launches.request({ plainFile: join(dir, "base.plain"), commit: lastCommit(base)!, cause: { pulse: "p2", title: "two" } }).launch;
+    expect(waiting.status).toBe("waiting");
+
+    builtOn("app", "base", { "app.py": "app\n" });
+    spec("app", "base");
+    const above = launches.request({ plainFile: join(dir, "app.plain"), cause: { pulse: "p3", title: "app" } }).launch;
+    expect(waiting.status).toBe("superseded");
+    expect(waiting.supersededBy).toBe(above.id);
+    expect(above.status).toBe("waiting");
+    release();
+    expect((await launches.done(first.id)).id).toBe(above.id);
+    expect(first.replacedBy).toBe(above.id);
+    await launches.settled("base");
+    expect(runs.map((run) => run.app)).toEqual(["base\n", "app\n"]);
+    expect(launches.runs("base")?.id).toBe(above.id);
+  }, 30_000);
+
+  it("takes a port another module's launch - not one below it - holds, and that launch is replaced, said in this one's summary", async () => {
+    const port = await freePort();
+    built("web", { "app.py": "web\n" });
+    built("cli", { "app.py": "cli\n" });
+    spec("web");
+    spec("cli");
+    const { launches, told } = track(async (launch, exported, freed) => {
+      const started = await startLaunched({
+        freed,
+        name: "server",
+        command: `exec python3 -m http.server ${port} --bind 127.0.0.1`,
+        dir: exported.dir,
+        moduleName: launch.codebase,
+        logDir: launchLogDirOf(),
+        url: `http://127.0.0.1:${port}/`,
+        launch: { id: launch.id, commit: launch.short },
+      });
+      return { launched: started.ok, summary: started.ok ? `Open http://127.0.0.1:${port}/` : started.text };
+    });
+    const web = launches.request({ plainFile: join(dir, "web.plain"), cause: {} }).launch;
+    await launches.done(web.id);
+    const webPid = runningLaunched("web")[0]!.pid;
+    const cli = launches.request({ plainFile: join(dir, "cli.plain"), cause: {} }).launch;
+    const ended = await launches.done(cli.id);
+    expect(ended.status).toBe("launched");
+    expect(ended.summary).toBe(`Open http://127.0.0.1:${port}/`);
+    expect(ended.stopped).toEqual([{ why: "held", module: "web", launch: web.id, commit: web.short, name: "server", pid: webPid, url: `http://127.0.0.1:${port}/`, held: `port ${port}` }]);
+    expect(launchText(ended)).toBe(`Stopped server (pid ${webPid}, http://127.0.0.1:${port}/), from web's launch ${web.id} at ${web.short}: it held port ${port}, which cli needs.\nOpen http://127.0.0.1:${port}/`);
+    expect(told.filter((each) => each.id === web.id).at(-1)?.replacedBy).toBe(cli.id);
+    expect(launches.current("web")).toBeUndefined();
+    expect(launches.runs("web")).toBeUndefined();
+  }, 30_000);
+});
+
 describe("activate", () => {
   const call = async (tool: { execute: (...args: never[]) => Promise<unknown> }, params: object) =>
     ((await (tool.execute as (...args: unknown[]) => Promise<{ content: Array<{ text: string }> }>)("id", params, undefined, undefined, undefined)).content[0]!.text);
@@ -524,6 +739,16 @@ describe("what the chat is told of a launch", () => {
   it("says a launch that ended up where it runs", () => {
     expect(launchedNote(launch({ summary: "http://localhost:8001" }))).toContain("greet at abcdef0 is launched.\n\nhttp://localhost:8001");
   });
+
+  it("says what turri stopped for a launch before where it runs, as it did when the summary carried both", () => {
+    const stopped = launch({
+      summary: "http://localhost:8001",
+      stopped: [{ why: "below", module: "base", launch: "launch-1", commit: "1234567", name: "web", pid: 42, url: "http://localhost:8001" }],
+    });
+    expect(launchedNote(stopped)).toContain(
+      "greet at abcdef0 is launched.\n\nStopped what base's launch launch-1 at 1234567 started - web (pid 42, http://localhost:8001): greet is built on base and holds its code, so this launch takes its place.\nhttp://localhost:8001",
+    );
+  });
 });
 
 describe("what an earlier session left running", () => {
@@ -595,7 +820,9 @@ describe("what an earlier session left running", () => {
     const { launch } = launches.request({ plainFile: join(dir, "app.plain"), cause: {} });
     const ended = await launches.done(launch.id);
     expect(isAlive(pid)).toBe(false);
-    expect(ended.summary).toBe(`Stopped what an earlier turri session left running of app: backend (pid ${pid}, http://127.0.0.1:8000).\nbackend runs.`);
+    expect(ended.summary).toBe("backend runs.");
+    expect(ended.stopped).toEqual([{ why: "left-behind", module: "app", name: "backend", pid, url: "http://127.0.0.1:8000" }]);
+    expect(launchText(ended)).toBe(`Stopped what an earlier turri session left running of app: backend (pid ${pid}, http://127.0.0.1:8000).\nbackend runs.`);
     expect(recorded).toEqual([`${runningLaunched("app")[0]!.pid}.json`]);
     await stopLaunched();
     await new Promise((resolve) => setTimeout(resolve, 100));
