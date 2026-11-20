@@ -292,8 +292,10 @@ export interface SentinelLaunches {
   readyFor(job: Job): Promise<void>;
   /** Resolves once what runs of the check's module is settled. Throws when nothing of it runs. */
   readyForCheck(check: SentinelCheck): Promise<void>;
-  /** Resolves once nothing of the codebase's is launching or waiting to. */
+  /** Resolves once nothing of the codebase's is launching or waiting to - nor of a module built on it that took its launches over. */
   settled(codebase: string): Promise<void>;
+  /** The codebases whose launches a launch replaces - what they started stopped: its own, and the modules below it. Default: its own. */
+  replacing?(launch: Launch): string[];
 }
 
 /** A chat's session, as stopping what it does reaches it. */
@@ -656,9 +658,12 @@ export function createChats(options: CoreOptions): TurriCore {
 
     launchChanged(launch) {
       if (launch.status === "running") {
-        pauseFor(launch);
+        pauseFor(launch, options.launches?.replacing?.(launch) ?? [launch.codebase]);
         return;
       }
+      // Replaced - what it started stopped by a newer launch, of its codebase or another module's that needed what it held:
+      // a check in it waits for the launches to settle, then carries on where its code runs - or is told nothing of it runs.
+      if (launch.replacedBy !== undefined && launch.status === "launched") pauseFor(launch, [launch.codebase]);
       // One after a pulse, ended, with the sentinel off: its chat is told - the sentinel, on, tests it with the pulse. One a
       // newer launch replaced as it ended is not: what it started is stopped the next moment, and the newer one is told.
       if (!("pulse" in launch.cause) || (launch.status !== "launched" && launch.status !== "failed") || launch.replacedBy !== undefined || core.sentinelOn()) return;
@@ -1082,20 +1087,22 @@ export function createChats(options: CoreOptions): TurriCore {
   }
 
   /**
-   * A launch of a codebase started while the sentinel checks a pulse or a check of it: its turn stopped - its conversation
-   * kept - until the codebase's launches are settled, then carried on in the launch that holds it.
+   * A launch started that replaces what runs of a codebase the sentinel checks a pulse or a check of - its own, or one
+   * below it in its chain - or what a launch started was stopped for another's: its turn stopped - its conversation kept
+   * - until the codebase's launches are settled, then carried on in the launch that holds it.
    */
-  function pauseFor(launch: Launch): void {
+  function pauseFor(launch: Launch, codebases: string[]): void {
     const sentinel = sentinelChat();
     const now = checking;
+    const codebase = now !== undefined ? codebaseOf(now.work) : undefined;
     // Concluded, it is only saying so: nothing to carry on.
-    if (sentinel === undefined || now === undefined || now.concluded === true || paused !== undefined || codebaseOf(now.work) !== launch.codebase) return;
+    if (sentinel === undefined || now === undefined || now.concluded === true || paused !== undefined || codebase === undefined || !codebases.includes(codebase)) return;
     paused = now;
     inChat(sentinel.scope, () => record({ kind: "sentinel.paused", module: launch.codebase, launch: launch.id }, { project: cwd, ...("pulse" in now.work ? { job: now.work.pulse.id } : {}) }));
     void sentinel.session?.abort().catch(() => undefined);
     changed();
     void (async () => {
-      await options.launches?.settled(launch.codebase);
+      await options.launches?.settled(codebase);
       // Let go meanwhile - closed, or given another conversation: nothing to carry on.
       if (paused !== now || !chats.includes(sentinel) || sentinel.instance === undefined) {
         if (paused === now) paused = undefined;

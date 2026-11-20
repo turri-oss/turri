@@ -1,8 +1,9 @@
+import { dirname, join } from "node:path";
 import { configForSpec, readProjectConfig } from "./config.ts";
 import type { SentinelLaunches } from "./chats.ts";
-import { createLaunchTrack, type Launch, type LaunchTrack } from "./launch-track.ts";
+import { createLaunchTrack, launchText, type Launch, type LaunchTrack } from "./launch-track.ts";
 import { runLaunchAgent } from "./launch-agent.ts";
-import { holdsCommit, runningLaunched, type LaunchedProcess } from "./regenerate/launch.ts";
+import { holdsAcross, runningLaunched, type LaunchedProcess } from "./regenerate/launch.ts";
 import { distDirFor, projectDirOf } from "./regenerate/paths.ts";
 import { pulseName, type Job, type JobRegistry, type PulseSpec } from "./regenerate/jobs.ts";
 import type { SentinelCheck } from "./notice.ts";
@@ -65,9 +66,9 @@ export function createSessionLaunches(options: {
   const waiters = new Map<string, Array<() => void>>();
   const track = createLaunchTrack({
     cwd: options.cwd,
-    run: (launch, code, signal) => {
+    run: (launch, code, signal, freed) => {
       const model = options.model(launch.plainFile);
-      return runLaunchAgent({ launch, code, cwd: options.cwd, signal, ...(model !== undefined ? { model } : {}) });
+      return runLaunchAgent({ launch, code, cwd: options.cwd, signal, freed, ...(model !== undefined ? { model } : {}) });
     },
     onChange: options.onChange,
   });
@@ -100,22 +101,26 @@ export function createSessionLaunches(options: {
 
   const short = (commit: string) => commit.slice(0, 7);
 
-  /** The person stopped the codebase's last launch: nothing of it runs. */
-  const stoppedLast = (codebase: string) => {
-    const last = [...track.list()].reverse().find((launch) => launch.codebase === codebase && launch.status !== "superseded");
-    return last?.status === "stopped";
-  };
+  /** The last launch that took the codebase's code on - its own, or one of a module built on it - none superseded. */
+  const lastFor = (codebase: string) => [...track.list()].reverse().find((launch) => launch.status !== "superseded" && track.replacing(launch).includes(codebase));
+  /** The person stopped the last launch of the codebase's code: nothing of it runs. */
+  const stoppedLast = (codebase: string) => lastFor(codebase)?.status === "stopped";
 
-  /** Throws when what runs of the codebase does not hold the pulse's commit. */
+  /** Throws when what runs of the codebase's code does not hold the pulse's commit. */
   const mustHold = (job: Job, landing: Landed) => {
-    const current = track.current(landing.codebase);
-    if (current === undefined) {
+    const runs = track.runs(landing.codebase);
+    if (runs === undefined) {
+      const last = lastFor(landing.codebase);
+      const by = last?.replacedBy !== undefined ? track.list().find((launch) => launch.id === last.replacedBy) : undefined;
+      if (last !== undefined && by !== undefined && by.codebase !== last.codebase) {
+        throw new Error(`what ${last.codebase}'s launch ${last.id} started was stopped for ${by.codebase}'s launch ${by.id}, which needed what it held - nothing of ${landing.codebase} runs to test pulse ${job.id} in.`);
+      }
       throw new Error(`nothing of ${landing.codebase} runs - no launch holds pulse ${job.id}'s commit ${short(landing.commit)}, and none that would is waiting.`);
     }
     if (!track.holds(landing.codebase, landing.commit)) {
-      throw new Error(`what runs of ${landing.codebase} is its commit ${current.short}, which does not hold pulse ${job.id}'s commit ${short(landing.commit)} - and no launch that would is waiting.`);
+      throw new Error(`what runs of ${landing.codebase} is ${runs.codebase === landing.codebase ? "its" : `${runs.codebase}'s`} commit ${runs.short}, which does not hold pulse ${job.id}'s commit ${short(landing.commit)} - and no launch that would is waiting.`);
     }
-    return current;
+    return runs;
   };
 
   return {
@@ -146,20 +151,23 @@ export function createSessionLaunches(options: {
     },
     async readyForCheck(check) {
       await track.settled(check.module);
-      if (track.current(check.module) === undefined && runningLaunched(check.module).length === 0) {
+      if (track.runs(check.module) === undefined && runningLaunched(check.module).length === 0) {
         throw new Error(`nothing of ${check.module} is launched to test it in - ask the chat to try it first, which launches it.`);
       }
     },
     settled: (codebase) => track.settled(codebase),
+    replacing: (launch) => track.replacing(launch),
     forPulse(job) {
       const landing = landedPulses.get(job.id);
       if (landing === undefined) return { later: [], laterSpecs: [], running: [], ...(landedJob(job) && !launchesAfter(job) ? { off: true } : {}) };
-      const base = { commit: landing.commit, running: runningLaunched(landing.codebase), later: [] as Job[], laterSpecs: [] as PulseSpec[] };
+      const launch = track.runs(landing.codebase);
+      const base = { commit: landing.commit, running: runningLaunched(launch?.codebase ?? landing.codebase), later: [] as Job[], laterSpecs: [] as PulseSpec[] };
       if (landing.notAsked !== undefined) return { ...base, notAsked: landing.notAsked };
       if (landing.launch === undefined) return { ...base, off: true };
-      const launch = track.current(landing.codebase);
       if (launch === undefined || !track.holds(landing.codebase, landing.commit)) return { ...base, stopped: true };
-      // The pulses that landed after it, which what runs holds too: what they changed is theirs to test.
+      // The pulses that landed after it, which what runs holds too - of its codebase, or of one built on it: what they
+      // changed is theirs to test.
+      const at = (codebase: string) => join(dirname(launch.moduleDir), codebase);
       const later = options.jobs
         .list()
         .filter((other) => {
@@ -167,10 +175,9 @@ export function createSessionLaunches(options: {
           return (
             other.id !== job.id &&
             theirs !== undefined &&
-            theirs.codebase === landing.codebase &&
             theirs.commit !== landing.commit &&
-            holdsCommit(launch.moduleDir, landing.commit, theirs.commit) &&
-            holdsCommit(launch.moduleDir, theirs.commit, launch.commit)
+            holdsAcross({ codebase: landing.codebase, commit: landing.commit }, { codebase: theirs.codebase, moduleDir: at(theirs.codebase), commit: theirs.commit }) &&
+            holdsAcross({ codebase: theirs.codebase, commit: theirs.commit }, { codebase: launch.codebase, moduleDir: launch.moduleDir, commit: launch.commit })
           );
         })
         .sort((a, b) => a.sequence - b.sequence);
@@ -184,19 +191,20 @@ export function createSessionLaunches(options: {
         if (landing === undefined) throw new Error(`turri has no commit for pulse ${work.job.id}.`);
         const launch = mustHold(work.job, landing);
         return [
-          `What you were testing was launched again: ${launch.codebase} at ${launch.short} (${launch.id}${launch.status === "failed" ? ", which did not come up" : ""}). It still holds pulse ${work.job.id}'s commit, ${short(landing.commit)}.`,
-          launch.status === "failed" ? `It did not come up: ${launch.summary ?? "the launch agent did not say why"}. That is what you find out about now.` : "What runs now:",
+          `What you were testing was launched again: ${launch.codebase} at ${launch.short} (${launch.id}${launch.status === "failed" ? ", which did not come up" : ""}). It still holds pulse ${work.job.id}'s commit, ${short(landing.commit)}${launch.codebase !== landing.codebase ? ` - built on ${landing.codebase}, it holds its code` : ""}.`,
+          launch.status === "failed" ? `It did not come up: ${launchText(launch) || "the launch agent did not say why"}. That is what you find out about now.` : "What runs now:",
           ...(launch.status === "failed" ? [] : whatRuns(runningLaunched(launch.codebase), launchedDir(launch))),
           "",
           LAUNCHED_ONLY,
           "Carry on the check where you were. Do again what you were doing as it restarted: what failed then may have failed for that alone.",
         ].join("\n");
       }
-      const running = runningLaunched(work.check.module);
-      if (track.current(work.check.module) === undefined && running.length === 0) throw new Error(`nothing of ${work.check.module} runs any more to test check ${work.check.id} in.`);
+      const runs = track.runs(work.check.module);
+      const running = runningLaunched(runs?.codebase ?? work.check.module);
+      if (runs === undefined && running.length === 0) throw new Error(`nothing of ${work.check.module} runs any more to test check ${work.check.id} in.`);
       return [
-        `What you were testing was launched again: ${work.check.module}${track.current(work.check.module) !== undefined ? ` at ${track.current(work.check.module)!.short}` : ""}. What runs now:`,
-        ...whatRuns(running, track.current(work.check.module) !== undefined ? launchedDir(track.current(work.check.module)!) : undefined),
+        `What you were testing was launched again: ${runs !== undefined ? `${runs.codebase} at ${runs.short}${runs.codebase !== work.check.module ? `, built on ${work.check.module} and holding its code` : ""}` : work.check.module}. What runs now:`,
+        ...whatRuns(running, runs !== undefined ? launchedDir(runs) : undefined),
         "",
         LAUNCHED_ONLY,
         "Carry on the check where you were. Do again what you were doing as it restarted: what failed then may have failed for that alone.",
@@ -264,7 +272,7 @@ export function launchedNote(launch: Launch, job?: Job): string {
   return [
     head,
     "",
-    (launch.summary ?? "").trim(),
+    launchText(launch),
     "",
     launch.status === "launched"
       ? "Tell the person in a line or two where it runs - what the summary says to open or run - then do what you were told to do once something is launched (opening it where the person can watch it, saying what to test), if anything. Start no other work."

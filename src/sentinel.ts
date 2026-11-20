@@ -11,8 +11,10 @@ import { formatDuration, pulseName, type Job } from "./regenerate/jobs.ts";
 import { readLedger } from "./regenerate/ledger.ts";
 import { describePulseView, pulseView } from "./regenerate/ledger-view.ts";
 import { MODULES_DIR, ensureInScratch } from "./regenerate/paths.ts";
-import type { LaunchedProcess } from "./regenerate/launch.ts";
+import { describeHolder, howToFree, launchLogDir, listenersOf, whoHolds, type LaunchedProcess } from "./regenerate/launch.ts";
+import { projectDirOf } from "./regenerate/paths.ts";
 import { LAUNCHED_ONLY, launchedDir, whatRuns, type PulseLaunch } from "./launch-session.ts";
+import { launchText } from "./launch-track.ts";
 import { SENTINEL, SENTINEL_START, wentWrong, type Conclusion, type Notice, type NoticeInput, type SentinelCheck } from "./notice.ts";
 import type { CheckedSpec } from "./sentinel-check.ts";
 
@@ -226,7 +228,8 @@ export function sentinelPrompt(cwd: string, options: { extraTools?: string[]; su
     "",
     "You fix the project's tooling and nothing else. Your file tools read the whole project; write and edit reach only the",
     "testing scripts and config.turri.yaml - and in it only where the scripts are, and toolchains:. Your shell runs with",
-    "the project read only; the files you try a launch with go in $TMPDIR - /tmp is outside what it may write. You never change ***plain - it is the person's intent, never yours to fix - and never steer,",
+    "the project read only; the files you try a launch with go in $TMPDIR - /tmp is outside what it may write. It sees no",
+    "other process: ps and lsof do not run there - who_holds says what holds a port and whose it is. You never change ***plain - it is the person's intent, never yours to fix - and never steer,",
     "launch, or regenerate but by resume after a fix of yours. You install nothing on this machine and change none of",
     "its settings, nor the person's shell - under no circumstances: that is always the person's, said in a notice. You",
     "never ask the person questions - a notice is how you reach them.",
@@ -307,11 +310,11 @@ function launchLines(job: Job, launch: PulseLaunch): string[] {
   const what = launch.launch;
   const later = launch.later.map((other) => `${other.id} (${pulseName(other)})`);
   const lines = [
-    `Its commit is ${commit}. It was launched in the background (launch-after-pulse): what runs is ${what.codebase} at ${what.short} (${what.id}), which holds it${later.length > 0 ? ` and the pulses that landed after it - ${later.join(", ")}` : ""}.`,
+    `Its commit is ${commit}. It was launched in the background (launch-after-pulse): what runs is ${what.codebase} at ${what.short} (${what.id}), which holds it${what.codebase !== job.module && job.module !== undefined ? ` - ${what.codebase} is built on ${job.module}, and holds its code` : ""}${later.length > 0 ? ` and the pulses that landed after it - ${later.join(", ")}` : ""}.`,
   ];
   if (what.status === "failed") {
     lines.push(
-      `That launch did not come up: ${what.summary ?? "the launch agent did not say why"}`,
+      `That launch did not come up: ${launchText(what) || "the launch agent did not say why"}`,
       "That is what you find out about: the launch did not come up. Test nothing in its place.",
       LAUNCHED_ONLY,
     );
@@ -371,7 +374,7 @@ export function sentinelCheckBrief(
  * The tools the sentinel's agent may call: what reads, write and edit for the project's tooling alone, resume, its
  * notices and its guidance - and what a host gives it.
  */
-export const SENTINEL_TOOLS = ["read", "ls", "grep", "find", "write", "edit", "bash", "read_output", "pulses", "parse", "doctor", "web_search", "web_fetch", "resume", "notify_person", "conclude", "keep_guidance"];
+export const SENTINEL_TOOLS = ["read", "ls", "grep", "find", "write", "edit", "bash", "read_output", "pulses", "parse", "doctor", "web_search", "web_fetch", "resume", "notify_person", "conclude", "keep_guidance", "who_holds"];
 
 /** A testing script by its name - `run_unittests_python.sh`, `prepare_environment_node.sh` - and a config file of turri's. */
 const SCRIPT_FILE = /^(run_|prepare_environment).*\.(sh|ps1|bat|cmd)$/;
@@ -592,6 +595,33 @@ export function resumeTool(resume: (plainFile: string) => Promise<string>): Tool
     parameters: Type.Object({ plain_file: Type.String({ description: "The module's .plain file, from the project's folder: app.plain" }) }),
     async execute(_id, params) {
       return { content: [{ type: "text" as const, text: await resume(params.plain_file) }], details: {} };
+    },
+  });
+}
+
+/**
+ * who_holds: what holds a TCP port, and whose it is - one of turri's launches, another turri's, or a program turri did not
+ * start - as turri's records say it. The sentinel's shell is sandboxed from every other process, so it cannot ask itself.
+ */
+export function whoHoldsTool(cwd: string): ToolDefinition {
+  return defineTool({
+    name: "who_holds",
+    label: "Who holds",
+    description:
+      "What listens on a TCP port on this machine, and whose it is: a server one of turri's launches started (which launch, " +
+      "which module, which commit), one another turri started, or a program turri did not start - with how the person " +
+      "frees it. Use it when what answers at a launch's URL is not what you expect, or nothing does: your shell cannot " +
+      "see other processes. It stops nothing.",
+    parameters: Type.Object({ port: Type.Integer({ minimum: 1, maximum: 65535, description: "The port, e.g. 8000" }) }),
+    async execute(_id, params) {
+      const pids = listenersOf(params.port);
+      const text =
+        pids === undefined
+          ? `turri cannot tell what holds port ${params.port} here: there is no lsof.`
+          : pids.length === 0
+            ? `Nothing listens on port ${params.port}.`
+            : [`Port ${params.port} is held by:`, ...pids.map((pid) => whoHolds(pid, launchLogDir(projectDirOf(join(cwd, "turri.plain"))))).map((holder) => `- ${describeHolder(holder)}. ${howToFree(holder)}`)].join("\n");
+      return { content: [{ type: "text" as const, text }], details: {} };
     },
   });
 }

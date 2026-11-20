@@ -2,7 +2,7 @@ import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-w
 import { Box, Text } from "@earendil-works/pi-tui";
 import type { ChatLink, TurriCore } from "./chats.ts";
 import { projectModels, readProjectConfig, roleModel } from "./config.ts";
-import { concludedNote, concludeTool, keepGuidanceTool, notifyTool, resumeTool, sentinelFileTools, type Conclusion, type Notice } from "./sentinel.ts";
+import { concludedNote, concludeTool, keepGuidanceTool, notifyTool, resumeTool, sentinelFileTools, whoHoldsTool, type Conclusion, type Notice } from "./sentinel.ts";
 
 /**
  * The sentinel in a chat: its tools in place of the chat's - the project to read, its shell behind the walls, notices,
@@ -34,6 +34,7 @@ export function registerSentinel(pi: ExtensionAPI, session: TurriCore, cwd: stri
   );
   pi.registerTool(concludeTool((conclusion) => session.concluded(conclusion)));
   pi.registerTool(keepGuidanceTool(cwd));
+  pi.registerTool(whoHoldsTool(cwd));
   pi.registerTool(resumeTool(resume));
   for (const tool of hostTools) pi.registerTool(tool);
 
