@@ -38,7 +38,7 @@ turri (not the agent that writes the tests) runs the script once per check, agai
 bash run_conformance_tests_<lang>.sh <build_folder> <conformance_tests_folder>
 ```
 
-Both arguments are absolute paths: `<build_folder>` is the module's generated code (`plain_modules/<module>/code`), and `<conformance_tests_folder>` is the folder holding the whole suite. The harness runs the script on the person's machine - macOS, Linux or WSL, with its toolchains, in the person's own environment - and its exit code alone decides whether the conformance tests pass.
+Both arguments are absolute paths (on Windows written with forward slashes, `C:/Users/...`): `<build_folder>` is the module's generated code (`plain_modules/<module>/code`), and `<conformance_tests_folder>` is the folder holding the whole suite. The harness runs the script on the person's machine - macOS, Linux or Windows, where bash is Git Bash - with its toolchains, in the person's own environment - and its exit code alone decides whether the conformance tests pass.
 
 Every conformance script is self-contained: toolchain check, argument validation, stage the build into `<temp>/<lang>_<basename of $1>`, install dependencies there in isolation, check the tests in `$2` statically, run the suite in `$2` against it, clean up on exit. Nothing is prepared ahead of time by another script - unless the project already has a `prepare_environment*.sh` (a prepare script the project brought, or one `prepare-environment-script:` names): turri runs it on the same build before every run of the conformance script, so keep it, and let the conformance script rely on what it sets up rather than doing it again. Never write a prepare script yourself.
 
@@ -53,16 +53,16 @@ Everything else — toolchain check, build staging, dependency isolation, exit c
 
 ## Pick the Shell
 
-The harness runs only Bash (`.sh`) scripts, on macOS, Linux and WSL alike. Always write `run_conformance_tests_<lang>.sh`, and make it work on all of them.
+The harness runs only Bash (`.sh`) scripts, on macOS, Linux and Windows (Git Bash) alike. Always write `run_conformance_tests_<lang>.sh`, and make it work on all of them - see [Bash specifics](#bash-specifics).
 
-A PowerShell (`.ps1`) copy is optional and only for people who run the script by hand on native Windows; the harness never runs it. Write one only if the user asks for it. The same pattern applies to both — only the syntax changes.
+A PowerShell (`.ps1`) copy is optional and only for people who run the script by hand in PowerShell; the harness never runs it. Write one only if the user asks for it. The same pattern applies to both — only the syntax changes.
 
 ## The Pattern
 
 1. **Toolchain check.** Verify that the required language runtime / build tool (and the required version, if any) is installed. If not, print an error and exit with code `69`.
 2. **Argument validation.** Require **two** positional arguments: `<build_folder>` and `<conformance_tests_folder>`. If either is missing, print usage and exit with code `69`.
 3. **Resolve the conformance tests folder to an absolute path.** turri passes `$2` as an absolute path; older harnesses passed it relative to the invocation directory. Resolve it once, up front, into a variable the test command in step 8 uses:
-   - Bash: `case "$2" in /*) CONFORMANCE_TESTS_FOLDER="$2" ;; *) CONFORMANCE_TESTS_FOLDER="$(pwd)/$2" ;; esac`
+   - Bash: `CONFORMANCE_TESTS_FOLDER="$(cd "$2" && pwd)" || exit 2` - not a test for a leading `/`, which takes Windows' `C:/Users/...` for a relative path
    - PowerShell: `if (-not [System.IO.Path]::IsPathRooted($ConformanceTestsFolder)) { $ConformanceTestsFolder = Join-Path (Get-Location) $ConformanceTestsFolder }`
 
    Never concatenate `$current_dir/$2` at the point of use — with an absolute `$2` that produces a doubled path (`/project//abs/path/...`), the classic symptom being `ImportError: Start directory is not importable` pointing at a path that contains the project root twice.
@@ -169,7 +169,7 @@ The dependency environment must live **inside** `$WORKING_FOLDER` so the test ru
 
 | Language | Isolation mechanism | Install command (run inside `$WORKING_FOLDER`) | Test command (point at `$CONFORMANCE_TESTS_FOLDER`) |
 |---|---|---|---|
-| Python | `venv` at `./.venv` | `python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt` | `python -m unittest discover -b -s "$CONFORMANCE_TESTS_FOLDER"` (or `pytest "$CONFORMANCE_TESTS_FOLDER"`) |
+| Python | `venv` at `./.venv` | `"$PYTHON" -m venv .venv && "$VENV_BIN/python" -m pip install -r requirements.txt` - `$VENV_BIN` is `.venv/bin`, or `.venv/Scripts` on Windows | `"$VENV_BIN/python" -m unittest discover -b -s "$CONFORMANCE_TESTS_FOLDER"` (or `"$VENV_BIN/pytest" "$CONFORMANCE_TESTS_FOLDER"`) |
 | Node.js | local `./node_modules` (default) | `npm ci` (preferred) or `npm install` | `npx jest --rootDir "$CONFORMANCE_TESTS_FOLDER"` |
 | Java | project-scoped Maven repo at `./.m2` | `mvn -Dmaven.repo.local=./.m2 install -DskipTests` (build + install artifact so the test pom can resolve it) | `mvn -f "$CONFORMANCE_TESTS_FOLDER/pom.xml" -Dmaven.repo.local="$(pwd)/.m2" test` |
 | Go | module cache at `./.gocache` | `GOMODCACHE="$PWD/.gocache" go mod download` (optional pre-warm) | `GOMODCACHE="$PWD/.gocache" go test "$CONFORMANCE_TESTS_FOLDER/..."` |
@@ -181,16 +181,24 @@ Notes:
 - **Always pass the isolation flag/env var to both the install command and the test command.** They must agree on where deps live, otherwise the test command will silently fall back to the global cache **or** (worse) write into `$1` / `$2`.
 - **Python is the only ecosystem where the venv is mandatory** to satisfy "into a virtual environment" literally. The others use language-native equivalents that achieve the same isolation.
 - **Propagate the install exit code immediately.** In Bash: `<install cmd> || exit $?`. In PowerShell: check `$LASTEXITCODE` and `exit $LASTEXITCODE` if non-zero.
-- **Time the dependency setup** with `date +%s.%N` (Bash) / `Get-Date` (PowerShell) and print `"Requirements setup completed in X.XX seconds"`.
+- **Time the dependency setup** with bash's own `SECONDS` (`SECONDS=0` before, `$SECONDS` after) / `Get-Date` (PowerShell) and print `"Requirements setup completed in X seconds"`.
 
 ### Bash specifics
 
-- **Shebang:** `#!/bin/bash`.
+- **Shebang:** `#!/usr/bin/env bash` - turri runs it with `bash` itself, and a person running it by hand gets the bash on their PATH, which is not at `/bin/bash` everywhere.
 - **File naming:** `run_conformance_tests_<lang>.sh`, placed in `assets/` (skill reference) or `test_scripts/` (target project).
 - **Arguments:** `$1` = build folder, `$2` = conformance tests folder.
 - **Make it executable:** `chmod +x` the produced script.
-- **`cd` failure check:** the reference scripts use the `cd ... 2>/dev/null` + `[ $? -ne 0 ]` pattern. Keep it.
-- **Portable:** the harness runs the script on macOS and Linux alike. Stick to POSIX tools and flags both have (e.g. `cp -R`, `mktemp`, plain `grep` - not GNU-only or BSD-only flags, not a macOS-only `/usr/libexec/java_home`), and let the toolchain check report clearly when the runtime is missing.
+- **`cd` failure check:** `if ! cd "$DIR" 2>/dev/null; then ...; exit 2; fi`, as the reference scripts do - the failure tested on the `cd` itself, not on a `$?` a later command has already replaced.
+- **Portable - macOS, Linux and Windows alike.** turri runs the script with the `bash` on the person's PATH: on macOS often the system's own bash 3.2, on Windows Git Bash. Write it for all three:
+  - bash 3.2's features only - no `mapfile` / `readarray`, `declare -A`, `${var,,}`, `|&`;
+  - tools and flags that GNU, BSD and Git Bash all have (`cp -R`, `mktemp -d`, `find`, `grep -E` with `[[:space:]]` rather than `\s`, `sed` without `-i`), and none that only some machines have: not `tree`, `bc`, `jq`, `realpath`, `timeout`, `date +%N` (time with bash's own `SECONDS`), not macOS's `/usr/libexec/java_home` (take `JAVA_HOME`, else the `java` on the PATH);
+  - a folder argument resolved with `$(cd "$1" && pwd)`, never told absolute by a leading `/`: on Windows turri passes `C:/Users/...`;
+  - every path quoted: a Windows home has spaces in it (`C:/Users/Ana Lee`);
+  - a path a native tool reads from a file the script writes - a config, a settings file - relative to the working folder, as Git Bash's `/tmp/...` means nothing to a Windows program reading a file;
+  - a Python venv keeps its tools in `.venv/bin`, on Windows in `.venv/Scripts`: pick the one that is there (`if [ -d .venv/Scripts ]; then VENV_BIN=.venv/Scripts; else VENV_BIN=.venv/bin; fi`) and call them by path. And on Windows `python3` may be the Microsoft Store's stand-in, which runs nothing: take the first of `python3` and `python` that runs `-c "import sys"`;
+  - LF line endings - bash cannot run a script with CRLF ones, which a Windows checkout under git's `core.autocrlf` makes of it. When the project is a git repository whose `.gitattributes` lacks `*.sh text eol=lf`, say so in your result.
+  - a missing runtime reported clearly by the toolchain check, on every one of them.
 
 ### PowerShell specifics (by-hand Windows copy only)
 

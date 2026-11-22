@@ -124,15 +124,15 @@ output=$(mvn test --no-transfer-progress 2>&1)
 
 Both scripts are invoked by turri with positional arguments, on the person's machine. They MUST:
 
-1. **Be POSIX-bash (`.sh`) on macOS / Linux, PowerShell (`.ps1`) on Windows.** Executable, idempotent — re-running with the same inputs produces the same result
+1. **Be Bash (`.sh`) on every OS.** turri runs only `.sh` scripts, with the `bash` on the person's PATH - macOS's own bash 3.2, Linux's, Git Bash on Windows - so the script keeps to what all three have (the testing-script skills' *Bash specifics* list it). A PowerShell (`.ps1`) copy is only for a person running it by hand. Executable, idempotent — re-running with the same inputs produces the same result
 2. **Validate every positional argument up front.** Exit with a clear `Usage:` line on bad args. Conventional exit codes (consistent with the shared testing-script rules):
    - `1` — bad arguments / usage error (and "no tests discovered" for the conformance runner)
    - `2` — missing or inaccessible input folder
    - `69` — unrecoverable environment failure (missing toolchain, cannot enter working folder, install failed)
    - Any other non-zero code — propagated verbatim from the underlying build / test tool
 
-   turri passes `$1` (and `$2` for the conformance runner) as **absolute paths** (older harnesses passed relative ones). Never build a derived path by concatenating a raw argument (`.tmp/$1`, `<lang>_$1`, `$current_dir/$2`) — with an absolute argument that produces a doubled path (`/project//abs/path/...`). Use the argument as-is where a path is needed, take its `basename` when naming a scratch folder, and resolve `$2` to absolute (if it isn't already) before any `cd`
-3. **Echo the toolchain home at the top** — the first thing a developer checks when CI breaks. For Java: `JAVA_HOME`. For Python: the active interpreter (`python --version` / `which python`). For Node: `node --version`. For Go: `go env GOROOT`. Pick the variable whose value most often explains "why does it work locally but not on the CI runner?"
+   turri passes `$1` (and `$2` for the conformance runner) as **absolute paths** (older harnesses passed relative ones). Never build a derived path by concatenating a raw argument (`.tmp/$1`, `<lang>_$1`, `$current_dir/$2`) — with an absolute argument that produces a doubled path (`/project//abs/path/...`). Use the argument as-is where a path is needed, take its `basename` when naming a scratch folder, and resolve `$2` to absolute with `$(cd "$2" && pwd)` before any `cd` - never by testing for a leading `/`, as on Windows turri passes `C:/Users/...`. Quote every path: a Windows home has spaces in it
+3. **Echo the toolchain home at the top** — the first thing a developer checks when CI breaks. For Java: `JAVA_HOME`. For Python: the active interpreter (`python --version` / `command -v python`). For Node: `node --version`. For Go: `go env GOROOT`. Pick the variable whose value most often explains "why does it work locally but not on the CI runner?"
 4. **Respect `VERBOSE=1`.** Gate chatty diagnostic prints behind `if [ "${VERBOSE:-}" = "1" ]` (and the PowerShell equivalent). Errors and key step markers print unconditionally
 5. **Resolve paths relative to the script, not `$PWD`.** Use `"$(cd "$(dirname "$0")/<relative-path-to-anchor>" && pwd)"`. Hard-coded `../../` chains break the moment turri's `cwd` changes
 6. **Create destination directories before copying.** `mkdir -p` before any `cp -R` / `rsync` / `robocopy` — most copy commands do not create intermediate directories and fail silently in some shells
@@ -266,7 +266,7 @@ Use them as a template when adding a new embedded integration in Java / Maven �
 
 1. Copy the two scripts from a working embedded-integration module into the project's `test_scripts/`
 2. Search-and-replace the package segment everywhere it appears — including the test-filter argument (the most commonly missed spot)
-3. `chmod +x` both (and verify ACLs on Windows for the `.ps1` siblings)
+3. `chmod +x` both (Git Bash on Windows needs nothing; verify ACLs only for `.ps1` copies)
 4. Do not link them from the ***plain: turri finds them in the project root - `config.turri.yaml` (`unittests-script:`, `conformance-tests-script:`), else the one of each kind in the root, else in `test_scripts/` - and shows them to the agents itself. If `test_scripts/` ends up with two scripts of one kind, name the one to use in `config.turri.yaml`.
 5. Smoke-test by running each script manually with the build output folder as `$1` (and the conformance-tests folder as `$2` for the conformance runner). Confirm exit codes match what turri expects
 

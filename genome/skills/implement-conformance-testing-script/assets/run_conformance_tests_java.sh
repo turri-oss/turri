@@ -1,6 +1,24 @@
-#!/bin/bash
-export JAVA_HOME=$(/usr/libexec/java_home -v 21)
-java --version
+#!/usr/bin/env bash
+
+# Java 21 or newer, and Maven: JAVA_HOME's java when it is set, else the one on the PATH - the same on macOS, Linux
+# and Windows (Git Bash). Not macOS's /usr/libexec/java_home, which no other OS has.
+JAVA="java"
+[ -n "${JAVA_HOME:-}" ] && JAVA="$JAVA_HOME/bin/java"
+if ! "$JAVA" -version >/dev/null 2>&1; then
+  echo "Error: Java is not installed (no $JAVA)."
+  exit 69
+fi
+JAVA_VERSION="$("$JAVA" -version 2>&1 | sed -n 's/.*version "\([0-9]*\).*/\1/p' | head -n 1)"
+if [ -z "$JAVA_VERSION" ] || [ "$JAVA_VERSION" -lt 21 ]; then
+  echo "Error: Java 21 or newer is needed; $JAVA is Java ${JAVA_VERSION:-of a version it does not say}."
+  exit 69
+fi
+if ! command -v mvn >/dev/null 2>&1; then
+  echo "Error: Maven (mvn) is not installed."
+  exit 69
+fi
+"$JAVA" -version
+mvn --version
 
 # Check if build folder name is provided
 if [ -z "$1" ]; then
@@ -21,13 +39,14 @@ printf "Current directory: $current_dir\n"
 
 # Resolve the conformance tests folder to an absolute path so it can be used
 # after changing into the working folder ($2 may be relative to the invocation
-# directory on older harnesses; turri passes it as an absolute path).
-case "$2" in
-  /*) CONFORMANCE_TESTS_SOURCE="$2" ;;
-  *)  CONFORMANCE_TESTS_SOURCE="$current_dir/$2" ;;
-esac
+# directory on older harnesses; turri passes it as an absolute path - on Windows
+# C:/Users/..., which a test for a leading / would take for a relative one).
+CONFORMANCE_TESTS_SOURCE="$(cd "$2" 2>/dev/null && pwd)" || {
+  printf "Error: the conformance tests folder '%s' does not exist.\n" "$2"
+  exit 2
+}
 
-tree "$CONFORMANCE_TESTS_SOURCE"
+find "$CONFORMANCE_TESTS_SOURCE" -type f
 
 # Working folders live in the system temp directory. $1 and $2 may be absolute
 # paths, so only their basenames are used to build the working folder names.
@@ -58,13 +77,11 @@ cp -R "$1"/* "$JAVA_BUILD_SUBFOLDER"
 printf "Copied from $1 to $JAVA_BUILD_SUBFOLDER...\n"
 
 # Move to the subfolder
-cd "$JAVA_BUILD_SUBFOLDER" 2>/dev/null
-printf "Moved to $JAVA_BUILD_SUBFOLDER...\n"
-
-if [ $? -ne 0 ]; then
+if ! cd "$JAVA_BUILD_SUBFOLDER" 2>/dev/null; then
   printf "Error: Java build folder '$JAVA_BUILD_SUBFOLDER' does not exist.\n"
   exit 2
 fi
+printf "Moved to $JAVA_BUILD_SUBFOLDER...\n"
 
 echo "Runinng maven install in $(pwd)..."
 output=$(mvn clean install -DskipTests 2>&1)
@@ -89,13 +106,11 @@ cp -R "$CONFORMANCE_TESTS_SOURCE"/* "$CONFORMANCE_TESTS_FOLDER"
 printf "Copied from $CONFORMANCE_TESTS_SOURCE to $CONFORMANCE_TESTS_FOLDER...\n"
 
 # Move to the subfolder
-cd "$CONFORMANCE_TESTS_FOLDER" 2>/dev/null
-printf "Moved to $CONFORMANCE_TESTS_FOLDER...\n"
-
-if [ $? -ne 0 ]; then
+if ! cd "$CONFORMANCE_TESTS_FOLDER" 2>/dev/null; then
   printf "Error: Java conformance tests folder '$CONFORMANCE_TESTS_FOLDER' does not exist.\n"
   exit 2
 fi
+printf "Moved to $CONFORMANCE_TESTS_FOLDER...\n"
 
 echo "Runinng maven install in $(pwd)..."
 output=$(mvn clean install -DskipTests 2>&1)

@@ -24,9 +24,9 @@ The reference implementation is [assets/run_unittests_java.sh](assets/run_unitte
 
 ## Always Bash
 
-turri requires this script and runs it itself, as `bash run_unittests_<lang>.sh <build_folder>` on the person's machine - macOS, Linux or WSL: its exit code decides whether a functional spec's unit tests pass. So the script is always **Bash (`.sh`)**, and stays portable across them - POSIX tools and flags, nothing only one of them has.
+turri requires this script and runs it itself, as `bash run_unittests_<lang>.sh <build_folder>` on the person's machine - macOS, Linux or Windows, where bash is Git Bash: its exit code decides whether a functional spec's unit tests pass. So the script is always **Bash (`.sh`)**, and stays portable across them - see [Bash specifics](#bash-specifics).
 
-A **PowerShell (`.ps1`)** copy is written only when the user asks for one, to run the tests by hand on native Windows. turri never runs it, so a project with only a `.ps1` has no unit testing script.
+A **PowerShell (`.ps1`)** copy is written only when the user asks for one, to run the tests by hand in PowerShell. turri never runs it, so a project with only a `.ps1` has no unit testing script.
 
 The same eight-step pattern applies to both. Only the syntax changes.
 
@@ -35,7 +35,7 @@ The same eight-step pattern applies to both. Only the syntax changes.
 Every testing script must implement these steps **in this order**:
 
 1. **Toolchain check.** Verify that the required language runtime / build tool (and the required version, if any) is installed. If not, print an error and exit with code `69`.
-2. **Argument validation.** Require exactly one positional argument: the source build folder. If missing, print usage and exit with code `1`. turri passes this argument as an **absolute path** (older harnesses passed a relative one) — the script must work with both, which is why the working-folder name in step 3 is built from the argument's *basename*, never from the raw argument.
+2. **Argument validation.** Require exactly one positional argument: the source build folder. If missing, print usage and exit with code `1`. turri passes this argument as an **absolute path** (older harnesses passed a relative one; on Windows it is written with forward slashes, `C:/Users/...`) — the script must work with both, which is why the working-folder name in step 3 is built from the argument's *basename*, never from the raw argument.
 3. **Working directory setup.** Define a working folder in the **system temp directory**: `/tmp/<lang>_$(basename "$1")` in Bash, `Join-Path ([System.IO.Path]::GetTempPath()) "<lang>_$(Split-Path $BuildFolder -Leaf)"` in PowerShell (written as `<temp>/<lang>_<basename>` below). If it exists, wipe its contents; otherwise create it. Register cleanup so the folder is removed when the script exits — `trap 'rm -rf "$WORKING_FOLDER"' EXIT` in Bash, a `Remove-Item -Recurse -Force` in the `finally` block in PowerShell. This folder — and **only** this folder — is where every subsequent write must land.
 4. **Copy the build.** Recursively copy everything from the source folder into the working folder. After this step the source folder (`$1`) is treated as **read-only** for the rest of the script.
 5. **Enter the working directory.** `cd` / `Set-Location` into `<temp>/<lang>_<basename>`. If that fails, exit with code `2`. All remaining steps run from inside the working folder; they must never write back to the source build folder.
@@ -84,7 +84,7 @@ The dependency environment must live **inside** `$WORKING_FOLDER` so the test ru
 
 | Language | Isolation mechanism | Install command (run inside `$WORKING_FOLDER`) | Test command |
 |---|---|---|---|
-| Python | `venv` at `./.venv` | `python3 -m venv .venv && ./.venv/bin/pip install -r requirements.txt` (or `pyproject.toml` / `uv sync` / `poetry install`) | `./.venv/bin/pytest` (or `./.venv/bin/python -m pytest`) |
+| Python | `venv` at `./.venv` | `"$PYTHON" -m venv .venv && "$VENV_BIN/python" -m pip install -r requirements.txt` (or `pyproject.toml` / `uv sync` / `poetry install`) - `$VENV_BIN` is `.venv/bin`, or `.venv/Scripts` on Windows | `"$VENV_BIN/pytest"` (or `"$VENV_BIN/python" -m pytest`) |
 | Node.js | local `./node_modules` (default) | `npm ci` (preferred) or `npm install` | `npm test` |
 | Java | project-scoped Maven repo at `./.m2` | `mvn -Dmaven.repo.local=./.m2 dependency:resolve` (optional pre-warm) | `mvn -Dmaven.repo.local=./.m2 test` |
 | Go | module cache at `./.gocache` | `GOMODCACHE="$PWD/.gocache" go mod download` (optional pre-warm) | `GOMODCACHE="$PWD/.gocache" go test ./...` |
@@ -96,7 +96,7 @@ Notes:
 - **Always pass the isolation flag/env var to both the install command and the test command** — they must agree on where deps live, otherwise the test command will silently fall back to the global cache **or** (worse) the source build folder.
 - **Python is the only ecosystem where the venv is mandatory** to satisfy "into a virtual environment" literally. The others use language-native equivalents that achieve the same isolation.
 - **Pre-warming is optional for Java/Go/Rust** — their test commands will fetch deps on demand. Doing it as a separate step makes failures easier to diagnose and gives a clean "install failed vs test failed" signal.
-- **Don't activate the venv** in Bash via `source .venv/bin/activate` — call `./.venv/bin/<tool>` directly. It's more portable and avoids subshell weirdness. In PowerShell, use `& .\.venv\Scripts\<tool>.exe` similarly.
+- **Don't activate the venv** in Bash via `source .venv/bin/activate` — call `"$VENV_BIN/<tool>"` directly, `$VENV_BIN` being `.venv/bin`, or `.venv/Scripts` on Windows. It's more portable and avoids subshell weirdness. In PowerShell, use `& .\.venv\Scripts\<tool>.exe` similarly.
 - **Propagate the install exit code immediately.** In Bash: `<install cmd> || exit $?`. In PowerShell: check `$LASTEXITCODE` and `exit $LASTEXITCODE` if non-zero.
 
 ### Static checks
@@ -122,10 +122,18 @@ Notes:
 
 ### Bash specifics
 
-- **Shebang:** `#!/bin/bash`.
+- **Shebang:** `#!/usr/bin/env bash` - turri runs it with `bash` itself, and a person running it by hand gets the bash on their PATH, which is not at `/bin/bash` everywhere.
 - **File naming:** `run_unittests_<lang>.sh`, placed in `assets/` (skill reference) or `test_scripts/` (target project).
 - **Argument:** `$1`.
 - **Make it executable:** `chmod +x test_scripts/run_unittests_<lang>.sh`.
+- **Portable - macOS, Linux and Windows alike.** turri runs the script with the `bash` on the person's PATH: on macOS often the system's own bash 3.2, on Windows Git Bash. Write it for all three:
+  - bash 3.2's features only - no `mapfile` / `readarray`, `declare -A`, `${var,,}`, `|&`;
+  - tools and flags that GNU, BSD and Git Bash all have (`cp -R`, `mktemp -d`, `find`, `grep -E` with `[[:space:]]` rather than `\s`, `sed` without `-i`), and none that only some machines have: not `tree`, `bc`, `jq`, `realpath`, `timeout`, `date +%N` (time with bash's own `SECONDS`), not macOS's `/usr/libexec/java_home` (take `JAVA_HOME`, else the `java` on the PATH);
+  - a folder argument resolved with `$(cd "$1" && pwd)`, never told absolute by a leading `/`: on Windows turri passes `C:/Users/...`;
+  - every path quoted: a Windows home has spaces in it (`C:/Users/Ana Lee`);
+  - a path a native tool reads from a file the script writes - a config, a settings file - relative to the working folder, as Git Bash's `/tmp/...` means nothing to a Windows program reading a file;
+  - a Python venv keeps its tools in `.venv/bin`, on Windows in `.venv/Scripts`: pick the one that is there (`if [ -d .venv/Scripts ]; then VENV_BIN=.venv/Scripts; else VENV_BIN=.venv/bin; fi`) and call them by path. And on Windows `python3` may be the Microsoft Store's stand-in, which runs nothing: take the first of `python3` and `python` that runs `-c "import sys"`;
+  - LF line endings - bash cannot run a script with CRLF ones, which a Windows checkout under git's `core.autocrlf` makes of it. When the project is a git repository whose `.gitattributes` lacks `*.sh text eol=lf`, say so in your result.
 
 ### PowerShell specifics
 

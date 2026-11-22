@@ -1,9 +1,8 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# Export Java 21
-#export JAVA_HOME="/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home"
-#export PATH="$JAVA_HOME/bin:$PATH"
-echo "JAVA_HOME: $JAVA_HOME"
+# Java 21: the person's JAVA_HOME, else the java on the PATH - nothing here names where one OS keeps it.
+echo "JAVA_HOME: ${JAVA_HOME:-unset - the java on the PATH}"
+java -version 2>&1
 
 # Check if build folder name is provided
 if [ -z "$1" ]; then
@@ -19,14 +18,13 @@ if [ -z "$2" ]; then
   exit 1
 fi
 
-current_dir=$(pwd)
-
 # Resolve the conformance tests folder to an absolute path ($2 may be relative
-# on older harnesses; turri passes it as an absolute path).
-case "$2" in
-  /*) CONFORMANCE_TESTS_SOURCE="$2" ;;
-  *)  CONFORMANCE_TESTS_SOURCE="$current_dir/$2" ;;
-esac
+# on older harnesses; turri passes it as an absolute path - on Windows C:/Users/...,
+# which a test for a leading / would take for a relative one).
+CONFORMANCE_TESTS_SOURCE="$(cd "$2" 2>/dev/null && pwd)" || {
+  printf "Error: the conformance tests folder '%s' does not exist.\n" "$2"
+  exit 2
+}
 
 # Host-relative paths of the module, as declared in ***implementation reqs***.
 # Replace the placeholders with the module's integration source path and its
@@ -104,11 +102,11 @@ else
   printf "Current directory: $(pwd)\n"
 
   printf "Subfolder does not exist. Creating it...\n"
-  mkdir -p $CONFORMANCE_TESTS_FOLDER
+  mkdir -p "$CONFORMANCE_TESTS_FOLDER"
 fi
 
 printf "Copying all files and folders from $CONFORMANCE_TESTS_SOURCE to $CONFORMANCE_TESTS_FOLDER...\n"
-cp -R "$CONFORMANCE_TESTS_SOURCE"/* $CONFORMANCE_TESTS_FOLDER
+cp -R "$CONFORMANCE_TESTS_SOURCE"/* "$CONFORMANCE_TESTS_FOLDER"
 
 # Move to the subfolder
 printf "Moving to $CONFORMANCE_TESTS_FOLDER...\n"

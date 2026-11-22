@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # The unit tests of a Python build, with its static checks: ruff's formatter in check mode, ruff's linter and mypy,
 # each from the project's own `dev` dependency group, then pytest - as stdlib/lang/python asks for them.
 #
@@ -52,31 +52,35 @@ if [ ! -f pyproject.toml ]; then
   echo "Error: there is no pyproject.toml - the project's dependencies, pytest, ruff and mypy among them, go in it."
   exit 1
 fi
-export UV_PROJECT_ENVIRONMENT="$WORKING_FOLDER/.venv" UV_PYTHON="$PYTHON" UV_PYTHON_DOWNLOADS=never
-export UV_CACHE_DIR="${UV_CACHE_DIR:-$WORKING_FOLDER/.uv-cache}" PYTHONDONTWRITEBYTECODE=1
+# Relative to the working folder, where the script now is: a path a native Windows uv reads as it is, from Git Bash too.
+export UV_PROJECT_ENVIRONMENT=".venv" UV_PYTHON="$PYTHON" UV_PYTHON_DOWNLOADS=never
+export UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" PYTHONDONTWRITEBYTECODE=1
 unset PYTHONPATH PYTHONHOME
-echo "+ uv sync (the project and its dev dependency group into $UV_PROJECT_ENVIRONMENT)"
+echo "+ uv sync (the project and its dev dependency group into $WORKING_FOLDER/.venv)"
 uv sync || exit $?
+# The venv's own tools: in bin/ on macOS and Linux, in Scripts/ on Windows.
+if [ -d .venv/Scripts ]; then VENV_BIN=.venv/Scripts; else VENV_BIN=.venv/bin; fi
 
 echo "===== [7/8] Static checks ====="
 CHECKS=0
 for tool in ruff mypy; do
-  if [ ! -x ".venv/bin/$tool" ]; then
+  if [ ! -x "$VENV_BIN/$tool" ]; then
     echo "pyproject.toml:1:1: $tool is not in the dev dependency group - add it with \`uv add --dev $tool\`"
     CHECKS=1
   fi
 done
-if [ -x .venv/bin/ruff ]; then
-  echo "+ ruff format --check --output-format concise ."
-  .venv/bin/ruff format --check --output-format concise . || CHECKS=1
-  echo "+ ruff check --output-format concise --no-fix ."
-  .venv/bin/ruff check --output-format concise --no-fix . || CHECKS=1
+if [ -x "$VENV_BIN/ruff" ]; then
+  # Not uv's cache, kept in the working folder when the person has none of their own: its files are not the build's.
+  echo "+ ruff format --check --output-format concise --extend-exclude .uv-cache ."
+  "$VENV_BIN/ruff" format --check --output-format concise --extend-exclude .uv-cache . || CHECKS=1
+  echo "+ ruff check --output-format concise --no-fix --extend-exclude .uv-cache ."
+  "$VENV_BIN/ruff" check --output-format concise --no-fix --extend-exclude .uv-cache . || CHECKS=1
 fi
-if [ -x .venv/bin/mypy ]; then
+if [ -x "$VENV_BIN/mypy" ]; then
   # `files` in [tool.mypy] says what to check; without it, the whole build.
-  if grep -Eq '^\s*files\s*=' pyproject.toml; then TARGETS=(); else TARGETS=(.); fi
+  if grep -Eq '^[[:space:]]*files[[:space:]]*=' pyproject.toml; then TARGETS=(); else TARGETS=(.); fi
   echo "+ mypy --no-color-output --show-column-numbers ${TARGETS[*]:-}"
-  .venv/bin/mypy --no-color-output --show-column-numbers ${TARGETS[@]+"${TARGETS[@]}"} || CHECKS=1
+  "$VENV_BIN/mypy" --no-color-output --show-column-numbers ${TARGETS[@]+"${TARGETS[@]}"} || CHECKS=1
 fi
 [ "$CHECKS" -eq 0 ] && echo "Static checks: passed" || echo "Static checks: FAILED - the findings are above"
 

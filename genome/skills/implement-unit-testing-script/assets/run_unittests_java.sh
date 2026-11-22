@@ -1,13 +1,24 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# Check that Java 21 is installed
-if ! /usr/libexec/java_home -v 21 >/dev/null 2>&1; then
-  echo "Error: Java 21 is not installed."
+# Java 21 or newer, and Maven: JAVA_HOME's java when it is set, else the one on the PATH - the same on macOS, Linux
+# and Windows (Git Bash). Not macOS's /usr/libexec/java_home, which no other OS has.
+JAVA="java"
+[ -n "${JAVA_HOME:-}" ] && JAVA="$JAVA_HOME/bin/java"
+if ! "$JAVA" -version >/dev/null 2>&1; then
+  echo "Error: Java is not installed (no $JAVA)."
   exit 69
 fi
-
-export JAVA_HOME=$(/usr/libexec/java_home -v 21)
-java --version
+JAVA_VERSION="$("$JAVA" -version 2>&1 | sed -n 's/.*version "\([0-9]*\).*/\1/p' | head -n 1)"
+if [ -z "$JAVA_VERSION" ] || [ "$JAVA_VERSION" -lt 21 ]; then
+  echo "Error: Java 21 or newer is needed; $JAVA is Java ${JAVA_VERSION:-of a version it does not say}."
+  exit 69
+fi
+if ! command -v mvn >/dev/null 2>&1; then
+  echo "Error: Maven (mvn) is not installed."
+  exit 69
+fi
+"$JAVA" -version
+mvn --version
 
 # Check if subfolder name is provided
 if [ -z "$1" ]; then
@@ -36,12 +47,11 @@ fi
 cp -R "$1"/* "$WORKING_FOLDER"
 printf "Copied from $1 to $WORKING_FOLDER...\n"
 # Move to the subfolder
-cd "$WORKING_FOLDER" 2>/dev/null
-printf "Moved to $WORKING_FOLDER...\n"
-if [ $? -ne 0 ]; then
-  echo "Error: Subfolder '$1' does not exist."
+if ! cd "$WORKING_FOLDER" 2>/dev/null; then
+  echo "Error: cannot enter the working folder '$WORKING_FOLDER'."
   exit 2
 fi
+printf "Moved to $WORKING_FOLDER...\n"
 
 # Static checks: the code compiled with every javac lint warning an error - the flags pinned here, not in the pom.
 # A formatter runs only when the implementation reqs name one (mvn spotless:check, say). Every check runs, and the

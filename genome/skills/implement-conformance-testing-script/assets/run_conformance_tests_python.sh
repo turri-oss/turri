@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 UNRECOVERABLE_ERROR_EXIT_CODE=69
 
@@ -16,23 +16,28 @@ if [ -z "$2" ]; then
   exit $UNRECOVERABLE_ERROR_EXIT_CODE
 fi
 
-# Try to find Python interpreter (python3 first, then python)
-if command -v python3 &> /dev/null; then
-    PYTHON_CMD="python3"
-elif command -v python &> /dev/null; then
-    PYTHON_CMD="python"
-else
+# A Python interpreter that runs: python3 first, then python. Found on the PATH is not enough - on Windows python3 may
+# be the Microsoft Store's stand-in, which runs nothing.
+PYTHON_CMD=""
+for candidate in python3 python; do
+    if "$candidate" -c "import sys" >/dev/null 2>&1; then
+        PYTHON_CMD="$candidate"
+        break
+    fi
+done
+if [ -z "$PYTHON_CMD" ]; then
     printf "Error: Python interpreter not found. Please install Python.\n"
     exit $UNRECOVERABLE_ERROR_EXIT_CODE
 fi
 
 # Resolve the conformance tests folder to an absolute path so it can be used
 # after changing into the working folder ($2 may be relative to the invocation
-# directory on older harnesses; turri passes it as an absolute path).
-case "$2" in
-  /*) CONFORMANCE_TESTS_FOLDER="$2" ;;
-  *)  CONFORMANCE_TESTS_FOLDER="$(pwd)/$2" ;;
-esac
+# directory on older harnesses; turri passes it as an absolute path - on Windows
+# C:/Users/..., which a test for a leading / would take for a relative one).
+CONFORMANCE_TESTS_FOLDER="$(cd "$2" 2>/dev/null && pwd)" || {
+    printf "Error: the conformance tests folder '%s' does not exist.\n" "$2"
+    exit 2
+}
 
 # Conformance tests live in the conformance tests folder and nowhere else. One in the
 # build folder is in the wrong place: nothing would run it as part of the suite. Refuse.
@@ -61,54 +66,45 @@ mkdir -p "$PYTHON_BUILD_SUBFOLDER"
 cp -R "$1"/* "$PYTHON_BUILD_SUBFOLDER"
 
 # Move to the subfolder
-cd "$PYTHON_BUILD_SUBFOLDER" 2>/dev/null
-
-if [ $? -ne 0 ]; then
+if ! cd "$PYTHON_BUILD_SUBFOLDER" 2>/dev/null; then
   printf "Error: Python build folder '$PYTHON_BUILD_SUBFOLDER' does not exist.\n"
   exit $UNRECOVERABLE_ERROR_EXIT_CODE
 fi
 
-printf "Creating and activating virtual environment...\n"
+printf "Creating the virtual environment...\n"
 
-# Time the virtual environment creation and activation
-start_time=$(date +%s.%N)
+# Time the virtual environment's setup: bash's own SECONDS, as `date +%N` is GNU's alone and bc is not everywhere.
+SECONDS=0
 
 VENV_DIR=".venv"
 
-if ! $PYTHON_CMD -m venv "$VENV_DIR"; then
+if ! "$PYTHON_CMD" -m venv "$VENV_DIR"; then
     printf "Error: Failed to create virtual environment in '$VENV_DIR'.\n"
     exit $UNRECOVERABLE_ERROR_EXIT_CODE
 fi
 
-# shellcheck disable=SC1091
-source "$VENV_DIR/bin/activate"
-
-if [ $? -ne 0 ]; then
-    printf "Error: Failed to activate virtual environment at '$VENV_DIR/bin/activate'.\n"
-    exit $UNRECOVERABLE_ERROR_EXIT_CODE
-fi
+# The venv's own tools, called by path rather than activated: in bin/ on macOS and Linux, in Scripts/ on Windows.
+if [ -d "$VENV_DIR/Scripts" ]; then VENV_BIN="$VENV_DIR/Scripts"; else VENV_BIN="$VENV_DIR/bin"; fi
+VENV_PYTHON="$VENV_BIN/python"
+printf "Virtual environment: %s (%s)\n" "$VENV_DIR" "$("$VENV_PYTHON" --version 2>&1)"
 
 # Install requirements if requirements.txt exists
 if [ -f "requirements.txt" ]; then
-    pip install --upgrade pip
-    pip install -r requirements.txt
+    "$VENV_PYTHON" -m pip install --upgrade pip
+    "$VENV_PYTHON" -m pip install -r requirements.txt || exit $?
 else
     echo "Warning: requirements.txt not found. Cannot proceed with setting up requirements. The requirements may also already be installed"
 fi
 
-end_time=$(date +%s.%N)
-
-# Calculate and display the time taken
-duration=$(echo "$end_time - $start_time" | bc)
-printf "Requirements setup completed in %.2f seconds\n\n" "$duration"
+printf "Requirements setup completed in %d seconds\n\n" "$SECONDS"
 
 # Static checks of the conformance tests - and only them - in the environment they run in, the build installed: ruff's
 # formatter in check mode, ruff's linter and mypy with a tests profile. The settings are pinned here, in a config the
 # script writes into the working folder; none is read from the tests folder, whose files the conformance agent writes.
 STATIC_CHECKS_FAILED=80
 printf "Static checks of the conformance tests in %s...\n" "$CONFORMANCE_TESTS_FOLDER"
-echo "+ pip install ruff mypy"
-pip install ruff mypy || exit $?
+echo "+ $VENV_PYTHON -m pip install ruff mypy"
+"$VENV_PYTHON" -m pip install ruff mypy || exit $?
 cat > .conformance-mypy.ini <<'INI'
 [mypy]
 disallow_untyped_defs = True
@@ -117,17 +113,17 @@ ignore_missing_imports = True
 INI
 CHECKS=0
 echo "+ ruff format --check --no-cache --isolated --output-format concise $CONFORMANCE_TESTS_FOLDER"
-ruff format --check --no-cache --isolated --output-format concise "$CONFORMANCE_TESTS_FOLDER" || CHECKS=1
+"$VENV_BIN/ruff" format --check --no-cache --isolated --output-format concise "$CONFORMANCE_TESTS_FOLDER" || CHECKS=1
 echo "+ ruff check --no-cache --isolated --output-format concise --no-fix $CONFORMANCE_TESTS_FOLDER"
-ruff check --no-cache --isolated --output-format concise --no-fix "$CONFORMANCE_TESTS_FOLDER" || CHECKS=1
+"$VENV_BIN/ruff" check --no-cache --isolated --output-format concise --no-fix "$CONFORMANCE_TESTS_FOLDER" || CHECKS=1
 echo "+ mypy --config-file .conformance-mypy.ini --cache-dir ./.mypy_cache --no-color-output --show-column-numbers $CONFORMANCE_TESTS_FOLDER"
-mypy --config-file .conformance-mypy.ini --cache-dir ./.mypy_cache --no-color-output --show-column-numbers "$CONFORMANCE_TESTS_FOLDER" || CHECKS=1
+"$VENV_BIN/mypy" --config-file .conformance-mypy.ini --cache-dir ./.mypy_cache --no-color-output --show-column-numbers "$CONFORMANCE_TESTS_FOLDER" || CHECKS=1
 [ "$CHECKS" -eq 0 ] && printf "Static checks: passed\n\n" || printf "Static checks: FAILED - the findings are above\n\n"
 
 # Execute all Python conformance tests in the build folder - whatever the checks said, so one run reports both
 printf "Running Python conformance tests...\n\n"
 
-output=$($PYTHON_CMD -m unittest discover -b -s "$CONFORMANCE_TESTS_FOLDER" 2>&1)
+output=$("$VENV_PYTHON" -m unittest discover -b -s "$CONFORMANCE_TESTS_FOLDER" 2>&1)
 exit_code=$?
 
 # Echo the original output

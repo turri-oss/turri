@@ -1,9 +1,8 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# Export Java 21
-#export JAVA_HOME="/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home"
-#export PATH="$JAVA_HOME/bin:$PATH"
-echo "JAVA_HOME: $JAVA_HOME"
+# Java 21: the person's JAVA_HOME, else the java on the PATH - nothing here names where one OS keeps it.
+echo "JAVA_HOME: ${JAVA_HOME:-unset - the java on the PATH}"
+java -version 2>&1
 
 # Check if subfolder name is provided
 if [ -z "$1" ]; then
@@ -25,15 +24,15 @@ if [ ! -d "$MAIN_PROJECT_FOLDER" ]; then
 fi
 
 # clean existing code from the main project folder
-rm -rf $MAIN_PROJECT_FOLDER/<placeholder for integration code>/*
-rm -rf $MAIN_PROJECT_FOLDER/<placeholder for integration code tests>/*
+rm -rf "$MAIN_PROJECT_FOLDER/<placeholder for integration code>"/*
+rm -rf "$MAIN_PROJECT_FOLDER/<placeholder for integration code tests>"/*
 
 # copy generated code to the main project folder
 # FIX: added the mkdir lines otherwise it complains that the cp destintation directory does not exist
-mkdir -p $MAIN_PROJECT_FOLDER/<placeholder for integration code>
-mkdir -p $MAIN_PROJECT_FOLDER/<placeholder for integration code tests>
-cp -R $1/<placeholder for integration code>/* $MAIN_PROJECT_FOLDER/<placeholder for integration code>
-cp -R $1/<placeholder for integration code tests>/* $MAIN_PROJECT_FOLDER/<placeholder for integration code tests>
+mkdir -p "$MAIN_PROJECT_FOLDER/<placeholder for integration code>"
+mkdir -p "$MAIN_PROJECT_FOLDER/<placeholder for integration code tests>"
+cp -R "$1/<placeholder for integration code>"/* "$MAIN_PROJECT_FOLDER/<placeholder for integration code>"
+cp -R "$1/<placeholder for integration code tests>"/* "$MAIN_PROJECT_FOLDER/<placeholder for integration code tests>"
 
 # Move to the subfolder
 # FIX: added this line to print the current directory to help the LLM
