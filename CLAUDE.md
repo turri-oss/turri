@@ -29,6 +29,18 @@ Tests that run real commands behind the OS sandbox are wrapped in `runIf(sandbox
 - imports use explicit `.ts` extensions;
 - don't use syntax that type stripping can't erase: parameter properties (`constructor(readonly x: T)`), `enum`, `namespace`. Declare the field and assign it in the constructor. `tsc` and `tsx` (the `npm run regenerate`-style scripts) both accept these, so they only fail when run through `turri`.
 
+## Linux, macOS and Windows
+
+turri is developed for all three, as equals: no code assumes the OS it is written on. Where the OSes differ, the code asks Node (`node:path`, `node:os`, `process.platform`) rather than hard-coding one's answer, and what only one OS has - Seatbelt, bubblewrap, process groups - is behind a check for it, with what the others do instead said beside it. On Windows, bash is Git Bash.
+
+- **A path on disk** is built and taken apart with `node:path` - `join`, `resolve`, `dirname`, `basename`, `relative`, `sep` - never with `/` in a template string, `+ "/"`, or `split("/")`.
+- **Inside a folder** is `isWithin(path, root)` (`regenerate/paths.ts`), never `startsWith(`${root}/`)` or `relative(...).startsWith("..")`: a Windows path does not start with `root/`, and one on another drive gives `relative` an absolute path.
+- **A name, not a place** - a file of a codebase, a .plain file in a diff, anything compared with git's paths or the parser's - is written with `/` on every OS: `slashed(relative(...))`, and `posix.join` to build one. `listFiles` gives codebase files so. Git pathspecs and refs, `stdlib/...` imports and `provider/model` ids are such names.
+- **A path handed to bash** - a testing script's arguments, a `bash -c` script's - is `slashed`: Git Bash's tools may read a backslash as an escape (GNU tar took the `\a` of `C:\Users\anton` for a bell). Better still, give the tool no path at all: run it with `cwd`.
+- **Lists of paths** split on `delimiter` (`;` on Windows), never `":"`; temporary folders come from `tmpdir()` and the person's home from `homedir()`, never `/tmp` or `process.env.HOME` (unset on Windows outside Git Bash).
+- **The genome too.** What the skills and rules teach agents runs on the person's machine: a testing script is Bash for macOS's bash 3.2, Linux and Git Bash at once (the testing-script skills' *Bash specifics*), and their reference scripts in `assets/` are run on macOS and on Linux (Docker) after a change.
+- **Tests** of what differs on Windows run everywhere: `tests/windows-paths.test.ts` mocks `node:path` with Node's `win32` and runs turri's own code on `C:\` paths. A fix for one OS comes with a test there, or one that fails on that OS's tools - checked against them (Docker for Linux's GNU tools) before the fix.
+
 ## Architecture
 
 **Names.** `plain_modules` and `.plaingit` are the ***plain language's, not turri's, and keep their names.
