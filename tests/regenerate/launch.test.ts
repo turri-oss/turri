@@ -16,6 +16,8 @@ import { NOTES_FILE } from "../../src/regenerate/notes.ts";
 import { RECORD_FILE } from "../../src/regenerate/records.ts";
 
 let dir: string;
+/** The temporary folder the test runs in: `dir`, unless a test put its project deeper. */
+let top: string;
 
 /** A module with its code committed, the way a render leaves it. */
 function built(moduleName: string, files: Record<string, string>): string {
@@ -62,12 +64,12 @@ function freePort(): Promise<number> {
 }
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "turri-launch-"));
+  dir = top = mkdtempSync(join(tmpdir(), "turri-launch-"));
   writeFileSync(join(dir, "config.yaml"), "module: app.plain\n");
 });
 afterEach(async () => {
   await stopLaunched();
-  rmSync(dir, { recursive: true, force: true });
+  rmSync(top, { recursive: true, force: true });
 });
 
 describe("exporting a codebase for a launch", () => {
@@ -112,6 +114,19 @@ describe("exporting a codebase for a launch", () => {
     // The work under way is the job's: it is left as it was.
     expect(readFileSync(join(code, "app.py"), "utf8")).toBe("print('hel");
     expect(existsSync(join(code, "wip.py"))).toBe(true);
+  });
+
+  it("exports into a folder whose path tar would read escapes in, as a Windows path through Git Bash", () => {
+    // GNU tar - Linux's, Git Bash's - reads `\a` in a path it is given as a bell: `C:\Users\anton` was a folder not there.
+    dir = join(dir, "C\\Users\\anton");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "config.yaml"), "module: app.plain\n");
+    built("app", { "app.py": "print('hello')\n" });
+
+    const deployment = exportModule(spec("app"));
+
+    expect(deployment.dir).toBe(join(dir, "dist", "app"));
+    expect(readFileSync(join(deployment.dir, "app.py"), "utf8")).toBe("print('hello')\n");
   });
 
   it("replaces what an earlier launch left in dist", () => {

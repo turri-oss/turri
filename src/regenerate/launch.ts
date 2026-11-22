@@ -4,7 +4,7 @@ import { connect } from "node:net";
 import { dirname, join, relative } from "node:path";
 import { HISTORY_DIR } from "./lineage.ts";
 import { NOTES_FILE } from "./notes.ts";
-import { distDirFor, ensureInScratch, projectDirOf } from "./paths.ts";
+import { distDirFor, ensureInScratch, projectDirOf, slashed } from "./paths.ts";
 import { findCodebaseTip, type ChainEntry } from "./requires.ts";
 import { RECORD_FILE } from "./paths.ts";
 
@@ -151,10 +151,12 @@ export function exportModule(plainFile: string, options: { inModule?: string; in
   // Emptied, not removed: the folder may be a mount point - a container's volume - that cannot be removed.
   mkdirSync(dir, { recursive: true });
   for (const entry of readdirSync(dir)) rmSync(join(dir, entry), { recursive: true, force: true });
+  // tar extracts where it runs, given no path: GNU tar reads escapes in the paths it is given, so a Windows path
+  // through Git Bash's tar (`-C C:\Users\anton`) names a folder that is not there - `\a` a bell.
   const exported = spawnSync(
     "bash",
-    ["-o", "pipefail", "-c", 'git --git-dir "$1" archive --format=tar "$2" | tar -x -f - -C "$3"', "export", join(moduleDir, HISTORY_DIR), `${commit}:code`, dir],
-    { encoding: "utf8" },
+    ["-o", "pipefail", "-c", 'git --git-dir "$1" archive --format=tar "$2" | tar -x -f -', "export", slashed(join(moduleDir, HISTORY_DIR)), `${commit}:code`],
+    { encoding: "utf8", cwd: dir },
   );
   if (exported.status !== 0) throw new Error(`Could not export ${entry.moduleName}'s code at ${commit.slice(0, 8)}: ${(exported.stderr ?? "").trim()}`);
   for (const file of [RECORD_FILE, NOTES_FILE]) rmSync(join(dir, file), { force: true });
