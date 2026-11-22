@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve, sep } from "node:path";
+import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** A module's code record and its tests' - `code/.turri.json`, `tests/.turri.json` (records.ts). */
@@ -24,6 +24,25 @@ export const STDLIB_DIR = join(dirname(dirname(dirname(fileURLToPath(import.meta
  * codebase instead of living in a scratch directory that can be cleared without anyone
  * noticing the specs and the code have drifted apart.
  */
+
+/**
+ * Whether `path` is `root` or inside it, in this machine's paths: on Windows a path is not under `C:\x` by starting
+ * with `C:\x/`, and one on another drive is outside whatever its text.
+ */
+export function isWithin(path: string, root: string): boolean {
+  const from = relative(root, path);
+  return from === "" || (from !== ".." && !from.startsWith(`..${sep}`) && !isAbsolute(from));
+}
+
+/**
+ * A path written with `/` on every machine. A relative one is a name, as git and ***plain write one: shown, compared or
+ * put in a diff - a file of a codebase, a .plain file from the project. An absolute one is a path handed to bash, which
+ * on Windows is Git Bash, whose tools may read a backslash as an escape: Windows and Git Bash both take `C:/Users`.
+ * Opening a file in turri still goes through `join`.
+ */
+export function slashed(path: string): string {
+  return sep === "/" ? path : path.split(sep).join("/");
+}
 
 export const MODULES_DIR = "plain_modules";
 
@@ -189,7 +208,7 @@ export function resolveTemplateDirs(plainFile: string, extra: string[] = []): st
   dirs.push(...extra.map((dir) => resolve(dir)));
 
   const fromEnv = process.env.PLAIN_TEMPLATE_DIRS;
-  if (fromEnv) dirs.push(...fromEnv.split(":").filter(Boolean).map((dir) => resolve(dir)));
+  if (fromEnv) dirs.push(...fromEnv.split(delimiter).filter(Boolean).map((dir) => resolve(dir)));
 
   return [...new Set(dirs)];
 }

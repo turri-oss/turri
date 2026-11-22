@@ -3,7 +3,7 @@ import "./terminal-images.ts";
 import { moduleOfTestPlainFile, refuseTestPlainFile, testPlainFileRefusal } from "./test-plain-files.ts";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { conversationCommand, conversationSettled, conversationWriting } from "./regenerate/conversation-writes.ts";
 import { fileURLToPath } from "node:url";
 import type { AgentSession, ExtensionAPI, ExtensionContext, ExtensionFactory, ModelRegistry } from "@earendil-works/pi-coding-agent";
@@ -1817,13 +1817,13 @@ export function projectConfigBlock(root: string): string {
 
   const describe = (dir: string): string[] => {
     const modules = moduleConfigsOf(dir);
-    const where = dir === root ? "" : ` (paths relative to ${relative(root, dir)}/)`;
-    const at = (name: string) => (dir === root ? name : `${relative(root, dir)}/${name}`);
+    const where = dir === root ? "" : ` (paths relative to ${relative(root, dir)}${sep})`;
+    const at = (name: string) => (dir === root ? name : join(relative(root, dir), name));
     return [
       ...settings(
         readProjectConfig(dir),
         withConfigModule(undefined, () => findTestScripts(dir)),
-        dir === root ? `${projectConfigFile(dir)}, for the specs here:` : `${relative(root, dir)}/${projectConfigFile(dir)}, for the specs in ${relative(root, dir)}/ - built in ${relative(root, dir)}/plain_modules:`,
+        dir === root ? `${projectConfigFile(dir)}, for the specs here:` : `${join(relative(root, dir), projectConfigFile(dir))}, for the specs in ${relative(root, dir)}${sep} - built in ${join(relative(root, dir), "plain_modules")}:`,
         where,
         modules.length > 0 ? "project of module files" : "project",
       ),

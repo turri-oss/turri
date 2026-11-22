@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, rmSync, statSync } from "node:fs";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, join, posix, relative, resolve } from "node:path";
 import { plainFileParser, withParseCache } from "../plain/parser.ts";
 import { STDLIB_ROOT } from "../plain/stdlib.ts";
 import { ACCEPTANCE_TESTS, CONFORMANCE_TESTS, FUNCTIONAL_REQUIREMENTS, REQUIRED_FUNCTIONAL_SPECS, TEST_PLAIN_FILES, TEST_REQUIREMENTS, type MarshalledPlainSource, type TestPlainFileBinding } from "../plain/spec.ts";
@@ -43,7 +43,7 @@ import { describeSpecDiff, renderSpecDiff, specFilesOf, type SpecSnapshot } from
 import { locateDiffLines, type DiffWhere } from "./diff-view.ts";
 import { agentChanges, changeDiffInFiles } from "./change-view.ts";
 import { createSteering, MAX_STEERS, markTold, steer, waitingSteer, type JobSteering } from "./steering.ts";
-import { projectDirOf } from "./paths.ts";
+import { isWithin, projectDirOf, slashed } from "./paths.ts";
 import { changesBetween, parseTree, serializeTree, type SpecChange, type SpecStep } from "./spec-steps.ts";
 import { hasFiles, listFiles } from "./testing.ts";
 import { makeRenames, pureRenames, renameText } from "./renames.ts";
@@ -923,7 +923,7 @@ export function createWorkLoop(options: {
   const plan = async (state: ModuleState, spec: SpecSnapshot, from: MarshalledPlainSource, track: Track = "code"): Promise<{ jobs: PlannedJob[]; notes: string[] }> => {
     const tip = tipEntry(state);
     const current = track === "code" ? codeTree(spec.tree) : conformanceOf(state, spec, from);
-    const specFile = relative(options.cwd, tip.plainFile);
+    const specFile = slashed(relative(options.cwd, tip.plainFile));
     let specText = "";
     try {
       specText = readFileSync(tip.plainFile, "utf8");
@@ -986,7 +986,7 @@ export function createWorkLoop(options: {
     const steering = conformance ? undefined : createSteering(planned.step.tree, tip.moduleName);
     // Shown as its agent is given it: the job's own items, from whichever file they are written in - its imports too, and
     // for the conformance tests the test plain files of the functional specs whose scenarios it carries out.
-    const moduleFile = relative(projectDirOf(tip.plainFile), tip.plainFile) || basename(tip.plainFile);
+    const moduleFile = slashed(relative(projectDirOf(tip.plainFile), tip.plainFile)) || basename(tip.plainFile);
     const shown = changeDiffInFiles(
       agentChanges(planned.step.changes, planned.track),
       moduleFile,
@@ -2161,10 +2161,11 @@ const NO_PLAN = "the planner found no way to cut the work into pulses that hold 
  */
 function testPlainPathOf(tree: MarshalledPlainSource, moduleName: string, plainFile: string, base: string): (funcId: string, module?: string) => string {
   const bound = Object.entries((tree[TEST_PLAIN_FILES] as Record<string, TestPlainFileBinding> | undefined) ?? {});
-  const fallback = relative(dirname(plainFile), testDirOf(plainFile));
+  // Named as the parser names a test plain file, with `/`: the names go into a diff, beside the parser's.
+  const fallback = slashed(relative(dirname(plainFile), testDirOf(plainFile)));
   return (funcId, module = moduleName) => {
-    const name = bound.find(([, binding]) => binding.module === module && binding.func_id === funcId)?.[0] ?? join(fallback, module, `${funcId}.plain`);
-    return join(base, name);
+    const name = bound.find(([, binding]) => binding.module === module && binding.func_id === funcId)?.[0] ?? posix.join(fallback, module, `${funcId}.plain`);
+    return posix.join(base, name);
   };
 }
 
@@ -2174,7 +2175,7 @@ function whereInFiles(diff: string, chain: ChainEntry[]): DiffWhere {
     // The test plain files too: a conformance pulse's diff has their lines.
     const files = [...chain].reverse().flatMap((entry) => [...specFilesOf(entry.plainFile), ...testPlainFilesOf(entry.plainFile)]);
     // A standard library template by its import path, not by where turri happens to be.
-    const nameOf = (path: string) => (path.startsWith(`${STDLIB_ROOT}/stdlib/`) ? relative(STDLIB_ROOT, path) : relative(projectDirOf(chain.at(-1)!.plainFile), path) || basename(path));
+    const nameOf = (path: string) => slashed(isWithin(path, join(STDLIB_ROOT, "stdlib")) ? relative(STDLIB_ROOT, path) : relative(projectDirOf(chain.at(-1)!.plainFile), path) || basename(path));
     const unique = [...new Set(files)].map((path) => ({ name: nameOf(path), text: readFileSync(path, "utf8") }));
     return locateDiffLines(diff, unique);
   } catch {

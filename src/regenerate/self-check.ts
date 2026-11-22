@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
-import { relative, resolve, sep } from "node:path";
+import { relative, resolve } from "node:path";
+import { isWithin } from "./paths.ts";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { workDiff } from "./lineage.ts";
@@ -78,7 +79,7 @@ export function createCanItFailTool(options: { buildDir: string; script: string;
       const say = (text: string) => ({ content: [{ type: "text" as const, text }], details: {} });
       if (left <= 0) return say("can_it_fail has no runs left in this session: decide with what it showed.");
       const path = resolve(options.buildDir, file);
-      if (relative(options.buildDir, path).startsWith(`..${sep}`) || relative(options.buildDir, path) === "..") return say(`${file} is not in the code folder.`);
+      if (!isWithin(path, options.buildDir)) return say(`${file} is not in the code folder.`);
       let text: string;
       try {
         text = readFileSync(path, "utf8");

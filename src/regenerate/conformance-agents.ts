@@ -6,7 +6,7 @@ import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { ask, BEGIN, createExecutor } from "../pi.ts";
 import { confinedTools } from "./confine.ts";
-import { ensureInModulesScratch, modulesScratchDir } from "./paths.ts";
+import { ensureInModulesScratch, isWithin, modulesScratchDir } from "./paths.ts";
 import { workspaceBlock } from "./workspace.ts";
 import { reportActivity } from "./activity.ts";
 import { runTiming, withTestingScripts, type ScriptRun, type TestScripts } from "./test-scripts.ts";
@@ -1049,7 +1049,7 @@ export async function judgeFailure(options: {
   const opened = (cited: string) => {
     // A file it opened, or one in a folder it listed or searched; cited as it was opened, or relative to the code or the tests.
     const candidates = [resolve(options.conformanceDir, cited), resolve(options.buildDir, cited)];
-    return candidates.some((path) => [...openedPaths].some((seen) => path === seen || path.startsWith(`${seen}/`)));
+    return candidates.some((path) => [...openedPaths].some((seen) => isWithin(path, seen)));
   };
   const scriptText = options.testingScripts?.map((script) => script.content).join("\n");
   const before = { code: digestFiles(options.buildDir), tests: digestFiles(options.conformanceDir) };

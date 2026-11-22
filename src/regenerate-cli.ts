@@ -36,7 +36,7 @@ for every functional spec's scenarios.
   --report <file.json>     write a report of the run there - outcome, usage, pulses, functional specs completed -
                            as it starts, as each pulse ends and as it exits (docs/headless.md)
 
-  PLAIN_TEMPLATE_DIRS      colon-separated template directories`;
+  PLAIN_TEMPLATE_DIRS      template directories, separated as PATH is (: or ; on Windows)`;
 
 const { positional, options } = parseArgs(process.argv.slice(2), ["--dry-run", "--start-over", "--from-scratch", "--from-scratch-chain"], USAGE, ["--build-dir", "--report", "--harness-model", "--judge-model", "--review", "--mutation-testing"]);
 const { report, buildDir } = headlessOptions(options);

@@ -16,7 +16,7 @@ import { testPlainFilesOf } from "../test-plain-files.ts";
 import { STDLIB_ROOT } from "../plain/stdlib.ts";
 import { conformanceDirFor } from "./conformance.ts";
 import { chainSpec, type MapCodebase, type MapPlan, type MapPulse } from "./loop.ts";
-import { modulesRoot, projectDirOf } from "./paths.ts";
+import { isWithin, modulesRoot, projectDirOf, slashed } from "./paths.ts";
 import { HISTORY_DIR } from "./lineage.ts";
 import { codeTree, hasScenarios, marksTestsAgain, readRecord, RECORD_FILE } from "./records.ts";
 import { pureRenames } from "./renames.ts";
@@ -272,8 +272,8 @@ function keyed(items: MapItem[]): MapItem[] {
 
 /** A spec file as the map names it: a template of turri's standard library by its import path, others from the project. */
 export function importLabel(path: string, projectDir: string, stdlibRoot = STDLIB_ROOT): string {
-  const name = path.startsWith(`${stdlibRoot}/stdlib/`) ? relative(stdlibRoot, path) : relative(projectDir, path) || basename(path);
-  return name.replace(/\.plain$/, "");
+  const name = isWithin(path, join(stdlibRoot, "stdlib")) ? relative(stdlibRoot, path) : relative(projectDir, path) || basename(path);
+  return slashed(name).replace(/\.plain$/, "");
 }
 
 /**

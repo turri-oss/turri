@@ -1,4 +1,5 @@
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { join } from "node:path";
 import { Type } from "typebox";
 import { ask, BEGIN, createExecutor } from "../pi.ts";
 import { debugMode } from "../config.ts";
@@ -105,7 +106,7 @@ export function diagnosisPrompt(options: {
     `- the project, in ${options.projectDir}: its .plain specs and templates, config.turri.yaml, the testing scripts, and`,
     "  plain_modules - each module's code and conformance tests, the notes (.turri-notes.md in the code), the full",
     "  outputs of the test runs (plain_modules/.turri/logs), and every agent's own log",
-    `  (${options.projectDir}/.turri/debug) - newest last;`,
+    `  (${join(options.projectDir, ".turri", "debug")}) - newest last;`,
     ...(options.jobLog !== undefined ? [`- this job's own log: ${options.jobLog};`] : []),
     `- turri itself, in ${options.harnessDir}: its source (src/), its skills (genome/skills/), the ***plain authoring rules`,
     "  (genome/rules/) and its docs (docs/) - so a failure that comes from the harness can be named as that.",

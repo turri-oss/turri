@@ -3,7 +3,7 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { DEFAULT_TEST_DIR, testDirOf } from "./config.ts";
 import { PLAIN_SOURCE_FILE_EXTENSION } from "./plain/parser.ts";
 import { FUNC_ID_KEY, loadFrontmatter, MODULE_KEY } from "./plain/test-plain-file.ts";
-import { isProjectDir, projectDirOf } from "./regenerate/paths.ts";
+import { isProjectDir, isWithin, projectDirOf } from "./regenerate/paths.ts";
 
 /**
  * Where a project's test plain files are, and what each belongs to: `<test-dir>/<module>/`, every `.plain` file in it
@@ -38,12 +38,6 @@ function plainFilesUnder(dir: string): string[] {
 /** A module's test plain files: every .plain file under `<test-dir>/<module>/`, sorted, as absolute paths. */
 export function testPlainFilesOf(plainFile: string): string[] {
   return plainFilesUnder(join(testDirOf(plainFile), basename(plainFile, PLAIN_SOURCE_FILE_EXTENSION)));
-}
-
-/** Whether a path is a folder, or below one. */
-function within(path: string, folder: string): boolean {
-  const from = relative(folder, path);
-  return from === "" || (!from.startsWith("..") && !from.startsWith(sep) && from !== "..");
 }
 
 /** The frontmatter of a .plain file, as a test plain file's is read; empty when it cannot be read. */
@@ -93,8 +87,8 @@ export function testPlaceOf(path: string): TestPlace | undefined {
   const testDir = testDirOf(join(projectDir, "x.plain"));
   const metadata = directory || !existsSync(absolute) ? {} : frontmatterOf(absolute);
   const bound = typeof metadata[MODULE_KEY] === "string" && typeof metadata[FUNC_ID_KEY] === "string";
-  if (!within(absolute, testDir) && !bound) return undefined;
-  const parts = within(absolute, testDir) ? relative(testDir, absolute).split(sep).filter(Boolean) : [];
+  if (!isWithin(absolute, testDir) && !bound) return undefined;
+  const parts = isWithin(absolute, testDir) ? relative(testDir, absolute).split(sep).filter(Boolean) : [];
   const folderModule = directory ? parts[0] : parts.length > 1 ? parts[0] : undefined;
   return {
     projectDir,
@@ -162,7 +156,7 @@ export function strayTestPlainFiles(projectDir: string): Array<{ file: string; p
     const folder = relative(testDir, dirname(path)).split(sep).filter(Boolean)[0];
     const metadata = frontmatterOf(path);
     const named = typeof metadata[MODULE_KEY] === "string" ? (metadata[MODULE_KEY] as string) : undefined;
-    const home = (module: string) => `${shown(join(testDir, module), projectDir)}/`;
+    const home = (module: string) => `${shown(join(testDir, module), projectDir)}${sep}`;
     if (folder === undefined) {
       strays.push({ file, problem: named === undefined ? "move it to the folder of its module, in the test folder" : `move it to ${home(named)} (its module: ${named})` });
     } else if (!modules.has(folder)) {

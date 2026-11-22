@@ -5,7 +5,7 @@ import { Type } from "typebox";
 import { reportActivity } from "./activity.ts";
 import { maskSecrets } from "./masking.ts";
 import { NOTES_FILE } from "./notes.ts";
-import { modulesScratchDir } from "./paths.ts";
+import { modulesScratchDir, slashed } from "./paths.ts";
 import { BASE_RECORD_FILE, RECORD_FILE } from "./paths.ts";
 import { missingToolchain, runUnitScript, scriptFailure, type ScriptRun } from "./test-scripts.ts";
 import { COMMAND_TIMEOUT_MS } from "./shell.ts";
@@ -243,7 +243,7 @@ export function listFiles(root: string): string[] {
       if (NOT_CODE.has(entry)) continue;
       const full = join(dir, entry);
       if (statSync(full).isDirectory()) walk(full);
-      else found.push(relative(root, full));
+      else found.push(slashed(relative(root, full)));
     }
   };
   if (existsSync(root)) walk(root);

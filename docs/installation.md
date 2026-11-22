@@ -1,6 +1,6 @@
 # Installation
 
-**turri** runs wherever [pi](https://pi.dev) runs - macOS, Linux, WSL - with git, bash and Node 22.19 or newer (a Linux distribution's own `nodejs` package is often older: take it from nodejs.org, nvm or NodeSource). Native Windows is best effort: it needs bash on the PATH (Git for Windows' Git Bash), and has no OS sandbox under the agents' commands.
+**turri** runs wherever [pi](https://pi.dev) runs - macOS, Linux and Windows, natively or in WSL - with git, bash and Node 22.19 or newer (a Linux distribution's own `nodejs` package is often older: take it from nodejs.org, nvm or NodeSource). On Windows the bash is Git for Windows' Git Bash, on the PATH; native Windows has no OS sandbox under the agents' commands, the command check and the audit holding alone.
 
 The agents' commands run on this machine, with its toolchains - see [the sandbox](sandbox.md). Each is checked before it runs and audited after, on every platform; under them an OS sandbox fences it where the OS has one: Seatbelt on macOS, always there, and bubblewrap on Linux and WSL 2 - `apt install bubblewrap`, or your distribution's package.
 
@@ -133,6 +133,6 @@ For Gemini, `GEMINI_API_KEY` is what makes [pi](https://pi.dev) *offer* the goog
 
 | variable | |
 | --- | --- |
-| `PLAIN_TEMPLATE_DIRS` | colon-separated template directories, e.g. the standard library |
+| `PLAIN_TEMPLATE_DIRS` | template directories, separated as `PATH` is (`:`, or `;` on Windows), e.g. the standard library |
 | `TURRI_COMMAND_TIMEOUT` | seconds a command may run before it is stopped - an agent's own, its tests (default `120`) |
 | `TURRI_LEDGER` | `off`: write no [ledger](using.md#the-ledger) at all, whatever `ledger-keep:` says - the test suite sets it |

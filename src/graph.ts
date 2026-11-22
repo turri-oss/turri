@@ -112,7 +112,7 @@ function stepPrompt(skill: Skill, step: StepSpec, critique: string, context?: st
     "",
     // What the step names by path - its references, another skill to follow - is found from here.
     `This skill's own files are in ${skill.dir}: a path its steps name, such as references/<file>.md, is there. ` +
-      `A skill it says to follow is beside it, in ${dirname(skill.dir)}/<skill name>/SKILL.md - read it and follow it.`,
+      `A skill it says to follow is beside it, in ${join(dirname(skill.dir), "<skill name>", "SKILL.md")} - read it and follow it.`,
     "",
     // The artifact exists for the gate's judges to read. Without a gate its reply is what the step gives,
     // and asking for a file is a tool call spent on what the reply already says.

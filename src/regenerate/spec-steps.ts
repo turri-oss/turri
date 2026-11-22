@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, posix } from "node:path";
 import {
   ACCEPTANCE_TESTS,
   CONFORMANCE_TESTS,
@@ -704,12 +704,12 @@ export function diffRequiredSpecs(before: string, after: string, file = "spec.pl
   };
   const was = byModule(before);
   const now = byModule(after);
-  const folder = dirname(file);
+  const folder = posix.dirname(file);
   return [...new Set([...was.keys(), ...now.keys()])]
     .map((module) => {
       const text = (items: string[] | undefined) => (items === undefined ? "" : `***${FUNCTIONAL_REQUIREMENTS}***\n\n${items.join("\n\n")}\n`);
       const [from, to] = [text(was.get(module)), text(now.get(module))];
-      const path = folder === "." ? `${module}.plain` : `${folder}/${module}.plain`;
+      const path = posix.join(folder, `${module}.plain`);
       return from === to ? "" : gitDiff(from, to, 3, [path, path]);
     })
     .join("");

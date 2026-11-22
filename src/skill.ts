@@ -164,7 +164,7 @@ export function loadSkill(skillDir: string): Skill {
   const name = String(data.name ?? "");
   const description = String(data.description ?? "");
   if (!name || !description) {
-    throw new Error(`${dir}/SKILL.md: 'name' and 'description' are required by the Agent Skills spec`);
+    throw new Error(`${join(dir, "SKILL.md")}: 'name' and 'description' are required by the Agent Skills spec`);
   }
 
   const rawGates: RawGate[] = (data.metadata as any)?.gates ?? [];

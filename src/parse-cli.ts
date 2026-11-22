@@ -13,7 +13,7 @@ test folder is refused: name its module.
   --template-dir <dir>   extra template directory (repeatable)
   --json                 machine-readable output
 
-  PLAIN_TEMPLATE_DIRS    colon-separated template directories`;
+  PLAIN_TEMPLATE_DIRS    template directories, separated as PATH is (: or ; on Windows)`;
 
 
 const argv = process.argv.slice(2);

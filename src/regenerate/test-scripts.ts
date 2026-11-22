@@ -1,11 +1,11 @@
 import { fixMethod } from "./prompt.ts";
 import { randomUUID } from "node:crypto";
 import { accessSync, constants, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { basename, delimiter, dirname, join, resolve, sep } from "node:path";
+import { basename, delimiter, dirname, join, posix, relative, resolve, sep } from "node:path";
 import { CONFIG_FILE, CONFIG_KEYS, configModuleFor, configModuleOf, configModulePinned, moduleConfigFile, moduleConfigFileIn, moduleConfigsOf, projectConfigFile, readProjectConfig } from "../config.ts";
 import { reportActivity, reportLogNote, reportNote } from "./activity.ts";
 import { record, signatureHash } from "./ledger.ts";
-import { ensureInModulesScratch, modulesScratchDir } from "./paths.ts";
+import { ensureInModulesScratch, isWithin, modulesScratchDir, slashed } from "./paths.ts";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { keepTestOutput, listFiles, shownTestOutput, type TestRun } from "./testing.ts";
@@ -377,7 +377,7 @@ function stageTests(testsDirs: string[], target: string): number {
       let name = file;
       if (taken.has(name)) {
         const renamed = `${index + 1}_${basename(file)}`;
-        name = dirname(file) === "." ? renamed : join(dirname(file), renamed);
+        name = posix.dirname(file) === "." ? renamed : posix.join(posix.dirname(file), renamed);
       }
       taken.add(name);
       mkdirSync(dirname(join(target, name)), { recursive: true });
@@ -390,7 +390,7 @@ function stageTests(testsDirs: string[], target: string): number {
 /** What the project calls a script: its path from the spec's folder when it is under it. */
 function shown(script: string): string {
   const parent = dirname(dirname(script));
-  return script.startsWith(`${parent}/`) ? script.slice(parent.length + 1) : basename(script);
+  return isWithin(script, parent) ? relative(parent, script) : basename(script);
 }
 
 /** How long a test run may take: the command time limit. Over it, the run counts as failed. */
@@ -437,7 +437,7 @@ async function runScript(cwd: string, script: string, args: string[], logDir: st
   const started = Date.now();
   // Where and how it runs, for the log: how it ended is what the activity says.
   reportLogNote(`  ▶ ${shown(script)} on this machine, ${options.named !== undefined ? "on a fresh copy of the code" : `in place, from ${cwd}`} (limit ${Math.round(timeoutMs / 1000)}s)`);
-  const { exitCode, output, timedOut } = await runCommand(`bash ${[options.named ?? script, ...args].map(quote).join(" ")}`, {
+  const { exitCode, output, timedOut } = await runCommand(scriptCommand(options.named ?? script, args), {
     cwd,
     env: scriptEnv(),
     timeoutMs,
@@ -509,6 +509,15 @@ function withScriptLineNote(output: string, script: string): string {
     );
   });
   return `${[...new Set(notes)].join("\n")}\n\n${output}`;
+}
+
+/**
+ * The command a testing script runs by: `bash <script> <args>`, every path quoted and written with `/`. On Windows bash is
+ * Git Bash, whose tools may read a backslash as an escape - GNU tar reads the `\a` of `C:\Users\anton` as a bell - while
+ * Windows and Git Bash both take `C:/Users/anton`.
+ */
+export function scriptCommand(script: string, args: string[]): string {
+  return `bash ${[script, ...args].map((path) => quote(slashed(path))).join(" ")}`;
 }
 
 /** A path, quoted for bash. */

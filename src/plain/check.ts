@@ -204,7 +204,7 @@ export function checkTestFolder(projectDir: string): CheckResult | undefined {
   if (strays.length === 0) return undefined;
   const testDir = testDirOf(join(projectDir, `x${PLAIN_SOURCE_FILE_EXTENSION}`));
   return {
-    file: `${shown(testDir, projectDir)}/`,
+    file: `${shown(testDir, projectDir)}${sep}`,
     ok: false,
     errorType: `${strays.length} test plain file${strays.length === 1 ? "" : "s"} outside a module's folder`,
     problems: strays.map((stray) => `${stray.file} - ${stray.problem}`),
@@ -262,7 +262,7 @@ function scenarioCounts(spec: CheckedFunctionalSpec): string {
 export function formatCheckResults(results: CheckResult[]): string {
   const lines: string[] = [];
   for (const result of results) {
-    const name = result.file.endsWith("/") ? result.file : basename(result.file);
+    const name = result.file.endsWith(sep) ? result.file : basename(result.file);
     if (result.ok) {
       const specs = result.functionalSpecs ?? [];
       const requires =

@@ -1,5 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, relative, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { isWithin } from "./regenerate/paths.ts";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 import type { Questioning } from "./questioning.ts";
@@ -27,7 +28,7 @@ export function createWriteArtifactTool(runDir: string) {
     }),
     async execute(_id, params) {
       const target = resolve(root, params.path);
-      if (relative(root, target).startsWith("..")) {
+      if (!isWithin(target, root)) {
         throw new Error(`write_artifact: '${params.path}' escapes the artifact directory`);
       }
       mkdirSync(dirname(target), { recursive: true });

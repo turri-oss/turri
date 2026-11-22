@@ -5,7 +5,7 @@ import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent
 import { Type } from "typebox";
 import { passedCredentials } from "./agent-env.ts";
 import { missingToolchain } from "./test-scripts.ts";
-import { MODULES_DIR } from "./paths.ts";
+import { isWithin, MODULES_DIR } from "./paths.ts";
 import { reportActivity } from "./activity.ts";
 import { LINUX_MACHINE, MACOS_MACHINE } from "./os-sandbox.ts";
 
@@ -94,8 +94,11 @@ function toolchainFolder(path: string): string {
  * the stop is the sandbox's, and the fix is a line of config - `toolchains:` - not an install.
  */
 export function sandboxGapOf(text: string, options: { project?: string; exists?: (path: string) => boolean; platform?: NodeJS.Platform } = {}): SandboxGap | undefined {
+  const platform = options.platform ?? process.platform;
+  // The paths are read as Seatbelt's and bubblewrap's, from the error's text: Windows has no OS sandbox to hide one.
+  if (platform === "win32") return undefined;
   const exists = options.exists ?? existsSync;
-  const system = (options.platform ?? process.platform) === "darwin" ? MACOS_MACHINE : LINUX_MACHINE;
+  const system = platform === "darwin" ? MACOS_MACHINE : LINUX_MACHINE;
   const within = (path: string, root: string) => path === root || path.startsWith(`${root}/`);
   const named = [...text.matchAll(/(?:^|[\s'"`(=:])(\/[^\s'"`()<>,;]+)/g)].map((match) => match[1]!.replace(/[.:]+$/, ""));
   const isLock = (path: string) => LOCK_FILE.test(basename(path));
@@ -125,7 +128,7 @@ export function describeEnvironmentError(error: EnvironmentError, rerun?: string
   if (gap?.access === "write") {
     const what = gap.lock === true ? `the lock file \`${gap.paths[0]}\`, which the build takes as it runs` : `\`${gap.paths[0]}\``;
     const home = homedir();
-    const inHome = gap.paths[0] === home || gap.paths[0]!.startsWith(`${home}/`);
+    const inHome = isWithin(gap.paths[0]!, home);
     return [
       `**${error.moduleName} stopped: turri's sandbox kept its agents from writing ${what} - it is on this machine; nothing is missing, and nothing needs installing.**`,
       needed,
