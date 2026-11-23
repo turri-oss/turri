@@ -834,7 +834,9 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
   // A skill that runs in the background: started, and the turn goes on; its end comes back to this chat once it is idle.
   const skillRunEnds = skillRunDelivery(pi, link, contextNow);
   pi.on("session_shutdown", (event) => {
-    if (event.reason === "quit") for (const controller of backgroundSkillRuns.values()) controller.abort();
+    if (event.reason !== "quit") return;
+    for (const waiting of backgroundSkillQueue.values()) for (const run of waiting.splice(0)) run.drop();
+    for (const controller of backgroundSkillRuns.values()) controller.abort();
   });
   const startInBackground = (
     skill: (typeof skills)[number],
@@ -843,10 +845,38 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
     ctx: ExtensionContext,
   ): { text: string; details: { background: true; started?: false } & ReturnType<typeof runDetails> } => {
     const key = `${cwd}\0${skill.name}`;
-    if (backgroundSkillRuns.has(key)) {
-      return { text: `${skill.name} is running in the background already; what it does comes back to this chat when it ends. Nothing new was started.`, details: { background: true, started: false } };
     const kind = scriptKindOfSkill(skill.name);
     const shown = plainFile !== undefined ? relative(cwd, plainFile) || basename(plainFile) : undefined;
+    if (backgroundSkillRuns.has(key)) {
+      const waiting = backgroundSkillQueue.get(key) ?? [];
+      const runningFor = backgroundSkillFor.get(key);
+      // Another module's run waits its turn - its testing script counted as being written from now, so the modules that
+      // need it wait for it rather than start with another's. The same module's, or one for none, is the run under way.
+      if (plainFile === undefined || runningFor === undefined || runningFor === plainFile || waiting.some((run) => run.plainFile === plainFile)) {
+        return { text: `${skill.name} is running in the background already; what it does comes back to this chat when it ends. Nothing new was started.`, details: { background: true, started: false } };
+      }
+      const configModule = configModuleFor(plainFile);
+      const held = kind !== undefined ? writingScript({ project: projectDirOf(plainFile), kind, ...(configModule !== undefined ? { configModule } : {}) }) : () => {};
+      waiting.push({
+        plainFile,
+        // Started before the hold is let go: the module is never seen with no script being written in between.
+        start: () => {
+          try {
+            startInBackground(skill, params, plainFile, ctx);
+          } catch (error) {
+            const why = `did not start: ${error instanceof Error ? error.message : String(error)}`;
+            skillRunEnds.put({ skill: skill.name, ok: false, line: `${skill.name} ${why}.`, task: failedTask(skill.name, why, undefined, kind), ...runDetails(kind, shown) });
+          } finally {
+            held();
+          }
+        },
+        drop: held,
+      });
+      backgroundSkillQueue.set(key, waiting);
+      return {
+        text: `${skill.name} is running in the background for ${relative(cwd, runningFor) || basename(runningFor)}; the run for ${shown} starts once it ends, and what it does comes back to this chat then.${kind !== undefined ? ` Until it has written its ${kind === "unit" ? "unit testing script" : "conformance testing script"}, the modules that need it wait for it.` : ""} Do not start it again.`,
+        details: { background: true, ...runDetails(kind, shown) },
+      };
     }
     const model = skill.model === "coding" ? jobModel(ctx, undefined, plainFile) : conversationModel(ctx);
     const configModule = plainFile !== undefined ? configModuleFor(plainFile) : undefined;
@@ -854,6 +884,7 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
     const written = kind !== undefined ? writingScript({ project: plainFile !== undefined ? projectDirOf(plainFile) : cwd, kind, ...(configModule !== undefined ? { configModule } : {}) }) : () => {};
     const controller = new AbortController();
     backgroundSkillRuns.set(key, controller);
+    backgroundSkillFor.set(key, plainFile);
     const context = [
       conversationContext(ctx, params.context),
       shown !== undefined ? `It is for ${shown}${configModule !== undefined ? `, built with ${moduleConfigFile(configModule)} over ${CONFIG_FILE}` : ""}.` : undefined,
@@ -900,6 +931,9 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
       })
       .finally(() => {
         backgroundSkillRuns.delete(key);
+        backgroundSkillFor.delete(key);
+        // The next module's run, waiting its turn, starts before this one's hold is let go.
+        backgroundSkillQueue.get(key)?.shift()?.start();
         written();
       });
     return {
@@ -1272,6 +1306,11 @@ function registerRegenerate(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
       // The whole chain with it - "from scratch, the whole chain" - every module it requires built again from the bottom.
       const chain = scratch && asksWholeChain(words);
       const module = basename(plainFile).replace(/\.plain$/, "");
+      // Nothing but the functional specs and from scratch: the planner cuts the work as it judges, so other words are not dropped unsaid.
+      if (words !== "" && !scratch) {
+        say(`/regenerate takes functional specs, each as module:func-id, and "from scratch" with "whole chain" - not "${words}". Nothing was started.`, "warning");
+        return;
+      }
       if (scratch && again.length > 0) {
         say("Name functional specs or ask for it from scratch, not both: from scratch regenerates every one of them.", "warning");
         return;
@@ -1306,11 +1345,6 @@ function registerRegenerate(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
           // Nothing to do: say how to build it again anyway.
           const upToDate = statuses.length > 0 && statuses.every(isUpToDate);
           const hint = upToDate
-      // Nothing but the functional specs and from scratch: the planner cuts the work as it judges, so other words are not dropped unsaid.
-      if (words !== "" && !scratch) {
-        say(`/regenerate takes functional specs, each as module:func-id, and "from scratch" with "whole chain" - not "${words}". Nothing was started.`, "warning");
-        return;
-      }
             ? `\nTo regenerate parts of it anyway, name their functional specs - /regenerate ${basename(target)} ${module}:<func-id> - or start over with /regenerate ${basename(target)} from scratch.`
             : "";
           // Pulses started: the agent says so, and that the person need not wait - a plan alone leaves the chat silent.
@@ -1967,6 +2001,10 @@ export function turnOnConformance(core: TurriCore, plainFile?: string): string {
 
 /** The skills running in the background, by project and skill - one at a time each, whichever chat started it - with what stops them. */
 const backgroundSkillRuns = new Map<string, AbortController>();
+/** The .plain file each run in `backgroundSkillRuns` is for. */
+const backgroundSkillFor = new Map<string, string | undefined>();
+/** The runs for other modules waiting their turn, by project and skill: each started as the one before it ends, or dropped as turri quits. */
+const backgroundSkillQueue = new Map<string, Array<{ plainFile: string; start: () => void; drop: () => void }>>();
 
 /**
  * The model a pulse's agents run on: the one named on the call, checked now so a wrong name fails here and not minutes

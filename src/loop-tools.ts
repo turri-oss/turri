@@ -14,6 +14,7 @@ import { runningLaunched, stopLaunched } from "./regenerate/launch.ts";
 import type { LaunchTrack } from "./launch-track.ts";
 import { projectDirOf } from "./regenerate/paths.ts";
 import { findTestScripts } from "./regenerate/test-scripts.ts";
+import { scriptBeingWritten } from "./regenerate/scripts-being-written.ts";
 import { surfaceOf } from "./surface.ts";
 
 /**
@@ -58,7 +59,7 @@ export function unbuildableConfig(plainFile: string): string | undefined {
     return error instanceof Error ? error.message : String(error);
   }
   const files = moduleConfigsOf(root);
-  if (files.length === 0 || own !== undefined || findTestScripts(root).unit !== undefined) return undefined;
+  if (files.length === 0 || own !== undefined || findTestScripts(root).unit !== undefined || scriptBeingWritten(root, "unit")) return undefined;
   const scripts = files.map((each) => {
     const unit = withConfigModule(each, () => findTestScripts(root).unit);
     return `${moduleConfigFile(each)}${unit !== undefined ? ` (${relative(root, unit)})` : ""}`;

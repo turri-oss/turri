@@ -10,6 +10,7 @@ import { createWorkLoop, describeModules, type JobRunner } from "../../src/regen
 import { recordHistory } from "../../src/regenerate/lineage.ts";
 import { readRecord, writeCodeRecord, writeTestsRecord } from "../../src/regenerate/records.ts";
 import { findTestScripts } from "../../src/regenerate/test-scripts.ts";
+import { writingScript } from "../../src/regenerate/scripts-being-written.ts";
 import { testPlainFile, writePlain } from "../test-plain.ts";
 
 // A project of two modules on two stacks, as a person sets one up: a Python backend and a TypeScript frontend side by
@@ -230,12 +231,69 @@ describe("a missing unit testing script where modules have config files of their
   it("is said to be named in the module's own file - which file names which - not in config.turri.yaml", () => {
     writePlain(dir, "api.plain", app(["Serve the orders."], "is Python."));
     const note = findTestScripts(dir, join(dir, "api.plain")).notes?.unit ?? "";
-    expect(note).toContain("name the one to use in the module's own config.turri.<module>.yaml");
     expect(note).toContain(
       "No module config file applies here, so config.turri.yaml alone is read - the modules' own are config.turri.backend.yaml, config.turri.frontend.yaml, " +
         "and config.turri.backend.yaml names test_scripts/run_unittests_python.sh; config.turri.frontend.yaml names test_scripts/run_unittests_typescript.sh.",
     );
     expect(note).not.toContain("name the one to use in config.turri.yaml");
     expect(findTestScripts(dir, join(dir, "backend.plain")).notes?.unit).toBeUndefined();
+  });
+});
+
+describe("a module with no config file of its own where the modules have theirs", () => {
+  const ctx = {} as ExtensionContext;
+  beforeEach(() => rmSync(join(dir, "config.turri.frontend.yaml")));
+
+  it("is never given a script another module's file names, though it is the only one in test_scripts/ - only one nobody's file names", () => {
+    rmSync(join(dir, "test_scripts", "run_unittests_typescript.sh"));
+    expect(findTestScripts(dir, join(dir, "frontend.plain")).unit).toBeUndefined();
+    expect(findTestScripts(dir, join(dir, "backend.plain")).unit).toBe(join(dir, "test_scripts", "run_unittests_python.sh"));
+    writeFileSync(join(dir, "test_scripts", "run_unittests_react.sh"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    rmSync(join(dir, "test_scripts", "run_unittests_python.sh"));
+    writeFileSync(join(dir, "config.turri.backend.yaml"), "unittests-script: test_scripts/run_unittests_python.sh\n");
+    expect(findTestScripts(dir, join(dir, "frontend.plain")).unit).toBe(join(dir, "test_scripts", "run_unittests_react.sh"));
+  });
+
+  it("waits for a unit testing script of its own instead of starting a pulse with another module's - and starts once its own file names one", async () => {
+    rmSync(join(dir, "test_scripts", "run_unittests_typescript.sh"));
+    const { ran, run } = runner();
+    const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run });
+    // Asked for before any module had a file of its own: nothing refused it, and the loop looks after it.
+    rmSync(join(dir, "config.turri.backend.yaml"));
+    const stopWriting = writingScript({ project: dir, kind: "unit" });
+    await loop.bringUp("frontend.plain");
+    expect(loop.status()[0]!.why).toBe("waiting for its unit testing script, which is being written");
+    // The backend's script is written and named in its file; the frontend's is not written yet.
+    writeFileSync(join(dir, "config.turri.backend.yaml"), "unittests-script: test_scripts/run_unittests_python.sh\n");
+    stopWriting();
+    await loop.drain();
+    expect(ran).toEqual([]);
+    const [waiting] = loop.status();
+    expect(waiting!.running).toBeUndefined();
+    expect(waiting!.why).toContain("waiting for a unit testing script of its own");
+    expect(waiting!.why).toContain("config.turri.backend.yaml names test_scripts/run_unittests_python.sh");
+    // Its own is written and named.
+    writeFileSync(join(dir, "test_scripts", "run_unittests_typescript.sh"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    writeFileSync(join(dir, "config.turri.frontend.yaml"), "unittests-script: test_scripts/run_unittests_typescript.sh\n");
+    await loop.bringUp("frontend.plain");
+    await loop.drain();
+    expect(new Set(ran.map(({ module, config, unit }) => `${module} ${config} ${unit}`))).toEqual(new Set(["frontend frontend test_scripts/run_unittests_typescript.sh"]));
+  });
+
+  it("is not refused while a unit testing script is being written in the project - the loop holds it", async () => {
+    // Only the backend's script there: without one being written, the call is refused.
+    rmSync(join(dir, "test_scripts", "run_unittests_typescript.sh"));
+    const { ran, run } = runner();
+    const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner: false, run });
+    const tool = regenerateTool({ cwd: dir, loop: () => loop, wait: () => false });
+    await expect(tool.execute("call", { plain_file: "frontend.plain" }, undefined, undefined, ctx)).rejects.toThrow("Nothing was started: frontend.plain would be built with config.turri.yaml alone");
+    const stopWriting = writingScript({ project: dir, kind: "unit" });
+    try {
+      const result = await tool.execute("call", { plain_file: "frontend.plain" }, undefined, undefined, ctx);
+      expect(result.content.map((part) => (part.type === "text" ? part.text : "")).join("")).toContain("waiting for its unit testing script, which is being written");
+      expect(ran).toEqual([]);
+    } finally {
+      stopWriting();
+    }
   });
 });

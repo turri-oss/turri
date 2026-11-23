@@ -202,6 +202,8 @@ A build needs a unit testing script - and, with conformance on, a conformance te
 2. the one `run_unittests*.sh` / `run_conformance_tests*.sh` in the project root;
 3. the one of each in `test_scripts/`.
 
+Where modules have files of their own, a module with none - nor any module it requires - never takes a script one of those files names from 2 or 3: it is another module's, of another stack. It waits for one of its own instead, saying which file names which.
+
 The optional prepare script - `prepare-environment-script:`, else the one `prepare_environment*.sh` - is looked for the same way, and run on the build before the conformance testing script.
 
 A folder holding two of a kind is not guessed between: name the one to use. A script named inside `plain_modules/` is refused - agents write there, so it could be changed by the work it judges. The scripts are never linked from \*\*\*plain. What they are and how they run is in [regenerating the code](regenerating.md#the-testing-scripts).

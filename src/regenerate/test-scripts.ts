@@ -106,11 +106,14 @@ export function projectRootFor(plainFile: string, buildDir: string): string {
   return index > 0 ? parts.slice(0, index).join(sep) : dirname(resolve(plainFile));
 }
 
-/** The one script of a kind in a folder, by the names the skills give them; two or more say which. */
-function onlyScriptIn(dir: string, kind: ScriptKind | "prepare"): { path?: string; several?: string[] } {
+/**
+ * The one script of a kind in a folder, by the names the skills give them; two or more say which. What `claimed` holds -
+ * the scripts other modules' own files name - is never one of them.
+ */
+function onlyScriptIn(dir: string, kind: ScriptKind | "prepare", claimed: Set<string> = new Set()): { path?: string; several?: string[] } {
   if (!existsSync(dir)) return {};
   const candidates = readdirSync(dir)
-    .filter((name) => (kind === "prepare" ? PREPARE_NAME.test(name) : scriptKind(name) === kind) && isFile(join(dir, name)))
+    .filter((name) => (kind === "prepare" ? PREPARE_NAME.test(name) : scriptKind(name) === kind) && isFile(join(dir, name)) && !claimed.has(resolve(dir, name)))
     .sort();
   if (candidates.length === 1) return { path: join(dir, candidates[0]!) };
   return candidates.length > 1 ? { several: candidates } : {};
@@ -130,6 +133,9 @@ function onlyScriptIn(dir: string, kind: ScriptKind | "prepare"): { path?: strin
  *
  * A folder holding two of a kind does not say which is meant: it is skipped, and noted, so the
  * error that stops the build can say to name one in config.turri.yaml.
+ *
+ * Where modules have config files of their own and none applies to this one, a script one of those files names is that
+ * module's - of its stack - and never found in a folder for this one: a frontend is not tested with the backend's script.
  */
 export function findTestScripts(root: string, plainFile?: string, buildDir?: string): TestScripts {
   const found: TestScripts = {};
@@ -140,6 +146,13 @@ export function findTestScripts(root: string, plainFile?: string, buildDir?: str
   const file = own !== undefined ? `${moduleConfigFileIn(root, own)} (over ${projectConfigFile(root)})` : projectConfigFile(root);
   // Modules with files of their own, none of them this one's: its scripts are likely named in theirs.
   const others = own === undefined ? moduleConfigsOf(root) : [];
+  // What their files name is theirs: never this module's, found in a folder.
+  const claimed = new Set(
+    others.flatMap((each) => {
+      const theirs = readProjectConfig(root, each);
+      return [theirs.unittestsScript, theirs.conformanceTestsScript, theirs.prepareEnvironmentScript].flatMap((named) => (named !== undefined ? [resolve(root, named.trim())] : []));
+    }),
+  );
   // Where a script is named: the module's own file - or, where modules have their own, the one of the module that builds it.
   const nameIn =
     own !== undefined
@@ -163,7 +176,7 @@ export function findTestScripts(root: string, plainFile?: string, buildDir?: str
       }
     }
     for (const dir of [root, join(root, SCRIPTS_DIR)]) {
-      const { path, several } = onlyScriptIn(dir, kind);
+      const { path, several } = onlyScriptIn(dir, kind, claimed);
       if (path !== undefined) {
         found[kind] = path;
         break;
@@ -183,7 +196,7 @@ export function findTestScripts(root: string, plainFile?: string, buildDir?: str
   } else {
     if (preparePath !== undefined) notes.prepare = `${file} names ${prepareNamed!.trim()} as the ${CONFIG_KEYS.prepareEnvironmentScript}, and there is no such file.`;
     for (const dir of [root, join(root, SCRIPTS_DIR)]) {
-      const { path, several } = onlyScriptIn(dir, "prepare");
+      const { path, several } = onlyScriptIn(dir, "prepare", claimed);
       if (path !== undefined) {
         found.prepare = path;
         break;

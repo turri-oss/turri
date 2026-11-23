@@ -34,7 +34,7 @@ import {
 import { describeSpecDiffConformance, renderSpecDiffConformance } from "./conform.ts";
 import { conformanceDirFor } from "./conformance.ts";
 import { modulesRoot, projectRootOf } from "./paths.ts";
-import { configForSpec, configModuleFor, moduleConfigFile, testDirOf, withConfigModule } from "../config.ts";
+import { configForSpec, configModuleFor, moduleConfigFile, moduleConfigsOf, testDirOf, withConfigModule } from "../config.ts";
 import { describeSpecChange } from "./prompt.ts";
 import { resolveTemplateDirs } from "./paths.ts";
 import { builtTips, copyRequiredCode, copyRequiredTests, importingModules, isImportModule, newlyRequired, resolveRequiresChain, startFromScratch, type ChainEntry } from "./requires.ts";
@@ -708,6 +708,20 @@ export function createWorkLoop(options: {
     const root = projectRootFor(tip.plainFile, tip.buildDir);
     // Lacking the script, or with one being written over: a pulse started now would run without it, or against the old one.
     return scriptBeingWritten(root, kind, configModuleFor(tip.plainFile));
+  };
+
+  /**
+   * Why a codebase waits for a unit testing script of its own, or undefined: the project's modules name their scripts in
+   * config files of their own - each its own stack's - and none applies to it, nor names a script it could run. Its
+   * script is still to come: a pulse started now would stop for want of one. Looked at again when a script run ends, or
+   * the module is asked for again.
+   */
+  const lacksOwnScript = (state: ModuleState): string | undefined => {
+    const tip = tipEntry(state);
+    const root = projectRootFor(tip.plainFile, tip.buildDir);
+    if (configModuleFor(tip.plainFile) !== undefined || moduleConfigsOf(root).length === 0) return undefined;
+    const found = withModuleConfig(state, () => findTestScripts(root, tip.plainFile, tip.buildDir));
+    return found.unit !== undefined ? undefined : `${NO_OWN_SCRIPT}${found.notes?.unit !== undefined ? ` ${found.notes.unit}` : ""}`;
   };
 
   /**
@@ -1482,6 +1496,11 @@ export function createWorkLoop(options: {
       state.why = SCRIPT_BEING_WRITTEN("unit testing script");
       return;
     }
+    const lacking = lacksOwnScript(state);
+    if (lacking !== undefined) {
+      state.why = lacking;
+      return;
+    }
     state.why = undefined;
     startJob(state, spec, from, state.plan.jobs[0]!);
   };
@@ -2132,6 +2151,8 @@ const LOOK_AGAIN = "looked ahead, and the ***plain changed since - look ahead ag
 /** Why a codebase with work left has no plan: the planner found none. */
 /** Why a codebase waits for a testing script being written in the background. */
 const SCRIPT_BEING_WRITTEN = (what: string) => `waiting for its ${what}, which is being written`;
+/** Why a codebase waits where modules name their testing scripts in files of their own and it has none: the note says which file names which. */
+const NO_OWN_SCRIPT = "waiting for a unit testing script of its own - write one for its stack (implement-unit-testing-script), named in its own config file.";
 const NO_PLAN = "the planner found no way to cut the work into pulses that hold together";
 
 /**
