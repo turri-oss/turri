@@ -67,6 +67,8 @@ Before an agent's command runs, its text is checked (`src/regenerate/command-che
 - installs software outside the project: `sudo`, the system's package managers installing (`brew`, `apt`, `dnf`, `apk`, `pacman`, `choco`, `winget`, ...), toolchain managers installing (`nvm`, `sdk`, `rustup`, `pyenv`, `asdf`, ...), global installs (`npm -g`, `yarn global`, `pip --user`, `pipx`, `gem install`), a script downloaded and run (`curl ... | sh`), an installer (`.pkg`, `.msi`, `.dmg`, `.run`). The project's own dependencies - `npm install`, pip into its venv, `mvn`, `cargo`, `go mod` - are building the code, and pass;
 - kills what its pulse did not start: `pkill`, `killall`, `taskkill`, `fuser -k`, or `kill` aimed at a port or name lookup. `kill $!` and `kill %1` pass.
 
+It reads the command as the shell reads its operators: a `>`, `<`, `|`, `&` or `;` inside quotes is text (`grep -rl "</content>" .` redirects nothing), and so is the body of a here-document fed to `cat` or `tee` under a quoted delimiter (`cat > src/App.tsx <<'EOF'`) - the text of a file being written, whose `../lib/logger` is an import, not a path. A body that runs - under an unquoted delimiter, where `$(...)` expands, or fed to a shell or an interpreter - and a `$(...)` in double quotes are checked as commands.
+
 On Windows, drive letters, backslashes and any case are read as Windows has them. It knowingly misses a path built at run time (`$(...)`, a variable, a script that reads one from a file): the OS sandbox and the audit are for those.
 
 ### The OS sandbox

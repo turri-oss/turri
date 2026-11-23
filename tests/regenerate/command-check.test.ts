@@ -99,6 +99,49 @@ describe("an ordinary working session", () => {
   });
 });
 
+describe("what quotes hold, and a file's text in a here-document", () => {
+  /** Reads the whole project and writes nothing there - the sentinel: a phantom write target anywhere is refused. */
+  const readOnly: CommandFence = { ...coder, cwd: project, read: [project], write: [] };
+
+  it.each([
+    `grep -rl "</content>" --exclude-dir=node_modules . | head -30; echo; tail -3 plain_modules/app/code/vite.config.ts`,
+    `grep -rl "a>b" .`,
+    `grep -rn "</content>\\|<parameter" . --include=*.ts | head`,
+    `printf '%s\\n' 'render(<Form client={client}><Field /></Form>);' > $TMPDIR/Probe.test.tsx`,
+    `echo "a < b; c > d && e | f" | wc -c`,
+  ])("lets the read-only `%s` through - a `>` or `<` in quotes redirects nothing", (command) => {
+    expect(refused(command, readOnly)).toBeUndefined();
+  });
+
+  it.each([
+    "cat > src/App.tsx <<'EOF'\nimport { log } from \"../lib/logger\";\nexport const App = () => <main>{items.length > 0 ? 'some' : 'none'}</main>;\nEOF",
+    "tee src/config.ts <<-\"END\"\n\texport const api = \"../../api\";\n\tEND",
+  ])("lets `%s` through - a `>`, `<` or `../` there is text, not a redirection or a path", (command) => {
+    expect(refused(command)).toBeUndefined();
+  });
+
+  it.each([
+    [`echo "a;b" > ../../outside.txt`, "../../outside.txt"],
+    [`grep x . > "../../out file.txt"`, "../../out"],
+    ["cat > notes.txt <<EOF\n$(cat ../../secret)\nEOF", "../../secret"],
+    ["bash <<'EOF'\ncat ../../secret\nEOF", "../../secret"],
+    ["python3 - <<'EOF'\nopen('../../secret').read()\nEOF", "../../secret"],
+    ["cat > /etc/motd <<'EOF'\nhello\nEOF", "/etc/motd"],
+    [`echo "$(cat ../../secret)"`, "../../secret"],
+  ])("still refuses `%s` - a redirection, an expanded body or a here-document that runs", (command, word) => {
+    expect(refused(command)?.reason).toContain(`\`${word}\``);
+  });
+});
+
+describe("a redirection after a program's operands", () => {
+  it("is not taken for the operand it follows - the refusal names what is written", () => {
+    const readOnly: CommandFence = { ...coder, cwd: project, read: [project], write: [] };
+    expect(refused("cp $TMPDIR/chk.mjs ./.chk.mjs 2>/dev/null", readOnly)?.reason).toContain("`./.chk.mjs` is outside what this command may write");
+    expect(refused("cp $TMPDIR/a.txt $TMPDIR/b.txt 2>/dev/null", readOnly)).toBeUndefined();
+    expect(refused("mkdir -p build 2>/dev/null")).toBeUndefined();
+  });
+});
+
 describe("the code record", () => {
   it.each([["cat .turri.json"], ["grep -r frid ."], ["jq . ./.turri.json"]])("refuses %s when it names the record", (command) => {
     if (!command.includes(".turri.json")) return;

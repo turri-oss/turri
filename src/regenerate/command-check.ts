@@ -262,6 +262,87 @@ const RUN_DOWNLOAD = /\b(ba|z|da|k)?sh\s+(-\w+\s+)*["']?\$\(\s*(curl|wget)\b|<\(
 const KILL_BY_LOOKUP = /\bkill\b[^;&|\n]*(\$\(|`)\s*(lsof|fuser|pgrep|pidof|ss|netstat)\b/;
 const LOOKUP_TO_KILL = /\b(lsof|pgrep|pidof|fuser|ss|netstat)\b[^;&\n]*\|\s*xargs\s+(-\S+\s+)*kill\b/;
 
+/** A here-document's start: `<<'EOF'`, `<<-"END"`, `<<EOF` - not a here-string's `<<<`. */
+const HEREDOC = /(?<!<)<<(-?)\s*(?:'([^'\n]+)'|"([^"\n]+)"|\\?([A-Za-z_][A-Za-z0-9_]*))/g;
+/** The programs whose here-document is a file's text: they write it out, and run nothing in it. */
+const DATA_SINKS = new Set(["cat", "tee"]);
+
+/**
+ * The command as the shell reads its operators, the same length: what quotes hold has its `<`, `>`, `|`, `&`, `;` and
+ * newlines put out of the way - a `>` in `grep "</content>"` redirects nothing, a `;` in a string ends no command - and
+ * the body of a here-document fed to cat or tee with a quoted delimiter, so not expanded, is blanked: it is the text of
+ * a file being written, and a `../lib/logger` or a `>` in it is code, not a path or a redirection. A `$(...)` in double
+ * quotes, an unquoted delimiter's body and a here-document fed to anything else - a shell, an interpreter - run, and are
+ * read as they are.
+ */
+export function shellCode(command: string): string {
+  const lines = command.split("\n");
+  const out: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]!;
+    out.push(line);
+    // The here-documents this line opens, in order: each body runs to its delimiter alone on a line.
+    const opened: Array<{ delimiter: string; strip: boolean; data: boolean }> = [];
+    for (const match of maskQuotes(line).matchAll(HEREDOC)) {
+      const quoted = match[2] ?? match[3];
+      const before = line.slice(0, match.index).split(/&&|\|\||[;|]/).pop() ?? "";
+      const program = programOf(before)?.program;
+      opened.push({ delimiter: quoted ?? match[4]!, strip: match[1] === "-", data: quoted !== undefined && program !== undefined && DATA_SINKS.has(program) });
+    }
+    for (const heredoc of opened) {
+      while (index + 1 < lines.length) {
+        index += 1;
+        const body = lines[index]!;
+        if ((heredoc.strip ? body.replace(/^\t+/, "") : body) === heredoc.delimiter) {
+          out.push(body);
+          break;
+        }
+        out.push(heredoc.data ? " ".repeat(body.length) : body);
+      }
+    }
+  }
+  return maskQuotes(out.join("\n"));
+}
+
+/** `text` with what its quotes hold out of the shell's way: operators and newlines in a string are a space each. */
+function maskQuotes(text: string): string {
+  let out = "";
+  let quote: "'" | '"' | undefined;
+  /** Inside double quotes, a command substitution runs: read as it is to the end of the string. */
+  let substituting = false;
+  for (let at = 0; at < text.length; at += 1) {
+    const char = text[at]!;
+    if (quote === undefined) {
+      if (char === "\\" && at + 1 < text.length) {
+        out += char + text[at + 1]!;
+        at += 1;
+        continue;
+      }
+      if (char === "'" || char === '"') quote = char;
+      out += char;
+      continue;
+    }
+    if (quote === '"' && char === "\\" && at + 1 < text.length) {
+      out += char + (substituting ? text[at + 1]! : maskedChar(text[at + 1]!));
+      at += 1;
+      continue;
+    }
+    if (char === quote) {
+      quote = undefined;
+      substituting = false;
+      out += char;
+      continue;
+    }
+    if (quote === '"' && (char === "`" || (char === "$" && text[at + 1] === "("))) substituting = true;
+    out += substituting ? char : maskedChar(char);
+  }
+  return out;
+}
+
+function maskedChar(char: string): string {
+  return /[<>|&;\n]/.test(char) ? " " : char;
+}
+
 /** One check, the paths of one platform. */
 class Paths {
   readonly path: typeof posix;
@@ -350,7 +431,8 @@ function writeTargets(segment: string): string[] {
     const found = programOf(part);
     if (found === undefined) continue;
     const { program, args } = found;
-    const operands = args.filter((arg) => !arg.startsWith("-"));
+    // A redirection among its words - `2>/dev/null`, `>out.txt` - is the shell's, read above: never an operand.
+    const operands = args.filter((arg) => !arg.startsWith("-") && !/^(\d|&)?[<>]/.test(arg));
     if (program === "tee") targets.push(...operands);
     else if ((program === "cp" || program === "mv" || program === "install" || program === "ln") && operands.length >= 2) targets.push(operands[operands.length - 1]!);
     else if (["touch", "rm", "rmdir", "mkdir", "truncate", "chmod", "chown"].includes(program)) targets.push(...operands.slice(program === "chmod" || program === "chown" ? 1 : 0));
@@ -394,9 +476,9 @@ export function checkCommand(command: string, fence: CommandFence): CheckResult 
     }
   }
 
-  // Paths, a simple command at a time from where the cds before it left it.
+  // Paths, a simple command at a time from where the cds before it left it - read as the shell reads its operators.
   let cwd = fence.cwd;
-  for (const segment of command.split(/&&|\|\||[;\n]/)) {
+  for (const segment of shellCode(command).split(/&&|\|\||[;\n]/)) {
     for (const word of pathWords(segment, paths, fence)) {
       const target = resolveWord(word, cwd, fence, paths);
       if (target !== undefined && !paths.inside(target, readable)) {
