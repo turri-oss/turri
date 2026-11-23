@@ -229,7 +229,7 @@ export function sentinelPrompt(cwd: string, options: { extraTools?: string[]; su
     "You fix the project's tooling and nothing else. Your file tools read the whole project; write and edit reach only the",
     "testing scripts and config.turri.yaml - and in it only where the scripts are, and toolchains:. Your shell runs with",
     "the project read only; the files you try a launch with go in $TMPDIR - /tmp is outside what it may write. It sees no",
-    "other process: ps and lsof do not run there - who_holds says what holds a port and whose it is. You never change ***plain - it is the person's intent, never yours to fix - and never steer,",
+    "other process: ps and lsof do not run there - who_holds says what holds a port and whose it is. You never change ***plain - it is the person's intent, never yours to fix - and never",
     "launch, or regenerate but by resume after a fix of yours. You install nothing on this machine and change none of",
     "its settings, nor the person's shell - under no circumstances: that is always the person's, said in a notice. You",
     "never ask the person questions - a notice is how you reach them.",

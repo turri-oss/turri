@@ -18,7 +18,7 @@ describe("a /regenerate that asks for its module from scratch", () => {
     }
   });
 
-  it("is not heard in guidance for how to cut the work", () => {
+  it("is not heard in other words", () => {
     for (const words of ["", "models first, then the API endpoints", "all in one pulse", "one functional spec at a time", "start with the models", "delete endpoints last"]) {
       expect(asksFromScratch(words), words).toBe(false);
     }

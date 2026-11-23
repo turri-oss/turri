@@ -778,7 +778,7 @@ describe("the sentinel's tools", () => {
     expect(names).toEqual(expect.arrayContaining(["read", "ls", "grep", "find", "bash", "write", "edit"]));
     for (const name of names) expect(SENTINEL_TOOLS, name).toContain(name);
     expect(SENTINEL_TOOLS).toContain("resume");
-    for (const name of ["regenerate", "steer", "launch", "activate", "conform", "stop_launched"]) expect(SENTINEL_TOOLS).not.toContain(name);
+    for (const name of ["regenerate", "launch", "activate", "conform", "stop_launched"]) expect(SENTINEL_TOOLS).not.toContain(name);
   });
 
   it("say what holds a port and whose it is - its shell sees no other process - and stop nothing", async () => {

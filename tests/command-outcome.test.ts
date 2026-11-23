@@ -83,7 +83,7 @@ describe("the module a /regenerate names", () => {
   });
   afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-  it("is found when typed with spaces for its underscores, the words after it being the guidance", () => {
+  it("is found when typed with spaces for its underscores, the words after it given back", () => {
     expect(moduleNamedFirst(root, ["d365_function", "executor", "and", "add", "conformance"])).toEqual({
       named: join(root, "d365_function_executor.plain"),
       rest: ["and", "add", "conformance"],

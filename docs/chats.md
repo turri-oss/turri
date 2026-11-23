@@ -15,7 +15,6 @@ The session's, shared by every chat:
 
 - **the pulses and their plan** - one job registry and one work loop on the project: a pulse any chat starts is in every chat's side panel and `pulses`, and two chats asking for the same module get one plan, not two;
 - **the coding model** given with `--coding-model`, and `parallel-jobs`;
-- **steering** - what `steer` was told, every plan follows;
 - **conformance** chosen with `conform`, module by module;
 - **what launches started** - it runs until turri ends or `/halt launched <name>`, whatever chats are opened or closed - and the launch track;
 - **the ledger** - one run, each event with the id of the chat its work was asked for in (`chat`), and `chat.opened` and `chat.closed` as they happen.

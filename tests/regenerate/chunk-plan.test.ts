@@ -24,7 +24,7 @@ function agents(group?: GroupAnswer, place?: PlaceAnswer): ChunkAgents & { shown
   const shown: { specs?: unknown; built?: unknown; place?: unknown } = {};
   return {
     shown,
-    group: async (specs, _check, _steering, _maxSpecs, built) => ((shown.specs = specs), (shown.built = built), group),
+    group: async (specs, _check, _maxSpecs, built) => ((shown.specs = specs), (shown.built = built), group),
     place: async (given) => ((shown.place = given), place),
   };
 }
@@ -229,7 +229,7 @@ describe("cutting the queue's work into jobs", () => {
 
   it("asks the grouping agent for fewer, fuller pulses - one feature together, a spec alone only when independent", async () => {
     const { groupPrompt } = await import("../../src/regenerate/chunk-plan.ts");
-    const prompt = groupPrompt([{ number: 1, text: "- spec 1" }], undefined, 5);
+    const prompt = groupPrompt([{ number: 1, text: "- spec 1" }], 5);
     expect(prompt).toContain("fewer, fuller jobs: each job costs a\ncoding session, a test run and a review. So group by default");
     expect(prompt).toContain("up to 5");
     expect(prompt).toContain("Keep a functional spec alone only when it is truly\nindependent");
@@ -239,32 +239,28 @@ describe("cutting the queue's work into jobs", () => {
   it("asks the grouping agent to place each change to what is built - with the new work it is about by default, first when it reshapes what that is built on", async () => {
     const { groupPrompt } = await import("../../src/regenerate/chunk-plan.ts");
     const built = [{ number: 1, kind: "taken out" as const, what: "functional spec", module: "todo", id: "remove-task", text: "A :Task: can be removed." }];
-    const prompt = groupPrompt([{ number: 1, text: "- spec 1" }], undefined, 3, built);
+    const prompt = groupPrompt([{ number: 1, text: "- spec 1" }], 3, built);
     expect(prompt).toContain("With a group, by default, when it is about the same thing as the group's new functional specs");
     expect(prompt).toContain('"first" when it reshapes what the new work is built on');
     expect(prompt).toContain('<change number="1" kind="taken out" what="functional spec" module="todo" id="remove-task">\nA :Task: can be removed.\n</change>');
     expect(prompt).toContain("and every change to what is built placed.");
     // With nothing built changed, none of it.
-    expect(groupPrompt([{ number: 1, text: "- spec 1" }], undefined, 3)).not.toContain("changes what is built already");
+    expect(groupPrompt([{ number: 1, text: "- spec 1" }], 3)).not.toContain("changes what is built already");
   });
 
-  it("notes what the plan did not do as asked - the wishes an agent did not follow, and an answer that did not hold, with why", async () => {
+  it("notes where the plan fell back - an answer that did not hold, with why", async () => {
     const from = input({}, tree({ definitions: DEFS, impl: ["- :Implementation: is Python."], specs: SPECS }));
     const notes: string[] = [];
     await planChunks(
       from,
       agents(
-        { groups: [{ specs: [1, 2, 3, 4], title: "Everything" }, { specs: [5], title: "Kudos" }], notes: "Kudos alone: it is past the comments." },
-        { implementationReqs: [{ req: 1, to: "all" }], testReqs: [], notes: "Python with the first: it is about everything." },
+        { groups: [{ specs: [1, 2, 3, 4], title: "Everything" }, { specs: [5], title: "Kudos" }] },
+        { implementationReqs: [{ req: 1, to: "all" }], testReqs: [] },
       ),
       notes,
     );
-    expect(notes).toEqual([
-      "the grouping: Kudos alone: it is past the comments.",
-      'the grouping did not hold ("Everything" has 4 functional specs - at most 3.) - a functional spec a pulse',
-      "the placement: Python with the first: it is about everything.",
-    ]);
-    // A plan that holds, and followed every wish, has nothing to say.
+    expect(notes).toEqual(['the grouping did not hold ("Everything" has 4 functional specs - at most 3.) - a functional spec a pulse']);
+    // A plan that holds has nothing to say.
     const quiet: string[] = [];
     await planChunks(from, agents({ groups: SPECS.map((_, index) => ({ specs: [index + 1], title: `${index + 1}` })) }, { implementationReqs: [{ req: 1, to: "all" }], testReqs: [] }), quiet);
     expect(quiet).toEqual([]);

@@ -24,15 +24,6 @@ import { surfaceOf } from "./surface.ts";
 
 type AnyTool = ToolDefinition<any, any, any>;
 
-/** How the queue is to be planned, for the work this call queues - see regenerate/steer.ts. */
-export const GUIDANCE_PARAM = Type.Optional(
-  Type.String({
-    description:
-      "How to plan the queue for this work, in a sentence or two - which functional specs go together, what first - as " +
-      "the user said it, or as you understood it. A strong preference for the planner, within its limits. Omit when there is none.",
-  }),
-);
-
 export const WORKING_DIR_PARAM = Type.Optional(
   Type.String({
     description:
@@ -55,7 +46,8 @@ export const MODEL_PARAM = Type.Optional(
  * Why a module cannot be built with the config it would be built with: two of the modules it requires have a config
  * file of their own (`configModuleFor`); or, in a project where modules have their own files, it has none - nor any
  * module it requires - and config.turri.yaml alone names no unit testing script, so every pulse would stop for want of
- * one. The files there are and the script each names, and what to do. Undefined when it can be built.
+ * one. The files there are and the script each names, and what to do. Undefined when it can be built - and while a unit
+ * testing script is being written in the project, which may be its own: the work loop holds it until it has one.
  */
 export function unbuildableConfig(plainFile: string): string | undefined {
   const root = projectDirOf(plainFile);
@@ -230,8 +222,7 @@ export function stopJob(jobs: JobRegistry, named: string, reason?: string, loop?
   const inSpec =
     target.kind === "regenerate"
       ? " Its change is still in the .plain files: nothing more is regenerated in that codebase until the spec changes or it is asked " +
-        "for again with regenerate - then it is regenerated with the rest. To drop the change, take it out of the spec and regenerate; to change " +
-        "how the work is cut or ordered, use steer."
+        "for again with regenerate - then it is regenerated with the rest. To drop the change, take it out of the spec and regenerate."
       : "";
   return stopped.status === "stopped"
     ? `Stopped ${pulseName(target)} (${target.id}) before it started.${queued}${inSpec}`
@@ -300,7 +291,6 @@ export function regenerateTool(options: LoopToolsOptions & { loop: (ctx: Extensi
     parameters: Type.Object({
       plain_file: Type.Optional(Type.String({ description: "Path to the .plain file. Omitted: the module the project's config.turri.yaml names" })),
       working_dir: WORKING_DIR_PARAM,
-      guidance: GUIDANCE_PARAM,
       funcIds: Type.Optional(
         Type.Array(Type.String(), {
           description: "Functional specs already built, each as module:func-id (todo:add-task), to regenerate though their spec did not change. Omitted: what the spec now differs from the code in",
@@ -326,7 +316,7 @@ export function regenerateTool(options: LoopToolsOptions & { loop: (ctx: Extensi
         if (again.length > 0 && given.from_scratch !== undefined) throw new Error("Name funcIds or set from_scratch, not both: from scratch regenerates every one of them.");
         const model = options.model !== undefined ? options.model(ctx, plainFile, given.model) : given.model;
         const loop = options.loop(ctx);
-        const request = { ...(model !== undefined ? { model } : {}), ...(given.guidance !== undefined ? { guidance: given.guidance } : {}) };
+        const request = { ...(model !== undefined ? { model } : {}) };
         const wait = options.wait !== undefined ? options.wait(ctx, given.wait) : given.wait === true;
         const waiting = wait && options.jobs !== undefined ? { jobs: options.jobs, wait: startWait(options.jobs) } : undefined;
         let statuses: ModuleStatus[];
@@ -394,7 +384,7 @@ export function haltTool(options: { jobs: JobRegistry; workLoop?: () => WorkLoop
     promptSnippet: "halt a pulse, or a launch and what it started",
     promptGuidelines: [
       "Halt a pulse only when the user asks, or your instructions say to. Name which one, and say which pulses were queued behind it - they will now run.",
-      "Halting a planned row halts its whole module - one planned pulse cannot be taken out alone, as the plan is made again from the spec. To build some of it later, or cut it differently, use steer; to drop work, change the spec.",
+      "Halting a planned row halts its whole module - one planned pulse cannot be taken out alone, as the plan is made again from the spec. To drop work, change the spec.",
       "A planned row for a module that is no longer in the project is halted the same way, and dropped.",
     ],
     parameters: HALT_PARAMS,

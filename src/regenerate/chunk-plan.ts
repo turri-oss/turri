@@ -5,7 +5,6 @@ import { ACCEPTANCE_TESTS, CONFORMANCE_TESTS, DEFINITIONS, FUNCTIONAL_REQUIREMEN
 import { ask, BEGIN, createExecutor } from "../pi.ts";
 import { reportActivity, reportStage } from "./activity.ts";
 import { firstLine, record } from "./ledger.ts";
-import { steeringBlock, type Steering } from "./steer.ts";
 import { marksRegenerateAgain } from "./records.ts";
 import { validateConcepts } from "../plain/concepts.ts";
 import { applyChanges, changesBetween, inconsistencies, layoutOf, makeStep, parseTree, serializeTree, type SpecChange, type SpecStep, type TestPlainPath } from "./spec-steps.ts";
@@ -41,8 +40,6 @@ export interface PlanInput {
   base: MarshalledPlainSource;
   /** What it ends on: the spec as the track sees it now. */
   current: MarshalledPlainSource;
-  /** How the person wants the work cut and ordered. */
-  steering?: Steering[];
   /** The module whose codebase it is: its own functional specs are given with it. */
   moduleName?: string;
   /** The module's .plain file, as the diffs name it, and its text - for the diffs' layout. */
@@ -213,13 +210,9 @@ export interface GroupAnswer {
   groups: Array<{ specs: number[]; title: string }>;
   /** Where each change to what is built goes: with a group, by its number, or "first" - a pulse of its own, before the new work. */
   built?: Array<{ change: number; to: number | "first" }>;
-  /** What of the person's wishes it did not follow, and why. */
-  notes?: string;
 }
 
 export interface PlaceInput {
-  /** How the person or the harness wants the queue planned. */
-  steering?: Steering[];
   groups: Array<{ number: number; title: string; specs: string[]; definitions: string[] }>;
   /** What is built already changes too: a job for that goes first, and a req can go with it. */
   built: boolean;
@@ -233,8 +226,6 @@ export type Target = number | "all" | "built";
 export interface PlaceAnswer {
   implementationReqs: Array<{ req: number; to: Target }>;
   testReqs: Array<{ req: number; to: Target }>;
-  /** What of the person's wishes it did not follow, and why. */
-  notes?: string;
 }
 
 /**
@@ -267,7 +258,7 @@ export interface TitleAnswer {
  * too, shown the edit's changes; without it, that pulse is titled by `editTitle`.
  */
 export interface ChunkAgents {
-  group(specs: NewSpec[], check: (answer: GroupAnswer) => string[], steering?: Steering[], maxSpecs?: number, built?: BuiltChange[]): Promise<GroupAnswer | undefined>;
+  group(specs: NewSpec[], check: (answer: GroupAnswer) => string[], maxSpecs?: number, built?: BuiltChange[]): Promise<GroupAnswer | undefined>;
   place(input: PlaceInput, check: (answer: PlaceAnswer) => string[]): Promise<PlaceAnswer | undefined>;
   title?(groups: TitleGroup[], check: (answer: TitleAnswer) => string[], track: "code" | "conformance"): Promise<TitleAnswer | undefined>;
 }
@@ -556,9 +547,9 @@ function titleChangeOf(change: SpecChange): TitleChange {
 
 /**
  * Cut the queue's work - from `input.base` to `input.current` - into jobs, as the three steps say. Returns the draft
- * the work loop runs: checked (checkDraft), or, when nothing holds, the whole work as one job. `notes` is given what
- * the plan did not do as asked - the person's wishes an agent did not follow and why, an answer that did not hold, a
- * group split for its size - for the conversation to say, rather than guess.
+ * the work loop runs: checked (checkDraft), or, when nothing holds, the whole work as one job. `notes` is given where
+ * the plan fell back - an answer that was not given or did not hold, a group split for its size - for the conversation
+ * to say, rather than guess.
  */
 /** A planner agent that failed: the plan falls back, and the ledger says why. */
 function plannerFailed(step: "group" | "place" | "title", error: unknown): undefined {
@@ -671,7 +662,7 @@ function funcIdOf(change: SpecChange): string | undefined {
 async function cut(input: PlanInput, agents?: ChunkAgents, notes?: string[]): Promise<DraftJob[]> {
   // How big a pulse may be: the config's, else the defaults.
   const { specs: maxSpecs, lines: maxLines } = input.limits ?? { specs: MAX_SPECS_PER_JOB, lines: MAX_LINES_PER_JOB };
-  /** What the plan did not do as asked: in the activity, and in the notes. */
+  /** Where the plan fell back: in the activity, and in the notes. */
   const say = (text: string) => {
     reportActivity(`  ${text}`);
     notes?.push(text);
@@ -770,7 +761,7 @@ async function cut(input: PlanInput, agents?: ChunkAgents, notes?: string[]): Pr
     say(answer === undefined ? "the titles were not given - each pulse titled by its functional specs' first lines" : `the titles did not hold (${problems.join(" ")}) - each pulse titled by its functional specs' first lines`);
     return list;
   };
-  const grouped = conformance ? undefined : ((await agents?.group(numbered, (answer) => groupProblems(numbered, answer, maxSpecs, builtShown), input.steering, maxSpecs, builtShown.length > 0 ? builtShown : undefined).catch((error: unknown) => plannerFailed("group", error))) ?? undefined);
+  const grouped = conformance ? undefined : ((await agents?.group(numbered, (answer) => groupProblems(numbered, answer, maxSpecs, builtShown), maxSpecs, builtShown.length > 0 ? builtShown : undefined).catch((error: unknown) => plannerFailed("group", error))) ?? undefined);
   const holds = grouped !== undefined && groupProblems(numbered, grouped, maxSpecs, builtShown).length === 0;
   // The grouping holds: each change to what is built goes where it was placed.
   if (holds) {
@@ -794,7 +785,6 @@ async function cut(input: PlanInput, agents?: ChunkAgents, notes?: string[]): Pr
     : grouped !== undefined && holds
       ? grouped.groups
       : numbered.map((spec, index) => ({ specs: [spec.number], title: titleOf(specs[index]!) }));
-  if (grouped?.notes !== undefined && grouped.notes.trim() !== "") say(`the grouping: ${grouped.notes.trim()}`);
   if (!conformance && agents !== undefined) {
     if (grouped === undefined) {
       record({ kind: "planner.fellBack", step: "group", why: "no grouping was given" });
@@ -818,14 +808,12 @@ async function cut(input: PlanInput, agents?: ChunkAgents, notes?: string[]): Pr
   if (implementationReqs.length + testReqs.length > 0) {
     reportStage(`planning the queue: where each of ${implementationReqs.length + testReqs.length} new req${implementationReqs.length + testReqs.length === 1 ? "" : "s"} goes`);
     const placeInput: PlaceInput = {
-      ...(input.steering !== undefined ? { steering: input.steering } : {}),
       groups: newChunks().map((chunk, index) => ({ number: index + 1, title: chunk.title, specs: chunk.specs.map(textOf), definitions: chunk.definitions.map(textOf) })),
       built: chunks.some((chunk) => chunk.built !== undefined),
       implementationReqs: implementationReqs.map((change, index) => ({ number: index + 1, text: textOf(change) })),
       testReqs: testReqs.map((change, index) => ({ number: index + 1, text: textOf(change) })),
     };
     const answer = (await planners?.place(placeInput, (given) => placeProblems(placeInput, given)).catch((error: unknown) => plannerFailed("place", error))) ?? undefined;
-    if (answer?.notes !== undefined && answer.notes.trim() !== "") say(`the placement: ${answer.notes.trim()}`);
     placement = answer !== undefined && placeProblems(placeInput, answer).length === 0 ? answer : undefined;
     if (placement === undefined && planners !== undefined) record({ kind: "planner.fellBack", step: "place", why: answer === undefined ? "no placement was given" : firstLine(placeProblems(placeInput, answer).join(" "), 300) });
     if (placement === undefined && planners !== undefined) say("the placement did not hold - every implementation req with the first pulse, every test req with the first conformance pulse");
@@ -917,7 +905,7 @@ async function cut(input: PlanInput, agents?: ChunkAgents, notes?: string[]): Pr
 // ---------------------------------------------------------------------------------------------
 // The agents.
 
-export function groupPrompt(specs: NewSpec[], steering?: Steering[], maxSpecs = MAX_SPECS_PER_JOB, built: BuiltChange[] = []): string {
+export function groupPrompt(specs: NewSpec[], maxSpecs = MAX_SPECS_PER_JOB, built: BuiltChange[] = []): string {
   return [
     "You plan how new work on a codebase is built: which of its new functional specs are built together, in one job.",
     "",
@@ -936,7 +924,6 @@ export function groupPrompt(specs: NewSpec[], steering?: Steering[], maxSpecs = 
     "The specification is split into modules - a ***plain matter, not how the code is laid out. A functional spec has a",
     "func-id, unique in its module: each below is given with its module, its func-id, its place among the module's functional specs, and a number of its own to answer with.",
     "",
-    ...steeringBlock(steering),
     ...(specs.some((spec) => spec.again === true)
       ? [
           "Those marked again=\"true\" are built already, and are regenerated again - rewritten, doing what they say. Group them as",
@@ -987,7 +974,6 @@ export function placePrompt(input: PlaceInput): string {
     "- A test req goes with the first group whose conformance tests need it; one about all the tests to \"all\".",
     ...(input.built ? ['- "built" is the job that changes what is built already, and goes first: a req about the code there already goes there.'] : []),
     "",
-    ...steeringBlock(input.steering),
     ...input.groups.map((group) =>
       [
         // A title that is only its first spec's first line is not said twice.
@@ -1043,7 +1029,6 @@ export function titlePrompt(groups: TitleGroup[], track: "code" | "conformance")
 }
 
 const TargetSchema = Type.Union([Type.Number(), Type.Literal("all"), Type.Literal("built")]);
-const NOTES = "Each of the person's wishes for how the queue is planned that you did not follow, and why - a limit it would break, say. Leave it out when you followed them all, or there are none.";
 
 /** Ask one step of an agent, and ask again with what was wrong, until it holds or the retries are spent. */
 async function askStep<A>(options: { cwd: string; model?: string; label: string; task: string; tool: (take: (answer: A) => void) => ToolDefinition; check: (answer: A) => string[] }): Promise<A | undefined> {
@@ -1068,12 +1053,12 @@ async function askStep<A>(options: { cwd: string; model?: string; label: string;
 export function llmChunkAgents(options: { cwd: string; model?: string; label?: string }): ChunkAgents {
   const label = options.label ?? "queue planner";
   return {
-    group: (specs, check, steering, maxSpecs, built) =>
+    group: (specs, check, maxSpecs, built) =>
       askStep<GroupAnswer>({
         cwd: options.cwd,
         model: options.model,
         label: `${label} grouping`,
-        task: groupPrompt(specs, steering, maxSpecs, built),
+        task: groupPrompt(specs, maxSpecs, built),
         check,
         tool: (take) =>
           defineTool({
@@ -1087,7 +1072,6 @@ export function llmChunkAgents(options: { cwd: string; model?: string; label?: s
                   description: 'Where each change to what is built goes: with a group, by its number, or "first" - a pulse of its own, before the new work.',
                 }),
               ),
-              notes: Type.Optional(Type.String({ description: NOTES })),
             }),
             async execute(_id, params) {
               take(params as GroupAnswer);
@@ -1110,11 +1094,10 @@ export function llmChunkAgents(options: { cwd: string; model?: string; label?: s
             parameters: Type.Object({
               implementation_reqs: Type.Array(Type.Object({ req: Type.Number(), to: TargetSchema })),
               test_reqs: Type.Array(Type.Object({ req: Type.Number(), to: TargetSchema })),
-              notes: Type.Optional(Type.String({ description: NOTES })),
             }),
             async execute(_id, params) {
-              const given = params as { implementation_reqs: PlaceAnswer["implementationReqs"]; test_reqs: PlaceAnswer["testReqs"]; notes?: string };
-              take({ implementationReqs: given.implementation_reqs, testReqs: given.test_reqs, ...(given.notes !== undefined ? { notes: given.notes } : {}) });
+              const given = params as { implementation_reqs: PlaceAnswer["implementationReqs"]; test_reqs: PlaceAnswer["testReqs"] };
+              take({ implementationReqs: given.implementation_reqs, testReqs: given.test_reqs });
               return { content: [{ type: "text" as const, text: "Recorded." }], details: {}, terminate: true };
             },
           }) as ToolDefinition,

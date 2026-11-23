@@ -118,59 +118,25 @@ describe("a pulse that lands", () => {
 });
 
 describe("the work loop", () => {
-  it("plans the work not running yet again when the steering changes - a running pulse goes on - and says what the planner did not follow", async () => {
-    writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye.", "Count to ten.", "Count to twenty."]));
+  it("says where the plan fell back, and keeps the plan when asked again with the ***plain as it was", async () => {
+    writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye.", "Count to ten."]));
     const { ran, gate, holdNext, run } = runner();
-    let wishes: string[] = [];
-    const seen: Array<string[]> = [];
-    const planner = {
-      group: async (specs: Array<{ number: number }>, _check: unknown, steering?: Array<{ text: string }>) => {
-        seen.push((steering ?? []).map((entry) => entry.text));
-        // Grouped only once it is asked to be: the counting together, the rest alone.
-        return wishes.length === 0
-          ? undefined
-          : { groups: specs.length === 4 ? [{ specs: [1], title: "Hello" }, { specs: [2], title: "Goodbye" }, { specs: [3, 4], title: "Counting" }] : [{ specs: [1], title: "Goodbye" }, { specs: [2, 3], title: "Counting" }], notes: "Hello and goodbye stay apart: they build nothing together." };
-      },
-      place: async () => undefined,
-    };
-    const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner, steering: () => wishes.map((text) => ({ source: "the conversation", text })), run });
+    let asked = 0;
+    const planner = { group: async () => ((asked += 1), undefined), place: async () => undefined };
+    const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner, run });
     holdNext();
     const [first] = await loop.bringUp("app.plain");
-    expect(first!.planned).toHaveLength(3);
+    expect(first!.planned).toHaveLength(2);
     expect(first!.planNotes).toContain("the grouping was not given - a functional spec a pulse");
+    expect(describeModules([first!])).toContain("where the plan fell back:\n    - the grouping was not given");
 
-    // Steered while the first pulse runs: the spec is as it was, and what comes after it is planned again.
-    wishes = ["Group the counting together."];
-    const [steered] = await loop.bringUp("app.plain");
-    expect(steered!.running?.title).toBe("Say hello.");
-    expect(steered!.planned.map((job) => job.title)).toEqual(["Goodbye", "Counting"]);
-    expect(steered!.planNotes).toEqual(["the grouping: Hello and goodbye stay apart: they build nothing together."]);
-    expect(describeModules([steered!])).toContain("what the plan did not do as asked:\n    - the grouping: Hello and goodbye stay apart");
-    expect(seen.at(-1)).toEqual(["Group the counting together."]);
-
-    // Asked again, the steering as it was: the plan is kept, no agent asked.
-    const asked = seen.length;
+    // Asked again while the first pulse runs, the ***plain as it was: the plan is kept, no agent asked.
+    const before = asked;
     await loop.bringUp("app.plain");
-    expect(seen).toHaveLength(asked);
+    expect(asked).toBe(before);
     gate.release!();
     await loop.drain();
-    expect(ran.map((job) => job.title)).toEqual(["Say hello.", "Goodbye", "Counting"]);
-  });
-
-  it("plans again with a request's new guidance when nothing runs", async () => {
-    writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye."]));
-    const guided: string[][] = [];
-    const planner = {
-      group: async (_specs: unknown, _check: unknown, steering?: Array<{ text: string }>) => (guided.push((steering ?? []).map((entry) => entry.text)), undefined),
-      place: async () => undefined,
-    };
-    // A look ahead plans and starts nothing: what is planned stays planned.
-    const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner, run: runner().run });
-    await loop.lookAhead("app.plain");
-    await loop.lookAhead("app.plain");
-    expect(guided).toEqual([[]]);
-    await loop.lookAhead("app.plain", { guidance: "Hello and goodbye together." });
-    expect(guided).toEqual([[], ["Hello and goodbye together."]]);
+    expect(ran.map((job) => job.title)).toEqual(["Say hello.", "Say goodbye.", "Count to ten."]);
   });
 
   it("builds a module nothing is built of, job by job, until its code record is the spec as the code sees it - its first job fresh", async () => {
@@ -1872,29 +1838,6 @@ describe("a look ahead", () => {
     await loop.bringUp("app.plain");
     await loop.drain();
     expect(ran.map((job) => job.title)).toEqual(["Say hello."]);
-  });
-
-  it("plans again when the steering changes after it, as regenerate would", async () => {
-    writePlain(dir, "app.plain", app(["Say hello.", "Say goodbye."]));
-    const { ran, run } = runner();
-    let wishes: string[] = [];
-    const seen: string[][] = [];
-    const planner = {
-      group: async (_specs: unknown, _check: unknown, steering?: Array<{ text: string }>) => {
-        seen.push((steering ?? []).map((entry) => entry.text));
-        return wishes.length > 0 ? { groups: [{ specs: [1, 2], title: "Both" }] } : undefined;
-      },
-      place: async () => undefined,
-    };
-    const loop = createWorkLoop({ registry: createJobRegistry(), cwd: dir, planner, steering: () => wishes.map((text) => ({ source: "the conversation", text })), run });
-    const [looked] = await loop.lookAhead("app.plain");
-    expect(looked!.planned).toHaveLength(2);
-    wishes = ["Hello and goodbye together."];
-    expect((await loop.plannedPulse("planned-app-1"))!.why).toContain("steering changed");
-    await loop.bringUp("app.plain");
-    await loop.drain();
-    expect(seen).toEqual([[], ["Hello and goodbye together."]]);
-    expect(ran.map((job) => job.title)).toEqual(["Both"]);
   });
 
   it("shows the next pulse's prompt from the kept plan, and says why a later pulse's is not shown", async () => {

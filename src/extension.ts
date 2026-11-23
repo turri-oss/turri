@@ -35,7 +35,6 @@ import { launchTool } from "./launch-tools.ts";
 import { createSessionLaunches, launchedDir, launchedNote, replacedNote, type SessionLaunches } from "./launch-session.ts";
 import { describeLaunchLine, launchText, type Launch } from "./launch-track.ts";
 import { checkedSpecs } from "./sentinel-check.ts";
-import { createSteeringStore, EVERY_MODULE, moduleNameOf, queueSectionOf, steeringFor } from "./regenerate/steer.ts";
 import { askedForCommandLine, refusal, selfInvocation, TOOLS_NOT_CLI } from "./self-invocation.ts";
 import { NEW_PROJECT } from "./new-project.ts";
 import { describeResolution, resolveModel } from "./regenerate/model-names.ts";
@@ -810,7 +809,6 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
   registerDrift(pi, cwd, jobs);
   registerBind(pi, cwd, jobs, (plainFile) => turnOnConformance(session, plainFile));
   registerLaunch(pi, cwd, jobs);
-  registerSteering(pi, cwd);
   registerSideQuestions(pi, cwd, jobs);
   // More chats beside this one, in the terminal: /chat, alt+n, alt+1…9 (chat-commands.ts).
   if (session.terminal) registerChats(pi, session);
@@ -847,11 +845,11 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
     const key = `${cwd}\0${skill.name}`;
     if (backgroundSkillRuns.has(key)) {
       return { text: `${skill.name} is running in the background already; what it does comes back to this chat when it ends. Nothing new was started.`, details: { background: true, started: false } };
+    const kind = scriptKindOfSkill(skill.name);
+    const shown = plainFile !== undefined ? relative(cwd, plainFile) || basename(plainFile) : undefined;
     }
     const model = skill.model === "coding" ? jobModel(ctx, undefined, plainFile) : conversationModel(ctx);
     const configModule = plainFile !== undefined ? configModuleFor(plainFile) : undefined;
-    const kind = scriptKindOfSkill(skill.name);
-    const shown = plainFile !== undefined ? relative(cwd, plainFile) || basename(plainFile) : undefined;
     // While it writes a testing script, the modules that need it wait for it rather than fail for want of it.
     const written = kind !== undefined ? writingScript({ project: plainFile !== undefined ? projectDirOf(plainFile) : cwd, kind, ...(configModule !== undefined ? { configModule } : {}) }) : () => {};
     const controller = new AbortController();
@@ -1256,10 +1254,9 @@ function registerRegenerate(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
   );
 
   // /regenerate: the same as the tool, from the person - a module brought up to its spec as it is now, cut into pulses
-  // by the planner: one functional spec at a time, a few together or the whole module in one, as it judges. What
-  // follows the module is guidance for that plan, in the person's words.
+  // by the planner: one functional spec at a time, a few together or the whole module in one, as it judges.
   pi.registerCommand("regenerate", {
-    description: "Regenerate a module from its ***plain as it is now, in pulses the planner cuts - named functional specs though they did not change, or all of it from scratch, its whole chain too when asked: /regenerate [module | file.plain] [module:func-id ...] [from scratch [whole chain]] [how to cut the work]",
+    description: "Regenerate a module from its ***plain as it is now, in pulses the planner cuts - named functional specs though they did not change, or all of it from scratch, its whole chain too when asked: /regenerate [module | file.plain] [module:func-id ...] [from scratch [whole chain]]",
     handler: async (args, ctx) => {
       const command = `/regenerate ${args.trim()}`.trim();
       await echoCommand(pi, command);
@@ -1267,13 +1264,13 @@ function registerRegenerate(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
       const picked = await commandModule(cwd, ctx, args, say, { verb: "regenerate", outcome: "regenerated" });
       if (picked === undefined) return;
       const { plainFile } = picked;
-      // Functional specs named first, each as module:func-id, as on the command line; what follows them is guidance.
-      const { funcIds: again, rest: words } = funcIdsNamedFirst(picked.rest);
-      const guidance = words.join(" ").trim();
+      // Functional specs named first, each as module:func-id, as on the command line.
+      const { funcIds: again, rest } = funcIdsNamedFirst(picked.rest);
+      const words = rest.join(" ").trim();
       // From scratch - started over, its code deleted - asked in the person's words: started at once, as asked.
-      const scratch = asksFromScratch(guidance);
+      const scratch = asksFromScratch(words);
       // The whole chain with it - "from scratch, the whole chain" - every module it requires built again from the bottom.
-      const chain = scratch && asksWholeChain(guidance);
+      const chain = scratch && asksWholeChain(words);
       const module = basename(plainFile).replace(/\.plain$/, "");
       if (scratch && again.length > 0) {
         say("Name functional specs or ask for it from scratch, not both: from scratch regenerates every one of them.", "warning");
@@ -1281,7 +1278,7 @@ function registerRegenerate(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
       }
       const loop = workLoopFor(jobs, cwd, ctx);
       const model = jobModel(ctx, undefined, plainFile);
-      const request = { ...(model !== undefined ? { model } : {}), ...(guidance !== "" ? { guidance } : {}) };
+      const request = { ...(model !== undefined ? { model } : {}) };
       // Said at once, and kept in the chat: what follows takes a while - the planner is an agent - and the person sees it
       // began, not a chat that stays empty until the first pulse starts. The plan is said under it once it is made.
       say(
@@ -1309,6 +1306,11 @@ function registerRegenerate(pi: ExtensionAPI, cwd: string, jobs: JobRegistry) {
           // Nothing to do: say how to build it again anyway.
           const upToDate = statuses.length > 0 && statuses.every(isUpToDate);
           const hint = upToDate
+      // Nothing but the functional specs and from scratch: the planner cuts the work as it judges, so other words are not dropped unsaid.
+      if (words !== "" && !scratch) {
+        say(`/regenerate takes functional specs, each as module:func-id, and "from scratch" with "whole chain" - not "${words}". Nothing was started.`, "warning");
+        return;
+      }
             ? `\nTo regenerate parts of it anyway, name their functional specs - /regenerate ${basename(target)} ${module}:<func-id> - or start over with /regenerate ${basename(target)} from scratch.`
             : "";
           // Pulses started: the agent says so, and that the person need not wait - a plan alone leaves the chat silent.
@@ -1539,7 +1541,7 @@ function registerBind(pi: ExtensionAPI, cwd: string, jobs: JobRegistry, turnOn: 
       const separately = asksOneByOne(words);
       // From scratch - the tests written again, the code untouched - asked in the person's words; the whole chain's with it.
       const scratch = asksFromScratch(words) ? (asksWholeChain(words) ? "chain" : "module") : undefined;
-      // Nothing but the functional specs, from scratch and one by one: no planner reads guidance here, so other words are not dropped unsaid.
+      // Nothing but the functional specs, from scratch and one by one: other words are not dropped unsaid.
       if (words !== "" && !separately && scratch === undefined) {
         refuse(`/conform takes functional specs, each as module:func-id, "from scratch" with "whole chain" and "one by one" - not "${words}". Nothing was started.`);
         return;
@@ -2031,9 +2033,6 @@ function projectModel(ctx: ExtensionContext, plainFile?: string): string | undef
 /** The one work loop of a conversation's jobs: every tool that builds brings its modules up through it. */
 const workLoops = new WeakMap<JobRegistry, { loop: WorkLoop; from: { ctx: ExtensionContext } }>();
 
-/** How the conversation wants the work planned, for the session - set with steer. */
-const steeringStore = createSteeringStore();
-
 /** A session's launches, by its jobs: the launch track every chat's launch tool and every pulse's launch share. */
 const sessionLaunches = new WeakMap<JobRegistry, SessionLaunches>();
 
@@ -2047,8 +2046,6 @@ function workLoopFor(jobs: JobRegistry, cwd: string, ctx: ExtensionContext): Wor
       modelFor: (plainFile) => projectModel(from.ctx, plainFile) ?? chatModelOf(from.ctx),
       // The planner reasons about the whole of the work: it runs on the chat's model.
       plannerModel: () => chatModelOf(from.ctx),
-      // How the work is to be planned: the conversation's steering, and AGENTS.md's - read afresh each plan.
-      steering: (plainFile) => steeringFor(plainFile, cwd, steeringStore),
       // A pulse landed: its commit kept for the sentinel - and, under launch-after-pulse, launched in the background, the
       // codebase's next pulse not waiting on it.
       landed: (input) => sessionLaunches.get(jobs)?.landed(input),
@@ -2161,14 +2158,14 @@ function registerJobTools(pi: ExtensionAPI, jobs: JobRegistry, cwd: string) {
       "the last failing test run with its output, the last review that sent the work back, the tool calls that failed, and where " +
       "the whole log is; of an earlier session, told from the ledger; planned (planned-<module>-N), its cases and - the next pulse " +
       "of its codebase - the whole prompt its coding agent will get, from the plan regenerate runs. With plain_file, a look " +
-      "ahead: that module's work planned as regenerate plans it, steering and all, and kept - nothing started, its pulses waiting " +
-      "for regenerate, which then runs this plan unless the ***plain or the steering changed - and what is planned listed. " +
+      "ahead: that module's work planned as regenerate plans it, and kept - nothing started, its pulses waiting " +
+      "for regenerate, which then runs this plan unless the ***plain changed - and what is planned listed. " +
       "What is left to regenerate, without a plan, is drift's. Every generation of a module's code and tests is a commit in its " +
       "history, read with git: git --git-dir=plain_modules/<module>/.plaingit log, and show <commit>.",
     promptSnippet: "pulses: every pulse or one - earlier, running or planned - why one did not land, and with plain_file what will run next and its prompt",
     promptGuidelines: [
       "When a pulse failed or did not land, call pulses with its id before you explain it or change the spec: go by what happened, not by the report alone.",
-      "Call pulses with plain_file when the user wants to see or check what will run before it does, then with a planned row's id for its prompt. To change the plan, use steer or change the ***plain, then look again.",
+      "Call pulses with plain_file when the user wants to see or check what will run before it does, then with a planned row's id for its prompt. To change the plan, change the ***plain, then look again.",
     ],
     parameters: Type.Object({
       job_id: Type.Optional(
@@ -2774,7 +2771,7 @@ function describeLookAhead(loop: WorkLoop, statuses: ModuleStatus[]): string {
   return (
     `${describeModules(statuses)}${listed}\n\n` +
     "Nothing was started. What is planned here waits for regenerate, conform or /regenerate, which runs this plan as it is - unless " +
-    "the ***plain or the steering changes first, when it is planned again. To change the plan, use steer or change the ***plain, then " +
+    "the ***plain changes first, when it is planned again. To change the plan, change the ***plain, then " +
     "look again. Tell the user what will run and in what order - the parts they are likely to care about."
   );
 }
@@ -2821,62 +2818,6 @@ function registerCheckPlain(pi: ExtensionAPI, cwd: string, dialogs?: AskUserIO, 
   // The web, for the conversation too - a library's documentation, an API, an error; curl is its
   // bash. Run here, like the rendering agents' (see render/web.ts).
   for (const tool of createWebTools()) pi.registerTool(tool);
-}
-
-/**
- * Steering the queue from the conversation: how the person wants the work cut into jobs and ordered, for the whole
- * project or one module, kept for the session and given to the planner with every plan - beside
- * what the project's AGENTS.md says of the queue (see render/steering.ts).
- */
-function registerSteering(pi: ExtensionAPI, cwd: string) {
-  pi.registerTool({
-    name: "steer",
-    label: "Steer",
-    description:
-      "Say how the work is to be planned from now on - which functional specs are regenerated together, what goes first, how " +
-      "big a pulse may be - for the whole project, or one module: every plan after this follows it as a strong preference, " +
-      "within the planner's limits, for the rest of the session. It changes nothing queued by itself: the next plan of the " +
-      "module follows it - regenerate makes one now. What the project's AGENTS.md says under a heading " +
-      "naming the queue is followed too, with every plan.",
-    promptSnippet: "steer how the work is planned, for the project or one module",
-    promptGuidelines: [
-      "When the user says how the work should be cut or ordered - 'build the batch worker's helpers with the worker', 'models first' - for more than one change, call steer with it in their words. For one change only, pass it as the guidance of regenerate.",
-      "After steering, call regenerate to plan again. Where its reply lists what the plan did not do as asked, tell the user that and the reasons it gives - never a reason of your own.",
-    ],
-    parameters: Type.Object({
-      action: Type.Union([Type.Literal("add"), Type.Literal("set"), Type.Literal("clear"), Type.Literal("show")], {
-        description: "add: one more wish; set: replace them all; clear: drop them; show: say what they are",
-      }),
-      text: Type.Optional(Type.String({ description: "The wish, in the user's words - for add and set" })),
-      module: Type.Optional(Type.String({ description: "A module's .plain file or name. Omit: every module of the project" })),
-    }),
-    async execute(_id, params) {
-      const scope = params.module !== undefined ? moduleNameOf(params.module) : EVERY_MODULE;
-      const where = scope === EVERY_MODULE ? "every module" : scope;
-      const text = params.text?.trim() ?? "";
-      if ((params.action === "add" || params.action === "set") && text === "") throw new Error(`Say what to ${params.action}: text is empty.`);
-      if (params.action === "add") steeringStore.set(scope, [...steeringStore.get(scope), text]);
-      if (params.action === "set") steeringStore.set(scope, [text]);
-      if (params.action === "clear") steeringStore.set(scope, []);
-      const now = steeringStore.scopes().flatMap((key) => steeringStore.get(key).map((wish) => `- ${key === EVERY_MODULE ? "every module" : key}: ${wish}`));
-      const agents = existsSync(join(cwd, "AGENTS.md")) ? queueSectionOf(readFileSync(join(cwd, "AGENTS.md"), "utf8")) : "";
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: [
-              params.action === "show" ? "How the work is planned:" : `${params.action === "clear" ? "Cleared" : "Noted"} for ${where}. How the work is planned now:`,
-              ...(now.length > 0 ? now : ["- (nothing from the conversation)"]),
-              ...(agents !== "" ? ["", "And from AGENTS.md, every plan:", agents] : []),
-              "",
-              "The next plan of each module follows it; nothing planned changes until then.",
-            ].join("\n"),
-          },
-        ],
-        details: { scope, steering: now },
-      };
-    },
-  });
 }
 
 const SIDE_ENTRY = "turri_btw";

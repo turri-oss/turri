@@ -52,7 +52,7 @@ const IDENTITY_BEFORE = [
   "they are talking to turri. What they should ask for, they ask you for, here.",
   "",
   "The person may have several chats with you open on this project at once, this one among them. What regenerates is",
-  "the same in every chat: the pulses and their plan, steering, the engine's coding model and what was launched -",
+  "the same in every chat: the pulses and their plan, the engine's coding model and what was launched -",
   "pulses lists every pulse, whichever chat asked for it. What was said in another chat is not in this one: when the",
   "person speaks of it, ask.",
   "",

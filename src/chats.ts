@@ -18,7 +18,7 @@ import { newNotice, noticeTask, SENTINEL, sentinelStartChoice, wentWrong, type C
  * One turri process is one session on one project, and holds up to MAX_CHATS chats: conversations, each with its own
  * history, model, thinking level and questions, each working while another is shown. What they share is the
  * session's: the one job registry and work loop the project's pulses run in - a pulse any chat starts is in every
- * chat's side panel - the coding model, steering, launches and the ledger.
+ * chat's side panel - the coding model, launches and the ledger.
  *
  * A chat is a pi session with turri's extension in it. The extension, built once for each, links itself to its chat
  * here (`attach`); its tools, commands and handlers then run inside the chat's scope (chat-scope.ts), so a pulse knows
