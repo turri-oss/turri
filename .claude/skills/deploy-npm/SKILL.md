@@ -123,7 +123,7 @@ Done when every job matches its row, no step is listed, no annotation is there, 
 
 ### 8. Check npm
 
-npm can take a minute to show a new version: try again before calling it missing.
+npm takes a few minutes to show a new version - four for 0.4.1, its log saying `Your package is being processed`: retry for ten minutes (`--prefer-online`, every 15 seconds) before calling it missing. The publish job's log line `+ @turri-dev/cli@<V>` says the registry took it.
 
 ```bash
 npm view @turri-dev/cli@<V> version dist.attestations.provenance.predicateType
