@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { askUserVia, chatAskUserTool, createTurriCore, NO_USER_ANSWER, type TurriHost } from "../src/extension.ts";
 import { sideQuestionPrompt } from "../src/btw.ts";
 import { TURRI_IDENTITY } from "../src/identity.ts";
@@ -12,6 +12,12 @@ import { refusal, TOOLS_NOT_CLI } from "../src/self-invocation.ts";
 import { NEW_PROJECT } from "../src/new-project.ts";
 import type { AskUserIO } from "../src/ask.ts";
 import type { Job, JobRegistry } from "../src/regenerate/jobs.ts";
+
+// No test calls a model: a pulse that fails for good is diagnosed by an agent on the coding model - here, by none.
+vi.mock("../src/regenerate/diagnose.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/regenerate/diagnose.ts")>()),
+  diagnoseFailure: async () => undefined,
+}));
 
 /** A host's dialogs that answer each question with `answer`, keeping what they were asked. */
 function hostDialogs(answer: (options: string[]) => string | undefined) {
