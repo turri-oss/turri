@@ -107,6 +107,8 @@ export interface TurriHost {
 
 /** What a chat's extension does for its chat when the session asks. */
 export interface ChatInstance {
+  /** The terminal header's button: open the project's spec map beside this chat. */
+  openPlainPanel?(): void;
   /** A pulse it asked for ended: said in the chat, and its agent told, to react to it. */
   announce(job: Job): void;
   /**

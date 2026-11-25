@@ -4,10 +4,10 @@ import { fileURLToPath } from "node:url";
 import { AgentSessionRuntime, InteractiveMode, type AgentSession, type ExtensionAPI, type ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
 import { createChats, INTERRUPT_SETTLE_MS } from "../src/chats.ts";
-import { chatStrip } from "../src/chat-commands.ts";
+import { chatTabs, type TabAction } from "../src/chat-tabs.ts";
 import { pressCtrlC, type CtrlCScreen } from "../src/chat-terminal.ts";
 import { Shade, showWaiting, unqueue, type QueueOf, type WaitingScreen } from "../src/chat-waiting.ts";
-import { Container, Text } from "@earendil-works/pi-tui";
+import { Container, Text, visibleWidth, type TuiMouseEvent } from "@earendil-works/pi-tui";
 import { createJobRegistry } from "../src/regenerate/jobs.ts";
 
 const PI = dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent")));
@@ -18,7 +18,7 @@ describe("what the terminal's chats reach of pi", () => {
   // fields. A pi that changes them fails here, before a person finds it.
   it("finds the methods it patches and calls", () => {
     const screen = InteractiveMode.prototype as unknown as Record<string, unknown>;
-    for (const name of ["rebindCurrentSession", "handleEvent", "resetExtensionUI", "handleCtrlC", "clearEditor", "restoreQueuedMessagesToEditor", "shutdown", "updatePendingMessagesDisplay", "getAllQueuedMessages", "addMessageToChat", "getAppKeyDisplay"]) expect(typeof screen[name], name).toBe("function");
+    for (const name of ["mountInteractiveTui", "rebindCurrentSession", "handleEvent", "resetExtensionUI", "handleCtrlC", "clearEditor", "restoreQueuedMessagesToEditor", "shutdown", "updatePendingMessagesDisplay", "getAllQueuedMessages", "addMessageToChat", "getAppKeyDisplay"]) expect(typeof screen[name], name).toBe("function");
     const runtime = AgentSessionRuntime.prototype as unknown as Record<string, unknown>;
     for (const name of ["newSession", "switchSession", "dispose", "setRebindSession", "setBeforeSessionInvalidate"]) expect(typeof runtime[name], name).toBe("function");
   });
@@ -166,24 +166,68 @@ describe("the terminal's chats", () => {
   });
 });
 
-describe("the strip of chats above the editor", () => {
-  const style = { shown: (text: string) => `[${text}]`, muted: (text: string) => text };
+describe("the chat tabs", () => {
+  const mouse = (type: TuiMouseEvent["type"], x: number, width: number): TuiMouseEvent => ({
+    type, button: "left", x, y: 0, screenX: x + 2, screenY: 1, width, height: 1, shift: false, alt: false, ctrl: false,
+  });
+  const first = { id: "a", title: "会話", status: "idle", shown: true } as const;
 
-  it("names each chat by its number, its title and what it is doing, the one shown set apart, a rule between them", () => {
-    const line = chatStrip(
-      [
-        { id: "a", title: "backend", status: "idle", shown: true },
-        { id: "b", title: "frontend", status: "question", shown: false },
-        { id: "c", title: "docs", status: "unread", shown: false },
-      ],
-      120,
-      style,
-    );
-    expect(line).toEqual([" [1 backend] │ 2 frontend ? │ 3 docs •"]);
+  it("opens a chat on a click on + beside the first tab, leaving the editor focused", () => {
+    const picks: TabAction[] = [];
+    const tabs = chatTabs(() => [first], (text) => text, (action) => picks.push(action));
+    const [line] = tabs.render(80);
+    expect(line).toMatch(/^ ▸ 1 会話 × +\+ +\*\*\*plain › $/);
+    const plus = visibleWidth(line!.split("+")[0]!);
+    expect(tabs.handleMouse!(mouse("press", plus, 80))).toEqual({ handled: true });
+    expect(picks).toEqual([]);
+    tabs.handleMouse!(mouse("click", plus, 80));
+    expect(picks).toEqual([{ kind: "open" }]);
   });
 
-  it("is not drawn for a single chat", () => {
-    expect(chatStrip([{ id: "a", title: "only", status: "idle", shown: true }], 80, style)).toEqual([]);
+  it("switches to the tab clicked even after resizing with wide titles and a waiting question", () => {
+    const picks: TabAction[] = [];
+    const tabs = chatTabs(() => [first, { id: "b", title: "frontend", status: "question", shown: false }], (text) => text, (action) => picks.push(action));
+    expect(tabs.render(80)[0]).toMatch(/▸ 1 会話 × +2 frontend \? × +\+/);
+    for (const width of [80, 20, 9]) {
+      const [line] = tabs.render(width);
+      expect(visibleWidth(line!)).toBeLessThanOrEqual(width);
+      const second = visibleWidth(line!.split("2")[0]!);
+      tabs.handleMouse!(mouse("press", second, width));
+      tabs.handleMouse!(mouse("click", second, width));
+      tabs.handleMouse!({ ...mouse("click", second, width), button: "right" });
+      tabs.handleMouse!(mouse("press", 0, width));
+      tabs.handleMouse!(mouse("click", 0, width)); // already shown
+    }
+    expect(picks).toEqual(Array(3).fill({ kind: "show", id: "b" }));
+  });
+
+  it("keeps the plain button clickable at the right edge when many chats have long or wide titles", () => {
+    const picks: TabAction[] = [];
+    const tabs = chatTabs(() => Array.from({ length: 9 }, (_, i) => ({ ...first, id: `${i}`, title: "長い".repeat(15) })), (text) => text, (action) => picks.push(action));
+    for (const width of [50, 120]) {
+      const [line] = tabs.render(width);
+      expect(visibleWidth(line!)).toBe(width);
+      expect(line!.endsWith(" ***plain › ")).toBe(true);
+      tabs.handleMouse!(mouse("press", width - 2, width));
+      tabs.handleMouse!(mouse("click", width - 2, width));
+    }
+    expect(picks).toEqual([{ kind: "plain" }, { kind: "plain" }]);
+  });
+
+  it("highlights the close button independently, clears it on leaving and closes the hidden chat without switching", () => {
+    const picks: TabAction[] = [];
+    const tabs = chatTabs(() => [first, { ...first, id: "b", shown: false }], (text, _shown, hover) => hover ? `<${text}>` : text, (action) => picks.push(action));
+    const [plain] = tabs.render(80);
+    const x = visibleWidth(plain!.slice(0, plain!.lastIndexOf("×")));
+    const send = (type: TuiMouseEvent["type"]) => tabs.pointer.dispatch(() => tabs.handleMouse!({ ...mouse(type, x, 80), button: type === "move" ? "none" : "left" }), () => {});
+    send("move");
+    expect(tabs.render(80)[0]).toContain("2 会話< × >");
+    tabs.pointer.dispatch(() => {}, () => {}); // move dispatched to the editor instead
+    expect(tabs.render(80)).toEqual([plain]);
+    expect(picks).toEqual([]);
+    send("press");
+    send("click");
+    expect(picks).toEqual([{ kind: "close", id: "b" }]);
   });
 });
 

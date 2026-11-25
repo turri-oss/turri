@@ -82,6 +82,7 @@ import { ignoredGuidance, keepGuidance, landedNote, pulseEndsBlock, SENTINEL, SE
 import { noticeDialogs, registerSentinel } from "./sentinel-chat.ts";
 import { currentChat } from "./chat-scope.ts";
 import { registerChats } from "./chat-commands.ts";
+import { buttonLabel, terminalPointer } from "./pointer-hover.ts";
 import { turriIdentity } from "./environment.ts";
 import { answerSideQuestion, askWithAsides, BTW_HOW, runningSkill, skillRunStarted, skillSessionText, transcriptOf } from "./btw.ts";
 import {
@@ -615,6 +616,10 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
   };
   const notices = noticeDialogs(pi, session, link, contextNow);
   link.live({
+    openPlainPanel: () => {
+      const ctx = contextNow();
+      if (ctx?.hasUI) sidePanelOf(jobs, cwd).open(ctx, "map", "beside");
+    },
     announce,
     landed,
     brief,
@@ -2476,7 +2481,7 @@ export const JOB_FINISHED_REACTION = [
 
 /** The session's side panel: opened from any chat, and the same panel whichever chat is shown. */
 interface SidePanelHost {
-  open(ctx: ExtensionContext, view?: "map" | "pulses"): void;
+  open(ctx: ExtensionContext, view?: "map" | "pulses", placement?: "beside"): void;
   /** It shows now, with the keys. */
   shown(): boolean;
   /** What it says to the chat - a module that needs the person: the chat shown says it. */
@@ -2490,11 +2495,11 @@ function sidePanelOf(jobs: JobRegistry, cwd: string): SidePanelHost {
   const known = sidePanels.get(jobs);
   if (known !== undefined) return known;
   const self: SidePanelHost = {
-    open: (ctx, view) => openPanel(ctx, view),
+    open: (ctx, view, placement) => openPanel(ctx, view, placement),
     shown: () => panel !== undefined && panel.keys,
   };
   sidePanels.set(jobs, self);
-  let panel: { handle?: OverlayHandle; view: ReturnType<typeof createSidePanel>; close: () => void; keepChatFocus: () => void; keys: boolean } | undefined;
+  let panel: { handle?: OverlayHandle; view: ReturnType<typeof createSidePanel>; close: () => void; keepChatFocus: () => void; layOut: () => void; keys: boolean } | undefined;
   // Beside the chat or over it: as the person last left it, for the conversation.
   let panelDocked = false;
   // The terminal the panel is drawn on, for its width: set as it opens.
@@ -2527,7 +2532,7 @@ function sidePanelOf(jobs: JobRegistry, cwd: string): SidePanelHost {
   });
 
   /** Open the side panel - on the view named, or as it was left. */
-  const openPanel = (ctx: ExtensionContext, view?: "map" | "pulses") => {
+  const openPanel = (ctx: ExtensionContext, view?: "map" | "pulses", placement?: "beside") => {
     // Found: ctrl+h under the job panel stops breathing.
     keyPressed("peek");
     if (view !== undefined) mapState.view = view;
@@ -2538,7 +2543,9 @@ function sidePanelOf(jobs: JobRegistry, cwd: string): SidePanelHost {
       if (id !== undefined && selectJob(shownJobs(jobs), jobsTree, id)) mapState.view = "pulses";
     }
     needsLooking.delete(jobs);
+    if (placement === "beside") panelDocked = true;
     if (panel !== undefined) {
+      panel.layOut();
       panel.keepChatFocus();
       panel.handle?.setHidden(false);
       panel.keys = true;
@@ -2607,6 +2614,8 @@ function sidePanelOf(jobs: JobRegistry, cwd: string): SidePanelHost {
         // Opened, it reads the files again at once: they may have changed while it was closed.
         specMap.refresh();
         const view = createSidePanel({
+          pointer: terminalPointer(tui.terminal),
+          tabLabel: (text, active, hovered, role) => buttonLabel(theme, text, active, hovered, role),
           jobs: () => shownJobs(jobs),
           earlier: earlierJobs,
           tree: jobsTree,
@@ -2653,7 +2662,7 @@ function sidePanelOf(jobs: JobRegistry, cwd: string): SidePanelHost {
             return focused !== null && focused !== component;
           },
         });
-        const entry: NonNullable<typeof panel> = { view, close, keepChatFocus, keys: true };
+        const entry: NonNullable<typeof panel> = { view, close, keepChatFocus, layOut, keys: true };
         panel = entry;
         layOut();
         // Every key goes to the panel while it shows, whatever has the focus: a question the chat model asks in the
@@ -2717,7 +2726,8 @@ function sidePanelOf(jobs: JobRegistry, cwd: string): SidePanelHost {
             else view.handleInput(data);
             tui.requestRender();
           },
-          handleMouse: (event: Parameters<NonNullable<ReturnType<typeof createSidePanel>["handleMouse"]>>[0]) => view.handleMouse(event),
+          handleMouse: (event: Parameters<NonNullable<ReturnType<typeof createSidePanel>["handleMouse"]>>[0]) =>
+            view.handleMouse(panelBeside() > 0 ? { ...event, x: event.x - 2, width: event.width - 2 } : event),
           invalidate: () => view.invalidate(),
           dispose: () => {
             unlisten();
