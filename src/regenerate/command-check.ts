@@ -98,12 +98,47 @@ function words(segment: string): string[] {
   return (segment.match(/"[^"]*"|'[^']*'|[^\s"']+(?:(?:"[^"]*"|'[^']*')[^\s"']*)*/g) ?? []).map((word) => word.replace(/"([^"]*)"|'([^']*)'/g, "$1$2"));
 }
 
-/** The simple commands a command line is made of, in order: split on `;`, `&&`, `||`, `|`, `&`, newlines and subshells. */
+/**
+ * The simple commands a command line is made of, in order: split on `;`, `&&`, `||`, `|`, `&`, newlines and subshells
+ * where the shell reads them - not in a string, so `grep "a\|b.run"` is one command - each cut from the command itself.
+ * A here-document's body that is a file's text is none.
+ */
 function segments(command: string): string[] {
-  return command
-    .split(/&&|\|\||[;|&\n()`]|\$\(/)
-    .map((part) => part.trim())
-    .filter((part) => part !== "");
+  const code = shellCode(command);
+  const found: string[] = [];
+  let start = 0;
+  const cut = (end: number) => {
+    if (code.slice(start, end).trim() !== "") found.push(command.slice(start, end).trim());
+  };
+  for (const match of code.matchAll(/&&|\|\||[;|&\n()`]|\$\(/g)) {
+    cut(match.index);
+    start = match.index + match[0].length;
+  }
+  cut(code.length);
+  return found;
+}
+
+/**
+ * The simple commands a command line runs: its own, and those of each script it hands a shell as a word - `bash -c
+ * "cd app; pip install --user x"`, `eval "..."` - which a string hides from the shell reading the line.
+ */
+function simpleCommands(command: string, depth = 0): string[] {
+  const own = segments(command);
+  if (depth >= 3) return own;
+  return own.flatMap((segment) => {
+    const script = scriptOf(segment);
+    return script === undefined ? [segment] : [segment, ...simpleCommands(script, depth + 1)];
+  });
+}
+
+/** The script a simple command hands a shell to run: `sh -c '<script>'`, `bash -lc "<script>"`, `eval <script>`. */
+function scriptOf(segment: string): string | undefined {
+  const found = programOf(segment);
+  if (found === undefined) return undefined;
+  if (found.program === "eval") return found.args.length > 0 ? found.args.join(" ") : undefined;
+  if (!/^(ba|z|da|k)?sh$/.test(found.program)) return undefined;
+  const at = found.args.findIndex((arg) => /^-[a-zA-Z]*c[a-zA-Z]*$/.test(arg));
+  return at === -1 ? undefined : found.args[at + 1];
 }
 
 /** A simple command's program and arguments, past assignments, wrappers and their own options. */
@@ -187,8 +222,8 @@ function systemSettingIn(segment: string): string | undefined {
  * an agent, not the chat, not a launch - what the machine lacks is the person's to install, in their own words.
  */
 export function machineChange(command: string): string | undefined {
-  if (PIPED_DOWNLOAD.test(command) || RUN_DOWNLOAD.test(command)) return "it runs a script downloaded from the web";
-  for (const segment of segments(command)) {
+  if (runsDownload(command)) return "it runs a script downloaded from the web";
+  for (const segment of simpleCommands(command)) {
     const why = installIn(segment) ?? systemSettingIn(segment);
     if (why !== undefined) return why;
   }
@@ -254,9 +289,39 @@ export function machineChangeReason(why: string): string {
   );
 }
 
-/** Downloads run as programs: a script piped to a shell, or run from a download. */
-const PIPED_DOWNLOAD = /\b(curl|wget)\b[^|;&\n]*\|\s*(sudo\s+(-\S+\s+)*)?((ba|z|da|k)?sh|python\d*|perl|ruby|node)\b/;
+/** Downloads run as programs: a script piped to a shell or an interpreter, or run from a download. */
+const PIPED_DOWNLOAD = /\b(?:curl|wget)\b[^|;&\n]*\|\s*(?:sudo\s+(?:-\S+\s+)*)?((?:ba|z|da|k)?sh|python[\d.]*|perl|ruby|node)\b([^|;&\n]*)/g;
 const RUN_DOWNLOAD = /\b(ba|z|da|k)?sh\s+(-\w+\s+)*["']?\$\(\s*(curl|wget)\b|<\(\s*(curl|wget)\b/;
+
+/**
+ * The option that gives an interpreter its code on the command line, so what is piped to it is data it reads - `curl
+ * localhost:8000/links | python3 -c 'import json, sys; ...'`, `| python3 -m json.tool`, `| node -e`, `| perl -ne`.
+ */
+const CODE_OPTIONS: Array<[RegExp, RegExp]> = [
+  [/^(ba|z|da|k)?sh$/, /^-[a-zA-Z]*c[a-zA-Z]*$/],
+  [/^python/, /^-[a-zA-Z]*[cm]$/],
+  [/^node$/, /^(-[a-zA-Z]*[ep][a-zA-Z]*|--eval|--print)$/],
+  [/^(perl|ruby)$/, /^-[a-zA-Z]*[eE][a-zA-Z]*$/],
+];
+
+/** Whether a command line runs what it downloads: piped to a shell or an interpreter that runs it, or run from it. */
+function runsDownload(command: string): boolean {
+  if (RUN_DOWNLOAD.test(command)) return true;
+  for (const match of shellCode(command).matchAll(PIPED_DOWNLOAD)) {
+    const interpreter = match[1]!;
+    const options: string[] = [];
+    for (const word of words(match[2]!)) {
+      if (!word.startsWith("-") || word === "-") break;
+      options.push(word);
+    }
+    const code = CODE_OPTIONS.find(([program]) => program.test(interpreter))?.[1];
+    if (code === undefined || !options.some((option) => code.test(option))) return true;
+  }
+  return simpleCommands(command).some((segment) => {
+    const script = scriptOf(segment);
+    return script !== undefined && script !== command && runsDownload(script);
+  });
+}
 
 /** Killing by name, or by what holds a port. */
 const KILL_BY_LOOKUP = /\bkill\b[^;&|\n]*(\$\(|`)\s*(lsof|fuser|pgrep|pidof|ss|netstat)\b/;
@@ -463,9 +528,9 @@ export function checkCommand(command: string, fence: CommandFence): CheckResult 
   }
 
   // Installs and kills, a simple command at a time; downloads run as programs, on the whole line.
-  if (PIPED_DOWNLOAD.test(command) || RUN_DOWNLOAD.test(command)) return refusal("install", installReason("it runs a script downloaded from the web"));
+  if (runsDownload(command)) return refusal("install", installReason("it runs a script downloaded from the web"));
   if (KILL_BY_LOOKUP.test(command) || LOOKUP_TO_KILL.test(command)) return refusal("kill", killReason());
-  for (const segment of segments(command)) {
+  for (const segment of simpleCommands(command)) {
     const why = installIn(segment);
     if (why !== undefined) return refusal("install", installReason(why));
     const setting = systemSettingIn(segment);
