@@ -500,8 +500,8 @@ describe("the regeneration drawn", () => {
     const pages = names.map((name, index) => module(name, index > 0 ? names[index - 1] : undefined));
     const marked = markSpecMap(pages, { files: [], codebases: [codebase(pages[0]!)] });
     const shown = marked.find((page) => page.module === "auth")!;
-    expect(tabBar(marked, shown, 200, style, 0)).toBe("version_api  function_executor  http_client  [auth]  utils  listing  restore_api");
-    const narrow = tabBar(marked, shown, 40, style, 0);
+    expect(tabBar(marked, shown, 200, style, 0).line).toBe("version_api  function_executor  http_client  [auth]  utils  listing  restore_api");
+    const { line: narrow } = tabBar(marked, shown, 40, style, 0);
     expect(narrow).toContain("[auth]");
     expect(narrow).toMatch(/^‹ \d+ {2}.*\[auth\].* \d+ ›$/);
     expect(narrow.length).toBeLessThanOrEqual(40);
@@ -553,6 +553,58 @@ describe("the regeneration drawn", () => {
 
 describe("the side panel's two views", () => {
   const job = (id: string) => ({ id, kind: "regenerate", summary: "app.plain log in", module: "app", status: "running" as const, sequence: 1, queuedAt: 0, startedAt: Date.now(), waitingOn: [], tail: "", activity: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 }, agents: [], transcript: [] });
+
+  /** Drive the panel by what is actually on screen, including the dock's coordinate translation. */
+  function clickLabel(panel: ReturnType<typeof createSidePanel>, text: string, width: number) {
+    const lines = panel.render(width);
+    const y = lines.findIndex((line) => line.includes(text));
+    expect(y, `visible label: ${text}`).toBeGreaterThanOrEqual(0);
+    const x = lines[y]!.indexOf(text);
+    for (const type of ["press", "click"] as const) {
+      panel.handleMouse({ type, button: "left", x, y, screenX: x + width + 2, screenY: y + 1, width, height: lines.length, shift: false, alt: false, ctrl: false });
+    }
+    return panel.render(width);
+  }
+
+  it("opens a spec on a wrapped summary after scrolling, and leaves keyboard navigation on that spec", () => {
+    const first = page(tree({ [FUNCTIONAL_REQUIREMENTS]: [
+      ...Array.from({ length: 12 }, (_, i): [string, string] => [`above-${i}`, `Earlier spec ${i}.`]),
+      ["follow-link", "Follow the link and send the visitor to its saved destination.\nKeep the original query."],
+    ] }), null);
+    const mapState = createSpecMapState();
+    const panel = createSidePanel({ jobs: () => [], map: () => markSpecMap([first], noPlan), mapState, rows: () => 25, style, key: "ctrl+h", back() {}, close() {} });
+    panel.render(40);
+    panel.handleInput("G");
+    panel.render(40);
+    panel.handleMouse({ type: "wheel", button: "none", x: 10, y: 15, width: 40, height: 25, screenX: 54, screenY: 16, wheelDelta: 8, shift: false, alt: false, ctrl: false });
+    expect(mapState.top).toBeGreaterThan(0);
+    clickLabel(panel, "destination.", 40);
+    expect(mapState.open.has(mapState.cursorKey!)).toBe(true);
+    expect(panel.render(40).find((line) => line.startsWith("›"))).toContain("# follow-link");
+    panel.handleInput("\r");
+    expect(mapState.open.size).toBe(0);
+  });
+
+  it("toggles an imported file and switches to another module by clicking its name", () => {
+    const first = page(tree({ [FUNCTIONAL_REQUIREMENTS]: ["Say hello."] }), null);
+    const lib = "stdlib/lang/python";
+    const base = { ...first, module: "base", plainFile: join(dir, "base.plain") };
+    const upper = { ...first, requires: "base", imports: [lib], items: [...first.items, { ...first.items[0]!, file: lib, key: "req", text: "Use Python." }] };
+    const marked = markSpecMap([base, upper], { files: [], codebases: [codebase(base)] });
+    const panel = createSidePanel({ jobs: () => [], map: () => marked, rows: () => 40, style, key: "ctrl+h", back() {}, close() {} });
+    expect(clickLabel(panel, `▸ from ${lib}`, 90).join("\n")).toContain("Use Python.");
+    expect(clickLabel(panel, `▾ from ${lib}`, 90).join("\n")).not.toContain("Use Python.");
+    expect(clickLabel(panel, "base  [app]", 90).join("\n")).toContain("status │ base.plain");
+  });
+
+  it("opens pulse sections, pulses and diff files by clicking their labels", () => {
+    const jobs = [{ ...job("done"), status: "succeeded" as const, diff: "--- a/app.plain\n+++ b/app.plain\n@@ -1 +1,2 @@\n+- Keep the query.\n" }];
+    const panel = createSidePanel({ jobs: () => jobs, rows: () => 35, style, key: "ctrl+h", back() {}, close() {} });
+    expect(clickLabel(panel, "finished (1)", 70).join("\n")).toContain("app regenerate");
+    expect(clickLabel(panel, "app regenerate", 70).join("\n")).toContain("Keep the query.");
+    expect(clickLabel(panel, "app.plain", 70).join("\n")).not.toContain("Keep the query.");
+    expect(clickLabel(panel, "app.plain", 70).join("\n")).toContain("Keep the query.");
+  });
 
   it("opens either view from its tab even with no spec, and clicking the selected tab keeps that view", () => {
     let closed = 0;

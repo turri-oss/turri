@@ -91,7 +91,7 @@ const tabName = (page: MarkedPage) => basename(page.plainFile).replace(/\.plain$
  * The tabs, a module each in the chain's order, the one shown marked - those regenerating spin, those stuck say so - fitted to
  * `width` around the one shown, what does not fit counted at either end.
  */
-export function tabBar(pages: MarkedPage[], shown: MarkedPage | undefined, width: number, style: TranscriptStyle, now: number): string {
+export function tabBar(pages: MarkedPage[], shown: MarkedPage | undefined, width: number, style: TranscriptStyle, now: number) {
   const label = (page: MarkedPage) => {
     const regenerating = page.items.some((item) => item.mark === "regenerating");
     const mark = regenerating ? `${spinner(now)} ` : page.stuck ? "! " : "";
@@ -111,7 +111,19 @@ export function tabBar(pages: MarkedPage[], shown: MarkedPage | undefined, width
     if (to < tabs.length && visibleWidth(lineOf(from, to + 1)) <= width) (to += 1), (widened = true);
     if (from > 0 && visibleWidth(lineOf(from - 1, to)) <= width) (from -= 1), (widened = true);
   }
-  return truncateToWidth(lineOf(from, to), width, "…");
+  const full = lineOf(from, to);
+  const end = visibleWidth(full) > width ? Math.max(0, width - 1) : width;
+  const targets: { x: number; end: number; page: MarkedPage }[] = [];
+  let x = 0;
+  const target = (text: string, index: number) => {
+    const next = x + visibleWidth(text);
+    if (x < end && pages[index]) targets.push({ x, end: Math.min(next, end), page: pages[index]! });
+    x = next + 2;
+  };
+  if (from > 0) target(`‹ ${from}`, from - 1);
+  for (let i = from; i < to; i++) target(tabs[i] ?? "", i);
+  if (to < tabs.length) target(`${tabs.length - to} ›`, to);
+  return { line: truncateToWidth(full, width, "…"), targets };
 }
 /** What needs the person - a stuck page, its `!` - in the warning colour: it waits on them, nothing is broken. */
 const needs = (style: TranscriptStyle) => style.warning ?? style.error;
@@ -455,7 +467,7 @@ export function specMapLines(
   style: TranscriptStyle,
   _jobs: Job[] = [],
   now = Date.now(),
-): { lines: string[]; rowStarts: number[]; rows: MapRow[]; marks: LineMark[] } {
+): { lines: string[]; rowStarts: number[]; labelHeights: number[]; rows: MapRow[]; marks: LineMark[] } {
   const rows = specMapRows(pages, state);
   // The cursor stays on its item when rows come and go above it.
   const kept = state.cursorKey === undefined ? -1 : rows.findIndex((row) => row.key === state.cursorKey);
@@ -464,6 +476,7 @@ export function specMapLines(
   const lines: string[] = [];
   const marks: LineMark[] = [];
   const rowStarts: number[] = [];
+  const labelHeights: number[] = [];
   const add = (line: string, mark?: LineMark) => {
     lines.push(line);
     marks.push(mark);
@@ -489,6 +502,7 @@ export function specMapLines(
       rowStarts.push(lines.length);
       const text = `${INDENT.repeat(row.depth + 1)}${row.label}`;
       add(`${pointer}${here ? style.heading(text) : style.muted(text)}`);
+      labelHeights.push(0); // A heading, with nothing to open.
       underImport = true;
       return;
     }
@@ -501,6 +515,7 @@ export function specMapLines(
       const items = page.items.filter((item) => item.file === row.file);
       const text = `${row.open ? "▾" : "▸"} from ${row.file} · ${importSummary(items)}`;
       add(`${pointer}${INDENT.repeat(row.depth + 1)}${here ? style.heading(text) : style.muted(text)}`);
+      labelHeights.push(1);
       underImport = true;
       return;
     }
@@ -545,6 +560,7 @@ export function specMapLines(
     add(`${gutter}${head}`, mark);
     for (const line of rest) add(`${CONTINUED}${line}`, mark);
     if (heading !== undefined) for (const line of hanging(body, first, room)) add(`${CONTINUED}${line}`, mark);
+    labelHeights.push(lines.length - rowStarts[index]!);
     // The first item that needs the person says what for, and how to go about it - opened or closed.
     if (page.stuck && !toldWhy && rungOf(item) === "needsYou") {
       toldWhy = true;
@@ -565,7 +581,7 @@ export function specMapLines(
       if (changed.length > 4) add(`${CONTINUED}${style.muted(`… ${changed.length - 4} more - enter opens it`)}`, mark);
     }
   });
-  return { lines, rowStarts, rows, marks };
+  return { lines, rowStarts, labelHeights, rows, marks };
 }
 
 /** How the strip and the minimap colour a mark. */

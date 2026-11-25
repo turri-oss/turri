@@ -60,6 +60,13 @@ interface Drawn<Row> {
   lineCount: number;
 }
 
+interface Hit {
+  key: string;
+  x: number;
+  end: number;
+  pick(): void;
+}
+
 export function createSidePanel(options: SidePanelOptions) {
   const style = options.style;
   let lastBodyHeight = 10;
@@ -74,7 +81,24 @@ export function createSidePanel(options: SidePanelOptions) {
 
   type Action = SpecMapState["view"] | "close";
   type Control = { action: Action; text: string; x: number };
-  let pressed: Action | undefined;
+  let pressed: string | undefined;
+  // Hit regions for the last frame, in panel-local cells (the dock border is outside them).
+  const hits = new Map<number, Hit[]>();
+  const hit = (y: number, target: Hit) => {
+    const row = hits.get(y);
+    if (row) row.push(target);
+    else hits.set(y, [target]);
+  };
+  let headerHeight = 0;
+  function hitLabels<Row>(drawn: { rows: Row[]; rowStarts: number[]; labelHeights: number[] }, first: number, y: number, height: number, width: number, target: (row: Row, index: number) => Pick<Hit, "key" | "pick">) {
+    drawn.rows.forEach((row, index) => {
+      const start = drawn.rowStarts[index]! - first;
+      const end = Math.min(height, start + drawn.labelHeights[index]!);
+      if (Math.max(0, start) >= end) return;
+      const label = { ...target(row, index), x: 0, end: width };
+      for (let line = Math.max(0, start); line < end; line++) hit(headerHeight + y + line, label);
+    });
+  }
   const controls = (width: number): Control[] => {
     if (width <= 0 || (!options.map && !options.dock)) return [];
     const close = width >= 30 ? " × close " : width >= 3 ? " × " : "×";
@@ -148,7 +172,7 @@ export function createSidePanel(options: SidePanelOptions) {
   const rule = (width: number) => style.muted("─".repeat(Math.max(1, width)));
 
   const renderPulses = (width: number, rows: number): string[] => {
-    const keys = ["↑↓ move", "enter open/close", "←→", "o/c all", "pgup pgdn scroll", ...(options.map !== undefined ? ["p regen"] : []), ...backKeys()];
+    const keys = ["↑↓ move", "click/enter open/close", "←→", "o/c all", "pgup pgdn scroll", ...(options.map !== undefined ? ["p regen"] : []), ...backKeys()];
     const top = topBlock([`${style.heading("pulses")}${waitingNote()}`], keys, width);
     // Under the top: the rule, and a line of space - as the map has.
     const bodyHeight = Math.max(3, rows - top.length - 2);
@@ -158,6 +182,10 @@ export function createSidePanel(options: SidePanelOptions) {
     const tree_ = jobsTreeLines([...options.jobs(), ...(options.earlier?.() ?? [])], tree, width, style);
     drawnTree = { rows: tree_.rows, rowStarts: tree_.rowStarts, lineCount: tree_.lines.length };
     keepCursorInView(tree, tree_.rowStarts, tree_.lines.length, bodyHeight);
+    hitLabels(tree_, tree.top, top.length + 2, bodyHeight, width, (row, index) => ({
+      key: `tree:${row.section}:${row.kind}:${row.kind !== "section" ? row.job.id : ""}:${row.kind === "file" ? row.file : ""}`,
+      pick: () => { tree.cursor = index; treeKey(tree, drawnTree.rows, "toggle"); },
+    }));
     const visible = tree_.lines.slice(tree.top, tree.top + bodyHeight);
     while (visible.length < bodyHeight) visible.push("");
     return [...top, rule(width), "", ...visible.map((line) => truncateToWidth(line, width))];
@@ -177,12 +205,18 @@ export function createSidePanel(options: SidePanelOptions) {
     const tabbed = pages.length > 1;
     const page = shownPage(pages, map)!;
     const discuss = page.stuck && options.discuss !== undefined ? [`${DISCUSS_KEY} talk it through in the chat`] : [];
-    const keys = [...discuss, "↑↓ move", "enter open/close", ...(tabbed ? ["←→ module"] : []), "o/c all", "pgup pgdn", "p pulses", ...backKeys()];
+    const keys = [...discuss, "↑↓ move", "click/enter open/close", ...(tabbed ? ["←→ module"] : []), "o/c all", "pgup pgdn", "p pulses", ...backKeys()];
     // The legend's box in the upper right corner, over what is under it; too narrow a panel has none.
     const box = width >= 60 ? legendBox(legendLines(page, style)) : [];
     const room = box.length > 0 ? width - visibleWidth(box[0]!) - 1 : width;
     // The top line whole - it wraps beside the box; the tabs fit themselves, counting what does not fit.
-    const title = [specMapHeader(page, Number.MAX_SAFE_INTEGER, style, waitingNote()), ...(tabbed ? [tabBar(pages, page, room, style, now)] : [])];
+    const title = [specMapHeader(page, Number.MAX_SAFE_INTEGER, style, waitingNote())];
+    if (tabbed) {
+      const tabs = tabBar(pages, page, room, style, now);
+      const y = headerHeight + wrapTextWithAnsi(title[0]!, room).length;
+      for (const tab of tabs.targets) hit(y, { key: `module:${tab.page.plainFile}`, x: tab.x, end: tab.end, pick: () => switchTab(pages, map, pages.indexOf(tab.page) - pages.indexOf(page)) });
+      title.push(tabs.line);
+    }
     const top = topBlock(title, keys, room);
     // Under the top: the rule, a line of space, and the columns' headings - two lines.
     const bodyHeight = Math.max(3, rows - top.length - 4);
@@ -193,6 +227,18 @@ export function createSidePanel(options: SidePanelOptions) {
     const drawn = long ? specMapLines(pages, map, width - 2, style, options.jobs(), now) : first;
     drawnMap = { rows: drawn.rows, rowStarts: drawn.rowStarts, lineCount: drawn.lines.length };
     keepCursorInView(map, drawn.rowStarts, drawn.lines.length, bodyHeight);
+    const headings = columnHeadings(page, width, style);
+    const bodyY = top.length + 2 + headings.length;
+    hitLabels(drawn, map.top, bodyY, bodyHeight, long ? width - 2 : width, (row, index) => ({
+      key: `map:${row.key}`,
+      pick: () => { map.cursor = index; map.cursorKey = row.key; toggleMapRow(row); },
+    }));
+    // On a short header the legend can cover part of a body row as well.
+    for (let i = bodyY; i < box.length; i++) {
+      const y = headerHeight + i;
+      const row = hits.get(y);
+      if (row) hits.set(y, row.map((target) => ({ ...target, end: Math.min(target.end, room) })));
+    }
     const visible = drawn.lines.slice(map.top, map.top + bodyHeight).map((line) => truncateToWidth(line, long ? width - 2 : width));
     while (visible.length < bodyHeight) visible.push("");
     const body = long
@@ -202,7 +248,7 @@ export function createSidePanel(options: SidePanelOptions) {
         })()
       : visible;
     // The rule beside the box stops short of it.
-    return overBox([...top, rule(top.length < box.length ? room - 1 : width), "", ...columnHeadings(page, width, style), ...body], box, width);
+    return overBox([...top, rule(top.length < box.length ? room - 1 : width), "", ...headings, ...body], box, width);
   };
 
   /** From the map to the pulse list: onto the pulse that regenerates the item under the cursor, when one does. */
@@ -235,6 +281,14 @@ export function createSidePanel(options: SidePanelOptions) {
     }
   };
 
+  const toggleMapRow = (target: MapRow | undefined, open?: boolean) => {
+    if (target === undefined || target.kind === "group") return;
+    const to = open ?? !(target.kind === "import" ? target.open : map.open.has(target.key));
+    if (target.kind === "import") map.imports.set(target.key.replace(/^import\n/, ""), to);
+    else if (to) map.open.add(target.key);
+    else map.open.delete(target.key);
+  };
+
   /** A key in the map. */
   const mapKey = (data: string) => {
     const page = Math.max(1, lastBodyHeight - 1);
@@ -244,22 +298,13 @@ export function createSidePanel(options: SidePanelOptions) {
       map.cursor = Math.max(0, Math.min(rows.length - 1, to));
       map.cursorKey = rows[map.cursor]?.key;
     };
-    const isOpen = (target: MapRow) => (target.kind === "item" ? map.open.has(target.key) : target.kind === "group" ? false : target.open);
-    const toggle = (target: MapRow | undefined, open?: boolean) => {
-      // A group's heading only says what is under it.
-      if (target === undefined || target.kind === "group") return;
-      const to = open ?? !isOpen(target);
-      if (target.kind === "import") map.imports.set(target.key.replace(/^import\n/, ""), to);
-      else if (to) map.open.add(target.key);
-      else map.open.delete(target.key);
-    };
     if (matchesKey(data, Key.up)) move(map.cursor - 1);
     else if (matchesKey(data, Key.down)) move(map.cursor + 1);
-    else if (matchesKey(data, Key.enter) || data === " ") toggle(row);
+    else if (matchesKey(data, Key.enter) || data === " ") toggleMapRow(row);
     // ←→ go from one module's tab to the next.
     else if (matchesKey(data, Key.right)) switchTab(pages, map, 1);
     else if (matchesKey(data, Key.left)) switchTab(pages, map, -1);
-    else if (data === "o" || data === "c") for (const entry of rows) toggle(entry, data === "o");
+    else if (data === "o" || data === "c") for (const entry of rows) toggleMapRow(entry, data === "o");
     else if (data === DISCUSS_KEY && options.discuss !== undefined) {
       const shown = shownPage(pages, map);
       if (shown?.stuck === true) options.discuss(shown);
@@ -277,6 +322,7 @@ export function createSidePanel(options: SidePanelOptions) {
 
   return {
     render(width: number): string[] {
+      hits.clear();
       let bar = "";
       let end = 0;
       for (const { action, text, x } of controls(width)) {
@@ -284,10 +330,12 @@ export function createSidePanel(options: SidePanelOptions) {
         end = x + visibleWidth(text);
       }
       const header = bar ? [bar] : [];
+      headerHeight = header.length;
       const rows = Math.max(8, options.rows()) - header.length;
       try {
         return [...header, ...(map.view === "map" && options.map !== undefined ? renderMap(width, rows) : renderPulses(width, rows))];
       } catch (error) {
+        hits.clear();
         // A frame that throws is never drawn - nor is anything after it: the screen would freeze. What failed is shown instead.
         const top = topBlock([`${style.heading(map.view === "map" ? "regen" : "pulses")}${waitingNote()}`], [...(options.map !== undefined ? ["p the other view"] : []), ...backKeys()], width);
         const lines = (error instanceof Error ? (error.stack ?? error.message) : String(error)).split("\n").slice(0, Math.max(1, rows - top.length - 1));
@@ -359,6 +407,14 @@ export function createSidePanel(options: SidePanelOptions) {
             }
             return { handled: true };
           }
+        }
+      }
+      if (event.button === "left" && (event.type === "press" || event.type === "click")) {
+        const target = hits.get(event.y)?.find(({ x, end }) => event.x >= x && event.x < end);
+        if (target) {
+          if (event.type === "press") pressed = target.key;
+          else if (down === target.key) target.pick();
+          return { handled: true };
         }
       }
       if (event.type !== "wheel" || event.wheelDelta === undefined) return undefined;
