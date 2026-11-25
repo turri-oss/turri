@@ -12,11 +12,12 @@ export interface ChatScreen {
 /** Where pi drew a child. Use the row counts its Container already measured for mouse dispatch: the width of the
  * chat, the banner's image and any wrapped warnings all affect where the divider lands. */
 function rowOf(parent: Container, child: Component): number | undefined {
-  const measured = (parent as unknown as { mouseLayout?: { children: { component: Component; height: number }[] } }).mouseLayout;
+  const measured = (parent as unknown as { childLines?: { children: readonly Component[]; parts: readonly (readonly string[])[] } }).childLines;
+  if (measured === undefined) return undefined;
   let row = 0;
-  for (const part of measured?.children ?? []) {
-    if (part.component === child) return row;
-    row += part.height;
+  for (const [index, component] of measured.children.entries()) {
+    if (component === child) return row;
+    row += measured.parts[index]!.length;
   }
   return undefined;
 }
