@@ -60,6 +60,7 @@ const ROLE_ABOUT: Record<(typeof AGENT_ROLES)[number] | "default", string> = {
   chat: "the conversation - as harness-model, which it wins over",
   sentinel: "the sentinel: checks every finished pulse and tests what is launched",
   planner: "cuts the work into pulses",
+  capture: "captures an existing codebase into ***plain",
   diagnosis: "looks into a pulse that failed for good",
   launch: "the launch agent",
   coding: "writes the code - as coding-model, which it wins over",

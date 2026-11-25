@@ -22,7 +22,12 @@ import { writingScript } from "./regenerate/scripts-being-written.ts";
 import { applyBedrockRegion } from "./bedrock-region.ts";
 import { bannerWarnings } from "./turri-versions.ts";
 import { CONFORMANCE_OFF_REFUSAL, conformanceBlock, conformanceTestsOn, conformanceTestsOnIn, turnOnConformanceTests } from "./conformance-switch.ts";
-import { BACKGROUND_NOTE, doneLine, failedTask, ownChanges, runDetails, skillRunDelivery, startedText } from "./background-skills.ts";
+import { BACKGROUND_NOTE, doneLine, failedTask, ownChanges, runDetails, skillRunDelivery, startedText, type SkillRunEnd } from "./background-skills.ts";
+import { runCapture } from "./capture/capture.ts";
+import { captureEnded, captureFailed, captureGoesOn, captureOpenQuestion, captureRefusal, captureStartedText, readReopenedAfterCapture, reopenedAfterCapture } from "./capture/chat.ts";
+import { reportFile as captureReportFile } from "./capture/state.ts";
+import { canReopen, REOPENED_AFTER_CAPTURE, reopenIn } from "./reopen.ts";
+import { captureStatusLines, type CaptureStatus } from "./capture/progress.ts";
 import { highlightPlainCodeBlocks } from "./plain-code-blocks.ts";
 import { createAskUserTool } from "./tools.ts";
 import { asksFromScratch, asksWholeChain, driftTool, endWait, fromWorkingDir, haltLaunched, haltTool, loopReply, startWait, toldByWaitingCall, MODEL_PARAM, regenerateTool, stopJob, WAIT_PARAM, whenBuildable, WORKING_DIR_PARAM } from "./loop-tools.ts";
@@ -37,7 +42,7 @@ import { createSessionLaunches, launchedDir, launchedNote, replacedNote, type Se
 import { describeLaunchLine, launchText, type Launch } from "./launch-track.ts";
 import { checkedSpecs } from "./sentinel-check.ts";
 import { askedForCommandLine, refusal, selfInvocation, TOOLS_NOT_CLI } from "./self-invocation.ts";
-import { NEW_PROJECT } from "./new-project.ts";
+import { CAPTURE_HINT, NEW_PROJECT } from "./new-project.ts";
 import { describeResolution, resolveModel } from "./regenerate/model-names.ts";
 import { checkPlainFile, formatCheckResults } from "./plain/check.ts";
 import { checkPlainTool } from "./parse-tool.ts";
@@ -683,6 +688,7 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
       systemPrompt: conversationSystemPrompt(event.systemPrompt, host, [
         TOOLS_NOT_CLI,
         NEW_PROJECT,
+        CAPTURE_HINT,
         pulseEndsBlock(session.sentinelOn()),
         // Conformance tests - what they are, whether they are on here, and how they are turned on: every turn, read afresh.
         conformanceBlock(conformanceTestsOnIn(cwd)),
@@ -839,6 +845,8 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
     for (const waiting of backgroundSkillQueue.values()) for (const run of waiting.splice(0)) run.drop();
     for (const controller of backgroundSkillRuns.values()) controller.abort();
   });
+  // An existing codebase captured into ***plain, in the background: the person starts it, never the chat's agent.
+  registerCapture(pi, cwd, skillRunEnds);
   const startInBackground = (
     skill: (typeof skills)[number],
     params: { context?: string },
@@ -2862,6 +2870,112 @@ function registerCheckPlain(pi: ExtensionAPI, cwd: string, dialogs?: AskUserIO, 
 const SIDE_ENTRY = "turri_btw";
 /** A message the person sent while a skill ran in the chat, read by the skill's agent: drawn as the message it is. */
 const SKILL_MESSAGE_ENTRY = "turri_skill_message";
+
+/** The capture's lines above the input while it runs. */
+const CAPTURE_WIDGET = "turri-capture";
+
+/**
+ * /capture [path]: the codebase at path - the chat's folder by default - captured into ***plain in <path>/plain, in the
+ * background and offline (docs/capture.md). A command alone: capture turns conformance tests on in the project it writes,
+ * which the person alone does. One at a time; its end comes back to this chat as a background skill's does, its report
+ * for the chat's agent to pass on.
+ */
+function registerCapture(pi: ExtensionAPI, cwd: string, ends: { put(end: SkillRunEnd): void }) {
+  let running: { root: string; controller: AbortController } | undefined;
+  pi.on("session_shutdown", (event) => {
+    if (event.reason === "quit") running?.controller.abort();
+  });
+  // turri opened again here, in the project a capture wrote: its report told in the first chat, once.
+  pi.on("session_start", () => {
+    const told = readReopenedAfterCapture(process.env[REOPENED_AFTER_CAPTURE]);
+    delete process.env[REOPENED_AFTER_CAPTURE];
+    if (told !== undefined) ends.put(captureEnded(cwd, { plainDir: cwd, reportFile: captureReportFile(cwd), summary: told.summary }));
+  });
+  pi.registerCommand("capture", {
+    description: "Capture an existing codebase into ***plain, in the background - nothing is asked, and its report comes back here; a stopped one goes on: /capture [path] (this folder by default - the ***plain goes into <path>/plain)",
+    handler: async (args, ctx) => {
+      const command = `/capture ${args.trim()}`.trim();
+      await echoCommand(pi, command);
+      const refuse = (text: string) => shownAfterCommand(pi, ctx, command, text, "error", true);
+      if (running !== undefined) return refuse(`A capture of ${running.root} is running already: its report comes back here when it ends. Nothing new was started.`);
+      const root = resolve(cwd, args.trim() || ".");
+      const refusal = captureRefusal(root);
+      if (refusal !== undefined) return refuse(refusal);
+      const controller = new AbortController();
+      running = { root, controller };
+      const model = conversationModel(ctx);
+      shownAfterCommand(pi, ctx, command, captureStartedText(root, model, captureGoesOn(root)), "info", true);
+      // Above the input while it runs: where it is, each agent at work and what it did last - a capture at work
+      // is told from one that hangs.
+      let status: CaptureStatus | undefined;
+      let redrawNow: (() => void) | undefined;
+      if (ctx.hasUI) {
+        ctx.ui.setWidget(CAPTURE_WIDGET, (tui, theme) => {
+          // The spinner and the clocks move.
+          const redraw = setInterval(() => tui.requestRender(), 1000);
+          redraw.unref?.();
+          redrawNow = () => tui.requestRender();
+          const style = {
+            heading: (text: string) => theme.bold(theme.fg("accent", text)),
+            done: (text: string) => theme.fg("success", text),
+            now: (text: string) => theme.bold(theme.fg("accent", text)),
+            muted: (text: string) => theme.fg("muted", text),
+          };
+          return {
+            render: (width: number) => (status === undefined ? [] : captureStatusLines(status, { frame: spinner(Date.now()), now: Date.now(), width }, style)),
+            invalidate: () => {},
+            dispose: () => {
+              clearInterval(redraw);
+              redrawNow = undefined;
+            },
+          };
+        });
+      }
+      const watch = (next: CaptureStatus) => {
+        status = next;
+        redrawNow?.();
+      };
+      // The captured project starts as the config in use here, with the chat's model and thinking of the moment, and the
+      // coding model turri was started with, where it says otherwise.
+      const codingModel = process.env[CODING_MODEL_ENV];
+      const configured = {
+        configFrom: cwd,
+        ...(model !== undefined ? { model, harnessModel: `${model}:${pi.getThinkingLevel()}` } : {}),
+        ...(codingModel !== undefined && codingModel !== "" ? { codingModel } : {}),
+      };
+      void captureConsole(() => runCapture({ root, signal: controller.signal, watch, ...configured }))
+        .then(async ({ result }) => {
+          if (ctx.hasUI) ctx.ui.setWidget(CAPTURE_WIDGET, undefined);
+          // A chat works on the project of its own folder, and the capture wrote one of its own: turri in a terminal
+          // can open again there, on the chat's model, the report told there.
+          if (ctx.hasUI && canReopen()) {
+            const question = captureOpenQuestion(cwd, result);
+            const chatModel = conversationModel(ctx);
+            const codingModel = process.env[CODING_MODEL_ENV];
+            const args = [
+              ...(chatModel !== undefined ? ["--model", chatModel] : []),
+              "--thinking",
+              pi.getThinkingLevel(),
+              ...(codingModel !== undefined && codingModel !== "" ? ["--coding-model", codingModel] : []),
+            ];
+            if ((await ctx.ui.confirm(question.title, question.message)) && reopenIn(result.plainDir, { args, env: { [REOPENED_AFTER_CAPTURE]: reopenedAfterCapture(result.summary) } })) {
+              ctx.shutdown();
+              return;
+            }
+          }
+          ends.put(captureEnded(cwd, result));
+        })
+        .catch((error: unknown) => {
+          // Stopped as turri quits: nobody is left to tell.
+          if (!controller.signal.aborted) ends.put(captureFailed(error));
+        })
+        .finally(() => {
+          running = undefined;
+          if (ctx.hasUI) ctx.ui.setWidget(CAPTURE_WIDGET, undefined);
+        });
+    },
+  });
+}
 
 /**
  * /btw, a question on the side (btw.ts): answered at once, even while a skill runs - pi runs a command mid-turn - and

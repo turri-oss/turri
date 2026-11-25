@@ -16,6 +16,7 @@ turri is the first coding agent with the power of regenerative software: [\*\*\*
 | what my machine needs, and why a check failed | [installation](installation.md) |
 | what turri needs of this machine, and what `turri doctor` checks | [installation](installation.md#what-turri-doctor-checks) |
 | how to start a project, or add a feature, in a conversation | [using](using.md#in-a-conversation) |
+| how to bring an existing codebase under \*\*\*plain | [capture](capture.md) |
 | how to have several chats open at once, and reopen them | [chats](chats.md) |
 | what checks each pulse as it finishes, and tells me what needs me | [the sentinel](sentinel.md) |
 | which model codes, and how to change it | [using](using.md#choosing-a-model), [the project config](config.md#models) |
@@ -48,6 +49,7 @@ turri is the first coding agent with the power of regenerative software: [\*\*\*
 | [A Claude subscription](claude-subscription.md) | running every agent on a Claude Pro, Max or Team subscription through Claude Code: setting it up, its models, checking it yourself, in turri-desktop, its limits, when it does not work |
 | [The project config](config.md) | `config.turri.yaml` and a module's own `config.turri.<module>.yaml`: where they are read from, every key, models and their inheritance, conformance, the testing scripts, which file builds a module, the old `config.yaml` |
 | [Launch](launch.md) | trying what is built: the launch track, a commit in dist/<module>, starting it on your machine, after every pulse, `turri launch` |
+| [Capture](capture.md) | an existing codebase captured into \*\*\*plain, offline: what it aims for, how it scales, what it writes, the report, resuming |
 | [Running unattended](headless.md) | regenerating overnight or in CI: before you leave it, the command, the results, resuming, rebuilding one functionality |
 | [Authoring \*\*\*plain](authoring-plain.md) | a \*\*\*plain project, what \*\*\*plain is made of, the rules, writing \*\*\*plain with the agent, the skills, checking \*\*\*plain |
 | [Regenerating](regenerating.md) | where things go, one job, a whole module and how its work is cut into jobs, each job's cases, \*\*\*plain changes, conformance tests, the two records of what is built |

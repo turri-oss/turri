@@ -434,6 +434,7 @@ export function quickStartConfig(vendor: Vendor = "other", bedrock?: BedrockChoi
     `${column(`#   chat: ${harness}`, 72)}# the conversation - as harness-model, which it wins over`,
     `${column(`#   sentinel: ${harness}`, 72)}# the sentinel: checks every finished pulse and tests what is launched`,
     role("planner", harness, "cuts the work into pulses"),
+    role("capture", harness, "captures an existing codebase into ***plain"),
     role("diagnosis", harness, "looks into a pulse that failed for good"),
     role("launch", coding, "the launch agent: turri launch's, the chat's and launch-after-pulse's"),
     `${column(`#   coding: { model: ${coding}, thinking: ${ROLE_THINKING.coding}, turn-limit: 180 }`, 72)}# as coding-model, which it wins over`,
