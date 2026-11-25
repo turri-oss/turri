@@ -225,6 +225,12 @@ describe("the chat's tools in a project of module config files", () => {
     writeFileSync(join(dir, "config.turri.yaml"), "conformance-tests: true\nunittests-script: test_scripts/run_unittests_python.sh\n");
     expect(whenBuildable(join(dir, "api.plain"), () => pinnedConfigModule() ?? "none")).toBe("none");
   });
+
+  it("refuses to build with a config that does not parse - it would be read as empty, every setting at its default", () => {
+    writeFileSync(join(dir, "config.turri.yaml"), "coding-model: p/small\ncoding-model: p/big\n");
+    writeFileSync(join(dir, "api.plain"), "***implementation reqs***\n\n- :Implementation: is Python.\n\n***functional specs***\n\n# ping\nPing.\n");
+    expect(() => whenBuildable(join(dir, "api.plain"), () => "started")).toThrow(/^Nothing was started: config\.turri\.yaml, line 2: coding-model is set twice\. A config that does not parse is read as empty/);
+  });
 });
 
 describe("a missing unit testing script where modules have config files of their own", () => {

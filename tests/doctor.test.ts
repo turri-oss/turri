@@ -38,6 +38,17 @@ describe("doctor for a host", () => {
     expect(machine.map((check) => check.name)).toEqual(["Node", "bash", "git", "OS sandbox", "Model provider"]);
   });
 
+  it("says a config that does not parse first - a key set twice, its line - and that none of it applies", async () => {
+    writeFileSync(join(project, "config.turri.yaml"), "harness-model: anthropic/claude-test\nconformance-tests: true\nconformance-tests: false\n");
+    const checks = await doctor({ dir: project, env: { PATH: "" } });
+    expect(checks.find((check) => check.name === "Config")).toMatchObject({
+      level: "missing",
+      detail: "config.turri.yaml, line 3: conformance-tests is set twice",
+      more: [expect.stringContaining("none of config.turri.yaml applies")],
+      fix: "Set each key once in config.turri.yaml, then run turri doctor again",
+    });
+  });
+
   it("writes nothing to stdout, even asking the models", async () => {
     const write = vi.spyOn(process.stdout, "write");
     const log = vi.spyOn(console, "log");
