@@ -1539,7 +1539,8 @@ export function createWorkLoop(options: {
     const own = (jobs: PlannedJob[] | undefined) => (jobs ?? []).filter((job) => job !== running);
     // A track being planned again shows as that, not as its plan before - and a module asked for, from that moment, as
     // its code being planned: its code deleted, what is left worked out, before the planner runs.
-    const planningTrack = state.running === undefined ? (state.planning ?? (preparing.has(tipEntry(state).moduleName) ? "code" : undefined)) : undefined;
+    // One waiting for a module below it is shown waiting, asked for or not: nothing plans it until that one is built.
+    const planningTrack = state.running === undefined ? (state.planning ?? (preparing.has(tipEntry(state).moduleName) && state.waitsFor === undefined ? "code" : undefined)) : undefined;
     const replanning = planningTrack;
     const jobs = [
       ...(running !== undefined ? [running] : []),
@@ -1657,6 +1658,13 @@ export function createWorkLoop(options: {
           state.lookedAhead = undefined;
           // Asked for again: its conformance tests are written for every functional spec with scenarios, not only those conform named.
           state.conformanceOnly = undefined;
+          // A module below it not built at all: it waits for that one, said at once - the looks go bottom first, each the
+          // planner's time, and until its own it would show as being planned. Its look says it again, or moves it on.
+          const below = state.running === undefined ? state.chain.slice(0, -1).find((entry) => modules.has(entry.buildDir) && !started(entry)) : undefined;
+          if (below !== undefined && state.waitsFor === undefined) {
+            state.waitsFor = below.moduleName;
+            state.why = `waiting for ${below.moduleName}: the code it is built on is not built yet`;
+          }
         }
         await tick();
         return [...new Set(states)].map(statusOf);
