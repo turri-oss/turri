@@ -23,8 +23,8 @@ interface Screen {
   /** pi's queued messages under the chat - and, with chat-waiting.ts, in it. */
   updatePendingMessagesDisplay?(): void;
   handleEvent(event: unknown): Promise<void>;
-  /** pi-tui's screen: its overlays among it. */
-  ui: { hideOverlay(): void };
+  /** The overlays extensions opened on the screen, each with what takes it off - the side panel among them. */
+  extensionOverlays?: Map<unknown, () => void>;
 }
 
 interface Runtime {
@@ -195,14 +195,15 @@ export function driveTerminal(core: TurriCore, options: { restore?: RunRecord; s
       if (runtime === undefined || chat.session === undefined) return;
       from?.ui?.hide();
       // pi takes the shown chat's widgets and dialogs off the screen, as it does before replacing a session - but not the
-      // overlay on it: the side panel, the session's and not the chat's, stays where it is, beside the chat or over it.
-      const tui = screen?.ui;
-      const hideOverlay = tui?.hideOverlay;
-      if (tui !== undefined) tui.hideOverlay = () => {};
+      // overlays on it: the side panel, the session's and not the chat's, stays where it is, beside the chat or over it.
+      // pi takes off every overlay it holds, so for that moment it holds none.
+      const overlays = screen?.extensionOverlays;
+      const kept = [...(overlays ?? [])];
+      overlays?.clear();
       try {
         runtime.beforeSessionInvalidate?.();
       } finally {
-        if (tui !== undefined && hideOverlay !== undefined) tui.hideOverlay = hideOverlay;
+        for (const [handle, remove] of kept) overlays?.set(handle, remove);
       }
       runtime._session = chat.session;
       runtime._services = chat.services;

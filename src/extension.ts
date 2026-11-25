@@ -2563,7 +2563,7 @@ function sidePanelOf(jobs: JobRegistry, cwd: string): SidePanelHost {
           done(undefined);
         };
         panelTerminal = tui.terminal;
-        let component: { render(width: number): string[]; dispose?(): void } | undefined;
+        let component: { render(width: number): readonly string[]; dispose?(): void } | undefined;
         // Beside the chat: the chat drawn narrower, on the left, and a click on either side giving it the keys - undone
         // when the panel goes over the screen, or closes.
         let undock: (() => void) | undefined;
@@ -2725,7 +2725,7 @@ function sidePanelOf(jobs: JobRegistry, cwd: string): SidePanelHost {
             undock?.();
             if (panel === entry) panel = undefined;
           },
-        } as { render(width: number): string[]; dispose?(): void };
+        } as { render(width: number): readonly string[]; dispose?(): void };
         return component as never;
       },
       {
