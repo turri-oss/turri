@@ -243,6 +243,11 @@ const SKILL: Record<ScriptKind, { skill: string; file: string; what: string }> =
   conformance: { skill: "implement-conformance-testing-script", file: "run_conformance_tests", what: "conformance testing script" },
 };
 
+/** The skill that writes a testing script of a kind, and what the script is called in words. */
+export function testingScriptSkill(kind: ScriptKind): { skill: string; what: string } {
+  return { skill: SKILL[kind].skill, what: SKILL[kind].what };
+}
+
 /** The kind of testing script a skill writes, by its name - one that writes none, undefined. */
 export function scriptKindOfSkill(skill: string): ScriptKind | undefined {
   return (Object.keys(SKILL) as ScriptKind[]).find((kind) => SKILL[kind].skill === skill);

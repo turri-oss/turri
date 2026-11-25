@@ -65,6 +65,25 @@ describe("what a host is told of a background run", () => {
     expect(messages[0]!.options).toEqual({ triggerTurn: true, deliverAs: "followUp" });
   });
 
+  it("draws a run that did its work and has something for the chat as its line, and starts a turn with what it has", async () => {
+    const entries: Array<{ type: string; data: unknown }> = [];
+    const messages: Array<{ customType: string; content: string }> = [];
+    const pi = {
+      registerEntryRenderer: () => {},
+      on: () => {},
+      appendEntry: (type: string, data: unknown) => entries.push({ type, data }),
+      sendMessage: async (message: { customType: string; content: string }) => {
+        messages.push(message);
+      },
+    } as unknown as ExtensionAPI;
+    const link = { session: () => ({ isStreaming: false, isCompacting: false, isRetrying: false }) } as unknown as ChatLink;
+    skillRunDelivery(pi, link, () => undefined).put({ skill: "capture", ok: true, line: "Capture finished.", task: "Pass the report on." });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(entries).toEqual([{ type: "turri_skill_run", data: { text: "Capture finished." } }]);
+    // Never the message of a run that did not finish, which a host shows as one.
+    expect(messages.map((message) => [message.customType, message.content])).toEqual([["turri_skill_report", "Pass the report on."]]);
+  });
+
   it("counts as a script run's own only its script, a prepare script and a config naming them - not what the chat wrote meanwhile", () => {
     const changed = ["quotes.plain", "test_scripts/run_conformance_tests_python.sh", "tests/quotes/health.plain", "config.turri.yaml", "test_scripts/prepare_environment_python.sh"];
     expect(ownChanges(changed, "conformance")).toEqual(["test_scripts/run_conformance_tests_python.sh", "config.turri.yaml", "test_scripts/prepare_environment_python.sh"]);

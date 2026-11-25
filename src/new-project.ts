@@ -29,3 +29,15 @@ export const NEW_PROJECT = [
   "go on, or what to change, and every change after is ***plain you write and regenerate.",
   "</new-project>",
 ].join("\n");
+
+/**
+ * Bringing an existing codebase under ***plain: the person starts /capture, never the chat - it runs a while, and turns
+ * conformance tests on in the project it writes.
+ */
+export const CAPTURE_HINT = [
+  "<capture>",
+  "When the person wants an existing codebase brought under ***plain - written down as ***plain, to work on from then on",
+  "instead of the code - tell them /capture [path] does it: in the background, asking nothing, into <path>/plain, with a",
+  "report of what it decided. Only they start it; you cannot.",
+  "</capture>",
+].join("\n");

@@ -190,6 +190,7 @@ Start at the [documentation index](docs/README.md), or go straight to a page:
 | [Using **turri**](docs/using.md) | the conversation, skills, tools, pulses and regen, choosing models, the command line |
 | [The project config](docs/config.md) | `config.turri.yaml` and a module's own `config.turri.<module>.yaml`: every key, models and their inheritance, conformance, the testing scripts, which file builds a module, the old `config.yaml` |
 | [Launch](docs/launch.md) | trying what is built: a commit in `dist/<module>`, started on your machine in the background - after every pulse too - nothing installed without asking |
+| [Capture](docs/capture.md) | an existing codebase captured into \*\*\*plain - offline, at any size - to work on from then on instead of the code |
 | [Running unattended](docs/headless.md) | regenerating \*\*\*plain overnight or in CI: the command, keeping it running, the results, resuming, rebuilding one functionality |
 | [Authoring \*\*\*plain](docs/authoring-plain.md) | what \*\*\*plain is made of, the authoring rules, the skills that write and fix it, checking it |
 | [Regenerating](docs/regenerating.md) | what each build does and in which order: functionalities, modules, regeneration, changes to \*\*\*plain, conformance and acceptance tests, working notes, what the code is built from |

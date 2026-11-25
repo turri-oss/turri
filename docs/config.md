@@ -139,6 +139,7 @@ Keys are written with dashes; underscores are read the same (`mutation_testing`)
 | `chat` | `turri`'s model - the same as `harness-model`, which it wins over |
 | `sentinel` | [the sentinel](sentinel.md): checks every finished pulse, and tests what was launched. Unnamed, the chat's model |
 | `planner` | the conversation's side: the planner's agents. Unnamed, the chat's model |
+| `capture` | the agents of [a capture](capture.md): they write \*\*\*plain from an existing codebase. Unnamed, the chat's model - `--harness-model` under `turri capture`. A turn may take ten minutes unless its entry, `default`'s or `turn-limit:` says otherwise - one trying the scenarios on the original at least thirty, unless the limit is off |
 | `diagnosis` | the diagnosis of a job that failed for good: why it did not land, and what to do. Unnamed, the coding model the job ran on, thinking medium |
 | `launch` | the launch agent - the chat's `launch`, `turri launch` and launch-after-pulse's: it follows steps - a script, a start command - so it runs on the coding model, thinking low |
 | `coding` | the coding agent, the code fixer of a conformance run and the repair agent - the same as `coding-model`, which it wins over. `--model` on the command line, or a model a call to `regenerate` or `conform` names, wins over both |
@@ -152,7 +153,7 @@ Keys are written with dashes; underscores are read the same (`mutation_testing`)
 
 What an entry leaves out it takes from `default`: `reviewer: { thinking: low }` runs the default model, thinking little. A turn limit is the role's own, else `default`'s, else `turn-limit:`, else two minutes. A module's `config.turri.<module>.yaml` lays its own `models:` over the project's, role by role - all but `chat`, the project's alone.
 
-A role whose thinking nothing names - neither its entry, `default`'s, nor a `:level` on the model it runs on - thinks as its kind of work needs: **low** for the agents that do the work (`coding`, `conformance`, `explorer`, `launch`), which work from \*\*\*plain that leaves little to guess and take many turns, and **medium** for the ones that judge (`reviewer`, `test-reviewer`, `judge`, `arbiter`, `debugger`, `planner`, `diagnosis`), where a wrong call costs pulses. A judging role that falls back on the coding model takes its model alone, not its thinking. The conversation keeps its own level, as [pi](https://pi.dev) sets it.
+A role whose thinking nothing names - neither its entry, `default`'s, nor a `:level` on the model it runs on - thinks as its kind of work needs: **low** for the agents that do the work (`coding`, `conformance`, `explorer`, `launch`), which work from \*\*\*plain that leaves little to guess and take many turns, and **medium** for the ones that judge (`reviewer`, `test-reviewer`, `judge`, `arbiter`, `debugger`, `planner`, `capture`, `diagnosis`), where a wrong call costs pulses. A judging role that falls back on the coding model takes its model alone, not its thinking. The conversation keeps its own level, as [pi](https://pi.dev) sets it.
 
 The thinking level reaches the model as each provider takes it. OpenAI's models on Bedrock are sent it as their reasoning effort (`none`, `low`, `medium`, `high`, `xhigh`) by turri itself, as [pi](https://pi.dev) sends them none.
 
@@ -294,6 +295,7 @@ A `config.turri.yaml` - or a module's own file, or a `config.yaml` turri still r
 
 - **The chat** says it under the banner, in the error colour, as it starts.
 - **Nothing is regenerated with it.** `regenerate`, `conform`, `/regenerate`, `/conform` and `turri regenerate` refuse to start a pulse until it parses, saying why - as they refuse a module that cannot be built with its config.
+- **A capture** started where it is in use refuses to start, since the captured project starts as that config ([capture](capture.md)).
 - **`turri doctor`** lists it first among the project's checks.
 
 Fix it - each key set once - and ask again.

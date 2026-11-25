@@ -19,7 +19,10 @@ export interface SkillRunEnd {
   ok: boolean;
   /** The line it is drawn as. */
   line: string;
-  /** When it did not do its work: what the chat's agent is told, in a turn of its own. */
+  /**
+   * What the chat's agent is told, in a turn of its own: when it did not do its work - or when what it did is for the
+   * chat to tell, as a capture's report is. A run that did its work with a task is drawn as its line too.
+   */
   task?: string;
   /** The testing script it writes, when it writes one. */
   kind?: ScriptKind;
@@ -97,6 +100,9 @@ export function failedTask(skill: string, why: string, output: string | undefine
 /** The line drawn for a background run, in the transcript and in no model's context. */
 const SKILL_RUN_ENTRY = "turri_skill_run";
 
+/** What a background run that did its work has for the chat's agent, unseen. */
+const SKILL_REPORT_ENTRY = "turri_skill_report";
+
 /** How long an end waits before the chat is looked at again, while the person types or it cannot be told yet. */
 const RECHECK_MS = 2000;
 
@@ -130,14 +136,20 @@ export function skillRunDelivery(pi: ExtensionAPI, link: ChatLink, context: () =
     }
     const now = waiting.splice(0);
     const failed = now.filter((end) => !end.ok && end.task !== undefined);
+    const reported = now.filter((end) => end.ok && end.task !== undefined);
     try {
       for (const end of now.filter((end) => end.ok)) pi.appendEntry(SKILL_RUN_ENTRY, { text: end.line });
+      // A follow-up, never a steer: should a turn start in between, this waits for it to end.
       if (failed.length > 0) {
-        // A follow-up, never a steer: should a turn start in between, this waits for it to end.
         void pi.sendMessage(
           { customType: SKILL_RUN_ENTRY, content: failed.map((end) => end.task!).join("\n\n---\n\n"), display: false, details: { skills: failed.map((end) => end.skill), runs: failed.map((end) => ({ skill: end.skill, ...runDetails(end.kind, end.plainFile) })) } },
           { triggerTurn: true, deliverAs: "followUp" },
         );
+      }
+      // What a run that did its work has for the chat - a capture's report: a message of its own, which a host never
+      // shows as a run that did not finish.
+      if (reported.length > 0) {
+        void pi.sendMessage({ customType: SKILL_REPORT_ENTRY, content: reported.map((end) => end.task!).join("\n\n---\n\n"), display: false, details: { skills: reported.map((end) => end.skill) } }, { triggerTurn: true, deliverAs: "followUp" });
       }
     } catch {
       // Not bound to its session yet: kept, and tried again.

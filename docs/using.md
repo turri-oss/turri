@@ -15,6 +15,8 @@ Peeking is safe while a question is open - a skill's or the chat's: `ctrl+h` ope
 
 While a skill runs, a line above the input shows its phases, every one by name - those done ticked, the one it is in marked, the rest to come - and where it is: the skill's name at the left edge, `phase 2 of 4` at the right, and its phases centred between them, `✓ intent ━━━━ ⠋ stack ──── ○ testing ──── ○ product`. Under it, dimmed, the phase it is in and what it does: `stack - the language, frameworks, storage and architecture`. The phases are the skill's own steps, read from its `SKILL.md`. A skill of one phase, or none, has nothing to be partway through: its line is the spinner and its name alone, `⠹ analyze-func-specs`.
 
+To bring an existing codebase under \*\*\*plain instead, `/capture` captures it into `plain/`, in the background - nothing is asked, its progress shows above the input, and once it ends turri offers to open again in `plain/`, where its report is told and `/regenerate` builds it; only you start it (see [capture](capture.md)).
+
 `genome/skills/` holds the rest: adding a feature, a concept, a requirement, a resource; splitting a functional spec that is too big; resolving conflicts; checking the environment - see [authoring \*\*\*plain](authoring-plain.md#the-skills). A skill run that is interrupted can be resumed where it stopped. A project can have skills of its own, in `.turri/skills/` or `.agents/skills/` - see [skills and gates](skills-and-gates.md#a-projects-own-skills).
 
 ## The tools
@@ -205,6 +207,7 @@ turri conform <file.plain> --from-scratch   # its tests folder taken out and wri
 turri lineage <module>                 # what each regeneration changed in a module, and when
 turri cultivate debug-specs            # run a skill directly - by name, the project's too, or by its folder
 turri launch <file.plain>              # launch what is regenerated from dist/<module>, here
+turri capture [path]                   # capture an existing codebase into ***plain, in <path>/plain - offline
 ```
 
 `turri cultivate` runs a skill on the project's harness model, as the chat does, unless `--model` names another. The ones that build take `--model provider/model-id`; `regenerate` also takes `--build-dir` and `--dry-run`, which looks ahead as `pulses` does in the chat - plans the work as `regenerate` would, prints the prompt of each codebase's next pulse from that plan, and starts and writes nothing - so not with `--from-scratch` or functional specs named, which change the code or its record before anything is planned. Template directories come from `PLAIN_TEMPLATE_DIRS`. `--help` on any of them lists the rest.

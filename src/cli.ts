@@ -8,12 +8,14 @@
  */
 
 import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CODING_MODEL_ENV, chatModels } from "./chat-models.ts";
 import { readProjectConfig } from "./config.ts";
 import { extensionInstalledGlobally, PACKAGE_ROOT, themesInstalledGlobally, versionLine } from "./environment.ts";
 import { dropNoise } from "./quiet.ts";
+import { REOPEN_FILE_ENV, takeReopening } from "./reopen.ts";
 
 /**
  * Start pi with this project's extension and themes already wired in.
@@ -53,23 +55,37 @@ function chat(args: string[]): never {
   // in as well: pi-launch.ts is told, and leaves it to that. turri doctor offers to remove the file.
   const inPi = extensionInstalledGlobally();
   const themes = themesInstalledGlobally() ? [] : ["--theme", join(PACKAGE_ROOT, ".pi", "themes")];
-  // turri's own theme, unless this run names another. For this run only: pi's settings
-  // are left as they are, so a plain `pi` keeps its theme.
-  const useTheme = args.some((arg) => arg === "--use-theme" || arg.startsWith("--use-theme=")) ? [] : ["--use-theme", DEFAULT_THEME];
+  // A chat that quits asking to open again elsewhere - after a capture, in the project it wrote - writes where in this
+  // file, and is started again there, as the first was (reopen.ts).
+  const reopenFile = join(tmpdir(), `turri-reopen-${process.pid}.json`);
+  let run: { cwd: string; args: string[]; env: Record<string, string> } = { cwd: process.cwd(), args, env: {} };
+  for (;;) {
+    // turri's own theme, unless this run names another. For this run only: pi's settings
+    // are left as they are, so a plain `pi` keeps its theme.
+    const useTheme = run.args.some((arg) => arg === "--use-theme" || arg.startsWith("--use-theme=")) ? [] : ["--use-theme", DEFAULT_THEME];
 
-  // The model the person talks to, and the one every render runs on - see chat-models.ts.
-  const { piArgs, codingModel } = chatModels(args, readProjectConfig(process.cwd()));
+    // The model the person talks to, and the one every render runs on - see chat-models.ts.
+    const { piArgs, codingModel } = chatModels(run.args, readProjectConfig(run.cwd));
 
-  // Fullscreen: pi owns the viewport, so the conversation stays where it is scrolled to while the
-  // jobs redraw - in the terminal's own scrollback, every redraw pulls it back to the bottom.
-  const tuiMode = args.some((arg) => arg === "--tui-mode" || arg.startsWith("--tui-mode=")) ? [] : ["--tui-mode", "fullscreen"];
+    // Fullscreen: pi owns the viewport, so the conversation stays where it is scrolled to while the
+    // jobs redraw - in the terminal's own scrollback, every redraw pulls it back to the bottom.
+    const tuiMode = run.args.some((arg) => arg === "--tui-mode" || arg.startsWith("--tui-mode=")) ? [] : ["--tui-mode", "fullscreen"];
 
-  const result = spawnSync(process.execPath, [launcher, ...themes, ...useTheme, ...tuiMode, ...piArgs], {
-    stdio: "inherit",
-    cwd: process.cwd(),
-    env: { ...process.env, ...(codingModel ? { [CODING_MODEL_ENV]: codingModel } : {}), ...(inPi ? { TURRI_EXTENSION_IN_PI: "1" } : {}) },
-  });
-  process.exit(result.status ?? 1);
+    const result = spawnSync(process.execPath, [launcher, ...themes, ...useTheme, ...tuiMode, ...piArgs], {
+      stdio: "inherit",
+      cwd: run.cwd,
+      env: {
+        ...process.env,
+        ...run.env,
+        [REOPEN_FILE_ENV]: reopenFile,
+        ...(codingModel ? { [CODING_MODEL_ENV]: codingModel } : {}),
+        ...(inPi ? { TURRI_EXTENSION_IN_PI: "1" } : {}),
+      },
+    });
+    const next = takeReopening(reopenFile);
+    if (next === undefined) process.exit(result.status ?? 1);
+    run = { cwd: next.dir, args: next.args, env: next.env };
+  }
 }
 
 const COMMANDS: Record<string, { module: string; blurb: string; args?: string[] }> = {
@@ -80,6 +96,7 @@ const COMMANDS: Record<string, { module: string; blurb: string; args?: string[] 
   lineage: { module: "./lineage-cli.ts", blurb: "a module's lineage: what was regenerated into it, and when" },
   launch: { module: "./launch-cli.ts", blurb: "launch what is regenerated from dist/<module> on this machine" },
   cultivate: { module: "./cultivate-cli.ts", blurb: "run a gated skill" },
+  capture: { module: "./capture-cli.ts", blurb: "capture an existing codebase into ***plain, in <path>/plain - offline, with a report of what it decided" },
 };
 
 /** Getting the machine ready, and checking it is. */
