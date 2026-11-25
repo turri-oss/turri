@@ -282,9 +282,9 @@ export function providerRetryDelay(attempt: number, random = Math.random): numbe
 /** How long a request to the model may go without anything coming back before the provider is said to be stalling; 0 never. */
 export const PROVIDER_STALL_MS = Number(process.env.TURRI_PROVIDER_STALL ?? 120) * 1000;
 
-/** A provider error that passes: overloaded, rate limited, unreachable, timed out. */
+/** A provider error that passes: overloaded, rate limited, unreachable, timed out, its stream cut off part-way. */
 const TRANSIENT_PROVIDER_ERROR =
-  /\b(429|500|502|503|504|529)\b|overloaded|high demand|rate.?limit|too many requests|unavailable|fetch failed|network|connection|timed? ?out|ECONNRESET|socket|terminated/i;
+  /\b(429|500|502|503|504|529)\b|overloaded|high demand|rate.?limit|too many requests|unavailable|fetch failed|network|connection|timed? ?out|ECONNRESET|socket|terminated|truncated|stream ended/i;
 
 /** Wait, unless the job is stopped first. */
 async function waitOrStop(ms: number): Promise<void> {
