@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AGENT_ROLES, modelOnly, projectModels, readProjectConfig, ROLE_THINKING, roleModel, roleTurnLimitMs, skillModel, moduleConfigsOf, unknownConfigKeys, configLines } from "../src/config.ts";
+import { AGENT_ROLES, brokenConfig, configFileProblem, modelOnly, projectModels, readProjectConfig, ROLE_THINKING, roleModel, roleTurnLimitMs, skillModel, moduleConfigsOf, unknownConfigKeys, configLines } from "../src/config.ts";
 
 let root: string;
 beforeEach(() => {
@@ -438,5 +438,27 @@ describe("keys turri does not read", () => {
   it("are none in a config of turri's own keys", () => {
     writeFileSync(join(root, "config.turri.yaml"), "harness-model: p/big\ncoding-model: p/small\nconformance-tests: true\nmodels:\n  judge: p/big\n");
     expect(unknownConfigKeys(root)).toEqual([]);
+  });
+});
+
+describe("a config that does not parse", () => {
+  it("is read as empty, and said - the file, its line and the key set twice - first among what turri says of the config", () => {
+    writeFileSync(join(root, "config.turri.yaml"), "# the capture's\nconformance-tests: true\nharness-model: p/big\n\n# pasted under it\nconformance-tests: false\n");
+    writeFileSync(join(root, "config.turri.api.yaml"), "unittests-script: [a\n");
+    expect(readProjectConfig(root)).toEqual({});
+    expect(configFileProblem(join(root, "config.turri.yaml"))).toBe("config.turri.yaml, line 6: conformance-tests is set twice");
+    expect(configFileProblem(join(root, "config.turri.api.yaml"))).toMatch(/^config\.turri\.api\.yaml, line \d+ does not parse: /);
+    expect(configLines(root).map((line) => line.kind)).toEqual(["broken", "broken"]);
+    expect(configLines(root)[1]!.text).toBe(
+      "config.turri.yaml, line 6: conformance-tests is set twice - so none of config.turri.yaml applies: turri runs on its defaults and pi's, the models among them. Set each key once.",
+    );
+    expect(brokenConfig(root)).toMatch(/^config\.turri\.api\.yaml, line \d+ does not parse: .*; config\.turri\.yaml, line 6: conformance-tests is set twice\. A config that does not parse is read as empty: none of it would apply/);
+  });
+
+  it("is nothing to say of a config that parses, or of a config.yaml turri no longer reads", () => {
+    writeFileSync(join(root, "config.turri.yaml"), "harness-model: p/big\n");
+    writeFileSync(join(root, "config.yaml"), "a: 1\na: 2\n");
+    expect(brokenConfig(root)).toBeUndefined();
+    expect(configLines(root)).toEqual([]);
   });
 });

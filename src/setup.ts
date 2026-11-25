@@ -10,7 +10,7 @@ import { fetchLatest, newerThan, turrisOnPath, versionFindings } from "./turri-v
 import { sandboxAvailable, sandboxWithAsync, type Wall } from "./regenerate/os-sandbox.ts";
 import { findTestScripts, onThisMachine } from "./regenerate/test-scripts.ts";
 import { configKeyOptions, parseArgs } from "./cli-options.ts";
-import { CONFIG_FILE, hasProjectConfig, readProjectConfig, moduleConfigFile, configModuleOf, moduleConfigsOf } from "./config.ts";
+import { CONFIG_FILE, hasProjectConfig, readProjectConfig, moduleConfigFile, configModuleOf, moduleConfigsOf, configProblems } from "./config.ts";
 import { checkModels, modelsInUse, piModelAccess, type ModelAccess } from "./model-check.ts";
 import { bedrockRegionFor, describeBedrockRegion, regionInGeography, type BedrockRegion } from "./bedrock-region.ts";
 import { baseFilesAsync } from "./regenerate/base-folder.ts";
@@ -278,6 +278,14 @@ async function allChecks(options: DoctorOptions & CliOptions): Promise<Check[]> 
   // In a project: what it needs of this machine, and whether its models answer.
   const project = options.dir;
   if (project === undefined) return checks;
+  // A config that does not parse is read as empty - every setting at its default, the models pi's own: said first.
+  checks.push(...configProblems(project).map((problem): Check => ({
+    level: "missing",
+    name: "Config",
+    detail: problem.text,
+    more: [`turri reads a config that does not parse as empty: none of ${problem.file} applies - not its models, not conformance tests, no other setting.`],
+    fix: `Set each key once in ${problem.file}, then run turri doctor again`,
+  })));
   if (hasProjectConfig(project) || existsSync(join(project, "plain_modules"))) checks.push(...(await checkProject(project, { has: (command) => onThisMachine(command, env) !== undefined })));
   if (hasProjectConfig(project)) checks.push(...checkBedrockRegion(project, env), ...(await checkClaudeSubscription(project, env)), ...(await checkBaseFolders(project)));
   if (asksModels(options)) checks.push(...(await checkProjectModels(project)));

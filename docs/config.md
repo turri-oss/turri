@@ -286,4 +286,14 @@ turri's settings were once in `config.yaml`, and a module's own in `config.<modu
 
 The first time turri itself writes a setting there with `/settings`, it copies `config.yaml` to `config.turri.yaml` and each `config.<name>.yaml` to `config.turri.<name>.yaml` first, leaves the old files as they are, and from then on reads only the new ones. `turri init-config` copies the modules' files the same way, but writes `config.turri.yaml` as its quick start, taking from `config.yaml` only the keys turri reads too - `unittests-script`, `conformance-tests-script` and `prepare-environment-script`, say - each in its place in the file, and saying which keys it left: `template_dir`, `verbose`, `api`, the other tool's alone. The two models are the vendor's, never taken. To change a setting by hand in such a project, do the same: copy the files to their new names, and edit the copies - never `config.yaml`. Writing a `config.turri.yaml` of your own beside it is the same move: from then on `config.yaml` is not read, its testing scripts with it. For a headless run that only needs conformance tests or another judge, or review, those options leave the files alone: `--conformance-tests`, `--judge-model`, `--review true|false`, and the models' too.
 
-Keys turri does not read - another tool's `verbose`, `api-key`, `build-folder`, ... - are ignored without a word, and so is a value of the wrong type. A file that does not parse as YAML is read as empty, so its testing scripts are then looked for by name.
+Keys turri does not read - another tool's `verbose`, `api-key`, `build-folder`, ... - are ignored without a word, and so is a value of the wrong type.
+
+## A config that does not parse
+
+A `config.turri.yaml` - or a module's own file, or a `config.yaml` turri still reads - that is not valid YAML is read as empty: none of it applies, and turri would run on its defaults and [pi](https://pi.dev)'s, the models among them - pi's own default model, which may not be one your credentials reach. A key set twice is the usual way in: a second config pasted under the first. So turri says it, never silently (`configProblems` in `src/config.ts`), naming the file, the line and what is wrong - `config.turri.yaml, line 13: conformance-tests is set twice`:
+
+- **The chat** says it under the banner, in the error colour, as it starts.
+- **Nothing is regenerated with it.** `regenerate`, `conform`, `/regenerate`, `/conform` and `turri regenerate` refuse to start a pulse until it parses, saying why - as they refuse a module that cannot be built with its config.
+- **`turri doctor`** lists it first among the project's checks.
+
+Fix it - each key set once - and ask again.

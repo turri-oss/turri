@@ -909,7 +909,7 @@ export function unknownConfigKeys(root: string): Array<{ file: string; keys: str
  * a key turri renamed in the file - information, nothing to do; `old-beside-new`, an old name left beside its new one,
  * doing nothing - take it out; `unknown`, keys turri does not read - take them out, or fix their spelling.
  */
-export type ConfigLineKind = "renamed" | "old-beside-new" | "unknown";
+export type ConfigLineKind = "broken" | "renamed" | "old-beside-new" | "unknown";
 
 export interface ConfigLine {
   kind: ConfigLineKind;
@@ -924,6 +924,7 @@ export interface ConfigLine {
  * beside its new one - doing nothing - and each file with keys turri does not read.
  */
 export function configLines(root: string): ConfigLine[] {
+  const broken = configProblems(root).map((problem): ConfigLine => ({ kind: "broken", file: problem.file, text: `${problem.text} - so none of ${problem.file} applies: turri runs on its defaults and pi's, the models among them. Set each key once.` }));
   const renamed = renameOldKeys(root).map(({ file, from, to }): ConfigLine => ({ kind: "renamed", file, text: `${file}: ${from} is called ${to} now - turri renamed it there, its value kept.` }));
   const left: ConfigLine[] = [];
   for (const file of namesIn(root).filter((name) => /^config\.turri(\.[^.]+)?\.yaml$/.test(name)).sort()) {
@@ -945,5 +946,55 @@ export function configLines(root: string): ConfigLine[] {
       text: `${file} has ${keys.length === 1 ? "a key" : "keys"} turri does not read - ${keys.join(", ")}: no setting turri has, so ${keys.length === 1 ? "it does" : "they do"} nothing. Take ${keys.length === 1 ? "it" : "them"} out, or see docs/config.md for the spelling.`,
     }),
   );
-  return [...renamed, ...left, ...unknown];
+  return [...broken, ...renamed, ...left, ...unknown];
+}
+
+/**
+ * Why a config file does not parse - its line and what YAML says, a key set twice among them - or undefined when it
+ * parses or is not there. turri reads a config that does not parse as empty, every setting at its default, the models
+ * pi's own: said, never silently.
+ */
+export function configFileProblem(path: string): string | undefined {
+  let text: string;
+  try {
+    if (!statSync(path).isFile()) return undefined;
+    text = readFileSync(path, "utf8");
+  } catch {
+    return undefined;
+  }
+  const file = basename(path);
+  try {
+    const parsed = loadYaml(text);
+    if (parsed !== null && parsed !== undefined && (typeof parsed !== "object" || Array.isArray(parsed))) return `${file} is not a list of settings, a key and its value a line`;
+    return undefined;
+  } catch (error) {
+    const reason = (error as { reason?: unknown }).reason;
+    const line = (error as { mark?: { line?: unknown } }).mark?.line;
+    const at = typeof line === "number" ? `, line ${line + 1}` : "";
+    const key = typeof line === "number" ? /^\s*([\w.-]+)\s*:/.exec(text.split("\n")[line] ?? "")?.[1] : undefined;
+    if (reason === "duplicated mapping key") return `${file}${at}: ${key !== undefined ? `${key} is` : "a key is"} set twice`;
+    return `${file}${at} does not parse: ${typeof reason === "string" ? reason : error instanceof Error ? error.message.split("\n")[0] : String(error)}`;
+  }
+}
+
+/** The config files of a project folder that do not parse - config.turri.yaml and each module's own - each with why. */
+export function configProblems(root: string): Array<{ file: string; text: string }> {
+  return namesIn(root)
+    // config.yaml only while turri reads it: until it writes config.turri.yaml, it may be another tool's.
+    .filter((name) => /^config\.turri(\.[^.]+)?\.yaml$/.test(name) || (name === LEGACY_CONFIG_FILE && usesLegacyConfig(root)))
+    .sort()
+    .flatMap((file) => {
+      const text = configFileProblem(join(root, file));
+      return text === undefined ? [] : [{ file, text }];
+    });
+}
+
+/** Why a project's config does not parse, in a sentence for a refusal - undefined when every file of it parses. */
+export function brokenConfig(root: string): string | undefined {
+  const problems = configProblems(root);
+  if (problems.length === 0) return undefined;
+  return (
+    `${problems.map((problem) => problem.text).join("; ")}. A config that does not parse is read as empty: none of it would apply - ` +
+    `not the models, not conformance tests, no other setting - and turri would run on its defaults and pi's. Fix it - each key set once - then ask again.`
+  );
 }

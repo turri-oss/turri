@@ -3245,8 +3245,8 @@ function registerBranding(pi: ExtensionAPI, skills: SkillCatalogue) {
         (data.commit !== undefined ? theme.fg("dim", `  from a clone, ${data.commit}${data.changed ? " with changes" : ""}`) : ""),
       // A newer turri out, or one installed and hidden behind this one: said first, under the version it is about.
       ...(data.versions ?? []).map((line) => theme.fg("warning", line)),
-      // A key renamed is information; the rest are the person's to take out.
-      ...(data.config ?? []).map((line) => theme.fg(line.kind === "renamed" ? "muted" : "warning", line.text)),
+      // A key renamed is information; one that does not parse stops everything that reads it; the rest are the person's to take out.
+      ...(data.config ?? []).map((line) => theme.fg(line.kind === "renamed" ? "muted" : line.kind === "broken" ? "error" : "warning", line.text)),
       `${theme.fg("text", "the first coding agent with the power of ")}${brandPink(theme)("regenerative software")}`,
       // Where the settings are changed, without leaving the chat.
       theme.fg("muted", "configure with /settings"),

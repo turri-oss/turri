@@ -3,7 +3,7 @@ import { refuseTestPlainFile } from "./test-plain-files.ts";
 import { basename, relative, resolve } from "node:path";
 import { defineTool, type ExtensionContext, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { CONFIG_FILE, readProjectConfig, moduleConfigFile, configModuleFor, moduleConfigsOf, withConfigModule } from "./config.ts";
+import { brokenConfig, CONFIG_FILE, readProjectConfig, moduleConfigFile, configModuleFor, moduleConfigsOf, withConfigModule } from "./config.ts";
 import { checkPlainFile, formatCheckResults } from "./plain/check.ts";
 import { describeDrift, describeModules, type ModuleStatus, type WorkLoop } from "./regenerate/loop.ts";
 import { describeJob, pulseName, type Job, type JobRegistry } from "./regenerate/jobs.ts";
@@ -52,6 +52,9 @@ export const MODEL_PARAM = Type.Optional(
  */
 export function unbuildableConfig(plainFile: string): string | undefined {
   const root = projectDirOf(plainFile);
+  // A config that does not parse is read as empty: built with it, every pulse would run on defaults - pi's model among them.
+  const broken = brokenConfig(root);
+  if (broken !== undefined) return broken;
   let own: string | undefined;
   try {
     own = configModuleFor(plainFile);

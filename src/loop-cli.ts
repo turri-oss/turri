@@ -3,6 +3,7 @@ import { refuseTestPlainFile } from "./test-plain-files.ts";
 import { createInterface } from "node:readline/promises";
 import { relative, resolve, sep } from "node:path";
 import {
+  brokenConfig,
   configForSpec,
   inheritModel,
   modelOnly,
@@ -53,6 +54,9 @@ export async function runLoop(options: {
 }): Promise<never> {
   const plainFile = resolve(options.plainFile);
   refuseTestPlainFile(plainFile);
+  // A config that does not parse is read as empty: refused, rather than every pulse run on defaults - pi's model among them.
+  const broken = brokenConfig(projectDirOf(plainFile));
+  if (broken !== undefined) throw new Error(`Nothing was started: ${broken}`);
   // What a turri that was killed left running - commands' process groups - stopped before anything starts.
   const orphans = sweepOrphanedGroups();
   if (orphans > 0) console.log(`Stopped ${orphans} process group${orphans === 1 ? "" : "s"} a turri that was killed left running.`);
