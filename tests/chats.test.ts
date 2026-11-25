@@ -36,7 +36,6 @@ function session() {
       links.push(link);
       link.live({
         announce: (job: Job) => told.set(link.id, [...(told.get(link.id) ?? []), job.summary]),
-        jobsChanged: () => {},
         thinkingLevel: () => undefined,
         context: () => undefined,
       });

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { describeUsage, reportSpec, reportStage, reportTranscript, reportUsage } from "../../src/regenerate/activity.ts";
 import { createJobRegistry, describeJob } from "../../src/regenerate/jobs.ts";
-import { jobPanelLines } from "../../src/regenerate/job-panel.ts";
 
 async function jobWith(run: () => void) {
   const jobs = createJobRegistry();
@@ -183,7 +182,7 @@ describe("the functional spec a job is building", () => {
     text: "A :Tuple: supports arithmetic.\n  - Adding two tuples adds each component.\n\nacceptance tests:\n- (3, -2, 5, 1) + (-2, 3, 1, 0) is (1, 1, 6, 1).",
   };
 
-  it("is shown with the job: its first line, and all of it while expanded", async () => {
+  it("names the spec it is building and records the full text in its transcript", async () => {
     const jobs = createJobRegistry();
     let release = () => {};
     const job = jobs.start({
@@ -200,31 +199,6 @@ describe("the functional spec a job is building", () => {
 
     // Which functional spec, as data - for a host to light it without reading the label.
     expect(job.building!.spec).toEqual({ module: "rt_tuples", funcId: "tuple-arithmetic" });
-
-    // With how long it has been on it.
-    const now = job.building!.since! + 7_000;
-    const compact = jobPanelLines([job], { now });
-    expect(compact).toContain("    rt_tuples functionality 2 of 5 · 7s: A :Tuple: supports arithmetic.  (+3 lines · ctrl+o)");
-    expect(compact.join("\n")).not.toContain("Adding two tuples");
-
-    const expanded = jobPanelLines([job], { expanded: true, now });
-    expect(expanded).toContain("    rt_tuples functionality 2 of 5 · 7s:");
-    expect(expanded).toContain("      │   - Adding two tuples adds each component.");
-    expect(expanded).toContain("      │ - (3, -2, 5, 1) + (-2, 3, 1, 0) is (1, 1, 6, 1).");
-
-    // A module build's own progress widget shows it: the panel does not write it twice.
-    const module = jobs.start({
-      kind: "regenerate",
-      summary: "rt_tuples.plain module",
-      run: async () => {
-        reportSpec(spec);
-        await new Promise<void>(() => {});
-        return { report: "" };
-      },
-    });
-    await new Promise((done) => setTimeout(done, 10));
-    expect(jobPanelLines([module], { expanded: true }).join("\n")).not.toContain("supports arithmetic");
-    expect(module.transcript.some((entry) => entry.kind === "spec" && entry.text.startsWith("rt_tuples functionality 2 of 5"))).toBe(true);
 
     // And whole in its transcript - what its log streams - where it began.
     const built = job.transcript.find((entry) => entry.kind === "spec");
@@ -253,33 +227,6 @@ describe("the spec text shown for a functionality", () => {
 });
 
 describe("how long the job has been on what it is building now", () => {
-  it("is shown beside the job's own time - for a module under it, for anything else on its building line - and kept through its later stages", async () => {
-    let finish!: () => void;
-    const held = new Promise<void>((resolve) => (finish = resolve));
-    const jobs = createJobRegistry();
-    const job = jobs.start({
-      kind: "regenerate",
-      summary: "app.plain module",
-      run: async () => {
-        reportSpec({ label: "app functionality 17 of 23", text: "- Back it up." });
-        await held;
-        return { report: "" };
-      },
-    });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    const since = job.building!.since!;
-    const lines = jobPanelLines(jobs.list(), { now: since + 192_000 });
-    expect(lines[0]).toMatch(/app\.plain module · \d+s/);
-    expect(lines).toContain("    app functionality 17 of 23 · 3m 12s");
-
-    const other = createJobRegistry();
-    const render = other.start({ kind: "render", summary: "app.plain fs 3", run: async () => (reportSpec({ label: "app functionality 3 of 5", text: "- Say hello." }), await held, { report: "" }) });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(jobPanelLines(other.list(), { now: render.building!.since! + 42_000 })).toContain("    app functionality 3 of 5 · 42s: - Say hello.");
-    finish();
-    await jobs.wait(job.id);
-  });
-
   it("keeps its clock when the same functionality goes on to its next stage, and starts a new one for the next", async () => {
     const released: Array<() => void> = [];
     const hold = () => new Promise<void>((resolve) => released.push(resolve));

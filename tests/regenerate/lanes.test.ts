@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { createJobRegistry, describeJob } from "../../src/regenerate/jobs.ts";
-import { jobPanelLines } from "../../src/regenerate/job-panel.ts";
 
 function gated() {
   let release!: () => void;
@@ -68,28 +67,4 @@ describe("jobs that write the same module", () => {
     expect(next.status).toBe("running");
   });
 
-  it("leave what waits out of the panel, compact or expanded - the side panel lists the queue", () => {
-    const jobs = createJobRegistry();
-    const { run } = gated();
-    for (let frid = 3; frid <= 6; frid += 1) {
-      jobs.start({ kind: "render", summary: `app ${frid}`, lanes: ["m"], run: run(`${frid}`) });
-    }
-    for (const lines of [jobPanelLines(jobs.list()), jobPanelLines(jobs.list(), { expanded: true })]) {
-      expect(lines.join("\n")).toContain("app 3");
-      expect(lines.join("\n")).not.toContain("queued");
-      expect(lines.join("\n")).not.toMatch(/app [456]/);
-    }
-    expect(jobPanelLines(jobs.list(), { expanded: true }).at(-1)).toBe("  ctrl+o to collapse the trace · ctrl+h to peek at regen");
-    expect(jobPanelLines(jobs.list()).at(-1)).toBe("  ctrl+o to expand the trace · ctrl+h to peek at regen");
-    // A blank line sets the help apart from the trace above it.
-    expect(jobPanelLines(jobs.list()).at(-2)).toBe("");
-  });
-
-  it("draw no panel while pulses only wait", () => {
-    const jobs = createJobRegistry();
-    const { run } = gated();
-    jobs.start({ kind: "render", summary: "app 3", lanes: ["m"], run: run("a") });
-    const waiting = jobs.list().map((job) => ({ ...job, status: "queued" as const }));
-    expect(jobPanelLines(waiting)).toEqual([]);
-  });
 });

@@ -7,6 +7,7 @@ import { withoutResumeLine } from "./resume-line.ts";
 import { lastRun, type RunRecord } from "./chat-records.ts";
 import { driveTerminal } from "./chat-terminal.ts";
 import { takeOverSettings } from "./pi-settings.ts";
+import { quietBrandThemeOverrides } from "./pi-themes.ts";
 import turri, { createTurriCore, processSession } from "./extension.ts";
 
 /**
@@ -44,6 +45,7 @@ SettingsManager.prototype.getFullscreenExitOutput = () => "resume-hint";
 
 // /settings is turri's, pi's own menu the last entry of it (pi-settings.ts).
 takeOverSettings();
+quietBrandThemeOverrides();
 const write = process.stdout.write.bind(process.stdout) as (chunk: unknown, ...rest: unknown[]) => boolean;
 process.stdout.write = ((chunk: unknown, ...rest: unknown[]) =>
   write(typeof chunk === "string" ? withoutResumeLine(chunk) : chunk, ...rest)) as typeof process.stdout.write;

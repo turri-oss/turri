@@ -127,7 +127,8 @@ export function keepGuidance(cwd: string, text: string): void {
  * What a chat of the person's is told of the pulses that end: told itself, of those asked for in it - or, with the
  * sentinel on, nothing, the sentinel telling the person what needs them.
  */
-export function pulseEndsBlock(sentinel: boolean): string {
+export function pulseEndsBlock(sentinel: boolean, terminal = false): string {
+  if (sentinel && terminal) return "<pulse-ends>\nThe sentinel checks finished pulses. Their results, its conclusions and its notices go to the notification centre (/notifications). Do not announce them here. Answer if the person asks; when they accept a notice's action, do the task you are given.\n</pulse-ends>";
   return sentinel
     ? [
         "<pulse-ends>",

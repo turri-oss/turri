@@ -118,7 +118,6 @@ function session(options: { sentinel?: boolean | "ask"; host?: TurriHost; ignore
         noticeOver: (notice) => of(link.id).over.push({ id: notice.id, state: notice.state }),
         act: (task) => of(link.id).acted.push(task),
         concluded: (conclusion) => of(link.id).concluded.push(`${conclusion.check !== undefined ? `check ${conclusion.check} ` : ""}${conclusion.module} ${conclusion.verdict}: ${conclusion.summary}`),
-        jobsChanged: () => {},
         thinkingLevel: () => undefined,
         context: () => undefined,
       });

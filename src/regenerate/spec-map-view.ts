@@ -20,8 +20,8 @@ import type { TranscriptStyle } from "./transcript-view.ts";
  */
 
 export interface SpecMapState {
-  /** Which view the side panel shows: the map, or the pulse list. */
-  view: "map" | "pulses";
+  /** Which tab the side panel shows. */
+  view: "map" | "pulses" | "notifications";
   /** The row the cursor is on, and the key of what is there - it stays on the item when rows move. */
   cursor: number;
   cursorKey?: string;

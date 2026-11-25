@@ -180,6 +180,7 @@ export function noticeDialogs(
 
   return {
     put(notice) {
+      if (session.terminal) return; // The terminal centre received it, including the question whether to start.
       try {
         pi.appendEntry(NOTICE_ENTRY, notice);
       } catch {
@@ -192,12 +193,12 @@ export function noticeDialogs(
     },
     concluded(conclusion) {
       try {
-        pi.appendEntry(CONCLUDED_ENTRY, conclusion);
+        if (!session.terminal) pi.appendEntry(CONCLUDED_ENTRY, conclusion);
       } catch {
         /* the agent is still told */
       }
       // A host that shows the person the conclusion itself: the chat knows of it - in order, with no turn of its own.
-      const shown = session.host.pulseEndsShown === true;
+      const shown = session.terminal || session.host.pulseEndsShown === true;
       void pi.sendMessage(
         {
           customType: "turri_sentinel_concluded",
@@ -209,6 +210,7 @@ export function noticeDialogs(
       );
     },
     over(notice) {
+      if (session.terminal) return;
       asking.get(notice.id)?.abort();
       const at = waiting.indexOf(notice);
       if (at !== -1) waiting.splice(at, 1);

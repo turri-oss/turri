@@ -10,7 +10,7 @@ turri --use-theme dark                      # pi's own
 
 The second form follows your terminal's light/dark appearance. The default is for `turri` only: [pi](https://pi.dev)'s settings are left alone, so a plain `pi` keeps its theme. With the themes copied to `~/.pi/agent/themes/` (`cp .pi/themes/*.json ~/.pi/agent/themes/`), `{"theme": "turri-dark"}` in `~/.pi/agent/settings.json` gives a plain `pi` the same one.
 
-Bad input fails quietly - an unknown `--use-theme` name and a malformed theme file both run without complaint - so if the colours do not change, suspect a typo rather than the mechanism.
+If the same turri theme is installed in both places, the project's `.pi/themes/` copy takes precedence over the one in `~/.pi/agent/themes/`. turri does not warn about these expected copies. Theme files that fail to load and name clashes with other themes still appear in pi's startup diagnostics.
 
 ## The palette
 
@@ -36,7 +36,7 @@ Both themes, the command line's colours, the \*\*\*plain diff's, the banner's je
 | indigo | `#5b57d9` | the jellyfish's bell, at its rim - nowhere else |
 | orange | `#ff7a3d` | the jellyfish's gut, the `$` of bash mode, and everything that asks for you - what failed (`✗`), what works with limits, what needs you (the \*\*\*plain map's `!`): `error`, `warning` |
 
-In the chat header, the `+` is the one pink button. Tabs use the theme's `selectedBg` for their padded surfaces and `accent` for the active tab. Hover underlines the target; `×` takes the warning colour on hover to distinguish closing from switching. The side panel uses the same treatment. In the transcript, pink carries what is done and orange everything that asks for you - what failed, what works with limits, what waits on you - the mark (`✗`, `!`, `■`) telling them apart. The palette has no red.
+In the chat header the `+` button uses the theme's success colour. The `***plain` toggle takes a brand-pink fill and a spinner while regeneration is active; its arrow points left when the panel is open and right when closed. Tabs use the theme's `selectedBg` for their padded surfaces and `accent` for the active tab. Hover underlines the target; `×` takes the warning colour on hover to distinguish closing from switching. The side panel uses the same treatment. In the transcript, pink carries what is done and orange everything that asks for you - what failed, what works with limits, what waits on you - the mark (`✗`, `!`, `■`) telling them apart. The palette has no red.
 
 ## Why there are two
 

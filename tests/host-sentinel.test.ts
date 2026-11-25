@@ -593,7 +593,7 @@ describe("a host that shows each pulse's end itself (pulseEndsShown)", () => {
     expect(heard).toEqual(["holds"]);
   });
 
-  it("without it, has the chat say both, each in a turn of its own - as the terminal does", async () => {
+  it("without it, has the host's chat say both, each in a turn of its own", async () => {
     const delivered = await landedAndConcluded({});
     expect(delivered.map(({ customType, turn }) => [customType, turn])).toEqual([
       ["turri_job_landed", true],

@@ -21,6 +21,8 @@ export interface QuestionDialogOptions {
   question: string;
   /** The choices. Without them, a line to type the answer on. */
   options?: string[];
+  /** Clickable choices when this dialog is embedded in the side panel. */
+  clickable?: boolean;
   /** The choice the cursor starts on. */
   selected?: number;
   /** The terminal's height, for the window the brief scrolls in. */
@@ -52,6 +54,9 @@ export class QuestionDialog implements Component, Focusable {
   private maxScroll = 0;
   private window = 0;
   private answered = false;
+  private choiceLines: number[] = [];
+  private choiceTop = 0;
+  private pressed: number | undefined;
   private focusedNow = false;
 
   constructor(options: QuestionDialogOptions) {
@@ -101,12 +106,14 @@ export class QuestionDialog implements Component, Focusable {
     const brief = context === "" ? [] : context.split("\n").flatMap((line) => (line.trim() === "" ? [""] : wrapTextWithAnsi(styled(line, style), inner)));
     const question = wrapTextWithAnsi(style.bold(style.accent(this.options.question)), inner);
     const choices = this.options.options ?? [];
+    this.choiceLines = [];
     const body =
       this.input !== undefined
         ? this.input.render(inner)
         : // A long option wraps, its lines under its first, rather than cut off where the person cannot read it.
           choices.flatMap((choice, index) =>
-            wrapTextWithAnsi(choice, Math.max(1, inner - 2)).map((line, at) => {
+             wrapTextWithAnsi(choice, Math.max(1, inner - 2)).map((line, at) => {
+               if (this.options.clickable) this.choiceLines.push(index);
               const shown = `${at === 0 && index === this.selected ? "›" : " "} ${line}`;
               return index === this.selected ? style.accent(shown) : shown;
             }),
@@ -135,7 +142,9 @@ export class QuestionDialog implements Component, Focusable {
       }
       lines.push("");
     }
-    lines.push(...question.map(pad), ...body.map(pad), "", pad(style.muted(hint)));
+    lines.push(...question.map(pad));
+    this.choiceTop = lines.length;
+    lines.push(...body.map(pad), "", pad(style.muted(hint)));
     return lines;
   }
 
@@ -170,6 +179,15 @@ export class QuestionDialog implements Component, Focusable {
   }
 
   handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+    if (this.options.clickable && event.button === "left" && (event.type === "press" || event.type === "click")) {
+      const index = this.choiceLines[event.y - this.choiceTop];
+      const down = this.pressed;
+      this.pressed = event.type === "press" ? index : undefined;
+      if (index === undefined) return;
+      this.selected = index;
+      if (event.type === "click" && down === index) this.finish(this.options.options?.[index]);
+      return { handled: true };
+    }
     if (event.type !== "wheel" || event.wheelDelta === undefined || this.maxScroll === 0) return undefined;
     this.scrollBy(event.wheelDelta);
     return { handled: true };

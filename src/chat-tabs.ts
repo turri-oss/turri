@@ -32,12 +32,19 @@ interface Part {
   action?: TabAction;
   text: string;
   shown?: boolean;
+  role?: ButtonRole;
 }
 
-function layout(chats: ChatInfo[], width: number): Part[] {
+interface PanelState { notifications: number; open: boolean; busy: boolean }
+
+function layout(chats: ChatInfo[], width: number, state?: PanelState): Part[] {
   if (width <= 0) return [];
   // Keep the panel button at the right edge while chat titles grow and shrink on the left.
-  const panel = width >= 30 ? " ***plain › " : width >= 14 ? " ***plain " : width >= 6 ? "≡" : "";
+  const pending = state?.notifications ?? 0;
+  const badge = pending && width >= 30 ? ` · ${pending > 99 ? "99+" : pending}` : "";
+  const arrow = state?.open ? "‹" : "›";
+  const spin = state?.busy ? spinner(Date.now()) : "";
+  const panel = width >= 24 ? ` ${spin && `${spin} `}***plain${badge} ${arrow} ` : width >= 14 ? `${spin}***plain ${arrow}` : width >= 6 ? `${spin}${arrow}` : "";
   const panelWidth = visibleWidth(panel);
   const chatWidth = width - (panel ? panelWidth + 1 : 0);
   // Reserve + and a close target per tab before spending cells on padding, gaps and titles.
@@ -60,7 +67,7 @@ function layout(chats: ChatInfo[], width: number): Part[] {
   parts.push({ text: plus, action: { kind: "open" } });
   if (panel) {
     const used = parts.reduce((cells, part) => cells + visibleWidth(part.text), 0);
-    parts.push({ text: " ".repeat(width - used - panelWidth) }, { text: panel, action: { kind: "plain" } });
+    parts.push({ text: " ".repeat(width - used - panelWidth) }, { text: panel, action: { kind: "plain" }, role: state?.busy ? "regenerating" : "panel" });
   }
   return parts;
 }
@@ -70,12 +77,12 @@ export interface ChatTabs extends Component {
 }
 
 /** Mouse positions, like the layout, are in terminal cells, not string offsets. */
-export function chatTabs(chats: () => ChatInfo[], style: ButtonPaint, pick: (action: TabAction) => void): ChatTabs {
+export function chatTabs(chats: () => ChatInfo[], style: ButtonPaint, pick: (action: TabAction) => void, panel?: () => PanelState): ChatTabs {
   let pressed: string | undefined;
   return {
     pointer: new PointerHover(),
     render(width) {
-      return [layout(chats(), width).map((part) => part.action ? style(part.text, part.shown === true, this.pointer.target === buttonKey(part.action), buttonRole[part.action.kind]) : part.text).join("")];
+      return [layout(chats(), width, panel?.()).map((part) => part.action ? style(part.text, part.shown === true, this.pointer.target === buttonKey(part.action), part.role ?? buttonRole[part.action.kind]) : part.text).join("")];
     },
     handleMouse(event) {
       const move = event.type === "move";
@@ -83,7 +90,7 @@ export function chatTabs(chats: () => ChatInfo[], style: ButtonPaint, pick: (act
       const down = pressed;
       if (!move) pressed = undefined;
       let x = 0;
-      for (const part of layout(chats(), event.width)) {
+      for (const part of layout(chats(), event.width, panel?.())) {
         const end = x + visibleWidth(part.text);
         if (event.x >= x && event.x < end && part.action) {
           const key = buttonKey(part.action);

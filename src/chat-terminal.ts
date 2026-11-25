@@ -125,10 +125,13 @@ export function driveTerminal(core: TurriCore, options: { restore?: RunRecord; s
     return theme === undefined ? text : buttonLabel(theme, text, shown, hovered, role);
   }, (action) => {
     if (switching || runtime === undefined) return;
-    if (action.kind === "plain") return core.shownChat()?.instance?.openPlainPanel?.();
+    if (action.kind === "plain") return core.shownChat()?.instance?.plainPanel?.toggle();
     switching = true;
     const change = action.kind === "open" ? core.open() : action.kind === "close" ? closeTerminalChat(core, action.id) : core.show(action.id);
     void change.catch((error: unknown) => core.notify(error instanceof Error ? error.message : String(error), "warning")).finally(() => { switching = false; });
+  }, () => {
+    const panel = core.shownChat()?.instance?.plainPanel;
+    return { notifications: core.notifications.count, open: panel?.open() === true, busy: panel?.busy() === true };
   });
 
   const header = chatTabHeader(tabs);
@@ -145,7 +148,7 @@ export function driveTerminal(core: TurriCore, options: { restore?: RunRecord; s
     const unwatch = header.watch(this, tui);
     let ticker: ReturnType<typeof setInterval> | undefined;
     const refresh = () => {
-      if (core.chats().some((chat) => chat.status === "working")) {
+      if (core.shownChat()?.instance?.plainPanel?.busy() || core.chats().some((chat) => chat.status === "working")) {
         ticker ??= setInterval(() => tui.requestRender(), 250).unref();
       } else {
         clearInterval(ticker);

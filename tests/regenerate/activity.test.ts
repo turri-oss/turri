@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { clearOfStop, currentStopSignal, describeToolCall, describeToolResult, reportActivity, reportNow, reportStage, withStopSignal } from "../../src/regenerate/activity.ts";
-import { createJobRegistry, type Job } from "../../src/regenerate/jobs.ts";
-import { jobPanelLines } from "../../src/regenerate/job-panel.ts";
+import { createJobRegistry } from "../../src/regenerate/jobs.ts";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
 
@@ -57,6 +56,25 @@ describe("what a background job is doing", () => {
 
   it("is a no-op outside a job", () => {
     expect(() => reportActivity("nobody listening")).not.toThrow();
+  });
+
+  it("keeps the clock when only the words change", async () => {
+    const jobs = createJobRegistry();
+    const job = jobs.start({
+      kind: "render",
+      summary: "x",
+      run: async () => {
+        reportNow("preparing a tool call");
+        const first = job.now!.since;
+        await tick();
+        reportNow("writing write call · 4.2k chars", { keepSince: true });
+        expect(job.now!.since).toBe(first);
+        reportNow(undefined);
+        return { report: "" };
+      },
+    });
+    await jobs.wait(job.id);
+    expect(job.now).toBeUndefined();
   });
 });
 
@@ -119,171 +137,5 @@ describe("tool calls as one line", () => {
     expect(describeToolResult("run_unit_tests", { details: { exitCode: 0 } }, false)).toBe("  ✓ passing");
     expect(describeToolResult("run_unit_tests", { details: { exitCode: 1 } }, false)).toBe("  ✗ failing (exit 1)");
     expect(describeToolResult("write", {}, false)).toBeUndefined();
-  });
-
-});
-
-describe("the panel", () => {
-  it("lists what finished on top, a line a module, each pulse with its mark, number and kind alone - a rule under it - and is gone when nothing runs", async () => {
-    const jobs = createJobRegistry();
-    const first = jobs.start({ kind: "regenerate", summary: "x", module: "backend", pulse: 1, title: "Registration", run: async () => ({ report: "", details: { passed: true } }) });
-    await jobs.wait(first.id);
-    const second = jobs.start({ kind: "conformance", summary: "y", module: "backend", pulse: 2, title: "fs 1", run: async () => ({ report: "", details: { passed: false } }) });
-    await jobs.wait(second.id);
-    const other = jobs.start({ kind: "regenerate", summary: "w", module: "web", pulse: 1, title: "home page", run: async () => ({ report: "", details: { passed: true } }) });
-    await jobs.wait(other.id);
-    // Nothing running: no panel at all.
-    expect(jobPanelLines(jobs.list())).toEqual([]);
-    jobs.start({ kind: "regenerate", summary: "z", module: "backend", pulse: 3, title: "Log in with :User:", run: () => new Promise(() => {}) });
-    const marks = { success: (t: string) => `<ok>${t}`, error: (t: string) => `<bad>${t}`, warning: (t: string) => `<stop>${t}` };
-    const lines = jobPanelLines(jobs.list(), { marks, width: 80 });
-    // Newest first: web finished last, and backend's conformance after its regenerate.
-    expect(lines[0]).toBe("  web      <ok>✓ 1 regenerate");
-    expect(lines[1]).toBe("  backend  <bad>✗ 2 conformance · <ok>✓ 1 regenerate");
-    expect(lines[2]).toBe(`  ${"─".repeat(76)}`);
-    // What runs is below the rule, by the input: its module, its kind and number - never what it regenerates.
-    expect(lines[3]).toMatch(/^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] backend · regenerate pulse 3 · \d+s$/);
-    // ctrl+o expands the agents' trace, not what finished: the side panel lists each.
-    expect(jobPanelLines(jobs.list(), { expanded: true, marks, width: 80 }).slice(0, 2)).toEqual(lines.slice(0, 2));
-  });
-
-  it("keeps each of its lines to one row of the screen - a line with a newline in it, an agent's words, is laid out on rows of its own", async () => {
-    const jobs = createJobRegistry();
-    jobs.start({
-      kind: "conformance",
-      summary: "x",
-      module: "tally",
-      pulse: 3,
-      run: () => {
-        reportActivity("(conformance) agent said:\ns=open(p).read()");
-        return new Promise(() => {});
-      },
-    });
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    const lines = jobPanelLines(jobs.list(), { expanded: true, width: 80 });
-    expect(lines.some((line) => line.includes("\n"))).toBe(false);
-    expect(lines.some((line) => line.includes("s=open(p).read()"))).toBe(true);
-  });
-
-  it("names a running conformance pulse by its module, kind and number alone - its functional specs run together are not its title", () => {
-    const jobs = createJobRegistry();
-    jobs.start({ kind: "conformance", summary: "b", module: "shorty", pulse: 6, title: ":ShortyApi: answers `GET /api/ping`; :UserAdmin: provisions a :User:", run: () => new Promise(() => {}) });
-    expect(jobPanelLines(jobs.list(), { width: 120 })[0]).toMatch(/^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] shorty · conformance pulse 6 · \d+s$/);
-  });
-
-  it("shows a module being planned at once, nothing running yet - the planner takes a while", () => {
-    const planning = { id: "planned-shorty-1", kind: "regenerate", summary: "shorty.plain the work", module: "shorty", status: "queued", sequence: 1, queuedAt: 0, startedAt: 0, waitingOn: [], tail: "", activity: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 }, agents: [], transcript: [], planning: { since: 1_000 } } as unknown as Job;
-    const lines = jobPanelLines([planning], { now: 13_000 });
-    expect(lines[0]).toMatch(/^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] shorty · planning the pulses · 12s$/);
-    expect(lines[1]).toBe("    working out what to regenerate and cutting it into pulses - the first starts once it is done");
-    // A queued pulse alone - planned, not being planned - is no work going on: no panel.
-    expect(jobPanelLines([{ ...planning, planning: undefined }])).toEqual([]);
-  });
-
-  it("fits a module's line to the width with its newest pulses, the rest counted as earlier", async () => {
-    const jobs = createJobRegistry();
-    for (const [index, title] of ["description", "health check", "registration", "log in", "search"].entries()) {
-      const job = jobs.start({ kind: "regenerate", summary: title, module: "cognio", pulse: index + 1, title, run: async () => ({ report: "", details: { passed: true } }) });
-      await jobs.wait(job.id);
-    }
-    jobs.start({ kind: "regenerate", summary: "z", module: "cognio", pulse: 6, title: "profiles", run: () => new Promise(() => {}) });
-    const line = jobPanelLines(jobs.list(), { width: 75 })[0]!;
-    expect(line).toBe("  cognio  ✓ 5 regenerate · ✓ 4 regenerate · ✓ 3 regenerate · … 2 earlier");
-    expect(line.length).toBeLessThanOrEqual(75);
-    expect(jobPanelLines(jobs.list())[0]).toBe("  cognio  ✓ 5 regenerate · ✓ 4 regenerate · ✓ 3 regenerate · ✓ 2 regenerate · ✓ 1 regenerate");
-  });
-
-  it("shows running jobs by module, time and cost, with their activity and not their stage - and what finished, above them", async () => {
-    const jobs = createJobRegistry();
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => (release = resolve));
-    jobs.start({
-      kind: "render",
-      summary: "app.plain functionality 3",
-      module: "app",
-      run: async () => {
-        reportStage("app 3: writing code and unit tests");
-        reportActivity("✎ write app.py");
-        await gate;
-        return { report: "" };
-      },
-    });
-    const finished = jobs.start({ kind: "render", summary: "done already", run: async () => ({ report: "" }) });
-    await jobs.wait(finished.id);
-
-    const lines = jobPanelLines(jobs.list());
-    expect(lines[2]).toMatch(/^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] app render · \d+s$/);
-    expect(lines.join("\n")).not.toContain("app 3: writing code and unit tests");
-    expect(lines).toContain("      ✎ write app.py");
-    // What finished is above it, with its mark - a job of no module under its kind.
-    expect(lines[0]).toBe("  render  ✓ done already");
-
-    release();
-  });
-
-  it("shows what the model is doing right now, and for how long", async () => {
-    const jobs = createJobRegistry();
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => (release = resolve));
-    const job = jobs.start({
-      kind: "render",
-      summary: "app 1",
-      run: async () => {
-        reportNow("thinking");
-        await gate;
-        return { report: "" };
-      },
-    });
-    await tick();
-    const since = job.now!.since;
-    expect(jobPanelLines(jobs.list(), { now: since + 12_400, hints: false }).at(-1)).toBe("      … thinking · 12s");
-
-    release();
-    await jobs.wait(job.id);
-  });
-
-  it("keeps the clock when only the words change", async () => {
-    const jobs = createJobRegistry();
-    const job = jobs.start({
-      kind: "render",
-      summary: "x",
-      run: async () => {
-        reportNow("preparing a tool call");
-        const first = job.now!.since;
-        await tick();
-        reportNow("writing write call · 4.2k chars", { keepSince: true });
-        expect(job.now!.since).toBe(first);
-        reportNow(undefined);
-        return { report: "" };
-      },
-    });
-    await jobs.wait(job.id);
-    expect(job.now).toBeUndefined();
-  });
-
-  it("shows the last two actions while compact, and all of them expanded", async () => {
-    const jobs = createJobRegistry();
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => (release = resolve));
-    const job = jobs.start({
-      kind: "render",
-      summary: "x",
-      run: async () => {
-        for (const n of [1, 2, 3, 4]) reportActivity(`step ${n}`);
-        await gate;
-        return { report: "" };
-      },
-    });
-    await tick();
-    const compact = jobPanelLines(jobs.list());
-    expect(compact).not.toContain("      step 2");
-    expect(compact).toContain("      step 4");
-    expect(jobPanelLines(jobs.list(), { expanded: true })).toContain("      step 1");
-    release();
-    await jobs.wait(job.id);
-  });
-
-  it("is empty when nothing is running", () => {
-    expect(jobPanelLines([])).toEqual([]);
   });
 });

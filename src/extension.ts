@@ -52,14 +52,15 @@ import { didNotLand } from "./regenerate/failure-reports.ts";
 import { conformanceRefusal, createWorkLoop, TestingStepsMissing, describeModules, isUpToDate, type ModuleStatus, type PlannedPulse, type WorkLoop } from "./regenerate/loop.ts";
 import { brandNeon, brandPink, plainPaint } from "./regenerate/plain-palette.ts";
 import { halfBlocks, JELLYFISH_FRAME_MS, JELLYFISH_REST, JELLYFISH_SEQUENCE, JELLYFISH_TEXT_FRAMES } from "./jellyfish.ts";
-import { createJobPanel, didNotPass, keyPressed, PANEL_KEY, spinner } from "./regenerate/job-panel.ts";
+import { didNotPass, PANEL_KEY, spinner } from "./regenerate/job-panel.ts";
 import { clickToFocus, dockedWidth, narrowChat, shade, shadeChat } from "./regenerate/panel-dock.ts";
 import { overPictureRow, PICTURE_AT } from "./picture-row.ts";
 import { padScreen, paddedColumns, paddedRows, SCREEN_PADDING } from "./screen-padding.ts";
 import { skillAboutLine, skillProgressLine } from "./skill-progress.ts";
 import { createSidePanel } from "./regenerate/side-panel.ts";
 import { createSpecMapSource, defaultMapFiles } from "./regenerate/spec-map.ts";
-import { createSpecMapState } from "./regenerate/spec-map-view.ts";
+import { createSpecMapState, type SpecMapState } from "./regenerate/spec-map-view.ts";
+import { notificationView } from "./terminal-notifications.ts";
 import { createJobsTreeState, selectJob } from "./regenerate/jobs-tree.ts";
 import { describeDiagnosis, diagnoseFailure } from "./regenerate/diagnose.ts";
 import { HISTORY_DIR, historyLog } from "./regenerate/lineage.ts";
@@ -363,12 +364,24 @@ export function createTurriCore(
   // The AWS region the project's Bedrock models need, before any model is called - a host has no shell to export it in.
   applyBedrockRegion(cwd);
   let core: TurriCore | undefined;
+  // One activity light for every chat. Only plan changes need to read the plan; streaming job updates do not.
+  let planning = false;
+  const running = new Set<string>();
+  const busy = () => planning || running.size > 0;
+  const updateActivity = (job?: Job) => {
+    if (!core?.terminal) return;
+    const before = busy();
+    if (!job) planning = workLoops.get(jobs)?.loop.planned().some((row) => row.planning !== undefined) ?? false;
+    else if (job.status === "running" && (job.kind === "regenerate" || job.kind === "conformance")) running.add(job.id);
+    else running.delete(job.id);
+    if (busy() !== before) core.changed();
+  };
   // Finished work is announced twice, to two audiences, because pi treats them differently - see ChatInstance.announce:
   // in the chat that asked for it, or the one shown when that is closed.
   const jobs: JobRegistry = createJobRegistry({
-    // The loop's plan changed - a module being planned, or planned: the live panel shows it at once.
+    // The planner can be at work before the registry has its first pulse.
     onNotify: () => {
-      core?.jobsChanged();
+      updateActivity();
       host.onPlanChange?.();
     },
     // A job that fails is run once more; failing again, it and every job behind it fail, and the
@@ -390,15 +403,15 @@ export function createTurriCore(
       return diagnosis !== undefined ? describeDiagnosis(diagnosis) : undefined;
     },
     onChange: (job) => {
-      core?.jobsChanged();
+      updateActivity(job);
       host.onJobChange?.(job);
     },
     onFinish: (job) => {
-      core?.jobsChanged();
+      updateActivity(job);
       host.onJobChange?.(job);
       // Queued again as another job: that one says how it went.
       if (job.replacedBy !== undefined) return;
-      // Gone wrong: the next ctrl+h opens on it - the live panel that showed it is gone with the last pulse.
+      // Gone wrong: the next ctrl+h opens on it.
       if (job.status === "failed" || job.status === "stopped" || didNotPass(job)) needsLooking.set(jobs, job.id);
       core?.jobFinished(job);
     },
@@ -410,7 +423,6 @@ export function createTurriCore(
     jobs,
     model: (plainFile) => launchModel(workLoops.get(jobs)?.from.ctx, plainFile),
     onChange: (launch) => {
-      core?.jobsChanged();
       try {
         host.onLaunch?.(launch);
       } catch {
@@ -425,7 +437,7 @@ export function createTurriCore(
     launches,
     host,
     jobs,
-    extension: (pi, link) => turriExtension(pi, core!, link),
+    extension: (pi, link) => turriExtension(pi, core!, link, busy),
     // A finished pulse goes to the sentinel when the project wants one - read as each pulse finishes - the person asked
     // first under `sentinel: ask`, and what they choose for the project written.
     sentinel: () => sentinelSetting(cwd),
@@ -494,7 +506,7 @@ export function sessionLoop(session: TurriCore): WorkLoop {
  * turri's extension, built into one chat of the session: its tools, commands and handlers run in the chat's scope -
  * its id on the pulses it asks for - on the session's job registry and work loop.
  */
-function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
+function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink, busy: () => boolean) {
   const pi = scopedToChat(api, link.scope);
   const { cwd, host, jobs } = session;
   // The session's sentinel: its own prompt and tools - the project to read, notices, its guidance - and nothing that
@@ -508,9 +520,6 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
   const dialogs = link.dialogs ?? host.dialogs;
   // turri's own skills, and the project's - .turri/skills, .agents/skills (skills.ts).
   const discoveredSkills = discoverSkills(PACKAGE_ROOT, cwd);
-
-  // What the background work is doing right now, drawn above the editor while it runs.
-  const panel = createJobPanel(() => shownJobs(jobs));
 
   // The chat's context, as its tools and handlers were last given it: for its model and its providers.
   let lastContext: ExtensionContext | undefined;
@@ -532,7 +541,7 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
   // does what the project's guidance says to do then (launch what was built, say), or says
   // what finished. In the chat that asked for the pulse, shown or not.
   const announce = (job: Job) => {
-    announceJob(pi, job);
+    if (!session.terminal) announceJob(pi, job);
     // A pulse a call of this chat waits for is told in that call's reply: a turn of its own would say it again.
     if (toldByWaitingCall(jobs, job) && job.specConflict === undefined) return;
     // A spec that contradicts itself is the person's to settle, now: the agent is started on it.
@@ -549,14 +558,15 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
     } catch {
       /* a config that cannot be read launches nothing */
     }
+    const quiet = session.terminal && job.status === "succeeded" && !didNotPass(job);
     void pi.sendMessage(
       {
         customType: "turri_job",
-        content: pulseEndNote(job, { launching }),
+        content: pulseEndNote(job, { launching, quiet }),
         display: false,
         details: { jobId: job.id, status: job.status },
       },
-      { triggerTurn: true, deliverAs: "followUp" },
+      quiet ? { triggerTurn: false } : { triggerTurn: true, deliverAs: "followUp" },
     );
   };
   // The sentinel's: what a pulse that ended is, told to its agent in a conversation of its own for the pulse. The hidden
@@ -604,11 +614,11 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
   // it landed and what the sentinel does with it - and nothing more: the pulse is the sentinel's. ***plain that
   // contradicts itself is put to the person at once, by turri itself, as the chat would have been started on it.
   const landed = (job: Job, options: { tell?: boolean } = {}) => {
-    announceJob(pi, job);
+    if (!session.terminal) announceJob(pi, job);
     if (job.specConflict !== undefined) session.notice(specConflictNotice(job, specConflictTask(job.specConflict)));
     if (options.tell !== true || toldByWaitingCall(jobs, job)) return;
     // A host that shows the person the pulse's end itself: the chat knows of it - in order, with no turn of its own.
-    const shown = host.pulseEndsShown === true;
+    const shown = session.terminal || host.pulseEndsShown === true;
     let launching = false;
     try {
       launching = readProjectConfig(cwd, job.configModule).launchAfterPulse === true;
@@ -622,9 +632,15 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
   };
   const notices = noticeDialogs(pi, session, link, contextNow);
   link.live({
-    openPlainPanel: () => {
-      const ctx = contextNow();
-      if (ctx?.hasUI) sidePanelOf(jobs, cwd).open(ctx, "map", "beside");
+    plainPanel: {
+      busy,
+      open: () => sidePanelOf(session).visible(),
+      toggle: () => {
+        const panel = sidePanelOf(session);
+        if (panel.visible()) return panel.close();
+        const ctx = contextNow();
+        if (ctx?.hasUI) panel.open(ctx, "map", "beside");
+      },
     },
     announce,
     landed,
@@ -638,7 +654,6 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
     act: (task) => {
       void pi.sendMessage({ customType: "turri_notice_answer", content: task, display: false }, { triggerTurn: true, deliverAs: "followUp" });
     },
-    jobsChanged: () => panel.refresh(),
     thinkingLevel: () => pi.getThinkingLevel(),
     context: contextNow,
   });
@@ -694,7 +709,7 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
         TOOLS_NOT_CLI,
         NEW_PROJECT,
         CAPTURE_HINT,
-        pulseEndsBlock(session.sentinelOn()),
+        pulseEndsBlock(session.sentinelOn(), session.terminal),
         // Conformance tests - what they are, whether they are on here, and how they are turned on: every turn, read afresh.
         conformanceBlock(conformanceTestsOnIn(cwd)),
         projectConfigBlock(cwd),
@@ -781,32 +796,9 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink) {
   pi.on("agent_end", endTurnCapture);
   pi.on("agent_settled", endTurnCapture);
 
-  pi.on("session_start", (_event, ctx) => {
-    if (!ctx.hasUI) return;
-    // setWidget is overloaded - lines or a component - and the panel is always a component. Through the chat's ui as it
-    // is when the panel draws - pi's screen, or what stands in for it while another chat is shown.
-    type ComponentWidget = Extract<Parameters<typeof ctx.ui.setWidget>[1], (...args: never[]) => unknown>;
-    panel.attach({
-      setWidget: (key, content, options) => {
-        try {
-          ctx.ui.setWidget(key, content as ComponentWidget | undefined, options);
-        } catch {
-          /* rebuilt by pi since: its new extension draws the panel */
-        }
-      },
-      getToolsExpanded: () => {
-        try {
-          return ctx.ui.getToolsExpanded();
-        } catch {
-          return false;
-        }
-      },
-    });
-  });
-
   registerBranding(pi, discoveredSkills);
   registerInterviewLog(pi);
-  registerJobTools(pi, jobs, cwd);
+  registerJobTools(pi, session);
   // The skills the person starts themselves - a project's, marked command-only: each has its command, and cultivate starts it only
   // once its command is typed, or picked among the options the conversation offers with ask_user.
   const gate = createCommandGate();
@@ -2194,7 +2186,8 @@ const pastPulseNote =
   "A pulse of an earlier session, as the ledger recorded it - facts, not its transcript. Its whole log is the file it names, " +
   "for the read tool.";
 
-function registerJobTools(pi: ExtensionAPI, jobs: JobRegistry, cwd: string) {
+function registerJobTools(pi: ExtensionAPI, session: TurriCore) {
+  const { jobs, cwd } = session;
   pi.registerTool(doctorTool({ cwd }));
 
   pi.registerTool({
@@ -2282,9 +2275,6 @@ function registerJobTools(pi: ExtensionAPI, jobs: JobRegistry, cwd: string) {
     },
   });
 
-  // The panel is compact and ctrl+o only lasts as long as the work does. This is the whole
-  // list, finished jobs included, put in the transcript where it stays.
-
   pi.registerCommand("halt", {
     description: "Halt a queued or running pulse, a module's planned pulses, a launch, or what a launch started: /halt [pulse id | module | launched <name | module>]",
     handler: async (args, ctx) => {
@@ -2353,8 +2343,12 @@ function registerJobTools(pi: ExtensionAPI, jobs: JobRegistry, cwd: string) {
   // While the panel has the keys, every key is its own.
   // The side panel is the session's, one for every chat: it stays on the screen - beside the chat or over it - as
   // another chat is shown, and what it says to a chat it says to the one shown.
-  const sidePanel = sidePanelOf(jobs, cwd);
+  const sidePanel = sidePanelOf(session);
   const openPanel = sidePanel.open;
+  if (session.terminal) pi.registerCommand("notifications", {
+    description: "Open the side panel on finished pulses and sentinel notices",
+    handler: async (_args, ctx) => { if (ctx.hasUI) openPanel(ctx, "notifications", "beside"); },
+  });
   pi.on("session_start", () => {
     sidePanel.say = (text) => pi.sendUserMessage(text, { deliverAs: "followUp" });
   });
@@ -2435,13 +2429,14 @@ const WATCH_REDRAW_MS = 500;
  * launch-after-pulse is being launched as it is told: it says so, and offers nothing else for it - it is told once the
  * launch ends.
  */
-export function pulseEndNote(job: Job, options: { launching?: boolean } = {}): string {
+export function pulseEndNote(job: Job, options: { launching?: boolean; quiet?: boolean } = {}): string {
   const head =
     job.status === "succeeded"
       ? `Pulse ${job.id} (${job.kind}) finished after ${formatDuration(job)}.\n\n${job.report ?? ""}`
       : job.status === "stopped"
         ? `Pulse ${job.id} (${job.kind}) was stopped after ${formatDuration(job)}. ${job.error ?? STOPPED_ON_REQUEST}${job.error === undefined || job.error === STOPPED_ON_REQUEST ? " The person stopped it; what it was building counts as not built." : ""}`
         : `Pulse ${job.id} (${job.kind}) failed after ${formatDuration(job)}.\n\n${job.error ?? ""}`;
+  if (options.quiet) return `${head}\n\nThis result is in notifications. It needs no announcement in the chat.`;
   const landed = job.status === "succeeded" && (job.details as { landed?: unknown } | undefined)?.landed === true;
   if (!landed || options.launching !== true) return `${head}\n\n${JOB_FINISHED_REACTION}`;
   return [
@@ -2490,7 +2485,9 @@ export const JOB_FINISHED_REACTION = [
 
 /** The session's side panel: opened from any chat, and the same panel whichever chat is shown. */
 interface SidePanelHost {
-  open(ctx: ExtensionContext, view?: "map" | "pulses", placement?: "beside"): void;
+  open(ctx: ExtensionContext, view?: SpecMapState["view"], placement?: "beside"): void;
+  visible(): boolean;
+  close(): void;
   /** It shows now, with the keys. */
   shown(): boolean;
   /** What it says to the chat - a module that needs the person: the chat shown says it. */
@@ -2500,11 +2497,14 @@ interface SidePanelHost {
 const sidePanels = new WeakMap<JobRegistry, SidePanelHost>();
 
 /** The side panel of the session these jobs are, made as a chat first asks for it. */
-function sidePanelOf(jobs: JobRegistry, cwd: string): SidePanelHost {
+function sidePanelOf(session: TurriCore): SidePanelHost {
+  const { jobs, cwd } = session;
   const known = sidePanels.get(jobs);
   if (known !== undefined) return known;
   const self: SidePanelHost = {
     open: (ctx, view, placement) => openPanel(ctx, view, placement),
+    visible: () => panel !== undefined && panel.handle?.isHidden() !== true,
+    close: () => panel?.close(),
     shown: () => panel !== undefined && panel.keys,
   };
   sidePanels.set(jobs, self);
@@ -2541,9 +2541,7 @@ function sidePanelOf(jobs: JobRegistry, cwd: string): SidePanelHost {
   });
 
   /** Open the side panel - on the view named, or as it was left. */
-  const openPanel = (ctx: ExtensionContext, view?: "map" | "pulses", placement?: "beside") => {
-    // Found: ctrl+h under the job panel stops breathing.
-    keyPressed("peek");
+  const openPanel = (ctx: ExtensionContext, view?: SpecMapState["view"], placement?: "beside") => {
     if (view !== undefined) mapState.view = view;
     // A pulse that failed or stopped since the panel was last opened: opened as it is, it is on that pulse - what went
     // wrong is what the person opens it to see.
@@ -2623,6 +2621,7 @@ function sidePanelOf(jobs: JobRegistry, cwd: string): SidePanelHost {
         // Opened, it reads the files again at once: they may have changed while it was closed.
         specMap.refresh();
         const view = createSidePanel({
+          ...(session.terminal ? { notifications: notificationView(session, { accent: (text) => theme.fg("accent", text), muted: (text) => theme.fg("muted", text), bold: (text) => theme.bold(text) }, back) } : {}),
           pointer: terminalPointer(tui.terminal),
           tabLabel: (text, active, hovered, role) => buttonLabel(theme, text, active, hovered, role),
           jobs: () => shownJobs(jobs),

@@ -214,6 +214,20 @@ describe("the chat tabs", () => {
     expect(picks).toEqual([{ kind: "plain" }, { kind: "plain" }]);
   });
 
+  it("toggles the panel from its button while regeneration is active and keeps its notification count", () => {
+    const state = { open: false, busy: true, notifications: 2 };
+    let paint: string | undefined;
+    const tabs = chatTabs(() => [first], (text, _active, _hovered, role) => { if (text.includes("***plain")) paint = role; return text; }, (action) => { if (action.kind === "plain") state.open = !state.open; }, () => state);
+    for (const arrow of ["›", "‹"]) {
+      expect(tabs.render(60)[0]).toMatch(new RegExp(`[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] \\*\\*\\*plain · 2 ${arrow}`));
+      expect(paint).toBe("regenerating");
+      for (const event of ["press", "click"] as const) tabs.handleMouse!(mouse(event, 58, 60));
+    }
+    state.busy = false;
+    expect(tabs.render(60)[0]).toMatch(/\+ +\*\*\*plain · 2 › $/);
+    expect(paint).toBe("panel");
+  });
+
   it("highlights the close button independently, clears it on leaving and closes the hidden chat without switching", () => {
     const picks: TabAction[] = [];
     const tabs = chatTabs(() => [first, { ...first, id: "b", shown: false }], (text, _shown, hover) => hover ? `<${text}>` : text, (action) => picks.push(action));

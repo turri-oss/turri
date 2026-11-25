@@ -5,6 +5,7 @@ import type { MarkedPage } from "./spec-map.ts";
 import { columnHeadings, createSpecMapState, DISCUSS_KEY, legendLines, minimap, shownPage, specMapHeader, specMapLines, switchTab, tabBar, type MapRow, type SpecMapState } from "./spec-map-view.ts";
 import type { TranscriptStyle } from "./transcript-view.ts";
 import type { ButtonPaint, PointerHover } from "../pointer-hover.ts";
+import type { notificationView } from "../terminal-notifications.ts";
 
 /**
  * The side panel: the spec and how far the code has been regenerated, beside the conversation rather than instead of
@@ -24,6 +25,7 @@ export interface SidePanelOptions {
   earlier?: () => Job[];
   /** The regeneration's pages. Not given: the pulse list alone. */
   map?: () => MarkedPage[];
+  notifications?: ReturnType<typeof notificationView>;
   pointer?: PointerHover;
   tabLabel?: ButtonPaint;
   /** Rows the panel may use. */
@@ -101,14 +103,19 @@ export function createSidePanel(options: SidePanelOptions) {
   }
   const controls = (width: number): Control[] => {
     if (width <= 0 || (!options.map && !options.dock)) return [];
-    const close = width >= 30 ? " × close " : width >= 3 ? " × " : "×";
+    const compact = options.notifications && width < 54;
+    const close = width >= 30 && !compact ? " × close " : width >= 3 ? " × " : "×";
     const right = width - visibleWidth(close);
     const buttons: Control[] = [];
     let x = 0;
     if (options.map) {
-      for (const [action, label] of [["map", "***plain"], ["pulses", "pulses"]] as const) {
-        const marker = width >= 30 ? (map.view === action ? "▸ " : "  ") : "";
-        const text = truncateToWidth(` ${marker}${label} `, Math.max(0, right - x - 1), "");
+      const labels: [SpecMapState["view"], string][] = [["map", "***plain"], ["pulses", "pulses"]];
+      if (options.notifications) {
+        const count = options.notifications.count();
+        labels.push(["notifications", `${width < 36 ? "notices" : "notifications"}${count ? ` ${count}` : ""}`]);
+      }
+      for (const [action, label] of labels) {
+        const text = truncateToWidth(` ${label} `, Math.max(0, right - x - 1), "");
         if (!text) break;
         buttons.push({ action, text, x });
         x += visibleWidth(text) + 1;
@@ -329,10 +336,14 @@ export function createSidePanel(options: SidePanelOptions) {
         bar += " ".repeat(x - end) + tabLabel(text, map.view === action, options.pointer?.target === `panel:${action}`, action === "close" ? "close" : "tab");
         end = x + visibleWidth(text);
       }
-      const header = bar ? [bar] : [];
+      const header = bar ? [bar, ""] : [];
       headerHeight = header.length;
       const rows = Math.max(8, options.rows()) - header.length;
       try {
+        if (map.view === "notifications" && options.notifications) {
+          const lines = options.notifications.render(width, rows).slice(0, rows);
+          return [...header, ...lines, ...new Array<string>(rows - lines.length).fill("")];
+        }
         return [...header, ...(map.view === "map" && options.map !== undefined ? renderMap(width, rows) : renderPulses(width, rows))];
       } catch (error) {
         hits.clear();
@@ -350,6 +361,12 @@ export function createSidePanel(options: SidePanelOptions) {
     },
 
     handleInput(data: string): void {
+      if (map.view === "notifications" && options.notifications) {
+        if (!options.notifications.inDetail() && data === "p") return toPulses();
+        if (!options.notifications.inDetail() && data === "s" && options.dock) return options.dock.toggle();
+        return options.notifications.handleInput(data);
+      }
+      if (data === "n" && options.notifications) { map.view = "notifications"; return; }
       if (matchesKey(data, Key.escape)) {
         options.back();
         return;
@@ -402,12 +419,17 @@ export function createSidePanel(options: SidePanelOptions) {
             if (event.type === "press") pressed = action;
             else if (action === down && action !== map.view) {
               if (action === "close") options.close();
+              else if (action === "notifications") map.view = "notifications";
               else if (action === "map") toMap();
               else toPulses();
             }
             return { handled: true };
           }
         }
+      }
+      if (map.view === "notifications" && options.notifications) {
+        if (event.y < headerHeight) return;
+        return options.notifications.handleMouse({ ...event, y: event.y - headerHeight, height: event.height - headerHeight });
       }
       if (event.button === "left" && (event.type === "press" || event.type === "click")) {
         const target = hits.get(event.y)?.find(({ x, end }) => event.x >= x && event.x < end);

@@ -1,10 +1,12 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { colorToRgb, parseColor, type Color } from "@earendil-works/pi-tui";
+import { BRAND_PINK } from "./regenerate/plain-palette.ts";
 
-export type ButtonRole = "tab" | "new" | "close" | "panel";
+export type ButtonRole = "tab" | "new" | "close" | "panel" | "regenerating";
 export type ButtonPaint = (text: string, active: boolean, hovered: boolean, role: ButtonRole) => string;
 
 const abyss = parseColor("#0a0f1a");
+const pink = parseColor(BRAND_PINK.dark);
 const white = parseColor("#f4f7f9");
 const linear = (byte: number) => byte <= 10 ? byte / 3294.6 : ((byte / 255 + 0.055) / 1.055) ** 2.4;
 
@@ -19,6 +21,7 @@ const inkSwitch = Math.sqrt((luminance(abyss) + 0.05) * (luminance(white) + 0.05
 
 /** The layout owns the padding, so the entire coloured surface is also the click target. */
 export function buttonLabel(theme: Theme, text: string, active: boolean, hovered: boolean, role: ButtonRole): string {
+  if (role === "regenerating") return theme.style(text, { bg: pink, fg: abyss, bold: true, underline: hovered });
   if (role === "new" || active || hovered) {
     const fill = theme.colors[role === "new" ? "success" : role === "close" && hovered ? "error" : "accent"];
     return theme.style(text, { bg: fill, fg: luminance(fill) > inkSwitch ? abyss : white, bold: true, underline: hovered });
