@@ -199,11 +199,12 @@ function whatWentOn(job: Job, width: number, style: TranscriptStyle): string[] {
 }
 
 /** The rows as lines, the cursor's marked, and where each row starts - for scrolling to it. */
-export function jobsTreeLines(jobs: Job[], state: JobsTreeState, width: number, style: TranscriptStyle): { lines: string[]; rowStarts: number[]; rows: TreeRow[] } {
+export function jobsTreeLines(jobs: Job[], state: JobsTreeState, width: number, style: TranscriptStyle): { lines: string[]; rowStarts: number[]; labelHeights: number[]; rows: TreeRow[] } {
   const rows = jobsTreeRows(jobs, state);
   state.cursor = Math.max(0, Math.min(state.cursor, rows.length - 1));
   const lines: string[] = [];
   const rowStarts: number[] = [];
+  const labelHeights: number[] = [];
   rows.forEach((row, index) => {
     rowStarts.push(lines.length);
     const here = index === state.cursor;
@@ -216,12 +217,14 @@ export function jobsTreeLines(jobs: Job[], state: JobsTreeState, width: number, 
       }
       const header = `${pointer} ${state.open[row.section] ? "▾" : "▸"} ${SECTION_NAMES[row.section]} (${row.count})`;
       lines.push(here ? style.heading(header) : style.muted(header));
+      labelHeights.push(1);
       return;
     }
     if (row.kind === "file") {
       const open = isFileOpen(state, row);
       const paint = style.diff ?? { ...PLAIN_PAINT, added: style.added, removed: style.removed, muted: style.muted };
       const shown = diffFiles(row.job.diff!, Math.max(10, width - FILE_INDENT.length), paint, row.job.diffWhere).find((file) => file.file === row.file);
+      labelHeights.push(shown === undefined ? 0 : 1);
       if (shown === undefined) return;
       const header = `${pointer}${FILE_INDENT.slice(1)}${fileHeader(shown, paint, open)}`;
       lines.push(here ? style.heading(header) : header);
@@ -236,13 +239,14 @@ export function jobsTreeLines(jobs: Job[], state: JobsTreeState, width: number, 
     const head = `${pointer}   ${open ? "▾" : "▸"} ${markOf(job, style)} ${pulseName(job)}${time}${pulseCost(job)}`;
     const [first = "", ...rest] = wrapTextWithAnsi(head, Math.max(10, width));
     lines.push(here ? style.heading(first) : first, ...rest.map((line) => `        ${line}`));
+    labelHeights.push(1 + rest.length);
     if (open) lines.push(...detailLines(job, jobs, width, style));
   });
   // The ledger has more than the runs shown: where to find them.
   if (state.open.earlier && (state.earlierMore ?? 0) > 0) {
     lines.push(style.muted(`      ${state.earlierMore} earlier run${state.earlierMore === 1 ? "" : "s"} in the ledger - pulses with runs lists them`));
   }
-  return { lines, rowStarts, rows };
+  return { lines, rowStarts, labelHeights, rows };
 }
 
 /** How far a job's files, and their lines, are indented under it. */
