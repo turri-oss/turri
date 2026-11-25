@@ -31,7 +31,7 @@ describe("what the terminal's chats reach of pi", () => {
     const runner = piFile("core/extensions/runner.js");
     for (const method of ["setUIContext(uiContext, mode", "getUIContext()", "this.mode = mode"]) expect(runner, method).toContain(method);
     const screen = piFile("modes/interactive/interactive-mode.js");
-    for (const call of ["pendingMessages: this.pendingMessagesContainer", 'case "queue_update":\n                this.updatePendingMessagesDisplay();', "this.chatContainer.addChild(userComponent);", 'onAction("app.clear", () => this.handleCtrlC())', "this.ui.hideOverlay();", "this.runtimeHost.setRebindSession(", "await this.rebindCurrentSession({ renderBeforeBind: true })", "await this.runtimeHost.newSession()", "await this.runtimeHost.switchSession(sessionPath"]) {
+    for (const call of ["pendingMessages: this.pendingMessagesContainer", "this.pendingBashComponents.push(this.bashComponent);", 'case "queue_update":\n                this.updatePendingMessagesDisplay();', "this.chatContainer.addChild(userComponent);", 'onAction("app.clear", () => this.handleCtrlC())', "for (const removeOverlay of [...this.extensionOverlays.values()].reverse())", "this.extensionOverlays.set(overlayHandle, removeOverlay);", "this.runtimeHost.setRebindSession(", "await this.rebindCurrentSession({ renderBeforeBind: true })", "await this.runtimeHost.newSession()", "await this.runtimeHost.switchSession(sessionPath"]) {
       expect(screen, call).toContain(call);
     }
   });
@@ -99,7 +99,13 @@ describe("the terminal's chats", () => {
 
     let cleared = 0;
     let overlaysHidden = 0;
-    const screen = { runtimeHost: undefined as unknown, handleEvent: async () => {}, ui: { hideOverlay: () => (overlaysHidden += 1) } };
+    const panel = {};
+    const screen = {
+      runtimeHost: undefined as unknown,
+      handleEvent: async () => {},
+      // The side panel, an overlay an extension opened.
+      extensionOverlays: new Map<unknown, () => void>([[panel, () => void (overlaysHidden += 1)]]),
+    };
     const runtime = {
       _session: first as AgentSession,
       _services: {},
@@ -108,10 +114,11 @@ describe("the terminal's chats", () => {
       },
       services: { agentDir: "/agent" },
       cwd: process.cwd(),
-      // pi's reset: the extension's UI cleared, and the overlay on the screen hidden.
+      // pi's reset: the extension's UI cleared, and every overlay an extension opened taken off the screen.
       beforeSessionInvalidate: () => {
         cleared += 1;
-        screen.ui.hideOverlay();
+        for (const remove of [...screen.extensionOverlays.values()].reverse()) remove();
+        screen.extensionOverlays.clear();
       },
       rebindSession: async () => {
         // pi binds the session to its screen as it draws it.
@@ -136,9 +143,10 @@ describe("the terminal's chats", () => {
     expect(runtime.session).toBe(second);
     expect(first.disposed).toBe(false);
     expect(cleared).toBe(1);
-    // The side panel, an overlay, stays on the screen as another chat is shown.
+    // The side panel, an overlay, stays on the screen as another chat is shown - and pi still takes it off on a reload.
     expect(overlaysHidden).toBe(0);
-    screen.ui.hideOverlay();
+    expect([...screen.extensionOverlays.keys()]).toEqual([panel]);
+    screen.extensionOverlays.get(panel)!();
     expect(overlaysHidden).toBe(1);
 
     // The first chat asks while hidden: nothing on the screen until it is shown again.
@@ -278,6 +286,20 @@ describe("a message sent while the agent works", () => {
 
     expect(screen.pendingMessagesContainer.children).toEqual([]);
     expect(screen.chatContainer.children).toEqual([]);
+  });
+
+  it("is drawn under the output of a command the person ran meanwhile, which stays there as pi keeps it", () => {
+    const queued = { steering: ["make it blue"], followUp: [] as string[] };
+    const screen = waitingScreen(queued);
+    const output = new Text("$ ls\nREADME.md", 0, 0);
+    screen.pendingBashComponents = [output];
+    showWaiting(screen);
+
+    expect(screen.pendingMessagesContainer.children[0]).toBe(output);
+    expect(plain(screen.pendingMessagesContainer.render(80))).toEqual(["$ ls", "README.md", "make it blue", " not read yet · alt+up to edit"]);
+    queued.steering = [];
+    showWaiting(screen);
+    expect(screen.pendingMessagesContainer.children).toEqual([output]);
   });
 });
 

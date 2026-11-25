@@ -17,6 +17,8 @@ import { Spacer, truncateToWidth, type Component } from "@earendil-works/pi-tui"
 export interface WaitingScreen {
   chatContainer: Container;
   pendingMessagesContainer: Container;
+  /** The output of commands the person ran (`!`) while the agent works: pi keeps it there until it goes in the chat. */
+  pendingBashComponents?: Component[];
   getAllQueuedMessages(): { steering: string[]; followUp: string[] };
   addMessageToChat(message: unknown, options?: unknown): void;
   getAppKeyDisplay?(action: string): string;
@@ -54,11 +56,13 @@ export class Shade implements Component {
 
 /**
  * Under the chat, each message the agent has not read yet, drawn as pi draws a message in the chat - shaded, and
- * marked not read yet - in the order they were sent.
+ * marked not read yet - in the order they were sent; under the output of any command the person ran meanwhile, as pi
+ * draws them.
  */
 export function showWaiting(screen: WaitingScreen): void {
   const area = screen.pendingMessagesContainer;
   area.clear();
+  for (const output of screen.pendingBashComponents ?? []) area.addChild(output);
   const { steering, followUp } = screen.getAllQueuedMessages();
   const waiting = [...steering, ...followUp];
   if (waiting.length === 0) return;
@@ -68,9 +72,9 @@ export function showWaiting(screen: WaitingScreen): void {
   const chat = screen.chatContainer;
   screen.chatContainer = area;
   try {
-    for (const text of waiting) {
-      // A line between it and the chat; pi puts one between messages itself.
-      if (area.children.length === 0) area.addChild(new Spacer(1));
+    for (const [index, text] of waiting.entries()) {
+      // A line between it and what is above it; pi puts one between messages itself.
+      if (index === 0) area.addChild(new Spacer(1));
       const before = area.children.length;
       screen.addMessageToChat({ role: "user", content: [{ type: "text", text }], timestamp: Date.now() });
       const parts = area.children.slice(before);
