@@ -23,6 +23,7 @@ import { applyBedrockRegion } from "./bedrock-region.ts";
 import { bannerWarnings } from "./turri-versions.ts";
 import { CONFORMANCE_OFF_REFUSAL, conformanceBlock, conformanceTestsOn, conformanceTestsOnIn, turnOnConformanceTests } from "./conformance-switch.ts";
 import { BACKGROUND_NOTE, doneLine, failedTask, ownChanges, runDetails, skillRunDelivery, startedText } from "./background-skills.ts";
+import { highlightPlainCodeBlocks } from "./plain-code-blocks.ts";
 import { createAskUserTool } from "./tools.ts";
 import { asksFromScratch, asksWholeChain, driftTool, endWait, fromWorkingDir, haltLaunched, haltTool, loopReply, startWait, toldByWaitingCall, MODEL_PARAM, regenerateTool, stopJob, WAIT_PARAM, whenBuildable, WORKING_DIR_PARAM } from "./loop-tools.ts";
 import { createWebTools } from "./regenerate/web.ts";
@@ -3273,6 +3274,8 @@ function registerBranding(pi: ExtensionAPI, skills: SkillCatalogue) {
     if (ctx.hasUI) {
       padTheScreen(ctx);
       animateJellyfish(ctx);
+      // ***plain an agent shows in the chat, highlighted in the theme of the moment.
+      highlightPlainCodeBlocks(() => ctx.ui.theme);
     }
     // Once a chat: it starts again each time it is shown.
     if (bannered) return;
