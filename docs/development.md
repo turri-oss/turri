@@ -64,6 +64,7 @@ The workflow signs in to npm with npm's trusted publishing (OIDC), not a token: 
 | `src/regenerate/pulse-files.ts` | what a pulse writes only for a person - its logs, outputs, temporary files, its chain's installed dependencies - removed as it ends outside debug mode |
 | `src/regenerate/failure-reports.ts` | why a pulse that failed or finished without landing did - what `pulses` says of it - kept in `.turri/pulses/<id>.md` whatever the debug setting, for a later session |
 | `src/regenerate/ledger.ts`, `src/regenerate/ledger-view.ts` | the ledger: what turri did, as typed facts, in `.turri/ledger/` - `record()`, read back for `pulses` - see [the ledger](using.md#the-ledger) |
+| `src/plain-code-blocks.ts` | \*\*\*plain fenced as ` ```plain ` in the chat, highlighted by turri's grammar - pi-tui's Markdown patched |
 | `genome/` | what turri knows and can do: `genome/skills/`, the skill library, and `genome/rules/`, the \*\*\*plain authoring rules |
 
 ## Known edges
