@@ -20,7 +20,7 @@ capture shorty  ✓ survey ━ ✓ outline ━ ⠋ features ─ ○ concepts ─
   captured shorty#service-info: 1 functional spec
 ```
 
-- **The phases,** drawn as a skill's are: those done ticked, the one it is in spinning, those to come, and which of the eight it is in.
+- **The phases** of the selected pipeline: those done ticked, the current one spinning and those to come. Compact captures have five; staged captures have eight.
 - **Under them, the phase's own work,** where it is counted, as the regen panel draws functional specs: done in green, at work in the accent colour, waiting `▓`. Then that work in words - while outlining, the features outlined so far and the areas still to outline; then the features captured of those to capture - how long the capture has taken, and what its models have cost.
 - **A line for each agent at work:** what it captures, for how long, the last file it read or searched, and what it is doing now.
 - **The last line:** what the capture said last.
@@ -46,9 +46,18 @@ When it ends, turri asks whether to open the captured project. A chat works on t
 
 **Offline.** No capture agent can ask anything. Whatever the code leaves open, each agent decides itself, and says so. The [report](#the-report) collects every such decision.
 
+## How capture scales
+
+Capture chooses a pipeline automatically, before the first model call. The CLI says which it chose and why; the report records the choice. It uses the map rather than asking an agent to estimate the work.
+
+- **Compact:** at most 12 source, test and contract files, **800 lines and 64 KiB combined**, and at most **12 mapped interface entries** outside tests. A lower `TURRI_CAPTURE_LEAF_LINES` also bounds the line count. Assets, docs and dependency lock files do not count. After the survey and interface reference, **one writer** reads the program and its tests and writes one module directly. There is no separate feature outline, writer per feature, module planner, concept reconciliation or readability pass. The conventions and reference still get checked, a fresh agent verifies the module against the code, and the scenarios are still tried on the original. Testing scripts and the parser check are the same on both paths.
+- **Staged:** larger or interface-heavy inputs are outlined by area, written by feature and checked by module. Areas split only when too large for one outliner; division runs only across multiple leaves, reconciliation only for conflicting definitions. Reference and trial work is batched and independent writers run up to `--parallel` at a time.
+
+A short program need not be simple. A compact capture switches to staged if the survey finds multiple parts, the extracted interface exceeds the budget, or the writer cannot fit the behaviour and scenarios into one module of up to eight functional specs. A writer can ask to expand rather than omit behaviour; an invalid draft that still fails the normal checks after retries also expands. Capture reuses the survey, conventions and reference. The choice is saved with its checkpoints; captures started before compact mode resume on the staged path.
+
 ## How it works
 
-The cost of a capture follows the number of features, not lines of code. However large the codebase, no agent sees more than a fixed budget. Size only changes how many agents run and how deep the split goes.
+Both pipelines share the map, survey, interface reference and final checks. The numbered steps below describe the staged pipeline in full.
 
 1. **The map** (`src/capture/map.ts`), with no model. Every file the codebase holds, read through git when it is a repo, so what git ignores is left out. Also left out: dependencies, caches, capture's own output folder, and any turri project inside the codebase (a folder with a `config.turri.yaml`, an earlier capture's among them), since its \*\*\*plain is not the code. Each file gets:
    - its kind: source, test, doc, asset, contract, manifest
@@ -89,7 +98,7 @@ The cost of a capture follows the number of features, not lines of code. However
 13. **The interface checked against the code.** For each module, an agent is given its \*\*\*plain - functional specs with their scenarios - the reference's entries in its features' files, and the options the \*\*\*plain names that the reference does not have, found mechanically, and checks every interface fact against the reference and the code that decides it: each option's names, value, choices and default; each route's method, path, fields and status codes; each message, format and exit code. It corrects what is wrong or left out, a functional spec's text or a scenario's, citing the code - over the readability pass, which never sees the code. A correction that never holds is not made.
 14. **The scenarios tried on the original** (`src/capture/trial.ts`, `genome/capture/trial.md`). Every agent before this one read the original and never ran it, so a scenario can expect a terminal its test will not give, a site on the internet, output wrapped at a width nobody set, or a message the original never prints. For each module, a copy of the original - the files the map has, so none of its installed dependencies, nor turri's own config files, and the lock files beside its manifests, so it installs what the original pins - is made under `.turri/capture/trial/<module>/`, and agents with a shell on it, 20 scenarios each, one after another, install the original there and run each scenario as its conformance test will: from outside, through its interface, under the part's test reqs and its stack's conformance template. Their shell is a coding agent's - the command check, a home, temporary folder and package caches of its own, the OS sandbox and the audit - fenced to the copy. Each scenario comes back `held`, with what was run and what the original answered; `corrected` to what the original does, keeping what it checks - a local server for a site on the internet, the option that forces colour where the test's output is no terminal; `removed`, when nothing outside can check it; or `untried`, with why, when the original would not run here - kept as written. A functional spec the original contradicts is corrected with its scenario, and what every test must set up for the original to act as the scenarios say - `COLUMNS`, a configuration folder of its own, an update check off - joins the part's test reqs. What only some scenarios need - a file one sends, a server answering one exact body, a pseudo-terminal for one prompt - is never a test req, which every conformance test of every module is written under: those scenarios are corrected to say it themselves, and a test req that names a scenario or a functional spec is sent back. The harness checks that every scenario has one result and that each held or corrected one says what was run. The copy is removed once the module's agents are done. An agent that never holds leaves its scenarios as written, and the report says so.
 15. **The files.** The modules, their scenarios, the interface references and the config are written, once.
-16. **The testing scripts.** turri's own skills write each part's unit and conformance testing scripts for the \*\*\*plain just written - `implement-unit-testing-script` and `implement-conformance-testing-script` (`src/capture/scripts.ts`), side by side, on `--coding-model` when given, else the capture's model. They run as the chat runs them in the background: nobody is asked, and a review gate that cannot be satisfied stands. So the captured project can be regenerated at once. A script that is not written does not stop the capture: the report says why, and which skill to ask for.
+16. **The testing scripts.** turri's own skills write each part's unit and conformance testing scripts for the \*\*\*plain just written - `implement-unit-testing-script` and `implement-conformance-testing-script` (`src/capture/scripts.ts`), side by side, on the coding model with its configured thinking. They run as the chat runs them in the background: nobody is asked, and a review gate that cannot be satisfied stands. So the captured project can be regenerated at once. A script that is not written does not stop the capture: the report says why, and which skill to ask for.
 17. **The check and the report.** The parser checks every module.
 
 The harness checks every answer before keeping it, and sends it back with what is wrong, twice at most (`src/capture/checks.ts`). It checks:
@@ -140,7 +149,7 @@ my-app/
 - **Concepts.** A concept stays in the module that defines it when only that module uses it. A concept used across modules goes to the part's import module, along with every concept its definition uses.
 - **The codebase is never written to.** Capture's agents only read it - read, grep, find, ls, and no shell - but for those that try the scenarios, which run the original in a copy of it, removed once they are done.
 - **Assets.** The assets are copied rather than linked, so the original can be deleted without breaking anything. `base-folder: assets` puts them in the first module's code before its first pulse, at the paths they had.
-- **The config.** The captured project's `config.turri.yaml` starts as the config in use where the capture was started - the chat's folder's, or the folder `turri capture` runs in (the nearest upwards that is a project's) - so the person's models, thinking, reviews, limits and every other setting they chose carry over (`src/capture/config.ts`). It is written as the capture starts, so its own agents run on those models too: its agents on the model you talk to, its testing scripts on the coding model. What belonged to the original project alone is left out - `module`, the testing scripts, `base-folder`, `test-dir` - since the capture writes its own; then `conformance-tests: true`, and the models given for it where they differ: in the chat, its model and thinking of the moment, and the coding model turri was started with; on the command line, `--harness-model` and `--coding-model`. With no config in use, it holds those alone. A config in use that does not parse refuses the capture, and nothing is written ([a config that does not parse](config.md#a-config-that-does-not-parse)).
+- **The config.** The captured project's `config.turri.yaml` starts as the config in use where the capture was started - the chat's folder's, or the folder `turri capture` runs in (the nearest upwards that is a project's) - so the person's models, thinking, reviews, limits and every other setting they chose carry over (`src/capture/config.ts`). It is written as the capture starts and its agents use [these models](#models). What belonged to the original project alone is left out - `module`, the testing scripts, `base-folder`, `test-dir` - since the capture writes its own; then `conformance-tests: true`, and the models given for it where they differ: in the chat, its model and thinking of the moment, and the coding model turri was started with; on the command line, `--harness-model` and `--coding-model`. With no config in use, it holds those alone. A config in use that does not parse refuses the capture, and nothing is written ([a config that does not parse](config.md#a-config-that-does-not-parse)).
 
 ## The report
 
@@ -174,12 +183,19 @@ Its first lines are the summary the command line and the chat show. In the chat,
 
 ## Models
 
-Capture's agents are the `capture` role (`models: capture:` in [the config](config.md#models-per-role)). Their model is:
-- in the chat, the chat's model
-- under `turri capture`, `--harness-model`
-- otherwise, pi's default
+| Role | Work | Default |
+| --- | --- | --- |
+| `capture-analysis` | Extract and check the interface reference; split areas, outline features and divide ownership on the staged path. | The coding model (`--coding-model` on the CLI), thinking **low**, even if coding itself uses high thinking. Without a separate coding model, the harness model thinks low. |
+| `capture` | Write or correct \*\*\*plain. This includes the survey, conventions, compact or feature writers, module gathering, verification and scenario trials, which can correct a spec or scenario. | The chat's model, or `--harness-model` / the project's harness model on the CLI; pi's choice when none is set. Thinking is **medium** unless a level is named. |
 
-They think at medium. A turn may take ten minutes, unless the role's entry, `default`'s or `turn-limit:` says otherwise - and an agent trying the scenarios on the original at least thirty, since it installs the original and runs twenty scenarios in its turn, unless the limit is turned off.
+For example, to use Sonnet for analysis without changing chat, coding or testing-script models, set this in `config.turri.yaml`:
+
+```yaml
+models:
+  capture-analysis: anthropic/claude-sonnet-5-5:low
+```
+
+An explicit `models.capture` setting still applies to both roles. Each model, thinking or turn-limit field set under `models.capture-analysis` overrides that field for analysis only. Capture turns have ten minutes unless a role, `models.default` or `turn-limit` sets a limit; scenario trials get at least thirty minutes unless the limit is off.
 
 `--harness-model` and `--coding-model` are also written into the new project's config, for the chat and the regeneration that follow.
 

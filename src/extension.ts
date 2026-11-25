@@ -2913,7 +2913,7 @@ function registerCapture(pi: ExtensionAPI, cwd: string, ends: { put(end: SkillRu
       const controller = new AbortController();
       running = { root, controller };
       const model = conversationModel(ctx);
-      shownAfterCommand(pi, ctx, command, captureStartedText(root, model, captureGoesOn(root)), "info", true);
+      shownAfterCommand(pi, ctx, command, captureStartedText(root, captureGoesOn(root)), "info", true);
       // Above the input while it runs: where it is, each agent at work and what it did last - a capture at work
       // is told from one that hangs.
       let status: CaptureStatus | undefined;

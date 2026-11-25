@@ -1,17 +1,18 @@
 import { existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
-import { CONFIG_FILE, modelSpec, projectModels, readProjectConfig, withConfigModule } from "../config.ts";
+import { CONFIG_FILE, modelOnly, modelSpec, projectModels, readProjectConfig, withConfigModule } from "../config.ts";
 import { slashed } from "../regenerate/paths.ts";
 import { findTestScripts, testingScriptSkill, type ScriptKind } from "../regenerate/test-scripts.ts";
 import { checkPlainFile, type CheckResult } from "../plain/check.ts";
 import { conformanceOf, stdlibCatalogue, stdlibTemplates } from "../stdlib.ts";
-import { AREAS_TOOL, askAgent, watched, CONCEPTS_TOOL, CONVENTIONS_TOOL, CORRECTIONS_TOOL, definitionsOf, EDITS_TOOL, FEATURE_TOOL, FEATURES_TOOL, INTERFACE_TOOL, leftOutOf, MODULES_TOOL, OWNERS_TOOL, records, REFERENCE_CHECKED_TOOL, REFERENCE_TOOL, strings, SURVEY_TOOL, text, TRIAL_TOOL, type AgentOptions } from "./agents.ts";
+import { AREAS_TOOL, askAgent, watched, COMPACT_TOOL, CONCEPTS_TOOL, CONVENTIONS_TOOL, CORRECTIONS_TOOL, definitionsOf, EDITS_TOOL, FEATURE_TOOL, FEATURES_TOOL, INTERFACE_TOOL, leftOutOf, MODULES_TOOL, OWNERS_TOOL, records, REFERENCE_CHECKED_TOOL, REFERENCE_TOOL, strings, SURVEY_TOOL, text, TRIAL_TOOL, type AgentOptions } from "./agents.ts";
 import { buildOrder, covers, entriesOf, filesOf, kebab, linesOf, renderArea, testEvidence, type TestEvidence } from "./area.ts";
 import { entriesIn, entryFile, entrySurface, interfaceConcept, renderReference, interfaceDefinition, interfaceGaps, interfaceIn, leftOutPaths, namedExactly, namedIn, optionsNotInReference, referenceOf, shownSurface } from "./interface.ts";
 import { assemble, featureKey, featurePaths, featuresOf, leavesOf, mergedInto, MODULE_SPECS, outlinedFeature, sharedName, writeCapture, type AssembledModule, type Assembly, type ConceptConflict } from "./assemble.ts";
 import { conventionProblems, correctionProblems, divisionProblems, moduleProblems, referenceProblems, editProblems, featureProblems, gapProblems, outlineProblems, reconciledProblems, scenarioBudget, splitProblems, surveyProblems, trialProblems, unplaced, type CheckedModule, type GatheringGiven } from "./checks.ts";
 import { buildMap, INTERFACE_KINDS, type CodeMap } from "./map.ts";
 import { CaptureTracker, type CaptureStatus } from "./progress.ts";
+import { capturePlan, COMPACT_SURFACES } from "./plan.ts";
 import { configInUse, configInUseProblem, startingConfig } from "./config.ts";
 import { renderReport, summaryOf } from "./report.ts";
 import { writeTestingScript, type ScriptWriter } from "./scripts.ts";
@@ -37,7 +38,7 @@ export interface CaptureOptions {
   root: string;
   /** Where the ***plain goes: `<root>/plain` unless given. */
   plainDir?: string;
-  /** What capture's agents run on - the chat's model, or `--harness-model`. */
+  /** What the agents that write or correct ***plain run on - the chat's model, or `--harness-model`. */
   model?: string;
   /** Written into the new project's config, when given. */
   harnessModel?: string;
@@ -136,11 +137,13 @@ export async function runCapture(options: CaptureOptions): Promise<CaptureResult
   if (!map.files.some((file) => file.kind === "source")) throw new CaptureError(`${root} holds no source code to capture.`);
   const state = found.kind === "resume" ? found.state : newState(root);
   if (found.kind === "resume") tracker.said(`going on with the capture started ${state.started}`);
+  state.plan ??= found.kind === "resume" ? { kind: "staged", reason: "continuing a capture started before compact captures" } : capturePlan(map, options.leafLines ?? LEAF_LINES);
   const save = () => {
     saveState(plainDir, state);
     tracker.counted(state);
   };
   save();
+  tracker.said(`${state.plan.kind} capture: ${state.plan.reason}`);
   // The config in use, from the start - after the state, so a capture stopped here goes on: its agents run on its models,
   // and the project it writes keeps them.
   const given = { ...(options.harnessModel !== undefined ? { harnessModel: options.harnessModel } : {}), ...(options.codingModel !== undefined ? { codingModel: options.codingModel } : {}) };
@@ -154,15 +157,18 @@ export async function runCapture(options: CaptureOptions): Promise<CaptureResult
   await run.survey();
   await run.checkConventions();
   await run.extractInterface();
-  tracker.stage("outlining");
-  await Promise.all(state.survey!.parts.map((part) => run.outlineArea(part.name)));
-  await run.divide();
-  tracker.stage("capturing");
-  await Promise.all(state.survey!.parts.map((part) => run.captureFeatures(part.name)));
-  await run.fillInterface();
-  await run.gatherModules();
-  await run.reconcile();
-  await run.readability();
+  if (state.plan.kind === "compact") await run.compact();
+  if (state.plan.kind === "staged") {
+    tracker.stage("outlining");
+    await Promise.all(state.survey!.parts.map((part) => run.outlineArea(part.name)));
+    await run.divide();
+    tracker.stage("capturing");
+    await Promise.all(state.survey!.parts.map((part) => run.captureFeatures(part.name)));
+    await run.fillInterface();
+    await run.gatherModules();
+    await run.reconcile();
+    await run.readability();
+  }
   await run.verifyInterface();
   await run.trialScenarios();
   tracker.stage("writing");
@@ -217,11 +223,13 @@ class CaptureRun {
     if (this.options.signal?.aborted === true) throw new CaptureError("The capture was stopped. Run it again to go on from where it was.");
   }
 
-  private agent(label: string, prompt: string | string[], context: string, extra: { reads: boolean; rules: boolean; calls: number }): AgentOptions {
+  private agent(label: string, prompt: string | string[], context: string, extra: Pick<AgentOptions, "reads" | "rules" | "calls">, role: AgentOptions["role"] = "capture"): AgentOptions {
+    const model = role === "capture-analysis" ? modelOnly(this.options.codingModel ?? this.options.model).model : this.options.model;
     return {
       plainDir: this.options.plainDir,
       root: this.options.root,
-      ...(this.options.model !== undefined ? { model: this.options.model } : {}),
+      role,
+      ...(model !== undefined ? { model } : {}),
       ...(this.options.signal !== undefined ? { signal: this.options.signal } : {}),
       label: `capture ${label}`,
       watch: this.tracker.agent(label),
@@ -229,6 +237,11 @@ class CaptureRun {
       context,
       ...extra,
     };
+  }
+
+  /** Work that hands back data or a plan. A check that can rewrite ***plain is a writer, even when it needs no authoring rules. */
+  private analysis(label: string, prompt: string, context: string, extra: Pick<AgentOptions, "reads" | "calls">): AgentOptions {
+    return this.agent(label, prompt, context, { ...extra, rules: false }, "capture-analysis");
   }
 
   private codebaseBlock(): string {
@@ -353,7 +366,7 @@ class CaptureRun {
               `<files>\n${listed.length > 0 ? listed.join("\n") : "The map found no interface in the part's files: find it - from its entry points, where its arguments, routes and variables are read."}\n</files>`,
               `<map>\n${renderArea(this.map, item.part.paths, Math.floor(this.budget / 2))}\n</map>`,
             ].join("\n\n");
-            const { answer, problems } = await askAgent(this.agent(item.label, "reference", context, { reads: true, rules: false, calls: 60 }), { ...REFERENCE_TOOL, convert: referenceAnswerOf }, (answer) =>
+            const { answer, problems } = await askAgent(this.analysis(item.label, "reference", context, { reads: true, calls: 60 }), { ...REFERENCE_TOOL, convert: referenceAnswerOf }, (answer) =>
               referenceProblems(this.map, this.options.root, item.files, answer),
             );
             ((this.state.interfaces ??= {})[item.part.name] ??= {})[item.key] = answer ?? { failed: `what its agent handed over did not hold: ${problems.join(" ")}` };
@@ -400,9 +413,9 @@ class CaptureRun {
             `<map>\n${renderArea(this.map, item.part.paths, Math.floor(this.budget / 2))}\n</map>`,
           ].join("\n\n");
           const { answer, problems } = await askAgent(
-            this.agent(item.label, "check-reference", context, { reads: true, rules: false, calls: 60 }),
+            this.analysis(item.label, "check-reference", context, { reads: true, calls: 60 }),
             { ...REFERENCE_CHECKED_TOOL, convert: (params) => ({ ...referenceAnswerOf(params), changes: strings(params.changes) }) },
-            (answer) => [...(answer.entries.length === 0 ? ["Give every entry as the code has it - those that hold too."] : []), ...referenceProblems(this.map, this.options.root, files, answer)],
+            (answer) => [...(item.batch.entries.length > 0 && answer.entries.length === 0 ? ["Give every entry as the code has it - those that hold too."] : []), ...referenceProblems(this.map, this.options.root, files, answer)],
           );
           const batch = this.state.interfaces![item.part.name]![item.key]!;
           if ("entries" in batch) {
@@ -492,6 +505,43 @@ class CaptureRun {
     return this.state.survey!.parts.find((part) => part.name === name)!;
   }
 
+  /** Write one small program in one turn. Nothing from a partial draft enters the state: the staged path can take over. */
+  async compact(): Promise<void> {
+    const parts = this.state.survey!.parts;
+    const expand = (why: string) => {
+      this.state.plan = { kind: "staged", reason: `expanded from compact: ${why}` };
+      this.save();
+      this.progress(`staged capture: ${this.state.plan.reason}`);
+    };
+    if (parts.length !== 1) return expand(`the survey found ${parts.length} parts`);
+    const part = parts[0]!;
+    const key = featureKey(part.name, part.name);
+    if (this.state.features[key]?.captured !== undefined) return;
+    const { entries, unlisted } = this.interfaceFor(part.name, part.paths);
+    const surfaces = [...entries.map(entrySurface), ...unlisted];
+    if (surfaces.length > COMPACT_SURFACES) return expand(`the interface contains ${surfaces.length} entries`);
+    this.stopIfAsked();
+    this.tracker.stage("compact-writing");
+    const evidence = testEvidence(this.map, part.paths);
+    const budget = scenarioBudget(evidence.reduce((sum, file) => sum + file.lines, 0));
+    const area = this.state.areas[part.name]!;
+    const context = [this.areaContext(area, this.budget), stackBlock(part), `<concepts>\n${part.definitions.map((d) => d.text).join("\n")}\n</concepts>`, this.writerInterfaceBlock(part.name, part.paths), testsBlock(evidence, budget)].join("\n\n");
+    const { answer, problems } = await askAgent(
+      this.agent(`compact ${part.name}`, "compact", context, { reads: true, rules: true, calls: 40 }),
+      { ...COMPACT_TOOL, convert: (params) => ({ feature: params.feature ? capturedOf(params.feature as Record<string, unknown>) : undefined, expand: text(params.expand) }) },
+      ({ feature, expand }) => {
+        if (feature === undefined) return expand ? [] : ["Give the feature, or say why it needs separate writers in expand."];
+        if (expand) return ["Give only one of feature and expand."];
+        return [...featureProblems(feature, part.definitions, budget), ...gapProblems(feature, surfaces)];
+      },
+    );
+    if (answer?.feature === undefined) return expand(answer?.expand || `the single writer's answer did not hold: ${problems.join(" ")}`);
+    if (answer.feature.specs.length > (this.options.moduleSpecs ?? MODULE_SPECS)) return expand("the specs do not fit in one module");
+    area.features = [{ name: part.name, title: part.name, about: part.about, paths: part.paths }];
+    this.state.features[key] = { key, captured: answer.feature };
+    this.save();
+    this.progress(`captured ${part.name} in one pass: ${answer.feature.specs.length} functional specs`);
+  }
 
   /** Outline an area: split it and outline its areas, or outline it into features - whichever is left to do. */
   async outlineArea(id: string): Promise<void> {
@@ -534,7 +584,7 @@ class CaptureRun {
             owns: records(params.features).map((item) => ({ feature: text(item.feature), owns: text(item.owns) })),
             merged: records(params.merged).map((item) => ({ feature: text(item.feature), into: strings(item.into), why: text(item.why) })),
           });
-          const { answer, problems } = await askAgent(this.agent(`divide ${part.name}`, "divide", context, { reads: false, rules: false, calls: 3 }), { ...OWNERS_TOOL, convert }, (answer) => divisionProblems(keys, answer));
+          const { answer, problems } = await askAgent(this.analysis(`divide ${part.name}`, "divide", context, { reads: false, calls: 3 }), { ...OWNERS_TOOL, convert }, (answer) => divisionProblems(keys, answer));
           (this.state.divided ??= {})[part.name] =
             answer !== undefined
               ? { owns: Object.fromEntries(answer.owns.map((item) => [item.feature, item.owns])), merged: Object.fromEntries(answer.merged.map((item) => [item.feature, { into: item.into, why: item.why }])) }
@@ -602,7 +652,7 @@ class CaptureRun {
       leftOut: leftOutOf(params.left_out),
     });
     const { answer, problems } = await this.limited(() =>
-      askAgent(this.agent(`split ${area.id}`, "split", this.areaContext(area, this.budget), { reads: true, rules: false, calls: 15 }), { ...AREAS_TOOL, convert }, (answer) => splitProblems(this.map, area.paths, answer)),
+      askAgent(this.analysis(`split ${area.id}`, "split", this.areaContext(area, this.budget), { reads: true, calls: 15 }), { ...AREAS_TOOL, convert }, (answer) => splitProblems(this.map, area.paths, answer)),
     );
     if (answer === undefined) {
       this.progress(`could not split ${area.id} - outlining it whole: ${problems[0] ?? ""}`);
@@ -629,7 +679,7 @@ class CaptureRun {
       leftOut: leftOutOf(params.left_out),
     });
     const { answer, problems } = await this.limited(() =>
-      askAgent(this.agent(`outline ${area.id}`, "outline", `${stackBlock(this.part(area.part))}\n\n${this.areaContext(area, this.budget)}`, { reads: true, rules: false, calls: 25 }), { ...FEATURES_TOOL, convert }, (answer) =>
+      askAgent(this.analysis(`outline ${area.id}`, "outline", `${stackBlock(this.part(area.part))}\n\n${this.areaContext(area, this.budget)}`, { reads: true, calls: 25 }), { ...FEATURES_TOOL, convert }, (answer) =>
         outlineProblems(this.map, area.paths, answer),
       ),
     );

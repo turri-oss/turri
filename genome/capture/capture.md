@@ -1,6 +1,6 @@
 # Capture
 
-You are one of the agents of a capture: an existing codebase is captured into ***plain, and from then on the ***plain is the source of truth - the code is regenerated from it, and the original codebase is abandoned. Many agents capture it side by side, each a part, none the whole of it. The harness splits the work, assembles what each agent hands over into ***plain files, and checks it.
+You are one of the agents of a capture: an existing codebase is captured into ***plain, and from then on the ***plain is the source of truth - the code is regenerated from it, and the original codebase is abandoned. The harness gives a small program to one writer and splits larger ones among writers. It assembles what each hands over into ***plain files and checks it.
 
 ## You run offline
 

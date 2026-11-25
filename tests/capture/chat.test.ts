@@ -25,7 +25,7 @@ describe("/capture in the chat", () => {
     saveState(join(root, "plain"), newState(root));
     expect(captureRefusal(root)).toBeUndefined();
     expect(captureGoesOn(root)).toBe(true);
-    expect(captureStartedText(root, "anthropic/claude-opus-5-5", true)).toMatch(/^Going on with the capture .* on anthropic\/claude-opus-5-5\. Nothing is asked/);
+    expect(captureStartedText(root, true)).toMatch(/^Going on with the capture .* in the background\. Nothing is asked/);
   });
 
   it("refuses a folder that is not there, a finished capture, and a plain/ that is not a capture", () => {

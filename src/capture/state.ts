@@ -2,6 +2,7 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ensureInScratch } from "../regenerate/paths.ts";
 import type { SurfaceKind } from "./map.ts";
+import type { CapturePlan } from "./plan.ts";
 
 /**
  * What a capture keeps as it goes, in `<plain>/.turri/capture/state.json`: every agent's answer, saved as it comes. A
@@ -258,6 +259,8 @@ export interface CaptureState {
   /** The codebase captured, absolute. */
   root: string;
   started: string;
+  /** Saved before the survey. An older capture without a plan continues on the staged pipeline. */
+  plan?: CapturePlan;
   survey?: Survey;
   /** The areas by id, each part's root area named as the part. */
   areas: Record<string, AreaState>;

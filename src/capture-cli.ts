@@ -15,8 +15,8 @@ const USAGE = [
   "what capture decided, left out or could not capture is in plain/.turri/capture/report.md. Run it again to go on",
   "with a capture that was stopped.",
   "",
-  "  --harness-model <m>  the model capture's agents run on, written into the new project as harness-model",
-  "  --coding-model <m>   written into the new project as coding-model: what regenerates the code later",
+  "  --harness-model <m>  the model that writes the ***plain, kept as the new project's harness-model",
+  "  --coding-model <m>   the model for capture analysis (low thinking) and testing scripts, kept as coding-model",
   "  --into <folder>      where the ***plain goes, instead of <path>/plain",
   "  --parallel <n>       how many agents work at once (4)",
 ].join("\n");

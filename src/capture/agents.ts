@@ -21,7 +21,7 @@ import { STDLIB_DIR } from "../regenerate/paths.ts";
 /** How many times an answer that does not hold is sent back. */
 export const RETRIES = 2;
 
-/** How long one turn of a capture agent may take, unless the config's `models: capture:` says: exploring takes a while. */
+/** How long one turn of a capture agent may take, unless the config says: exploring takes a while. */
 export const CAPTURE_TURN_LIMIT_MS = 10 * 60 * 1000;
 
 const PROMPTS_DIR = join(PACKAGE_ROOT, "genome", "capture");
@@ -36,6 +36,7 @@ export interface AgentOptions {
   plainDir: string;
   /** The codebase, which the agent reads. */
   root: string;
+  role: "capture" | "capture-analysis";
   model?: string;
   label: string;
   /** Its prompt's name in genome/capture, after the shared one - or several, in order. */
@@ -134,12 +135,12 @@ async function answerOf<A>(
     model: options.model,
     rules: options.rules,
     label: options.label,
-    role: "capture",
+    role: options.role,
     ...(fence !== undefined ? { system: fence.note } : {}),
     task: [capturePrompt("capture"), ...[options.prompt].flat().map(capturePrompt), options.context].join("\n\n"),
     budget: { calls: options.calls, finish: [submit.name] },
   });
-  const limit = turnLimit(options.plainDir);
+  const limit = turnLimit(options.plainDir, options.role);
   timeTurns(session, limit === 0 ? 0 : Math.max(limit, options.turnAtLeastMs ?? 0));
   let problems: string[] = [];
   try {
@@ -156,9 +157,9 @@ async function answerOf<A>(
   }
 }
 
-function turnLimit(plainDir: string): number {
+function turnLimit(plainDir: string, role: AgentOptions["role"]): number {
   try {
-    return roleTurnLimitMs(readProjectConfig(plainDir), "capture") ?? CAPTURE_TURN_LIMIT_MS;
+    return roleTurnLimitMs(readProjectConfig(plainDir), role) ?? CAPTURE_TURN_LIMIT_MS;
   } catch {
     return CAPTURE_TURN_LIMIT_MS;
   }
@@ -362,6 +363,13 @@ export const INTERFACE_TOOL = {
     ...FEATURE_TOOL.parameters.properties,
     dropped: Strings("Each surface that is not the software's interface - a development script's option, a variable only its tests read - by its name, with why."),
   }),
+};
+
+export const COMPACT_TOOL = {
+  name: "submit_capture_compact",
+  label: "Submit the compact capture",
+  description: "The whole small part as one feature, or why it needs separate writers. Give exactly one.",
+  parameters: Type.Object({ feature: Type.Optional(FEATURE_TOOL.parameters), expand: Type.Optional(Type.String()) }),
 };
 
 export const CORRECTIONS_TOOL = {

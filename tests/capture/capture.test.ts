@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NOTES_APP, writeCodebase } from "./fixture.ts";
+import { newState, saveState } from "../../src/capture/state.ts";
 
 /**
  * A whole capture with stand-in agents: the survey names one part on Flask, the codebase is split into storage and an
@@ -16,7 +17,7 @@ type StubSession = { tools: Array<{ name: string; execute: (...args: unknown[]) 
 const asked: string[] = [];
 const followUps: Array<{ label: string; text: string }> = [];
 /** The model each agent was started on, by its label. */
-const agentModels = new Map<string, string | undefined>();
+const agentModels = new Map<string, { role?: string; model?: string }>();
 /** The tools each agent was given, by its label. */
 const agentTools = new Map<string, string[]>();
 /** Labels whose agent throws, as if turri were stopped while it worked. */
@@ -27,8 +28,8 @@ vi.mock("../../src/pi.ts", async (importOriginal) => {
   const activity = await import("../../src/regenerate/activity.ts");
   return {
     ...actual,
-    createExecutor: vi.fn(async (opts: { customTools: StubSession["tools"]; label?: string; task?: string; model?: string }) => {
-      agentModels.set((opts.label ?? "").replace(/^capture /, ""), opts.model);
+    createExecutor: vi.fn(async (opts: { customTools: StubSession["tools"]; label?: string; task?: string; model?: string; role?: string }) => {
+      agentModels.set((opts.label ?? "").replace(/^capture /, ""), { role: opts.role, model: opts.model });
       agentTools.set((opts.label ?? "").replace(/^capture /, ""), opts.customTools.map((tool) => tool.name));
       return { tools: opts.customTools, label: opts.label ?? "", task: opts.task, dispose() {} };
     }),
@@ -235,6 +236,78 @@ function leafLines(): number {
 }
 
 describe("a capture", () => {
+  it("captures a small program with one writer, keeps its checks and resumes without planning or writing it again", async () => {
+    const entries = ["POST /notes", "GET /notes"].map((name) => ({ kind: "route", name, where: "app/routes.py:6", aliases: [], choices: [], details: [], also: [] }));
+    STUB.reference = () => ["submit_capture_reference", { entries, excluded: [] }];
+    STUB.checkReference = () => ["submit_capture_reference_checked", { entries, excluded: [], changes: [] }];
+    STUB.compact = () => ["submit_capture_compact", { feature: {
+      functional_specs: [{ func_id: "keep-notes", text: "Using :NotesInterface:, `POST /notes` keeps a :Note: and `GET /notes` lists them.", conformance: [{ scenario_id: "one-note", text: "Adding a :Note: with text `hi` answers 201." }] }],
+      definitions: [], assumptions: [], uncertain: [], dropped: [],
+    } }];
+    try {
+      crashes.add("trial notes");
+      await expect(runCapture({ root, model: "p/talk:high" })).rejects.toThrow("stopped");
+      expect(agentModels.get("reference notes")).toEqual({ role: "capture-analysis", model: "p/talk" });
+      expect(asked).toEqual(["survey", "check notes", "reference notes", "check reference notes", "compact notes", "verify notes", "trial notes"]);
+      const compactAgents = asked.length;
+      // A changed split threshold after a stop must not turn a completed compact draft into a new set of features.
+      asked.length = 0;
+      crashes.clear();
+      const result = await runCapture({ root, leafLines: 1 });
+      expect(asked).toEqual(["trial notes"]);
+      expect(result).toMatchObject({ modules: ["notes"], specs: 1, failing: 0, uncaptured: 0 });
+      expect(readFileSync(result.reportFile, "utf8")).toContain("Pipeline: compact");
+      expect(result.summary).toContain("1 of the 1 scenario tried on the original held");
+      expect(existsSync(join(result.plainDir, "resources", "interface", "notes.md"))).toBe(true);
+      expect(scriptsAsked).toEqual(expect.arrayContaining(["notes:unit", "notes:conformance"]));
+
+      // Compare the same map with a checkpoint from before compact capture. It follows the staged path, even unsplit.
+      const plainDir = join(root, "previous");
+      saveState(plainDir, newState(root));
+      asked.length = 0;
+      const staged = await runCapture({ root, plainDir });
+      expect(staged.failing).toBe(0);
+      expect(asked).toContain("outline notes");
+      expect(asked).not.toContain("compact notes");
+      expect(asked.length).toBeGreaterThan(compactAgents);
+    } finally {
+      delete STUB.compact;
+      delete STUB.reference;
+      delete STUB.checkReference;
+    }
+  });
+
+  it("expands a small project's pipeline when its behaviour needs separate writers, keeping the survey and reference", async () => {
+    STUB.compact = () => ["submit_capture_compact", { expand: "separate concerns" }];
+    try {
+      crashes.add("outline notes");
+      await expect(runCapture({ root })).rejects.toThrow("stopped");
+      crashes.clear();
+      asked.length = 0;
+      const result = await runCapture({ root });
+      expect(asked[0]).toBe("outline notes");
+      expect(asked).not.toContain("compact notes");
+      expect(result.failing).toBe(0);
+      expect(readFileSync(result.reportFile, "utf8")).toContain("Pipeline: staged - expanded from compact: separate concerns");
+    } finally {
+      delete STUB.compact;
+    }
+  });
+
+  it("does not accept an incomplete compact draft or mix it with the staged writers' specs", async () => {
+    STUB.compact = () => ["submit_capture_compact", { feature: { functional_specs: [{ func_id: "partial-draft", text: "A :User: stores notes." }] } }];
+    try {
+      const result = await runCapture({ root });
+      expect(followUps.find((call) => call.label === "compact notes")?.text).toContain("Neither captured nor dropped:");
+      expect(asked.filter((label) => label === "survey")).toHaveLength(1);
+      expect(asked).toContain("outline notes");
+      expect(result.failing).toBe(0);
+      expect(readFileSync(join(result.plainDir, "notes.plain"), "utf8")).not.toContain("partial-draft");
+    } finally {
+      delete STUB.compact;
+    }
+  });
+
   it("captures the codebase into modules in build order, with an import module, scenarios, config and a report", async () => {
     // A module of one functional spec at most: each area is a module of its own.
     const result = await runCapture({ root, leafLines: leafLines(), parallel: 2, moduleSpecs: 1 });
@@ -444,7 +517,8 @@ describe("a capture", () => {
       ]
     );
     try {
-      const result = await runCapture({ root, leafLines: leafLines() });
+      const result = await runCapture({ root, leafLines: leafLines(), model: "p/talk:high", codingModel: "p/code:high" });
+      expect(agentModels.get("check reference notes")).toEqual({ role: "capture-analysis", model: "p/code" });
       expect(tasks.get("check reference notes")).toContain("<the reference>\nAs it was taken from app/routes.py:");
       expect(tasks.get("reference notes")).toContain("<files>\n- app/routes.py - 14 lines; the map found `POST /notes`, `GET /notes`\n</files>");
       const read = (path: string) => readFileSync(join(root, "plain", ...path.split("/")), "utf8");
@@ -704,9 +778,12 @@ describe("a capture", () => {
         ].join("\n"),
       );
       const result = await runCapture({ root, leafLines: leafLines(), configFrom: here });
-      // Its own agents ran on the model in use, its testing scripts on the coding model in use.
-      expect(agentModels.get("survey")).toBe("p/talk:high");
-      expect(agentModels.get("feature notes/api#add-note")).toBe("p/talk:high");
+      for (const label of ["survey", "check notes", "feature notes/api#add-note", "modules notes", "verify notes", "trial notes"]) {
+        expect(agentModels.get(label), label).toEqual({ role: "capture", model: "p/talk:high" });
+      }
+      for (const label of ["reference notes", "split notes", "outline notes/api", "divide notes"]) {
+        expect(agentModels.get(label), label).toEqual({ role: "capture-analysis", model: "p/code" });
+      }
       expect(scriptModels).toEqual(["p/code:low", "p/code:low"]);
       const config = readFileSync(join(result.plainDir, "config.turri.yaml"), "utf8");
       expect(config).toContain(`# It started as the config in use where the capture was started - ${join(here, "config.turri.yaml")}`);

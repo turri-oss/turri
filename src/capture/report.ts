@@ -225,6 +225,7 @@ export function renderReport(input: ReportInput): string {
     summaryOf(input),
     "",
     `The codebase: ${input.root} - ${map.files.length} files. Started ${state.started}${state.finished !== undefined ? `, finished ${state.finished}` : ""}.`,
+    ...(state.plan !== undefined ? [`Pipeline: ${state.plan.kind} - ${state.plan.reason}.`] : []),
     "",
     "## What was written",
     "",

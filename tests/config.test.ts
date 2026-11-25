@@ -100,7 +100,7 @@ describe("the project's config.yaml", () => {
 
 describe("how hard each role thinks when nothing names a level", () => {
   it("has the agents that do the work think low, the ones that judge medium, and leaves the conversation its own", () => {
-    for (const role of ["coding", "conformance", "explorer", "launch"] as const) expect(ROLE_THINKING[role], role).toBe("low");
+    for (const role of ["coding", "conformance", "explorer", "launch", "capture-analysis"] as const) expect(ROLE_THINKING[role], role).toBe("low");
     for (const role of ["reviewer", "test-reviewer", "judge", "arbiter", "debugger", "planner", "diagnosis"] as const) expect(ROLE_THINKING[role], role).toBe("medium");
     // The sentinel is a chat too: it keeps its own level, as the conversation does.
     expect(ROLE_THINKING.chat).toBeUndefined();
@@ -195,6 +195,17 @@ describe("models: and turn-limit:", () => {
     expect(roleTurnLimitMs(readProjectConfig(root), "conformance")).toBe(150_000);
     writeFileSync(join(root, "config.yaml"), "coding-model: google/gemini-3.8-flash\n");
     expect(roleTurnLimitMs(readProjectConfig(root), "conformance")).toBeUndefined();
+  });
+
+  it("keeps explicit capture settings for analysis unless it has its own override", () => {
+    writeFileSync(join(root, "config.turri.yaml"), "harness-model: p/talk:high\nmodels:\n  capture: { model: p/writer, thinking: medium, turn-limit: 420 }\n  capture-analysis: p/fast:low\n");
+    const config = readProjectConfig(root);
+    expect(roleModel(config, "capture")).toEqual({ model: "p/writer", thinking: "medium" });
+    expect(roleModel(config, "capture-analysis")).toEqual({ model: "p/fast", thinking: "low" });
+    expect(roleTurnLimitMs(config, "capture-analysis")).toBe(420_000);
+    expect(roleTurnLimitMs({ models: { ...config.models, "capture-analysis": { turnLimit: 0 } } }, "capture-analysis")).toBe(0);
+    delete config.models!["capture-analysis"];
+    expect(roleModel(config, "capture-analysis")).toEqual({ model: "p/writer", thinking: "medium" });
   });
 
   it("reads the old keys as before, models: winning over them - judge-model for the judge and the test review", () => {

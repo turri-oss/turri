@@ -22,7 +22,7 @@ import type { CaptureState } from "./state.ts";
  * at work: what it does, for how long, and what it did last. Last, what the capture said last.
  */
 
-export type CaptureStage = "mapping" | "surveying" | "checking" | "extracting" | "outlining" | "dividing" | "capturing" | "filling" | "gathering" | "reconciling" | "reading" | "verifying" | "trying" | "writing" | "scripts";
+export type CaptureStage = "mapping" | "surveying" | "checking" | "extracting" | "outlining" | "dividing" | "compact-writing" | "capturing" | "filling" | "gathering" | "reconciling" | "reading" | "verifying" | "trying" | "writing" | "scripts";
 
 export interface CaptureAgentStatus {
   /** What it does: `survey`, `feature short-links#create-link`. */
@@ -37,6 +37,7 @@ export interface CaptureAgentStatus {
 
 /** A capture's phases, as its first line names them: what each stage is part of (`phaseOf`). */
 export const CAPTURE_PHASES = ["survey", "outline", "features", "concepts", "readability", "interface", "trial", "scripts"];
+const COMPACT_PHASES = ["survey", "features", "interface", "trial", "scripts"];
 
 /** The phase a stage is part of, by its place in CAPTURE_PHASES. */
 export function phaseOf(stage: CaptureStage): number {
@@ -50,6 +51,7 @@ export function phaseOf(stage: CaptureStage): number {
     case "dividing":
       return 1;
     case "capturing":
+    case "compact-writing":
     case "filling":
     case "gathering":
       return 2;
@@ -71,6 +73,7 @@ export interface CaptureStatus {
   root: string;
   started: number;
   stage: CaptureStage;
+  pipeline?: "compact" | "staged";
   /** Features outlined so far - none merged into others - and how many of them are done: captured, or failed. */
   features: { outlined: number; done: number };
   /** Areas still to be split or outlined: more features to come. */
@@ -119,6 +122,7 @@ export class CaptureTracker {
 
   /** The features outlined and done, counted from the state as it is now. */
   counted(state: CaptureState): void {
+    this.status.pipeline = state.plan?.kind;
     this.status.features = featureCounts(state);
     this.status.outlining = Object.values(state.areas).filter((area) => area.children === undefined && area.features === undefined && area.failed === undefined).length;
     this.changed();
@@ -199,7 +203,8 @@ const STRIP_CELLS = 24;
 
 /** The status as lines across `width`, the spinner at `frame` and the clock at `now`. */
 export function captureStatusLines(status: CaptureStatus, at: { frame: string; now: number; width: number }, style: StatusStyle = PLAIN): string[] {
-  const phases = skillProgressLine({ skill: `capture ${basename(status.root)}`, phases: CAPTURE_PHASES, current: phaseOf(status.stage), attempt: 1, frame: at.frame }, at.width, style);
+  const steps = status.pipeline === "compact" ? COMPACT_PHASES : CAPTURE_PHASES;
+  const phases = skillProgressLine({ skill: `capture ${basename(status.root)}`, phases: steps, current: steps.indexOf(CAPTURE_PHASES[phaseOf(status.stage)]!), attempt: 1, frame: at.frame }, at.width, style);
   const work = workOf(status);
   const cost = status.cost > 0 ? ` · $${status.cost.toFixed(2)}` : "";
   const phase = `  ${work !== undefined ? `${workStrip(work, style)}  ` : `${style.now(at.frame)} `}${stageText(status, work)} ${style.muted(`· ${duration(at.now - status.started)}${cost}`)}`;
@@ -259,6 +264,8 @@ function stageText(status: CaptureStatus, work: { total: number; done: number; r
       return "mapping the codebase";
     case "surveying":
       return "surveying the codebase";
+    case "compact-writing":
+      return "capturing the whole program as one module";
     case "outlining": {
       const { outlined } = status.features;
       const more = status.outlining > 0 ? `, ${status.outlining === 1 ? "1 area" : `${status.outlining} areas`} still being outlined` : "";

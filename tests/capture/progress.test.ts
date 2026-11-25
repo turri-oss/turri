@@ -17,6 +17,8 @@ describe("a capture's status", () => {
   it("leads with its phases - those done ticked, the one it is in spinning, those to come - and how far through them it is", () => {
     const [phases] = captureStatusLines(status(), { frame: "⠋", now: 0, width: 160 });
     expect(phases).toMatch(/^capture shorty +✓ survey ━+ ✓ outline ━+ ⠋ features ─+ ○ concepts ─+ ○ readability ─+ ○ interface ─+ ○ trial ─+ ○ scripts +phase 3 of 8$/);
+    const [compact] = captureStatusLines(status({ pipeline: "compact", stage: "compact-writing" }), { frame: "⠋", now: 0, width: 160 });
+    expect(compact).toMatch(/✓ survey ━+ ⠋ features ─+ ○ interface ─+ ○ trial ─+ ○ scripts +phase 2 of 5$/);
     const [checking] = captureStatusLines(status({ stage: "checking" }), { frame: "⠙", now: 0, width: 160 });
     expect(checking).toMatch(/⠙ survey ─+ ○ outline .* phase 1 of 8$/);
     const [dividing] = captureStatusLines(status({ stage: "dividing" }), { frame: "⠙", now: 0, width: 160 });

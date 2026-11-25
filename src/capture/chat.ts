@@ -19,9 +19,9 @@ export function captureRefusal(root: string): string | undefined {
   return undefined;
 }
 
-export function captureStartedText(root: string, model: string | undefined, goesOn: boolean): string {
+export function captureStartedText(root: string, goesOn: boolean): string {
   return [
-    `${goesOn ? "Going on with the capture" : "Capturing"} ${root} into ${join(root, "plain")}, in the background${model !== undefined ? `, on ${model}` : ""}.`,
+    `${goesOn ? "Going on with the capture" : "Capturing"} ${root} into ${join(root, "plain")}, in the background.`,
     "Nothing is asked: what it decides, leaves out or cannot capture is in its report, which comes back to this chat when it ends.",
   ].join(" ");
 }
