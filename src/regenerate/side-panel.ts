@@ -4,6 +4,7 @@ import { createJobsTreeState, jobsTreeLines, jobsTreeRows, keepCursorInView, scr
 import type { MarkedPage } from "./spec-map.ts";
 import { columnHeadings, createSpecMapState, DISCUSS_KEY, legendLines, minimap, shownPage, specMapHeader, specMapLines, switchTab, tabBar, type MapRow, type SpecMapState } from "./spec-map-view.ts";
 import type { TranscriptStyle } from "./transcript-view.ts";
+import type { ButtonPaint, PointerHover } from "../pointer-hover.ts";
 
 /**
  * The side panel: the spec and how far the code has been regenerated, beside the conversation rather than instead of
@@ -23,6 +24,8 @@ export interface SidePanelOptions {
   earlier?: () => Job[];
   /** The regeneration's pages. Not given: the pulse list alone. */
   map?: () => MarkedPage[];
+  pointer?: PointerHover;
+  tabLabel?: ButtonPaint;
   /** Rows the panel may use. */
   rows: () => number;
   style: TranscriptStyle;
@@ -68,6 +71,28 @@ export function createSidePanel(options: SidePanelOptions) {
   let drawnTree: Drawn<TreeRow> = { rows: [], rowStarts: [], lineCount: 0 };
   let drawnMap: Drawn<MapRow> = { rows: [], rowStarts: [], lineCount: 0 };
   let pages: MarkedPage[] = [];
+
+  type Action = SpecMapState["view"] | "close";
+  type Control = { action: Action; text: string; x: number };
+  let pressed: Action | undefined;
+  const controls = (width: number): Control[] => {
+    if (width <= 0 || (!options.map && !options.dock)) return [];
+    const close = width >= 30 ? " × close " : width >= 3 ? " × " : "×";
+    const right = width - visibleWidth(close);
+    const buttons: Control[] = [];
+    let x = 0;
+    if (options.map) {
+      for (const [action, label] of [["map", "***plain"], ["pulses", "pulses"]] as const) {
+        const marker = width >= 30 ? (map.view === action ? "▸ " : "  ") : "";
+        const text = truncateToWidth(` ${marker}${label} `, Math.max(0, right - x - 1), "");
+        if (!text) break;
+        buttons.push({ action, text, x });
+        x += visibleWidth(text) + 1;
+      }
+    }
+    return [...buttons, { action: "close", text: close, x: right }];
+  };
+  const tabLabel = options.tabLabel ?? ((text, active) => active ? style.heading(text) : style.muted(text));
 
   /** The keys back to the chat - and `s`, from over the screen to beside the chat and back. */
   const backKeys = (): string[] => {
@@ -252,14 +277,22 @@ export function createSidePanel(options: SidePanelOptions) {
 
   return {
     render(width: number): string[] {
-      const rows = Math.max(8, options.rows());
+      let bar = "";
+      let end = 0;
+      for (const { action, text, x } of controls(width)) {
+        bar += " ".repeat(x - end) + tabLabel(text, map.view === action, options.pointer?.target === `panel:${action}`, action === "close" ? "close" : "tab");
+        end = x + visibleWidth(text);
+      }
+      const header = bar ? [bar] : [];
+      const rows = Math.max(8, options.rows()) - header.length;
       try {
-        return map.view === "map" && options.map !== undefined ? renderMap(width, rows) : renderPulses(width, rows);
+        return [...header, ...(map.view === "map" && options.map !== undefined ? renderMap(width, rows) : renderPulses(width, rows))];
       } catch (error) {
         // A frame that throws is never drawn - nor is anything after it: the screen would freeze. What failed is shown instead.
         const top = topBlock([`${style.heading(map.view === "map" ? "regen" : "pulses")}${waitingNote()}`], [...(options.map !== undefined ? ["p the other view"] : []), ...backKeys()], width);
         const lines = (error instanceof Error ? (error.stack ?? error.message) : String(error)).split("\n").slice(0, Math.max(1, rows - top.length - 1));
         return [
+          ...header,
           ...top,
           rule(width),
           ...lines.map((line, index) => truncateToWidth(index === 0 ? style.error(`could not be drawn: ${line}`) : style.muted(line), width)),
@@ -309,8 +342,25 @@ export function createSidePanel(options: SidePanelOptions) {
       else if (matchesKey(data, Key.end) || data === "G") tree.cursor = Math.max(0, drawnTree.rows.length - 1);
     },
 
-    /** The wheel scrolls the panel wherever the keyboard is. */
+    /** View tabs switch on a click, and the wheel scrolls the panel wherever the keyboard is. */
     handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+      const down = pressed;
+      if (event.type === "press" || event.type === "click") pressed = undefined;
+      if (event.y === 0 && (event.type === "move" || (event.button === "left" && (event.type === "press" || event.type === "click")))) {
+        for (const { action, text, x } of controls(event.width)) {
+          if (event.x >= x && event.x < x + visibleWidth(text)) {
+            if (options.pointer) options.pointer.target = `panel:${action}`;
+            if (event.type === "move") return { handled: true, render: false };
+            if (event.type === "press") pressed = action;
+            else if (action === down && action !== map.view) {
+              if (action === "close") options.close();
+              else if (action === "map") toMap();
+              else toPulses();
+            }
+            return { handled: true };
+          }
+        }
+      }
       if (event.type !== "wheel" || event.wheelDelta === undefined) return undefined;
       if (map.view === "map" && options.map !== undefined) scrollMap(event.wheelDelta * 3);
       else scrollTree(tree, event.wheelDelta * 3, drawnTree.rowStarts, drawnTree.lineCount, lastBodyHeight);

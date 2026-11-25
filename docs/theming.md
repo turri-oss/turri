@@ -36,7 +36,7 @@ Both themes, the command line's colours, the \*\*\*plain diff's, the banner's je
 | indigo | `#5b57d9` | the jellyfish's bell, at its rim - nowhere else |
 | orange | `#ff7a3d` | the jellyfish's gut, the `$` of bash mode, and everything that asks for you - what failed (`✗`), what works with limits, what needs you (the \*\*\*plain map's `!`): `error`, `warning` |
 
-The design system keeps pink for the one thing to press and orange for the `$` prompt alone. A terminal has no buttons, but it needs status colours, so pink carries what is done and orange everything that asks for you - what failed, what works with limits, what waits on you - the mark (`✗`, `!`, `■`) telling them apart. The palette has no red.
+In the chat header, the `+` is the one pink button. Tabs use the theme's `selectedBg` for their padded surfaces and `accent` for the active tab. Hover underlines the target; `×` takes the warning colour on hover to distinguish closing from switching. The side panel uses the same treatment. In the transcript, pink carries what is done and orange everything that asks for you - what failed, what works with limits, what waits on you - the mark (`✗`, `!`, `■`) telling them apart. The palette has no red.
 
 ## Why there are two
 

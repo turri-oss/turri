@@ -1,6 +1,10 @@
 import { AgentSessionRuntime, InteractiveMode, SessionManager, type AgentSession, type ExtensionUIContext } from "@earendil-works/pi-coding-agent";
+import type { Component, TUI } from "@earendil-works/pi-tui";
+import { chatTabHeader, type ChatScreen } from "./chat-tab-header.ts";
 import type { RunRecord } from "./chat-records.ts";
+import { chatTabs, closeTerminalChat } from "./chat-tabs.ts";
 import { showWaitingMessages } from "./chat-waiting.ts";
+import { buttonLabel } from "./pointer-hover.ts";
 import { interruptChat, terminalUi, type ChatState, type Stoppable, type TurriCore } from "./chats.ts";
 
 /**
@@ -38,7 +42,9 @@ interface Runtime {
   createRuntime(options: unknown): Promise<{ session: AgentSession; services: unknown }>;
 }
 
-interface Patched {
+interface Patched extends ChatScreen {
+  addCustomEntryToChat(entry: { customType: string }): void;
+  mountInteractiveTui(tui: TUI, components: Component[]): void;
   rebindCurrentSession(...args: unknown[]): Promise<void>;
   handleCtrlC(): void;
 }
@@ -113,6 +119,44 @@ export function driveTerminal(core: TurriCore, options: { restore?: RunRecord; s
 
   showWaitingMessages();
   const prototype = InteractiveMode.prototype as unknown as Patched;
+  let switching = false;
+  const tabs = chatTabs(() => core.chats(), (text, shown, hovered, role) => {
+    const theme = real?.theme;
+    return theme === undefined ? text : buttonLabel(theme, text, shown, hovered, role);
+  }, (action) => {
+    if (switching || runtime === undefined) return;
+    if (action.kind === "plain") return core.shownChat()?.instance?.openPlainPanel?.();
+    switching = true;
+    const change = action.kind === "open" ? core.open() : action.kind === "close" ? closeTerminalChat(core, action.id) : core.show(action.id);
+    void change.catch((error: unknown) => core.notify(error instanceof Error ? error.message : String(error), "warning")).finally(() => { switching = false; });
+  });
+
+  const header = chatTabHeader(tabs);
+  const addEntry = prototype.addCustomEntryToChat;
+  prototype.addCustomEntryToChat = function (entry) {
+    addEntry.call(this, entry);
+    if (entry.customType === "turri_banner") header.afterBanner(this.chatContainer, entry);
+  };
+  let stopWatchingTabs: (() => void) | undefined;
+  const mount = prototype.mountInteractiveTui;
+  prototype.mountInteractiveTui = function (tui, components) {
+    stopWatchingTabs?.();
+    mount.call(this, tui, header.mount(this, components));
+    const unwatch = header.watch(this, tui);
+    let ticker: ReturnType<typeof setInterval> | undefined;
+    const refresh = () => {
+      if (core.chats().some((chat) => chat.status === "working")) {
+        ticker ??= setInterval(() => tui.requestRender(), 250).unref();
+      } else {
+        clearInterval(ticker);
+        ticker = undefined;
+      }
+      tui.requestRender();
+    };
+    const stop = core.onChats(refresh);
+    refresh();
+    stopWatchingTabs = () => { stop(); clearInterval(ticker); unwatch(); };
+  };
   const rebind = prototype.rebindCurrentSession;
   prototype.rebindCurrentSession = async function (this: Screen, ...args: unknown[]) {
     await rebind.apply(this, args);
@@ -161,7 +205,10 @@ export function driveTerminal(core: TurriCore, options: { restore?: RunRecord; s
   // Leaving turri: every chat let go - the one shown by pi, as it always is.
   const dispose = runtimes.dispose;
   runtimes.dispose = async function (this: unknown) {
-    if (this === runtime) await core.dispose({ except: runtime!.session });
+    if (this === runtime) {
+      stopWatchingTabs?.();
+      await core.dispose({ except: runtime!.session });
+    }
     return dispose.call(this);
   };
 

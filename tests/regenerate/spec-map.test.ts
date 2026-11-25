@@ -554,17 +554,37 @@ describe("the regeneration drawn", () => {
 describe("the side panel's two views", () => {
   const job = (id: string) => ({ id, kind: "regenerate", summary: "app.plain log in", module: "app", status: "running" as const, sequence: 1, queuedAt: 0, startedAt: Date.now(), waitingOn: [], tail: "", activity: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 }, agents: [], transcript: [] });
 
+  it("opens either view from its tab even with no spec, and clicking the selected tab keeps that view", () => {
+    let closed = 0;
+    const panel = createSidePanel({ jobs: () => [], map: () => [], rows: () => 20, style, key: "ctrl+h", back() {}, close() { closed++; } });
+    const click = (x: number) => {
+      for (const type of ["press", "click"] as const) panel.handleMouse({ type, button: "left", x, y: 0, screenX: 72 + x, screenY: 1, width: 68, height: 20, shift: false, alt: false, ctrl: false });
+    };
+    const [tabs] = panel.render(68);
+    expect(tabs).toMatch(/^ ▸ \*\*\*plain +pulses +× close $/);
+    click(tabs!.indexOf("pulses"));
+    expect(panel.render(68)[0]).toContain("▸ pulses");
+    expect(panel.render(68)[1]).toBe("pulses");
+    click(tabs!.indexOf("pulses"));
+    expect(panel.render(68)[1]).toBe("pulses");
+    click(tabs!.indexOf("plain"));
+    expect(panel.render(68).join("\n")).toContain("No .plain file to map");
+    expect(closed).toBe(0);
+    click(tabs!.indexOf("close"));
+    expect(closed).toBe(1);
+  });
+
   it("opens on regen, and p goes to the pulse regenerating the item under the cursor and back to the item", () => {
     const first = page(tree({ [FUNCTIONAL_REQUIREMENTS]: ["- Register.", "- Log in."] }), tree({ [FUNCTIONAL_REQUIREMENTS]: ["- Register."] }));
     const login = first.items.find((entry) => entry.text === "- Log in.")!;
     const marked = markSpecMap([first], { files: [], codebases: [codebase(first, { pulses: [pulseOf([login], 1, true)] })] });
     const panel = createSidePanel({ jobs: () => [job("job1")], map: () => marked, rows: () => 20, style, back() {}, close() {}, key: "ctrl+h" });
-    expect(panel.render(100)[0]).toContain("regen");
+    expect(panel.render(100)[1]).toContain("regen");
     panel.handleInput("\x1b[B");
     panel.handleInput("\x1b[B");
     panel.handleInput("p");
     const pulses = panel.render(100);
-    expect(pulses[0]).toMatch(/^pulses/);
+    expect(pulses[1]).toMatch(/^pulses/);
     // A line of space under the rule, before the first section.
     const rule = pulses.findIndex((line) => /^─+$/.test(line));
     expect(pulses[rule + 1]).toBe("");
@@ -607,7 +627,7 @@ describe("the side panel's two views", () => {
     const panel = createSidePanel({ jobs: () => [], map: () => [marked!], rows: () => 20, style, back() {}, close() {}, key: "ctrl+h" });
     const drawn = panel.render(100);
     // In the upper right corner, beside the title and the keys - the keys at the top, where they are seen first.
-    const plain = drawn.map((line) => line.replace(/\x1b\[[0-9;]*m/g, "").trimEnd());
+    const plain = drawn.slice(1).map((line) => line.replace(/\x1b\[[0-9;]*m/g, "").trimEnd());
     // Validating spins in the green of the rungs it is between, working in the accent: told apart at a glance.
     const painted = legendLines(marked!, { ...style, accent: (text: string) => `<accent>${text}`, success: (text: string) => `<green>${text}` });
     expect(painted[1]).toBe("<accent>⠋ working");
@@ -642,8 +662,8 @@ describe("the side panel's two views", () => {
     expect(discussed).toEqual([]);
     marked = stuck;
     const lines = panel.render(100);
-    expect(lines[0]).toContain("! needs you");
-    expect(lines[2]).toMatch(/^d talk it through in the chat · /);
+    expect(lines[1]).toContain("! needs you");
+    expect(lines[3]).toMatch(/^d talk it through in the chat · /);
     panel.handleInput("d");
     expect(discussed).toEqual(["pulse 3 didn't land"]);
   });
@@ -653,9 +673,9 @@ describe("the side panel's two views", () => {
     const lines = panel.render(100);
     expect(lines).toHaveLength(20);
     expect(lines.find((line) => line.includes("could not be drawn"))).toContain("could not be drawn: Error: the plan could not be read");
-    expect(lines[2]).toContain("p the other view · esc or ctrl+h back to the chat");
+    expect(lines[3]).toContain("p the other view · esc or ctrl+h back to the chat");
     panel.handleInput("p");
-    expect(panel.render(100)[0]).toMatch(/^pulses/);
+    expect(panel.render(100)[1]).toMatch(/^pulses/);
   });
 
   it("reads a plan that fails as a page saying so", () => {
@@ -673,14 +693,14 @@ describe("the side panel's two views", () => {
     let lines = panel.render(100);
     const heading = () => lines.find((line) => line.startsWith(" status │"))?.split("  ")[0];
     expect(heading()).toBe(" status │ top.plain");
-    expect(lines[1]).toMatch(/^base {2}\[top\] /);
+    expect(lines[2]).toMatch(/^base {2}\[top\] /);
     expect(lines.join("\n")).toContain("- Two.");
     expect(lines.join("\n")).not.toContain("- One.");
     // ← to the module it is built on.
     panel.handleInput("\x1b[D");
     lines = panel.render(100);
     expect(heading()).toBe(" status │ base.plain");
-    expect(lines[1]).toMatch(/^\[base\] {2}top /);
+    expect(lines[2]).toMatch(/^\[base\] {2}top /);
     expect(lines.join("\n")).toContain("- One.");
     // Enter opens the item under the cursor.
     panel.handleInput("\r");
@@ -745,4 +765,3 @@ describe("the work loop's plan for the map", () => {
     expect(marked!.status).toMatch(/^pulse 1 didn't land/);
   });
 });
-
