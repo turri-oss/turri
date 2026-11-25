@@ -446,6 +446,23 @@ describe("the work loop", () => {
     expect(JSON.stringify(readRecord(codeDir("top")))).toContain("Users register.");
   });
 
+  it("shows a module asked for that waits for one below it as waiting from the start - never as being planned meanwhile", async () => {
+    writePlain(dir, "base.plain", "***implementation reqs***\n\n- :Implementation: is Python.\n\n***functional specs***\n\n# register\nUsers register.\n");
+    writePlain(dir, "top.plain", "---\nrequires:\n  - base\n---\n\n***implementation reqs***\n\n- :Implementation: is Python.\n\n***functional specs***\n\n# home-page\nThe home page says hello.\n");
+    const registry = createJobRegistry();
+    const frames: string[][] = [];
+    let loop: ReturnType<typeof createWorkLoop> | undefined;
+    registry.notify = () => frames.push(loop!.planned().map((job) => `${job.summary}${job.planning !== undefined ? " (planning)" : ""}`));
+    loop = createWorkLoop({ registry, cwd: dir, planner: false, run: runner().run });
+    await loop.bringUp("top.plain");
+    await loop.drain();
+    // While base is planned - its codebase looked at first, the planner's time - top is shown waiting for it, not planned.
+    const whileBase = frames.filter((rows) => rows.some((row) => row.startsWith("base.plain")));
+    expect(whileBase.length).toBeGreaterThan(0);
+    expect(whileBase.flat().filter((row) => row.startsWith("top.plain") && row.endsWith("(planning)"))).toEqual([]);
+    expect(whileBase.flat()).toContain("top.plain - waits for base");
+  });
+
   it("builds two modules that share nothing side by side - neither waits for the other", async () => {
     writePlain(dir, "frontend.plain", app(["Show the home page."]));
     writePlain(dir, "backend.plain", app(["Serve the users."]));
