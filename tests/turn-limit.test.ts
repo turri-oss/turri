@@ -108,6 +108,12 @@ describe("a provider that fails for a moment", () => {
     expect(prompts[1]).toMatch(/^Carry on where you were: the model provider failed part-way through your last turn/);
   });
 
+  it("waits out a stream cut off part-way - as Bedrock's truncated event message once ended a whole capture", async () => {
+    const { session, prompts } = flakySession(1, "Truncated event message received.");
+    expect(await ask(session, "Check the reference.")).toBe("Done.");
+    expect(prompts).toHaveLength(2);
+  });
+
   it("does not fail a turn pi's own retry recovered - as a reviewer's verdict was once thrown away after Bedrock dropped its stream", async () => {
     const listeners: Array<(event: unknown) => void> = [];
     const prompts: string[] = [];
