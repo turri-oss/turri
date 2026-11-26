@@ -122,7 +122,7 @@ function leftOutProblems(map: CodeMap, leftOut: LeftOut[], within: string[]): st
     if (!within.some((path) => covers(path, item.path))) return [`Left out ${item.path}: not in your area.`];
     // The tests show what someone cared about: what scenarios are written from, never left behind.
     const files = filesOf(map, [item.path]);
-    if (files.length > 0 && files.every((file) => file.kind === "test")) return [`Left out ${item.path}: it holds the original's tests, the evidence of what the software does - keep them with the code they test.`];
+    if (files.some((file) => file.kind === "test")) return [`Left out ${item.path}: it holds the original's tests, the evidence of what the software does - keep them with the code they test.`];
     return [];
   });
 }
@@ -293,10 +293,15 @@ export function referenceProblems(map: CodeMap, root: string, given: string[], a
     return texts.get(path);
   };
   const seen = new Set<string>();
+  const commands = new Set(answer.entries.filter(entry => entry.kind === "command").map(entry => entry.name));
   answer.entries.forEach((entry, at) => {
     const what = `Entry ${at + 1}, \`${entry.name || "(no name)"}\``;
     if (!INTERFACE_KINDS_TAKEN.has(entry.kind)) problems.push(`${what}: its kind is command, argument, option, route, env or other.`);
     if (entry.name.trim() === "") problems.push(`${what}: give its name, exactly as the code has it.`);
+    if (entry.command && !commands.has(entry.command)) {
+      const owners = entry.command.split(/,\s*|\s+and\s+/).map(name => name.trim());
+      if (owners.length > 1 && owners.every(name => commands.has(name))) problems.push(`${what}: ${entry.command} is a list of commands, not one command. Give a separate entry under each command that accepts it.`);
+    }
     const key = `${entry.kind} ${entry.command ?? ""} ${entry.name}`;
     if (seen.has(key)) problems.push(`${what}: listed twice.`);
     seen.add(key);

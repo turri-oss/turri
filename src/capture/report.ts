@@ -73,7 +73,7 @@ export function referenceLines(state: CaptureState): string[] {
     };
     const held = [...count("command", "command"), ...count("argument", "argument"), ...count("option", "option"), ...count("route", "route"), ...count("env", "environment variable"), ...count("other", "other piece", "other pieces")];
     return [
-      ...(entries.length > 0 ? [`${part.name}: \`${referencePath(part.name)}\`, linked by ${interfaceConcept(part.name)} - ${held.join(", ")}`] : [`${part.name}: no interface reference - the writers took its interface from the map alone`]),
+      ...(entries.length > 0 || state.pythonInterfaces?.[part.name] ? [`${part.name}: \`${referencePath(part.name)}\`, linked by ${interfaceConcept(part.name)} - ${[...held, ...(state.pythonInterfaces?.[part.name] ? ["public Python imports and signatures"] : [])].join(", ")}`] : [`${part.name}: no interface reference - the writers took its interface from the map alone`]),
       ...excluded.map((item) => `${part.name}: \`${item.name}\` (${item.path}) left out of it - ${item.why}`),
       ...Object.values(state.interfaces?.[part.name] ?? {}).flatMap((batch) =>
         "entries" in batch && batch.checked !== undefined

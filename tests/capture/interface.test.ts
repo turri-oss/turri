@@ -74,7 +74,7 @@ describe("a part's interface reference", () => {
         "### Options",
         "",
         "- `--proxy` - also `-x`; takes `PROTOCOL:PROXY_URL`; repeatable",
-        "  - help: String mapping protocol to the proxy.",
+        "  - help: String mapping\n  protocol to the proxy.",
         "- `--ssl` - one of `ssl2.3`, `tls1.2`",
         "- `--history-print` - hidden from its help",
         "",

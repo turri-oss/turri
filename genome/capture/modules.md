@@ -21,3 +21,5 @@ The areas are in the order of the code's imports, which is not that order: the c
 - `rewrites`: a scenario that needs a module after its own whatever the order - two modules whose scenarios each need the other - is rewritten so it checks what it checks with only the modules before it: a scenario of output formatting that follows a redirect checks the formatting of a plain response instead. Its feature's key, its functional spec's func-id, its scenario's id, its whole new text, and `why`: the later module it needed. None when none: most orders need no rewrite. Never merge two modules to spare a rewrite.
 
 You see the ***plain, not the code: decide from what each feature does and what its scenarios run.
+
+Prefer the order that preserves the original observations. In particular, a test of the effect of an option must not become a test that the option is merely accepted. A test of one named failure must not become a test of a different failure that happens to share its exit code. Put the consumer after the features needed to demonstrate the original outcome. When choosing between a neat ordering and an exact observable contract, keep the contract.

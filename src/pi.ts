@@ -119,9 +119,9 @@ const RULES_DIR = join(dirname(dirname(fileURLToPath(import.meta.url))), "genome
  * agent to load when one fits; an agent turri starts has one job, and turri runs its gated skills itself,
  * giving each step to an agent as its task. The conversation keeps them.
  */
-export async function subAgentResources(cwd: string, withRules: boolean, system?: string): Promise<DefaultResourceLoader> {
+export async function subAgentResources(cwd: string, withRules: boolean | readonly string[], system?: string): Promise<DefaultResourceLoader> {
   // Less any the project leaves out (rules-off).
-  const rules = withRules ? renderRulesBlock(loadRules(RULES_DIR, readProjectConfig(projectRootOf(cwd)).rulesOff ?? [])) : "";
+  const rules = withRules ? renderRulesBlock(loadRules(RULES_DIR, readProjectConfig(projectRootOf(cwd)).rulesOff ?? []).filter(rule => withRules === true || withRules.includes(rule.name))) : "";
   const extra = [rules, system ?? ""].filter((part) => part !== "");
   const loader = new DefaultResourceLoader({
     cwd,
@@ -824,7 +824,7 @@ export async function createExecutor(opts: {
    */
   model?: string;
   /** Give it the ***plain rules - for agents that write or edit specs, not code. */
-  rules?: boolean;
+  rules?: boolean | readonly string[];
   /** Continue the session saved in this file, instead of starting a new one. */
   resumeFrom?: string;
   /** Save its session to disk, debug mode or not: it is picked back up later (a skill's run, resumed). */
@@ -884,7 +884,7 @@ export async function createExecutor(opts: {
     // What an agent is shown never holds a credential the project passed: each value is its name (masking.ts).
     customTools: guardRepeats(maskToolResults(withListArguments(withEnvironmentErrors)), () => session, opts.budget),
     sessionManager,
-    resourceLoader: await subAgentResources(opts.cwd, opts.rules === true, [opts.system, opts.task].filter((part) => part !== undefined && part !== "").join("\n\n") || undefined),
+    resourceLoader: await subAgentResources(opts.cwd, opts.rules ?? false, [opts.system, opts.task].filter((part) => part !== undefined && part !== "").join("\n\n") || undefined),
   });
   if (opts.task !== undefined) pendingTask.set(session, opts.task);
   if (hasShell) environmentReports.set(session, { cwd: opts.cwd, reported });

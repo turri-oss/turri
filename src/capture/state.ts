@@ -269,6 +269,8 @@ export interface CaptureState {
   interfaces?: Record<string, Record<string, InterfaceBatch>>;
   /** Parts whose interface reference is whole: every batch answered - and its concept defined. */
   interfaceTaken?: string[];
+  /** Public import signatures found without a model, keyed by the survey's part. */
+  pythonInterfaces?: Record<string, string>;
   /** Each part's conventions checked against the code, by part: what the check changed and why, or why it did not hold. */
   conventionsChecked?: Record<string, { changes: string[]; failed?: string }>;
   /** Each part's features divided, by part - absent until its areas are all outlined. */

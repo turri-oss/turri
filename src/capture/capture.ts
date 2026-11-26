@@ -13,6 +13,7 @@ import { conventionProblems, correctionProblems, divisionProblems, moduleProblem
 import { buildMap, INTERFACE_KINDS, type CodeMap } from "./map.ts";
 import { CaptureTracker, type CaptureStatus } from "./progress.ts";
 import { capturePlan } from "./plan.ts";
+import { pythonInterface } from "./python-interface.ts";
 import { configInUse, configInUseProblem, startingConfig } from "./config.ts";
 import { renderReport, summaryOf } from "./report.ts";
 import { writeTestingScript, type ScriptWriter } from "./scripts.ts";
@@ -380,7 +381,9 @@ class CaptureRun {
     await this.checkReference(parts);
     for (const part of parts) {
       const concept = interfaceConcept(part.name);
-      if (referenceOf(this.state, part.name).entries.length > 0 && !part.definitions.some((definition) => definition.concept === concept)) part.definitions.push({ concept, text: interfaceDefinition(part.name) });
+      const api = pythonInterface(this.map, part.paths);
+      if (api) (this.state.pythonInterfaces ??= {})[part.name] = api;
+      if ((api || referenceOf(this.state, part.name).entries.length > 0) && !part.definitions.some((definition) => definition.concept === concept)) part.definitions.push({ concept, text: interfaceDefinition(part.name) });
       (this.state.interfaceTaken ??= []).push(part.name);
     }
     this.save();
@@ -450,9 +453,11 @@ class CaptureRun {
 
   /** What a feature's writer is told of the interface in its files: the reference's entries, exact, and what to do with them. */
   private writerInterfaceBlock(part: string, paths: string[]): string {
+    const api = this.state.pythonInterfaces?.[part];
+    const library = api ? `\n<public Python API>\nThese exact public imports and signatures are already in ${interfaceConcept(part)}'s linked reference. Use the concept where you describe their behaviour. Keep literal lists and signatures in the reference; write what a caller observes in the spec.\n${api.slice(0, this.budget)}\n</public Python API>` : "";
     const { entries, unlisted } = this.interfaceFor(part, paths);
     if (referenceOf(this.state, part).entries.length === 0) {
-      return interfaceBlock("the interface in your files", "Every option, command, route, screen and environment variable the code defines in your feature's files - capture exactly each your feature owns:", unlisted);
+      return interfaceBlock("the interface in your files", "Every option, command, route, screen and environment variable the code defines in your feature's files - capture exactly each your feature owns:", unlisted) + library;
     }
     const concept = interfaceConcept(part);
     return referenceBlock(
@@ -460,7 +465,7 @@ class CaptureRun {
       `Taken from the code, every literal checked against it: ${concept}'s reference, which every functional spec using ${concept} carries. Of these, capture what each your feature owns does - by its exact name, using ${concept}. What one takes, its choices, its default and its help are the reference's: say them only where a behaviour turns on them, and never otherwise than here.`,
       entries,
       unlisted,
-    );
+    ) + library;
   }
 
   /** What a writer of the interface no feature captured is given: those pieces, with the reference's entry of each. */
@@ -1277,7 +1282,7 @@ function referenceAnswerOf(params: Record<string, unknown>): { entries: Interfac
       const command = given(item.command);
       const takes = given(item.takes);
       const value = typeof item.default === "string" && item.default.trim() !== "" ? item.default.trim() : undefined;
-      const help = typeof item.help === "string" && item.help.trim() !== "" ? item.help.trim() : undefined;
+      const help = typeof item.help === "string" && item.help.trim() !== "" ? item.help : undefined;
       return {
         kind: text(item.kind) as InterfaceKind,
         name: text(item.name),

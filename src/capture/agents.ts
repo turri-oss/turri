@@ -26,6 +26,10 @@ export const CAPTURE_TURN_LIMIT_MS = 10 * 60 * 1000;
 
 const PROMPTS_DIR = join(PACKAGE_ROOT, "genome", "capture");
 
+// These reviewers can only return edits to existing text. Keep the rules for that text and the full source/reference
+// evidence; they have no modules, stacks, integrations, testing scripts or regeneration workflow to design.
+const REVIEW_TEXT_RULES = ["concise-specs", "concise-specs-examples", "func-specs", "test-plain-files", "definitions", "linked-resources", "bullet-continuation", "semantic-ids"];
+
 /** One of capture's prompts, from genome/capture. */
 export function capturePrompt(name: string): string {
   return readFileSync(join(PROMPTS_DIR, `${name}.md`), "utf8").trim();
@@ -133,7 +137,7 @@ async function answerOf<A>(
     customTools: [submit, ...(fence?.tools ?? [])],
     tools: [...(fence?.names ?? []), submit.name],
     model: options.model,
-    rules: options.rules,
+    rules: options.rules && (options.prompt === "verify" || options.prompt === "readability") ? REVIEW_TEXT_RULES : options.rules,
     label: options.label,
     role: options.role,
     ...(fence !== undefined ? { system: fence.note } : {}),
@@ -250,7 +254,7 @@ export const REFERENCE_TOOL = {
         kind: Type.Union([Type.Literal("command"), Type.Literal("argument"), Type.Literal("option"), Type.Literal("route"), Type.Literal("env"), Type.Literal("other")]),
         name: Type.String({ description: "Exactly as the code has it: --proxy, http, httpie plugins install, GET /notes/<int:id> (the code's own parameter syntax), HTTPIE_CONFIG_DIR." }),
         aliases: Strings("Every other name it has, as the code has each: -x."),
-        command: Type.Optional(Type.String({ description: "For an argument or an option: the command it belongs to, as its users type it - http, httpie plugins install." })),
+        command: Type.Optional(Type.String({ description: "For an argument or option: one actual command, as typed. Repeat a shared option's entry for each command accepting it; never join commands into a made-up command name." })),
         takes: Type.Optional(Type.String({ description: "What it takes: its value's form or type, as the code names it - its metavar, its type, a body." })),
         choices: Strings("The values it accepts when the code lists them, each exactly as the code has it."),
         default: Type.Optional(Type.String({ description: "Its default, exactly as the code has it. Left out when it has none." })),

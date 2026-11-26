@@ -48,6 +48,8 @@ When it ends, turri asks whether to open the captured project. A chat works on t
 
 ## How capture scales
 
+For Python libraries the interface reference also records statically declared package exports, import paths used in the original tests, callable signatures and fields of their result types. When Python 3 is available, a helper reads syntax trees without importing the project. Dynamic exports still need the agents' source check. These literal details belong in the linked reference, leaving the functional specs to describe behaviour. A survey that already found distinct concerns too large for a single module can hand that decision directly to the staged writers.
+
 Capture chooses a pipeline automatically, before the first model call. The CLI says which it chose and why; the report records the choice. It uses the map rather than asking an agent to estimate the work.
 
 Size selects **staged** if **any one** of three counts exceeds its limit: **more than 64** source, test and contract files, **more than 4,000** lines across those files, or **more than 24** interface entries outside tests. Otherwise capture starts **compact**. A count exactly at its limit does not exceed it. Bytes, assets, docs and dependency lock files do not enter the decision.

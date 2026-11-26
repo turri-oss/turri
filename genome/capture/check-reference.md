@@ -7,5 +7,6 @@ Below is part of the software's interface reference as an agent took it from the
 - **Its default, what it takes, whether it repeats, is required or is hidden** - as the code has them; a default worked out when it runs, in its details, saying how.
 - **Before you say what a set, a list or a mapping holds,** grep every line that builds it or adds to it - a set defined in one place is often added to in another, a mapping filtered further down - and read each. Correct an entry only where the code shows it wrong, and say the file and the line that show it.
 - **What was missed:** grep the part for interface no entry holds - environment variables read through a constant or a helper, subcommands, arguments, routes a router adds - and add each.
+- **Which command owns an option:** shared arguments belong to each actual command. Do not invent a command named `a, b`. Keep usage failures, configuration failures and domain failures distinct, even when the CLI catches them in the same file.
 
 Call `submit_capture_reference_checked` once, with every entry as the code has it - each that holds, word for word; each corrected; each missed - and every exclusion; and in `changes` what you changed, a line each, with why: the file and the line, and what its code does there. Never change one that holds.

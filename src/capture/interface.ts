@@ -150,7 +150,7 @@ function entryLines(entry: InterfaceEntry): string[] {
   ];
   return [
     `- ${quoted(entry.name)}${facts.length > 0 ? ` - ${facts.join("; ")}` : ""}`,
-    ...(entry.help !== undefined && entry.help.trim() !== "" ? [`  - help: ${entry.help.replace(/\s+/g, " ").trim()}`] : []),
+    ...(entry.help !== undefined && entry.help.trim() !== "" ? [`  - help: ${entry.help}`] : []),
     ...entry.details.map((detail) => `  - ${detail}`),
   ];
 }
@@ -231,4 +231,3 @@ export function droppedBecause(state: CaptureState, named: Named): string | unde
   }
   return undefined;
 }
-

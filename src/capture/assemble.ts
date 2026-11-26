@@ -494,7 +494,8 @@ export function writeCapture(plainDir: string, map: CodeMap, state: CaptureState
   // Each part's interface reference, which its interface concept links: exact where the ***plain is prose.
   for (const part of state.survey?.parts ?? []) {
     const { entries } = referenceOf(state, part.name);
-    if (entries.length > 0) put(referencePath(part.name), renderReference(part.name, entries));
+    const api = state.pythonInterfaces?.[part.name];
+    if (entries.length > 0 || api) put(referencePath(part.name), renderReference(part.name, entries) + (api ? `\n## Public Python imports\n\n${api}\n` : ""));
   }
   const config = join(plainDir, CONFIG_FILE);
   put(CONFIG_FILE, configText(existsSync(config) ? readFileSync(config, "utf8") : "", { assets: assets.length > 0, ...models }));
