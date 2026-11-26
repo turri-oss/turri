@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, delimiter, dirname, join, resolve } from "node:path";
 import { DEFAULT_CACHE_KEEP_MB, readProjectConfig, configModuleOf } from "../config.ts";
 import { registerSecrets } from "./masking.ts";
 import { projectRootOf, modulesScratchDir } from "./paths.ts";
@@ -119,6 +119,9 @@ export function agentEnvironment(moduleDir: string, options: { hostEnv?: NodeJS.
     if (value === undefined) continue;
     if (ALLOWED.includes(key) || ALLOWED_PREFIXES.some((prefix) => key.startsWith(prefix))) env[key] = value;
   }
+  // The caller's activated venv is not an agent toolchain. Its bin is on PATH but its config and site-packages are outside
+  // the fence. Use the next installed Python; an agent may still create and activate its own venv inside its workspace.
+  if (env.PATH) env.PATH = env.PATH.split(delimiter).filter((dir) => !(["bin", "scripts"].includes(basename(dir).toLowerCase()) && existsSync(join(dirname(dir), "pyvenv.cfg")))).join(delimiter);
   for (const [key, inHome] of Object.entries(TOOLCHAIN_LOCATORS)) {
     const given = hostEnv[key];
     if (given !== undefined && given !== "") env[key] = given;

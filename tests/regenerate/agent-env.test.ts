@@ -1,7 +1,7 @@
 import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { agentEnvironment } from "../../src/regenerate/agent-env.ts";
 import { runCommand } from "../../src/regenerate/shell.ts";
@@ -42,6 +42,14 @@ const host = {
 };
 
 describe("the environment of an agent's command", () => {
+  it("skips an external venv ahead of the machine's Python even if VIRTUAL_ENV is unset", () => {
+    const venv = join(home, "active venv");
+    mkdirSync(venv);
+    writeFileSync(join(venv, "pyvenv.cfg"), "home = elsewhere\n");
+    const system = join(home, "toolchain", "bin");
+    const path = [join(venv, "bin"), join(venv, "Scripts"), system].join(delimiter);
+    expect(agentEnvironment(module, { hostEnv: { PATH: path }, home }).env.PATH).toBe(system);
+  });
   it("passes on only what the host may - the path, the locale, the terminal, the user - and no key or token", () => {
     const { env } = agentEnvironment(module, { hostEnv: host, home });
     expect(env).toMatchObject({ PATH: "/usr/bin:/bin", LANG: "en_GB.UTF-8", LC_ALL: "en_GB.UTF-8", TERM: "xterm-256color", TZ: "Europe/Ljubljana", USER: "zan" });

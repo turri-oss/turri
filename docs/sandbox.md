@@ -4,6 +4,8 @@ A regenerating agent is building one module. It has no business reading \*\*\*pl
 
 ## What an agent can reach
 
+The agent's `PATH` omits the launching shell's Python virtual environments. A venv's `bin` (or Windows `Scripts`) alone is not a usable interpreter without its neighbouring `pyvenv.cfg` and packages. Commands use the next installed Python and can create a venv inside their own workspace. No additional host directory needs to be opened to trial a Python project.
+
 Each agent's file tools reach its own module and only the parts its role needs:
 
 | Role | Reads | Writes |
