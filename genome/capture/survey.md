@@ -12,6 +12,8 @@ A part is software on one stack: a backend, a frontend, a command-line tool, a l
 
 ## The stack
 
+Select stock testing `runners` only where they match the part. Ordinary pytest can use a requirements.txt build or a standard pip-installable pyproject.toml package, including src layouts and installed console scripts. The runner installs the build in a fresh venv and runs pytest with the staged project as cwd (for conformance, only the supplied external tests). For conformance on a requirements.txt build, Bats is also available. Read any test helper for the exact environment variable names for the build folder and Python interpreter. Choose custom for any different checkers, services, flags or setup. Do not change the original's stack to make a stock runner fit.
+
 The parts are captured on the stack they are on now - the same language, framework, storage and main libraries, with their versions from the manifests.
 
 - `stdlib_stack`: turri's standard library has templates that settle a stack (the catalogue is below). Read the one that matches. Name it only when the original agrees with it - its framework, its layout, its libraries - since everything in it becomes a requirement. When it contradicts the original anywhere that matters, name none, and write the stack in `implementation_reqs` instead.

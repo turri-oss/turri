@@ -236,6 +236,12 @@ export const SURVEY_TOOL = {
         ),
         test_reqs: Strings("How its conformance tests run, one fact each, and what each sets up so the software acts the same on every run and machine - empty when the conformance template says it all."),
         definitions: Definitions,
+        runners: Type.Object({
+          unit: Type.Union([Type.Literal("pytest"), Type.Literal("custom")]),
+          conformance: Type.Union([Type.Literal("pytest"), Type.Literal("bats"), Type.Literal("custom")]),
+          build_dir_env: Type.Optional(Type.String({ description: "Build-folder variable used by external tests, if any. Omit rather than an empty string." })),
+          python_env: Type.Optional(Type.String({ description: "Interpreter variable used by external tests, if any. Omit rather than an empty string." })),
+        }, { description: "Select each runner explicitly. pytest: ordinary pytest for a root requirements.txt project, or an installable pyproject.toml package (pip install . creates its console scripts; external tests can use a src layout). bats: bats-core with a root requirements.txt build, including --separate-stderr and env -C. Choose custom when the suite needs other services, plugins, checkers, environment or setup." }),
       }),
     ),
     left_out: LeftOutSchema,

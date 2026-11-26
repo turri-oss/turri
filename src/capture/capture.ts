@@ -19,6 +19,7 @@ import { pythonInterface } from "./python-interface.ts";
 import { configInUse, configInUseProblem, startingConfig } from "./config.ts";
 import { renderReport, summaryOf } from "./report.ts";
 import { writeTestingScript, type ScriptWriter } from "./scripts.ts";
+import { runnerChoices, reuseRunner } from "./runners.ts";
 import { captureDir, newState, readState, reportFile, saveState, type InterfaceEntry, type InterfaceExclusion, type InterfaceKind, type Convention, type Correction, type InterfaceSurface, type AreaState, type CapturedFeature, type CapturedSpec, type CaptureState, type Definition, type FeatureOutline, type Part, type ScriptOutcome, type Survey, type TrialOutcome } from "./state.ts";
 import { copyOriginal, trialBatches, trialTestReqs, type TrialScenario } from "./trial.ts";
 
@@ -1142,8 +1143,8 @@ class CaptureRun {
   }
 
   /**
-   * Each part's testing scripts, written by turri's skills on the ***plain just written - on the coding model when one
-   * was given - side by side. One that is not written does not stop the capture: the report says why, and what to ask.
+   * Each part's testing scripts: reuse a matching stock runner, otherwise use the writing tier. One that is not written
+   * does not stop the capture: the report says why, and what to ask.
    */
   async scripts(): Promise<void> {
     const assembly = assemble(this.state, this.options.moduleSpecs);
@@ -1176,6 +1177,10 @@ class CaptureRun {
     const { plainDir, root, signal } = this.options;
     const model = this.models.capture;
     try {
+      if (!this.options.writeScript) {
+        const reused = reuseRunner(plainDir, this.map, item.part, item.kind, item.configModule);
+        if (reused) return reused;
+      }
       await watched(this.tracker.agent(testingScriptSkill(item.kind).what), signal, () =>
         (this.options.writeScript ?? writeTestingScript)({
           plainDir,
@@ -1240,6 +1245,7 @@ function partOf(item: Record<string, unknown>): Part {
     conventions: conventionsOf(item.conventions),
     testReqs: strings(item.test_reqs).map((req) => req.replace(/^-\s+/, "")),
     definitions: definitionsOf(item.definitions),
+    runners: runnerChoices(item.runners),
   };
 }
 

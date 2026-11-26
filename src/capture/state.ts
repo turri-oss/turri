@@ -51,6 +51,8 @@ export interface Part {
   conventions?: Convention[];
   testReqs: string[];
   definitions: Definition[];
+  /** Stock runners whose complete invocation matches this part, selected in the survey. */
+  runners?: { unit?: "pytest"; conformance?: "pytest" | "bats"; buildDirEnv?: string; pythonEnv?: string };
 }
 
 export interface Survey {
@@ -302,7 +304,7 @@ export interface CaptureState {
 }
 
 /** A testing script a capture had written: where it is in the project, or why there is none. */
-export type ScriptOutcome = { written: string } | { failed: string };
+export type ScriptOutcome = { written: string; finding?: string } | { failed: string };
 
 export function captureDir(plainDir: string): string {
   const scratch = join(plainDir, ".turri");
