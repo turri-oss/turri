@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
-import { CONFIG_FILE, modelOnly, modelSpec, projectModels, readProjectConfig, withConfigModule } from "../config.ts";
+import { CONFIG_FILE, inheritModel, modelSpec, projectModels, readProjectConfig, roleModel, withConfigModule } from "../config.ts";
+import { captureDefaults, type CaptureRole } from "./models.ts";
 import { slashed } from "../regenerate/paths.ts";
 import { findTestScripts, testingScriptSkill, type ScriptKind } from "../regenerate/test-scripts.ts";
 import { checkPlainFile, type CheckResult } from "../plain/check.ts";
@@ -39,7 +40,7 @@ export interface CaptureOptions {
   root: string;
   /** Where the ***plain goes: `<root>/plain` unless given. */
   plainDir?: string;
-  /** What the agents that write or correct ***plain run on - the chat's model, or `--harness-model`. */
+  /** The harness model from which capture chooses its provider and default tiers. */
   model?: string;
   /** Written into the new project's config, when given. */
   harnessModel?: string;
@@ -207,9 +208,15 @@ class CaptureRun {
   private readonly limited: <T>(work: () => Promise<T>) => Promise<T>;
   private readonly leafLines: number;
   private readonly budget: number;
+  private readonly models: Record<CaptureRole, string | undefined>;
 
   constructor(options: CaptureOptions & { root: string; plainDir: string; given: { harnessModel?: string; codingModel?: string } }, map: CodeMap, state: CaptureState, save: () => void, tracker: CaptureTracker) {
     this.options = options;
+    const defaults = captureDefaults(options.model, options.codingModel);
+    const config = readProjectConfig(options.plainDir);
+    const tier = (role: CaptureRole) => modelSpec(inheritModel(roleModel(config, role), defaults[role]));
+    this.models = { capture: tier("capture"), "capture-analysis": tier("capture-analysis"), "capture-exploration": tier("capture-exploration") };
+    tracker.said(`models: exploration ${this.models["capture-exploration"]}, analysis ${this.models["capture-analysis"]}, reasoning and writing ${this.models.capture}`);
     this.map = map;
     this.state = state;
     this.save = save;
@@ -225,7 +232,7 @@ class CaptureRun {
   }
 
   private agent(label: string, prompt: string | string[], context: string, extra: Pick<AgentOptions, "reads" | "rules" | "calls">, role: AgentOptions["role"] = "capture"): AgentOptions {
-    const model = role === "capture-analysis" ? modelOnly(this.options.codingModel ?? this.options.model).model : this.options.model;
+    const model = this.models[role];
     return {
       plainDir: this.options.plainDir,
       root: this.options.root,
@@ -240,7 +247,7 @@ class CaptureRun {
     };
   }
 
-  /** Work that hands back data or a plan. A check that can rewrite ***plain is a writer, even when it needs no authoring rules. */
+  /** Analysis of evidence: plans, checks and trials, including corrections the evidence requires. */
   private analysis(label: string, prompt: string, context: string, extra: Pick<AgentOptions, "reads" | "calls">): AgentOptions {
     return this.agent(label, prompt, context, { ...extra, rules: false }, "capture-analysis");
   }
@@ -296,7 +303,7 @@ class CaptureRun {
             `<conventions>\n${part.conventions!.map((convention, at) => `${at + 1}. ${convention.text}\n   decided in: ${convention.where.join(", ")}`).join("\n")}\n</conventions>`,
           ].join("\n\n");
           const { answer, problems } = await askAgent(
-            this.agent(`check ${part.name}`, "check-conventions", context, { reads: true, rules: false, calls: 30 }),
+            this.analysis(`check ${part.name}`, "check-conventions", context, { reads: true, calls: 30 }),
             { ...CONVENTIONS_TOOL, convert: (params) => ({ conventions: conventionsOf(params.conventions), changes: strings(params.changes) }) },
             (answer) => [...(answer.conventions.length === 0 ? ["Give every convention as the code has it - those that hold too."] : []), ...conventionProblems(this.map, answer.conventions, known)],
           );
@@ -367,7 +374,7 @@ class CaptureRun {
               `<files>\n${listed.length > 0 ? listed.join("\n") : "The map found no interface in the part's files: find it - from its entry points, where its arguments, routes and variables are read."}\n</files>`,
               `<map>\n${renderArea(this.map, item.part.paths, Math.floor(this.budget / 2))}\n</map>`,
             ].join("\n\n");
-            const { answer, problems } = await askAgent(this.analysis(item.label, "reference", context, { reads: true, calls: 60 }), { ...REFERENCE_TOOL, convert: referenceAnswerOf }, (answer) =>
+            const { answer, problems } = await askAgent(this.agent(item.label, "reference", context, { reads: true, rules: false, calls: 60 }, "capture-exploration"), { ...REFERENCE_TOOL, convert: referenceAnswerOf }, (answer) =>
               referenceProblems(this.map, this.options.root, item.files, answer),
             );
             ((this.state.interfaces ??= {})[item.part.name] ??= {})[item.key] = answer ?? { failed: `what its agent handed over did not hold: ${problems.join(" ")}` };
@@ -839,7 +846,7 @@ class CaptureRun {
               `<map>\n${renderArea(this.map, paths, Math.floor(this.budget / 2))}\n</map>`,
             ].join("\n\n");
             const { answer } = await askAgent(
-              this.agent(`verify ${module.name}`, "verify", context, { reads: true, rules: true, calls: 40 }),
+              this.agent(`verify ${module.name}`, "verify", context, { reads: true, rules: true, calls: 40 }, "capture-analysis"),
               {
                 ...CORRECTIONS_TOOL,
                 convert: (params) =>
@@ -981,7 +988,7 @@ class CaptureRun {
           testReqs: strings(params.test_reqs).map((req) => req.replace(/^-\s+/, "")),
         });
         const { answer, problems } = await askAgent(
-          { ...this.agent(label, "trial", context, { reads: true, rules: false, calls: TRIAL_CALLS }), shell: { workdir: original, home: dir }, turnAtLeastMs: TRIAL_TURN_MS },
+          { ...this.analysis(label, "trial", context, { reads: true, calls: TRIAL_CALLS }), shell: { workdir: original, home: dir }, turnAtLeastMs: TRIAL_TURN_MS },
           { ...TRIAL_TOOL, convert },
           (answer) => trialProblems(answer, batch, checked),
         );
@@ -1164,7 +1171,7 @@ class CaptureRun {
 
   private async script(item: { part: Part; module: string; configModule?: string; kind: ScriptKind }): Promise<ScriptOutcome> {
     const { plainDir, root, signal } = this.options;
-    const model = this.options.codingModel ?? this.options.model;
+    const model = this.models.capture;
     try {
       await watched(this.tracker.agent(testingScriptSkill(item.kind).what), signal, () =>
         (this.options.writeScript ?? writeTestingScript)({

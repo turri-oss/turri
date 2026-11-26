@@ -71,7 +71,12 @@ describe("turri init-config", () => {
     });
     // Commented out, the optional ones have no value.
     const config0 = readProjectConfig(dir);
-    for (const key of ["module", "judgeModel", "models", "conformanceBudget", "unittestsScript", "conformanceTestsScript", "prepareEnvironmentScript"] as const) {
+    expect(config0.models).toEqual({
+      "capture-exploration": { model: "anthropic/claude-haiku-5-5", thinking: "low" },
+      "capture-analysis": { model: "anthropic/claude-sonnet-5-5", thinking: "low" },
+      capture: { model: "anthropic/claude-opus-5-5", thinking: "medium" },
+    });
+    for (const key of ["module", "judgeModel", "conformanceBudget", "unittestsScript", "conformanceTestsScript", "prepareEnvironmentScript"] as const) {
       expect(config0[key], key).toBeUndefined();
     }
     // agent-env with nothing in it is no agent-env.
@@ -98,6 +103,17 @@ describe("turri init-config", () => {
     expect(projectModels(config)).toMatchObject({ harness: { model: "openai/gpt-6-astra", thinking: "medium" }, coding: { model: "openai/gpt-6-luna", thinking: "low" } });
     expect((await initConfig(dir, { force: true })).written).toBe(true);
     expect(readFileSync(join(dir, "config.turri.yaml"), "utf8")).toBe(QUICK_START_CONFIG);
+  });
+
+  it("adds missing capture tiers in the selected Bedrock geography without clobbering a person's analysis model", async () => {
+    writeFileSync(join(dir, "config.turri.yaml"), "models:\n  capture-analysis: custom/analysis:high\n  capture: { turn-limit: 280 }\n");
+    const { message } = await initConfig(dir, { vendor: "amazon-bedrock", bedrock: { region: "eu", maker: "anthropic" } });
+    expect(readProjectConfig(dir).models).toMatchObject({
+      "capture-exploration": { model: "amazon-bedrock/eu.anthropic.claude-haiku-5-5", thinking: "low" },
+      "capture-analysis": { model: "custom/analysis", thinking: "high" },
+      capture: { model: "amazon-bedrock/eu.anthropic.claude-opus-5-5", thinking: "medium", turnLimit: 280 },
+    });
+    expect(message).toContain("custom/analysis:high");
   });
 
   it("takes from another tool's config.yaml the keys turri reads too - each in its place in the quick start - and leaves the rest, and config.yaml, as they were", async () => {

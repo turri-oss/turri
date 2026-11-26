@@ -250,7 +250,7 @@ describe("a capture", () => {
     try {
       crashes.add("trial notes");
       await expect(runCapture({ root, model: "p/talk:high" })).rejects.toThrow("stopped");
-      expect(agentModels.get("reference notes")).toEqual({ role: "capture-analysis", model: "p/talk" });
+      expect(agentModels.get("reference notes")).toEqual({ role: "capture-exploration", model: "p/talk:low" });
       expect(asked).toEqual(["survey", "check notes", "reference notes", "check reference notes", "compact notes", "verify notes", "trial notes"]);
       const compactAgents = asked.length;
       // A changed split threshold after a stop must not turn a completed compact draft into a new set of features.
@@ -523,7 +523,7 @@ describe("a capture", () => {
     );
     try {
       const result = await runCapture({ root, leafLines: leafLines(), model: "p/talk:high", codingModel: "p/code:high" });
-      expect(agentModels.get("check reference notes")).toEqual({ role: "capture-analysis", model: "p/code" });
+      expect(agentModels.get("check reference notes")).toEqual({ role: "capture-analysis", model: "p/code:low" });
       expect(tasks.get("check reference notes")).toContain("<the reference>\nAs it was taken from app/routes.py:");
       expect(tasks.get("reference notes")).toContain("<files>\n- app/routes.py - 14 lines; the map found `POST /notes`, `GET /notes`\n</files>");
       const read = (path: string) => readFileSync(join(root, "plain", ...path.split("/")), "utf8");
@@ -783,13 +783,14 @@ describe("a capture", () => {
         ].join("\n"),
       );
       const result = await runCapture({ root, leafLines: leafLines(), configFrom: here });
-      for (const label of ["survey", "check notes", "feature notes/api#add-note", "modules notes", "verify notes", "trial notes"]) {
-        expect(agentModels.get(label), label).toEqual({ role: "capture", model: "p/talk:high" });
+      for (const label of ["survey", "feature notes/api#add-note", "modules notes"]) {
+        expect(agentModels.get(label), label).toEqual({ role: "capture", model: "p/talk:medium" });
       }
-      for (const label of ["reference notes", "split notes", "outline notes/api", "divide notes"]) {
-        expect(agentModels.get(label), label).toEqual({ role: "capture-analysis", model: "p/code" });
+      expect(agentModels.get("reference notes")).toEqual({ role: "capture-exploration", model: "p/code:low" });
+      for (const label of ["check notes", "verify notes", "trial notes", "split notes", "outline notes/api", "divide notes"]) {
+        expect(agentModels.get(label), label).toEqual({ role: "capture-analysis", model: "p/code:low" });
       }
-      expect(scriptModels).toEqual(["p/code:low", "p/code:low"]);
+      expect(scriptModels).toEqual(["p/talk:medium", "p/talk:medium"]);
       const config = readFileSync(join(result.plainDir, "config.turri.yaml"), "utf8");
       expect(config).toContain(`# It started as the config in use where the capture was started - ${join(here, "config.turri.yaml")}`);
       expect(config).toContain("# my settings\nharness-model: p/talk:high   # you talk to it\ncoding-model: p/code:low\n");

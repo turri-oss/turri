@@ -191,17 +191,20 @@ Its first lines are the summary the command line and the chat show. In the chat,
 
 | Role | Work | Default |
 | --- | --- | --- |
-| `capture-analysis` | Extract and check the interface reference; split areas, outline features and divide ownership on the staged path. | The coding model (`--coding-model` on the CLI), thinking **low**, even if coding itself uses high thinking. Without a separate coding model, the harness model thinks low. |
-| `capture` | Write or correct \*\*\*plain. This includes the survey, conventions, compact or feature writers, module gathering, verification and scenario trials, which can correct a spec or scenario. | The chat's model, or `--harness-model` / the project's harness model on the CLI; pi's choice when none is set. Thinking is **medium** unless a level is named. |
+| `capture-exploration` | Gather facts from source for the public interface reference. | **Haiku, low** |
+| `capture-analysis` | Check conventions, reference entries and the module's interface against the code, split and outline areas, divide features, and try draft scenarios against the original. | **Sonnet, low** |
+| `capture` | Reason about the stack and requirements, write the specs, organise modules, reconcile concepts, revise the text and write custom testing scripts. | **Opus, medium** |
 
-For example, to use Sonnet for analysis without changing chat, coding or testing-script models, set this in `config.turri.yaml`:
+`init-config` writes all three entries as active configuration. For example, with Anthropic:
 
 ```yaml
 models:
+  capture-exploration: anthropic/claude-haiku-5-5:low
   capture-analysis: anthropic/claude-sonnet-5-5:low
+  capture: anthropic/claude-opus-5-5:medium
 ```
 
-An explicit `models.capture` setting still applies to both roles. Each model, thinking or turn-limit field set under `models.capture-analysis` overrides that field for analysis only. Capture turns have ten minutes unless a role, `models.default` or `turn-limit` sets a limit; scenario trials get at least thirty minutes unless the limit is off.
+The three entries are independent, each overriding its tier's default. Headless capture resolves the same defaults without needing `init-config`; a Bedrock Claude harness uses its inference geography. A non-Claude harness keeps its configured provider models: coding for exploration and analysis, harness for writing. Capture prints the resolved models at startup, and each agent's elapsed time and cost at completion. Capture turns have ten minutes unless a role, `models.default` or `turn-limit` sets a limit; scenario trials get at least thirty minutes unless the limit is off.
 
 `--harness-model` and `--coding-model` are also written into the new project's config, for the chat and the regeneration that follow.
 

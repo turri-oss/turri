@@ -4,17 +4,18 @@ import { basename, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { load as loadYaml } from "js-yaml";
 import { adoptLegacyConfig, CONFIG_FILE, CONFIG_KEYS, LEGACY_CONFIG_FILE, ROLE_THINKING, type AgentRole } from "./config.ts";
-import { withTopLevelValue } from "./config-edit.ts";
+import { currentValue, withSetting, withTopLevelValue } from "./config-edit.ts";
 import { brand } from "./brand.ts";
 import { closestModels, piModelCatalogue, type CatalogueModel, type ModelCatalogue } from "./model-check.ts";
 import { EXTENSION_PROVIDERS } from "./installed-providers.ts";
+import { captureDefaults } from "./capture/models.ts";
 
 /**
  * `turri init-config`: a project's first config.turri.yaml - the two models, a strong one to talk to and a smaller one to
  * write the code - so a new project starts with a choice that works rather than an empty file. It asks which vendor's
  * models you use and fills in theirs. Every other setting is written out with the value turri uses for it (DEFAULTS),
  * so the file says how the project is built; the optional ones, which have no value of their own - the testing
- * scripts, `module`, `judge-model`, `models` - are there commented out, with an example. docs/config.md has them all.
+ * scripts, `module`, `judge-model` - are there commented out, with an example. The three capture models are active.
  *
  * Then it says what to do next: where the file is - turri reads it from that folder and the folders below it, nowhere
  * else - and how to sign in to the vendor so pi, which turri runs on, can reach the models.
@@ -429,13 +430,13 @@ export function quickStartConfig(vendor: Vendor = "other", bedrock?: BedrockChoi
     "",
     "# Optional: each agent role's own model, thinking and turn limit. Without it, every role runs on coding-model and the",
     "# conversation's side on harness-model, each thinking as written here. What an entry leaves out it takes from default.",
-    "# models:",
+    "# Capture uses three tiers: gather facts, analyse evidence, then reason and write.",
+    "models:",
+    ...Object.entries(captureDefaults(harness, coding)).map(([name, choice]) => `  ${name}: ${choice.model}:${choice.thinking}`),
     `#   default: ${coding}`,
     `${column(`#   chat: ${harness}`, 72)}# the conversation - as harness-model, which it wins over`,
     `${column(`#   sentinel: ${harness}`, 72)}# the sentinel: checks every finished pulse and tests what is launched`,
     role("planner", harness, "cuts the work into pulses"),
-    role("capture", harness, "captures an existing codebase into ***plain"),
-    role("capture-analysis", coding, "extracts the interface reference and outlines features during capture"),
     role("diagnosis", harness, "looks into a pulse that failed for good"),
     role("launch", coding, "the launch agent: turri launch's, the chat's and launch-after-pulse's"),
     `${column(`#   coding: { model: ${coding}, thinking: ${ROLE_THINKING.coding}, turn-limit: 180 }`, 72)}# as coding-model, which it wins over`,
@@ -686,9 +687,13 @@ export async function initConfig(dir: string, options: InitConfigOptions = {}): 
   const lines = modelLines(harness, coding);
   // A new file takes what a config.yaml beside it - another tool's, say - says that turri reads too: its testing scripts, say.
   const shared = existing ? { carried: [], left: [] } : sharedWithLegacy(folder);
-  const config = existing
+  let config = existing
     ? withModels(readFileSync(path, "utf8"), lines)
     : shared.carried.reduce((text, [key, value]) => withTopLevelValue(text, key, value), quickStartConfig(vendor, bedrock, models));
+  for (const [role, choice] of Object.entries(captureDefaults(harness, coding))) {
+    const key = `models.${role}`;
+    if (currentValue(config, key) === undefined) config = withSetting(config, key, `${choice.model}:${choice.thinking}`);
+  }
   writeFileSync(path, config);
   const here = resolve(process.cwd()) === folder;
   const [talk, code] = [harness, coding].map((model, at) => `${model}:${at === 0 ? HARNESS_THINKING : ROLE_THINKING.coding}`);
@@ -697,10 +702,11 @@ export async function initConfig(dir: string, options: InitConfigOptions = {}): 
     message: [
       "",
       `${brand.success("✓")} ${existing ? `Set the two models in ${brand.bold(path)}` : `Wrote ${brand.bold(path)}`}`,
-      `  ${brand.muted(`with ${whose(vendor, models, given)}${existing ? " - everything else in it left as it was (--force writes it all again)" : ""}`)}`,
+      `  ${brand.muted(`with ${whose(vendor, models, given)}${existing ? " - missing capture tiers filled in, everything else in it left as it was (--force writes it all again)" : ""}`)}`,
       "",
       `  ${brand.muted("you talk to")}   ${talk}`,
       `  ${brand.muted("it codes")}      ${code}`,
+      ...(["capture-exploration", "capture-analysis", "capture"] as const).map(role => `  ${brand.muted(role)}   ${currentValue(config, `models.${role}`)}`),
       ...(shared.carried.length > 0
         ? [
             "",

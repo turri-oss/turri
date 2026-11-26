@@ -197,7 +197,7 @@ describe("models: and turn-limit:", () => {
     expect(roleTurnLimitMs(readProjectConfig(root), "conformance")).toBeUndefined();
   });
 
-  it("keeps explicit capture settings for analysis unless it has its own override", () => {
+  it("keeps the capture tiers independent while sharing the turn limit", () => {
     writeFileSync(join(root, "config.turri.yaml"), "harness-model: p/talk:high\nmodels:\n  capture: { model: p/writer, thinking: medium, turn-limit: 420 }\n  capture-analysis: p/fast:low\n");
     const config = readProjectConfig(root);
     expect(roleModel(config, "capture")).toEqual({ model: "p/writer", thinking: "medium" });
@@ -205,7 +205,7 @@ describe("models: and turn-limit:", () => {
     expect(roleTurnLimitMs(config, "capture-analysis")).toBe(420_000);
     expect(roleTurnLimitMs({ models: { ...config.models, "capture-analysis": { turnLimit: 0 } } }, "capture-analysis")).toBe(0);
     delete config.models!["capture-analysis"];
-    expect(roleModel(config, "capture-analysis")).toEqual({ model: "p/writer", thinking: "medium" });
+    expect(roleModel(config, "capture-analysis")).toBeUndefined();
   });
 
   it("reads the old keys as before, models: winning over them - judge-model for the judge and the test review", () => {

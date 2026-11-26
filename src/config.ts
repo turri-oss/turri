@@ -326,7 +326,7 @@ export interface ModelChoice {
  * The code fixer of a conformance run and the repair agent are coding agents; the unit-test and conformance arbiters
  * are both `arbiter`.
  */
-export const AGENT_ROLES = ["chat", "sentinel", "planner", "capture", "capture-analysis", "diagnosis", "launch", "coding", "conformance", "explorer", "reviewer", "test-reviewer", "judge", "arbiter", "debugger"] as const;
+export const AGENT_ROLES = ["chat", "sentinel", "planner", "capture-exploration", "capture-analysis", "capture", "diagnosis", "launch", "coding", "conformance", "explorer", "reviewer", "test-reviewer", "judge", "arbiter", "debugger"] as const;
 export type AgentRole = (typeof AGENT_ROLES)[number];
 
 /**
@@ -348,14 +348,15 @@ export const ROLE_THINKING: Partial<Record<AgentRole, ThinkingLevel>> = {
   planner: "medium",
   capture: "medium",
   "capture-analysis": "low",
+  "capture-exploration": "low",
   diagnosis: "medium",
 };
 
 /** The roles on the conversation's side: without their own entry they take the chat's model, not `default`. */
 // The launch is not: it follows steps - a script, a start command - and runs on the coding model, thinking low. Nor
 // is the diagnosis: a post-mortem of a job that failed, read by the person - it runs on the coding model, thinking medium.
-// Capture's writers are on the chat's side; its analysis agents take the coding model.
-const CHAT_SIDE: readonly AgentRole[] = ["chat", "sentinel", "planner", "capture"];
+// Capture has its own three tiers, resolved by capture/models.ts.
+const CHAT_SIDE: readonly AgentRole[] = ["chat", "sentinel", "planner"];
 
 /** A role's model and thinking, and how long each of its turns may take, in seconds - each may be left out. */
 export interface RoleChoice extends ModelChoice {
@@ -448,8 +449,8 @@ export function roleModel(config: Pick<ProjectConfig, "harnessModel" | "judgeMod
   if (role === "coding") return undefined;
   const models = config.models ?? {};
   const own = choiceOf(models[role]);
-  // An explicit capture setting still applies to the whole capture. Otherwise analysis takes the coding model it was given.
-  if (role === "capture-analysis") return inheritModel(own, choiceOf(models.capture));
+  // Capture supplies its tier defaults; do not inherit a writer's model or thinking for exploration or analysis.
+  if (role === "capture-exploration" || role === "capture-analysis" || role === "capture") return own;
   // The debugger looks at the coding agent's failure: without its own entry it runs on the model it is given - a stronger one.
   if (role === "debugger") return own;
   if (CHAT_SIDE.includes(role)) return own === undefined ? undefined : inheritModel(own, inheritModel(choiceOf(models.chat), config.harnessModel));
@@ -460,7 +461,7 @@ export function roleModel(config: Pick<ProjectConfig, "harnessModel" | "judgeMod
 /** How long each turn of a role's agents may take, in milliseconds: its own, `default`'s, `turn-limit:`'s - or undefined, the harness's default. */
 export function roleTurnLimitMs(config: Pick<ProjectConfig, "models" | "turnLimit">, role: AgentRole | undefined): number | undefined {
   const models = config.models ?? {};
-  const seconds = (role !== undefined ? models[role]?.turnLimit : undefined) ?? (role === "capture-analysis" ? models.capture?.turnLimit : undefined) ?? models.default?.turnLimit ?? config.turnLimit;
+  const seconds = (role !== undefined ? models[role]?.turnLimit : undefined) ?? (role?.startsWith("capture-") ? models.capture?.turnLimit : undefined) ?? models.default?.turnLimit ?? config.turnLimit;
   return seconds !== undefined ? seconds * 1000 : undefined;
 }
 

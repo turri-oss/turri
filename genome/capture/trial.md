@@ -15,4 +15,4 @@ What every conformance test of the part must set up for the original to act as t
 
 The test reqs are read by whoever writes any conformance test of the part, for every scenario of every module. So what only some scenarios need - a file one sends, a session file one starts from, a server that answers one exact body, a pseudo-terminal for the one password prompt, a variable unset for one case - is never a test req: it goes in those scenarios' own text. Return each `corrected`, its text saying the setup it needs as part of what it does, and `why`: the setup it did not say. A test req names no scenario and no functional spec.
 
-You have a budget of tool calls: install once, then a command or two a scenario. Run several scenarios in one command where you can.
+Run the smallest batch of actual commands that demonstrates all the scenarios, capturing stdout, stderr and exit status separately. A standard-library CLI you can run from its source tree needs no install: invoke it directly. A test framework is not needed to observe what its black-box tests observe. Do not spend a turn installing a framework just to launch the same command.

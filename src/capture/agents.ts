@@ -8,6 +8,7 @@ import { ask, BEGIN, createExecutor, timeTurns } from "../pi.ts";
 import { withActivity, type ActivitySink } from "../regenerate/activity.ts";
 import { confinedTools } from "../regenerate/confine.ts";
 import { STDLIB_DIR } from "../regenerate/paths.ts";
+import type { CaptureRole } from "./models.ts";
 
 /**
  * Capture's agents, each fresh, each with one thing to hand over through a submit tool of its own: the survey, its
@@ -40,7 +41,7 @@ export interface AgentOptions {
   plainDir: string;
   /** The codebase, which the agent reads. */
   root: string;
-  role: "capture" | "capture-analysis";
+  role: CaptureRole;
   model?: string;
   label: string;
   /** Its prompt's name in genome/capture, after the shared one - or several, in order. */

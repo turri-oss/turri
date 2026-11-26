@@ -1,5 +1,5 @@
 import { relative, resolve } from "node:path";
-import { CaptureError, runCapture } from "./capture/capture.ts";
+import { CaptureError, DEFAULT_PARALLEL, runCapture } from "./capture/capture.ts";
 import { c } from "./module-report.ts";
 
 /**
@@ -15,10 +15,10 @@ const USAGE = [
   "what capture decided, left out or could not capture is in plain/.turri/capture/report.md. Run it again to go on",
   "with a capture that was stopped.",
   "",
-  "  --harness-model <m>  the model that writes the ***plain, kept as the new project's harness-model",
-  "  --coding-model <m>   the model for capture analysis (low thinking) and testing scripts, kept as coding-model",
+  "  --harness-model <m>  the project's harness model; Claude capture defaults to Haiku low / Sonnet low / Opus medium",
+  "  --coding-model <m>   the project's coding model; set models.capture-exploration, capture-analysis and capture to override capture's tiers",
   "  --into <folder>      where the ***plain goes, instead of <path>/plain",
-  "  --parallel <n>       how many agents work at once (4)",
+  `  --parallel <n>       how many agents work at once (default: ${DEFAULT_PARALLEL})`,
 ].join("\n");
 
 function option(args: string[], name: string): string | undefined {
