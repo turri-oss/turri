@@ -1,4 +1,4 @@
-import { Container, SelectList, Text, type TuiMouseEvent } from "@earendil-works/pi-tui";
+import { Container, SelectList, Text, truncateToWidth, visibleWidth, type Component, type TuiMouseEvent } from "@earendil-works/pi-tui";
 import type { TurriCore } from "./chats.ts";
 import type { Conclusion, Notice } from "./notice.ts";
 import { QuestionDialog, type DialogStyle } from "./question-dialog.ts";
@@ -8,6 +8,7 @@ export interface TerminalNotification {
   title: string;
   detail: string;
   conclusion?: string;
+  warning?: boolean;
   notice?: Notice;
   seen: boolean;
 }
@@ -24,8 +25,8 @@ export class TerminalNotifications {
     return item.notice?.state === "open" && item.notice.kind !== "fixed";
   }
 
-  add(title: string, detail: string, notice?: Notice): void {
-    this.items.unshift({ title, detail, seen: false, notice });
+  add(title: string, detail: string, options: Pick<TerminalNotification, "notice" | "warning"> = {}): void {
+    this.items.unshift({ title, detail, seen: false, ...options });
   }
 
   /** Only the sentinel's review shares a row. The pulse result and the question whether to start it are independent. */
@@ -44,8 +45,9 @@ export class TerminalNotifications {
     const heading = notice.kind === "fixed" ? "Fixed" : "Sentinel";
     const title = [heading, about, notice.summary].filter(Boolean).join(" · ");
     const detail = notice.evidence.join("\n\n");
-    if (notice.kind === "sentinel-start") return this.add(title, detail, notice);
+    if (notice.kind === "sentinel-start") return this.add(title, detail, { notice });
     const item = this.review(work ?? notice, title);
+    if (!item.conclusion) item.warning = notice.severity !== "info";
     Object.assign(item, { title, detail, notice, seen: false });
   }
 
@@ -54,14 +56,44 @@ export class TerminalNotifications {
     const verdict = result.verdict === "holds" ? "it holds" : result.verdict === "wrong" ? "found something wrong" : "not checked";
     const item = this.review(result, ["Sentinel", result.module, what, verdict].filter(Boolean).join(" · "));
     item.conclusion = `${verdict}: ${result.summary}`;
+    item.warning = result.verdict !== "holds";
   }
 }
 
 /** The notifications tab. Opening or leaving a detail never answers its notice. Only an explicit choice does. */
-export function notificationView(session: TurriCore, style: DialogStyle, leave: () => void) {
+interface NotificationStyle extends DialogStyle {
+  warning(text: string): string;
+  button(text: string, selected: boolean): string;
+}
+
+export function notificationView(session: TurriCore, style: NotificationStyle, leave: () => void) {
   const inbox = session.notifications;
   const { accent, muted } = style;
   const listBox = new Container();
+  const markRead = () => {
+    for (const item of inbox.items) item.seen = true;
+    session.changed();
+  };
+  const readLabel = " mark all as read ";
+  let pressedRead = false;
+  const listHeader: Component = {
+    render(width) {
+      const button = truncateToWidth(readLabel, width);
+      const room = width - visibleWidth(button);
+      const title = truncateToWidth("notifications", Math.max(0, room - 1), "");
+      return [style.bold(accent(title)) + " ".repeat(room - visibleWidth(title)) + style.button(button, false)];
+    },
+    handleMouse(event) {
+      if (event.button !== "left" || (event.type !== "press" && event.type !== "click")) return;
+      const inside = event.x >= Math.max(0, event.width - visibleWidth(readLabel)) && event.x < event.width && event.y === 0;
+      const down = pressedRead;
+      pressedRead = event.type === "press" && inside;
+      if (!inside) return;
+      if (event.type === "click" && down) markRead();
+      return { handled: true };
+    },
+    invalidate() {},
+  };
   let list: SelectList | undefined;
   let rows: TerminalNotification[] = [];
   let labels: string[] = [];
@@ -83,9 +115,9 @@ export function notificationView(session: TurriCore, style: DialogStyle, leave: 
     const options = [...actions, ...(open && notice.ignorable ? [ignore] : []), ...(open && notice.kind === undefined ? [steer] : []), ...(open ? ["Dismiss"] : []), "Back"];
     const target = notice && session.chats().find((chat) => chat.id === notice.chat);
     detail = new QuestionDialog({
-      question: steering ? "What should be done about it?" : "Notifications",
-      context: [item.title, item.detail, item.conclusion, ...(open && notice.kind === undefined && target ? [`Accepted work goes to ${target.title}.`] : [])].filter(Boolean).join("\n\n"),
-      ...(steering ? {} : { options, clickable: true }), rows: () => height,
+      question: steering ? "What should be done about it?" : "notifications",
+      context: [item.warning ? style.warning(item.title) : item.title, item.detail, item.conclusion, ...(open && notice.kind === undefined && target ? [`Accepted work goes to ${target.title}.`] : [])].filter(Boolean).join("\n\n"),
+      ...(steering ? {} : { options, choiceButton: style.button }), rows: () => height,
       style, requestRender: () => {},
       done(answer) {
         if (!answer || !notice || notice.state !== "open" || (!steering && answer === "Back")) return back();
@@ -107,7 +139,10 @@ export function notificationView(session: TurriCore, style: DialogStyle, leave: 
       if (selectedNotice && selectedNotice.state !== detailState) back();
       if (detail) return detail.render(width);
       const next = inbox.items;
-      const lines = next.map((item) => `${inbox.needsAnswer(item) ? "? " : item.seen ? "  " : "• "}${item.notice && item.notice.state !== "open" ? `[${item.notice.state}] ` : ""}${item.title.replace(/\s+/g, " ")}`);
+      const lines = next.map((item) => {
+        const label = `${inbox.needsAnswer(item) ? "? " : item.seen ? "  " : "• "}${item.notice && item.notice.state !== "open" ? `[${item.notice.state}] ` : ""}${item.title.replace(/\s+/g, " ")}`;
+        return item.warning ? style.warning(label) : label;
+      });
       const room = Math.max(1, available - 4);
       if (!list || room !== visible || next.length !== rows.length || next.some((item, i) => item !== rows[i] || lines[i] !== labels[i])) {
         // Keep the same item selected when a pulse finishes while the person is reading the list.
@@ -118,7 +153,7 @@ export function notificationView(session: TurriCore, style: DialogStyle, leave: 
         list.onSelect = ({ value }) => show(rows[Number(value)]!);
         list.onCancel = leave;
         listBox.clear();
-        listBox.addChild(new Text(style.bold(accent("Notifications")), 0, 0));
+        listBox.addChild(listHeader);
         listBox.addChild(rows.length ? list : new Text("No notifications this session.", 0, 0));
         listBox.addChild(new Text(muted(rows.length ? "↑↓ select · enter open · r mark all read · esc back" : "esc back"), 0, 0));
       }
@@ -126,10 +161,8 @@ export function notificationView(session: TurriCore, style: DialogStyle, leave: 
     },
     handleInput(data: string) {
       if (detail) detail.handleInput(data);
-      else if (data === "r") {
-        for (const item of inbox.items) item.seen = true;
-        session.changed();
-      } else list?.handleInput(data);
+      else if (data === "r") markRead();
+      else list?.handleInput(data);
     },
     handleMouse: (event: TuiMouseEvent) => detail ? detail.handleMouse(event) : listBox.handleMouse(event),
   };

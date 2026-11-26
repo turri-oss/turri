@@ -2626,7 +2626,10 @@ function sidePanelOf(session: TurriCore): SidePanelHost {
         // Opened, it reads the files again at once: they may have changed while it was closed.
         specMap.refresh();
         const view = createSidePanel({
-          ...(session.terminal ? { notifications: notificationView(session, { accent: (text) => theme.fg("accent", text), muted: (text) => theme.fg("muted", text), bold: (text) => theme.bold(text) }, back) } : {}),
+          ...(session.terminal ? { notifications: notificationView(session, {
+            accent: (text) => theme.fg("accent", text), muted: (text) => theme.fg("muted", text), bold: (text) => theme.bold(text),
+            warning: (text) => theme.fg("warning", text), button: (text, selected) => buttonLabel(theme, text, selected, false, "panel"),
+          }, back) } : {}),
           pointer: terminalPointer(tui.terminal),
           tabLabel: (text, active, hovered, role) => buttonLabel(theme, text, active, hovered, role),
           jobs: () => shownJobs(jobs),

@@ -657,8 +657,9 @@ export function createChats(options: CoreOptions): TurriCore {
 
     jobFinished(job) {
       if (core.terminal) {
-        const result = job.status === "succeeded" ? wentWrong(job) ? "did not pass" : "finished" : job.status;
-        core.notifications.add(`${pulseName(job)} · ${result} after ${formatDuration(job)}`, job.error ?? job.report ?? job.note ?? "");
+        const didNotPass = job.status === "succeeded" && wentWrong(job);
+        const result = job.status === "succeeded" ? didNotPass ? "did not pass" : "finished" : job.status;
+        core.notifications.add(`${pulseName(job)} · ${result} after ${formatDuration(job)}`, job.error ?? job.report ?? job.note ?? "", { warning: job.status === "failed" || didNotPass });
         changed();
       }
       // The question was settled in config.turri.yaml while it was open: what it held goes as the file now says.

@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { stripTerminalSequences } from "@earendil-works/pi-tui";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createTurriCore } from "../src/extension.ts";
 import { createSidePanel } from "../src/regenerate/side-panel.ts";
@@ -64,21 +65,28 @@ it("shows evidence beside pulses and only starts the chat on an accepted, still-
   const input = { module: "app", job: job.id, severity: "warning" as const, summary: "Missing greeting", evidence: ["stdout was empty"], actions: [{ label: "Fix greeting", task: "Restore the greeting" }] };
   const notice = core.notice(input)!;
   const text = (value: string) => value;
-  const panel = createSidePanel({ jobs: () => [], map: () => [], style: new Proxy({}, { get: () => text }) as never, rows: () => 30, key: "ctrl+h", back() {}, close() {}, notifications: notificationView(core, { bold: text, accent: text, muted: text }, () => {}) });
+  const style = { bold: text, accent: text, muted: text, warning: (value: string) => `\x1b[38;2;255;122;61m${value}\x1b[39m`, button: (value: string) => `\x1b[7m${value}\x1b[27m` };
+  const panel = createSidePanel({ jobs: () => [], map: () => [], style: new Proxy({}, { get: () => text }) as never, rows: () => 30, key: "ctrl+h", back() {}, close() {}, notifications: notificationView(core, style, () => {}) });
   const width = 70;
   const click = (label: string) => {
-    const lines = panel.render(width);
+    const lines = panel.render(width).map(stripTerminalSequences);
     const y = lines.findIndex((line) => line.includes(label));
     expect(y).toBeGreaterThanOrEqual(0);
     const x = lines[y]!.indexOf(label);
     for (const type of ["press", "click"] as const) panel.handleMouse({ type, button: "left", x, y, width, height: 30, screenX: x, screenY: y, shift: false, alt: false, ctrl: false });
   };
   click("notifications 2");
-  panel.handleInput("r");
+  expect(panel.render(width).join("\n")).toContain(style.button(" mark all as read "));
+  expect(panel.render(width).find((line) => line.includes("Missing greeting"))).toContain("\x1b[38;2;255;122;61m");
+  click("mark all as read");
   expect(core.notifications.count).toBe(1);
   click("Missing greeting");
   expect(panel.render(width).join("\n")).toContain("stdout was empty");
   expect(panel.render(width).join("\n")).toContain("No greeting on stdout");
+  expect(panel.render(width).join("\n")).toContain(style.button(" Back "));
+  click("Back");
+  expect(notice.state).toBe("open");
+  click("Missing greeting");
   core.notice({ ...input, job: "later-pulse", summary: "Missing prefix" });
   expect(notice.state).toBe("superseded");
   expect(panel.render(width).join("\n")).toContain("[superseded]");
@@ -89,6 +97,15 @@ it("shows evidence beside pulses and only starts the chat on an accepted, still-
   expect(sendMessage).toHaveBeenLastCalledWith(expect.objectContaining({ customType: "turri_notice_answer", content: expect.stringContaining("Restore the greeting") }), expect.objectContaining({ triggerTurn: true }));
   expect(core.notices()).toHaveLength(0);
   expect(appendEntry).not.toHaveBeenCalled();
+});
+
+it("marks a failed pulse and a build that did not pass as warnings independently of their wording", async () => {
+  const { core, job } = await terminal("false");
+  core.jobFinished({ ...job, status: "failed", error: "Process exited" });
+  core.jobFinished({ ...job, details: { passed: false } });
+  expect(core.notifications.items.map((row) => row.warning)).toEqual([true, true, false]);
+  core.concluded({ job: job.id, verdict: "holds", summary: "No failure found" });
+  expect(core.notifications.items[0]!.warning).toBe(false);
 });
 
 it("adds the conclusion to a dismissed finding without a second row, badge or action", async () => {

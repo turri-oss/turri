@@ -1,4 +1,4 @@
-import { Input, matchesKey, truncateToWidth, wrapTextWithAnsi, type Component, type Focusable, type TuiMouseEvent, type TuiMouseEventResult } from "@earendil-works/pi-tui";
+import { Input, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type Focusable, type TuiMouseEvent, type TuiMouseEventResult } from "@earendil-works/pi-tui";
 
 /**
  * The dialog a question is put to the person in, in the TUI: what they must read to answer - a brief to confirm, a plan
@@ -21,8 +21,8 @@ export interface QuestionDialogOptions {
   question: string;
   /** The choices. Without them, a line to type the answer on. */
   options?: string[];
-  /** Clickable choices when this dialog is embedded in the side panel. */
-  clickable?: boolean;
+  /** Draw choices as clickable buttons in the side panel. The padding belongs to the button. */
+  choiceButton?(text: string, selected: boolean): string;
   /** The choice the cursor starts on. */
   selected?: number;
   /** The terminal's height, for the window the brief scrolls in. */
@@ -54,7 +54,7 @@ export class QuestionDialog implements Component, Focusable {
   private maxScroll = 0;
   private window = 0;
   private answered = false;
-  private choiceLines: number[] = [];
+  private choiceLines: Array<{ index: number; width: number }> = [];
   private choiceTop = 0;
   private pressed: number | undefined;
   private focusedNow = false;
@@ -112,8 +112,12 @@ export class QuestionDialog implements Component, Focusable {
         ? this.input.render(inner)
         : // A long option wraps, its lines under its first, rather than cut off where the person cannot read it.
           choices.flatMap((choice, index) =>
-             wrapTextWithAnsi(choice, Math.max(1, inner - 2)).map((line, at) => {
-               if (this.options.clickable) this.choiceLines.push(index);
+            wrapTextWithAnsi(choice, Math.max(1, inner - 2)).map((line, at) => {
+              if (this.options.choiceButton) {
+                const label = ` ${line} `;
+                this.choiceLines.push({ index, width: visibleWidth(label) });
+                return this.options.choiceButton(label, index === this.selected);
+              }
               const shown = `${at === 0 && index === this.selected ? "›" : " "} ${line}`;
               return index === this.selected ? style.accent(shown) : shown;
             }),
@@ -121,7 +125,7 @@ export class QuestionDialog implements Component, Focusable {
     const hint =
       this.input !== undefined
         ? "enter answers · esc dismisses · ctrl+c declines"
-        : "↑↓ choose · enter picks · esc dismisses · ctrl+c declines";
+        : this.options.choiceButton ? "↑↓ select · enter or click · esc back" : "↑↓ choose · enter picks · esc dismisses · ctrl+c declines";
 
     // The brief gets what the question, the options and the hints leave of the screen.
     const fixed = question.length + body.length + 5;
@@ -179,8 +183,9 @@ export class QuestionDialog implements Component, Focusable {
   }
 
   handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
-    if (this.options.clickable && event.button === "left" && (event.type === "press" || event.type === "click")) {
-      const index = this.choiceLines[event.y - this.choiceTop];
+    if (this.options.choiceButton && event.button === "left" && (event.type === "press" || event.type === "click")) {
+      const row = this.choiceLines[event.y - this.choiceTop];
+      const index = row && event.x >= 2 && event.x < 2 + row.width ? row.index : undefined;
       const down = this.pressed;
       this.pressed = event.type === "press" ? index : undefined;
       if (index === undefined) return;
