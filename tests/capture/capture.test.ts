@@ -39,6 +39,12 @@ vi.mock("../../src/pi.ts", async (importOriginal) => {
       const label = session.label.replace(/^capture /, "");
       if (given === actual.BEGIN) {
         asked.push(label);
+        if (label === "feature notes/api#add-note") {
+          activity.reportTranscript({ kind: "thinking", text: "Private reasoning." });
+          activity.reportTranscript({ kind: "text", text: "Pl" });
+          activity.reportTranscript({ kind: "text", text: "an: I’ll trace POST /notes from its route to the storage code.\n" });
+        }
+        activity.reportNow("preparing a tool call");
         // What a session reports as its agent reads: a tool call, and what the model's answer cost.
         activity.reportActivity(`(capture) ○ read ${join(root, "app", "routes.py")}   (model 1.2s)`);
         activity.reportUsage({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0.01 });
@@ -112,6 +118,7 @@ const STUB: Record<string, (label: string, given: string, task: string) => [stri
       return [
         "submit_capture_feature",
         {
+          finding: funcId === "add-note" ? "Posting a note returns 201\nwith its new id." : "Rejected draft finding.",
           functional_specs: [
             {
               func_id: funcId,
@@ -206,13 +213,14 @@ let scriptFails: Partial<Record<"unit" | "conformance", string>> = {};
 const scriptModels: Array<string | undefined> = [];
 
 /** Writes a testing script as turri's skill would - into test_scripts/ - or fails as it might. */
-async function standInScript(request: ScriptRequest): Promise<void> {
+async function standInScript(request: ScriptRequest): Promise<string> {
   scriptsAsked.push(`${request.part.name}:${request.kind}`);
   scriptModels.push(request.model);
   const fails = scriptFails[request.kind];
   if (fails !== undefined) throw new Error(fails);
   mkdirSync(join(request.plainDir, "test_scripts"), { recursive: true });
   writeFileSync(join(request.plainDir, "test_scripts", request.kind === "unit" ? "run_unittests_python.sh" : "run_conformance_tests_python.sh"), "#!/usr/bin/env bash\n");
+  return `The ${request.kind} runner uses pytest.`;
 }
 
 /** A capture whose testing scripts the stand-in writes: no test runs turri's own skills. */
@@ -406,12 +414,14 @@ describe("a capture", () => {
   });
 
   it("says where it is while it runs: its stage, each agent at work and what it did last, the features done and the cost", async () => {
+    const lines: string[] = [];
     const seen: Array<{ stage: string; agents: string[]; did: Array<string | undefined>; outlined: number; done: number; cost: number }> = [];
     await runCapture({
       root,
       leafLines: leafLines(),
       parallel: 1,
       watch: (status) => seen.push({ stage: status.stage, agents: status.agents.map((agent) => agent.label), did: status.agents.map((agent) => agent.did), ...status.features, cost: status.cost }),
+      progress: (line) => lines.push(line),
     });
 
     expect(seen.map((status) => status.stage).filter((stage, at, all) => stage !== all[at - 1])).toEqual(["mapping", "surveying", "checking", "extracting", "compact-writing", "outlining", "dividing", "capturing", "gathering", "reconciling", "reading", "verifying", "trying", "writing", "scripts"]);
@@ -419,6 +429,16 @@ describe("a capture", () => {
     expect(seen.some((status) => status.agents[0] === "feature notes/api#add-note" && status.outlined === 3)).toBe(true);
     expect(seen.at(-1)).toMatchObject({ agents: [], outlined: 3, done: 3 });
     expect(seen.at(-1)!.cost).toBeCloseTo(asked.length * 0.01);
+    expect(lines.filter((line) => line.startsWith("feature notes/api#add-note:"))).toEqual(["feature notes/api#add-note: Posting a note returns 201 with its new id."]);
+    const plans = lines.filter((line) => line.includes(" · plan: "));
+    expect(plans).toHaveLength(asked.length + scriptsAsked.length);
+    const plan = "feature notes/api#add-note · plan: I’ll trace POST /notes from its route to the storage code.";
+    expect(plans).toContain(plan);
+    expect(lines.indexOf(plan)).toBeLessThan(lines.findIndex((line) => line.startsWith("feature notes/api#add-note:")));
+    expect(plans).toContain("survey · plan: Survey the codebase");
+    expect(lines.join("\n")).not.toContain("Private reasoning.");
+    expect(lines.join("\n")).not.toContain("Rejected draft finding.");
+    expect(lines.some((line) => line.startsWith("wrote the unit testing script") && line.includes("The unit runner uses pytest."))).toBe(true);
   });
 
   it("gives each behaviour to one feature before any is written: one merged is not written, its files are the other's, and every writer sees what each owns", async () => {

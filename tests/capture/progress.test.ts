@@ -95,7 +95,7 @@ describe("a capture's status", () => {
   it("follows each agent from its start to its end, and counts the features from the state", () => {
     const changes: string[] = [];
     const tracker = new CaptureTracker(ROOT, undefined, (now) => changes.push(`${now.stage} ${now.agents.map((agent) => `${agent.label}:${agent.did ?? ""}`).join(",")}`));
-    const agent = tracker.agent("survey");
+    const agent = tracker.agent("survey", "Survey the codebase");
     agent.did("(capture) ○ read pyproject.toml");
     agent.started();
     agent.did("(capture) ○ read pyproject.toml");
@@ -105,7 +105,7 @@ describe("a capture's status", () => {
     expect(tracker.status.agents).toEqual([]);
     expect(tracker.status.cost).toBe(0.5);
     // What an agent says before it starts, or after it ends, is not shown.
-    expect(changes).toEqual(["mapping ", "mapping survey:", "mapping survey:○ read pyproject.toml", "mapping survey:○ read pyproject.toml", "mapping "]);
+    expect(changes).toEqual(["mapping ", "mapping survey:", "mapping survey:", "mapping survey:○ read pyproject.toml", "mapping survey:○ read pyproject.toml", "mapping "]);
 
     const state = newState(ROOT);
     state.areas.api = { id: "api", name: "api", about: "", paths: ["."], part: "api", features: [{ name: "a", title: "", about: "", paths: [] }, { name: "b", title: "", about: "", paths: [] }] };

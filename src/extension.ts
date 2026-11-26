@@ -27,7 +27,7 @@ import { runCapture } from "./capture/capture.ts";
 import { captureEnded, captureFailed, captureGoesOn, captureOpenQuestion, captureRefusal, captureStartedText, readReopenedAfterCapture, reopenedAfterCapture } from "./capture/chat.ts";
 import { reportFile as captureReportFile } from "./capture/state.ts";
 import { canReopen, REOPENED_AFTER_CAPTURE, reopenIn } from "./reopen.ts";
-import { captureStatusLines, type CaptureStatus } from "./capture/progress.ts";
+import { captureStatusLines, duration, type CaptureStatus } from "./capture/progress.ts";
 import { highlightPlainCodeBlocks } from "./plain-code-blocks.ts";
 import { createAskUserTool } from "./tools.ts";
 import { asksFromScratch, asksWholeChain, driftTool, endWait, fromWorkingDir, haltLaunched, haltTool, loopReply, startWait, toldByWaitingCall, MODEL_PARAM, regenerateTool, stopJob, WAIT_PARAM, whenBuildable, WORKING_DIR_PARAM } from "./loop-tools.ts";
@@ -1426,6 +1426,15 @@ export function asksOneByOne(words: string): boolean {
   return /\b(one[\s-]+(by|at)[\s-]+(one|a[\s-]+time)|separately|each[\s-]+(on[\s-]+its[\s-]+own|alone))\b/i.test(words);
 }
 
+/** Keep a command's output in the transcript without adding a message to the model's context. */
+function showCommandEntry(pi: ExtensionAPI, ctx: ExtensionContext, entry: CommandOutcome & { text: string }): void {
+  try {
+    pi.appendEntry(COMMAND_OUTCOME, entry);
+  } catch {
+    if (ctx.hasUI) ctx.ui.notify(entry.text, entry.level);
+  }
+}
+
 /**
  * What a slash command showed the person: kept in the chat, where they read it, and put in the conversation as well -
  * unseen there - so that when they speak of it next ("fix it"), the agent knows what they saw. A command runs outside
@@ -1442,12 +1451,7 @@ export function shownAfterCommand(
   echoed = false,
   react?: string,
 ): void {
-  try {
-    pi.appendEntry(COMMAND_OUTCOME, { command, text, level, ...(echoed ? { echoed } : {}) } satisfies CommandOutcome);
-  } catch {
-    // Shown for a moment all the same.
-    if (ctx.hasUI) ctx.ui.notify(text, level);
-  }
+  showCommandEntry(pi, ctx, { command, text, level, ...(echoed ? { echoed } : {}) });
   const content = `The person ran ${command}, and was shown:\n${text}${react !== undefined ? `\n\n${react}` : ""}`;
   if (react === undefined) void pi.sendMessage({ customType: COMMAND_OUTCOME, content, display: false });
   else void pi.sendMessage({ customType: COMMAND_OUTCOME, content, display: false }, { triggerTurn: true, deliverAs: "followUp" });
@@ -2952,6 +2956,14 @@ function registerCapture(pi: ExtensionAPI, cwd: string, ends: { put(end: SkillRu
         status = next;
         redrawNow?.();
       };
+      // The same milestones as the CLI, kept in the chat that started the capture. Tool activity stays in the widget.
+      const started = Date.now();
+      const progress = (line: string) => {
+        if (controller.signal.aborted) return;
+        const elapsed = duration(Date.now() - started);
+        const spent = status && status.cost > 0 ? ` · $${status.cost.toFixed(2)}` : "";
+        showCommandEntry(pi, ctx, { command, text: `capture · ${elapsed}${spent} · ${line}`, level: "info", echoed: true });
+      };
       // The captured project starts as the config in use here, with the chat's model and thinking of the moment, and the
       // coding model turri was started with, where it says otherwise.
       const codingModel = process.env[CODING_MODEL_ENV];
@@ -2960,7 +2972,7 @@ function registerCapture(pi: ExtensionAPI, cwd: string, ends: { put(end: SkillRu
         ...(model !== undefined ? { model, harnessModel: `${model}:${pi.getThinkingLevel()}` } : {}),
         ...(codingModel !== undefined && codingModel !== "" ? { codingModel } : {}),
       };
-      void captureConsole(() => runCapture({ root, signal: controller.signal, watch, ...configured }))
+      void captureConsole(() => runCapture({ root, signal: controller.signal, progress, watch, ...configured }))
         .then(async ({ result }) => {
           if (ctx.hasUI) ctx.ui.setWidget(CAPTURE_WIDGET, undefined);
           // A chat works on the project of its own folder, and the capture wrote one of its own: turri in a terminal

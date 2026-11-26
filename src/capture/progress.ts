@@ -1,4 +1,5 @@
 import { basename, sep } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { skillProgressLine } from "../skill-progress.ts";
 import type { AgentWatch } from "./agents.ts";
@@ -38,6 +39,12 @@ export interface CaptureAgentStatus {
 /** A capture's phases, as its first line names them: what each stage is part of (`phaseOf`). */
 export const CAPTURE_PHASES = ["survey", "outline", "features", "concepts", "readability", "interface", "trial", "scripts"];
 const COMPACT_PHASES = ["survey", "features", "interface", "trial", "scripts"];
+
+/** A model's account is one short line of prose in the transcript, even if its reply ran long. */
+export function findingLine(text: string): string {
+  const line = stripVTControlCharacters(text).replace(/\s+/g, " ").trim();
+  return line.length <= 280 ? line : `${line.slice(0, 279).trimEnd()}…`;
+}
 
 /** The phase a stage is part of, by its place in CAPTURE_PHASES. */
 export function phaseOf(stage: CaptureStage): number {
@@ -129,17 +136,26 @@ export class CaptureTracker {
   }
 
   /** An agent's watch: it shows while the agent works, with what it did last. */
-  agent(label: string): AgentWatch {
+  agent(label: string, assignment: string): AgentWatch {
     const root = this.status.root;
     let shown: CaptureAgentStatus | undefined;
+    let dollars = 0;
+    let planShown = false;
+    const plan = (line?: string) => {
+      if (shown === undefined || planShown) return;
+      planShown = true;
+      this.said(`${label} · plan: ${findingLine(line ?? "") || assignment}`);
+    };
     return {
       started: () => {
         shown = { label, since: Date.now() };
         this.status.agents.push(shown);
         this.changed();
       },
+      plan,
       did: (line) => {
         if (shown === undefined) return;
+        plan();
         shown.did = activityLine(line, root);
         this.changed();
       },
@@ -150,13 +166,21 @@ export class CaptureTracker {
         this.changed();
       },
       spent: (cost) => {
+        dollars += cost;
         this.status.cost += cost;
         this.changed();
       },
+      finding: (text) => {
+        plan();
+        const line = findingLine(text);
+        if (line) this.said(`${label}: ${line}`);
+      },
       ended: () => {
+        plan();
+        const since = shown?.since;
         this.status.agents = this.status.agents.filter((agent) => agent !== shown);
         shown = undefined;
-        this.changed();
+        if (since !== undefined) this.said(`${label} · ${duration(Date.now() - since)} · $${dollars.toFixed(2)}`);
       },
     };
   }

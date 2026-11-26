@@ -10,7 +10,17 @@ turri capture ../other-app --harness-model anthropic/claude-opus-4-5 --coding-mo
 
 In the chat, `/capture [path]` does the same in the background. Only you start it: the chat can tell you about it, but cannot run it, since a capture turns conformance tests on in the project it writes (`src/capture/`).
 
-While it runs, the lines above the input show how far it is and what is left (`src/capture/progress.ts`):
+The chat that started `/capture` keeps a trace you can scroll back through. Each milestone shows elapsed time and, once reported, the model cost so far. For example:
+
+```text
+capture · 0s · compact capture: 10/64 source, test and contract files, 305/4000 lines, 0/24 mapped interface entries - within all three limits
+capture · 1s · survey · plan: I’ll trace the calculator’s commands and check how its tests exercise them.
+capture · 14s · $0.08 · survey: Both arithmetic commands reject invalid arguments before computing a result.
+capture · 14s · $0.08 · surveyed: calc-cli
+capture · 1m 12s · $0.42 · captured calc-cli in one pass: 3 functional specs
+```
+
+Each agent, including a testing-script writer, opens with a **plan**: one sentence about what it will inspect, write or test. If it goes straight to a tool, the trace shows its assigned task instead. Each capture agent reports a concrete finding in its existing submission: what it discovered, corrected or could not verify. Once the harness accepts that submission, the finding appears by the agent's name alongside the progress lines. Testing-script writers describe what their scripts check. Neither the plan nor the finding needs a separate model call. These transcript entries do not start a chat turn or enter the chat model's context. While capture runs, the widget above the input shows finer detail, including what each agent is doing right now (`src/capture/progress.ts`):
 
 ```
 capture shorty  ✓ survey ━ ✓ outline ━ ⠋ features ─ ○ concepts ─ ○ readability ─ ○ interface ─ ○ trial ─ ○ scripts  phase 3 of 8

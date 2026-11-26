@@ -207,7 +207,7 @@ function scriptLines(state: CaptureState): string[] {
   return Object.entries(state.scripts ?? {}).map(([key, outcome]) => {
     const [part, kind] = key.split(":") as [string, ScriptKind];
     const { skill, what } = testingScriptSkill(kind);
-    return "written" in outcome ? `${part}, the ${what}: \`${outcome.written}\`` : `${part}, the ${what}: not written - ${outcome.failed}. Ask turri for it: \`${skill}\`.`;
+    return "written" in outcome ? `${part}, the ${what}: \`${outcome.written}\`${outcome.finding ? ` - ${outcome.finding}` : ""}` : `${part}, the ${what}: not written - ${outcome.failed}. Ask turri for it: \`${skill}\`.`;
   });
 }
 

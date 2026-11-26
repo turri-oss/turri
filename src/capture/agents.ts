@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { Type, type TSchema } from "typebox";
+import { Type, type TObject } from "typebox";
 import { readProjectConfig, roleTurnLimitMs } from "../config.ts";
 import { PACKAGE_ROOT } from "../environment.ts";
 import { ask, BEGIN, createExecutor, timeTurns } from "../pi.ts";
@@ -24,6 +24,9 @@ export const RETRIES = 2;
 
 /** How long one turn of a capture agent may take, unless the config says: exploring takes a while. */
 export const CAPTURE_TURN_LIMIT_MS = 10 * 60 * 1000;
+
+/** Part of the first response, so explaining the work costs no separate model call. */
+export const CAPTURE_PLAN_NOTE = "Before your first tool call, write one short line beginning 'Plan: ' for the person watching. Say what you will inspect, write or test for this assignment. Then do it in the same turn. Say the plan only once.";
 
 const PROMPTS_DIR = join(PACKAGE_ROOT, "genome", "capture");
 
@@ -71,31 +74,60 @@ export interface AgentOptions {
 /** Who watches an agent at work - the capture's status: when it starts, what it does, what it costs, when it ends. */
 export interface AgentWatch {
   started(): void;
+  /** The agent's opening line, or its assigned task when it starts straight on a tool. */
+  plan(line?: string): void;
   /** A tool call it made, or a result worth a line: `○ read app/main.py`. */
   did(line: string): void;
   /** What it is at this moment - thinking, waiting for the model, writing a call - or nothing. */
   now(label: string | undefined): void;
   /** What one model response cost, in dollars. */
   spent(cost: number): void;
+  /** The agent's own account, once its submitted work passes the harness's checks. */
+  finding(line: string): void;
   ended(): void;
 }
 
 /** What the agent's session reports, handed to its watch - and the capture's stop, which ends its turn. */
 function watchedBy(watch: AgentWatch | undefined, signal: AbortSignal | undefined): ActivitySink {
+  let opening = "";
+  let announced = false;
+  // Only the explicitly labelled opening line is public. Reasoning, later prose and tool results never enter this trace.
+  const announce = () => {
+    if (announced) return;
+    announced = true;
+    watch?.plan(/^\s*Plan:[ \t]*([^\r\n]+)/i.exec(opening)?.[1]?.trim());
+  };
   return {
     stage: () => {},
     activity: (line) => watch?.did(line),
-    now: (label) => watch?.now(label),
+    now: (label) => {
+      if (label === "preparing a tool call") announce();
+      watch?.now(label);
+    },
     usage: (usage) => watch?.spent(usage.cost),
-    transcript: () => {},
+    transcript: (entry) => {
+      if (announced) return;
+      if (entry.kind === "text") {
+        opening += entry.text.slice(0, 320 - opening.length);
+        if (opening.trimStart().includes("\n") || opening.length === 320) announce();
+      } else if (entry.kind === "tool") announce();
+    },
     ...(signal !== undefined ? { signal } : {}),
   };
+}
+
+interface AnswerTool<A> {
+  name: string;
+  label: string;
+  description: string;
+  parameters: TObject;
+  convert: (params: Record<string, unknown>) => A;
 }
 
 /** Ask an agent for one answer, sending it back with what is wrong until it holds. Undefined, with the last problems, when it never did. */
 export async function askAgent<A>(
   options: AgentOptions,
-  tool: { name: string; label: string; description: string; parameters: TSchema; convert: (params: Record<string, unknown>) => A },
+  tool: AnswerTool<A>,
   check: (answer: A) => string[],
 ): Promise<{ answer?: A; problems: string[] }> {
   return watched(options.watch, options.signal, () => answerOf(options, tool, check));
@@ -113,17 +145,20 @@ export async function watched<T>(watch: AgentWatch | undefined, signal: AbortSig
 
 async function answerOf<A>(
   options: AgentOptions,
-  tool: { name: string; label: string; description: string; parameters: TSchema; convert: (params: Record<string, unknown>) => A },
+  tool: AnswerTool<A>,
   check: (answer: A) => string[],
 ): Promise<{ answer?: A; problems: string[] }> {
   let answer: A | undefined;
+  let finding = "";
   const submit = defineTool({
     name: tool.name,
     label: tool.label,
     description: tool.description,
-    parameters: tool.parameters,
+    parameters: Type.Object({ ...tool.parameters.properties, finding: Type.String({ description: "For the person watching: one short sentence naming the most useful behaviour you found, corrected or could not verify. Give a concrete example rather than a count or a list of actions." }) }),
     async execute(_id, params) {
-      answer = tool.convert(params as Record<string, unknown>);
+      const { finding: report, ...work } = params;
+      answer = tool.convert(work);
+      finding = text(report);
       return { content: [{ type: "text" as const, text: "Recorded." }], details: {}, terminate: true };
     },
   }) as ToolDefinition;
@@ -142,7 +177,7 @@ async function answerOf<A>(
     label: options.label,
     role: options.role,
     ...(fence !== undefined ? { system: fence.note } : {}),
-    task: [capturePrompt("capture"), ...[options.prompt].flat().map(capturePrompt), options.context].join("\n\n"),
+    task: [capturePrompt("capture"), ...[options.prompt].flat().map(capturePrompt), options.context, CAPTURE_PLAN_NOTE].join("\n\n"),
     budget: { calls: options.calls, finish: [submit.name] },
   });
   const limit = turnLimit(options.plainDir, options.role);
@@ -152,7 +187,10 @@ async function answerOf<A>(
     await ask(session, BEGIN);
     for (let again = 0; ; again += 1) {
       problems = answer === undefined ? [`You did not call ${submit.name}.`] : check(answer);
-      if (problems.length === 0) return { answer, problems };
+      if (problems.length === 0) {
+        if (finding) options.watch?.finding(finding);
+        return { answer, problems };
+      }
       if (again >= RETRIES) return { problems };
       answer = undefined;
       await ask(session, `That does not hold:\n- ${problems.join("\n- ")}\n\nCall ${submit.name} again, with it fixed.`);

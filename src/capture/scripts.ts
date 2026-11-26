@@ -7,6 +7,7 @@ import { skillRunDir } from "../regenerate/paths.ts";
 import { testingScriptSkill, type ScriptKind } from "../regenerate/test-scripts.ts";
 import { discoverSkills } from "../skills.ts";
 import type { Part } from "./state.ts";
+import { CAPTURE_PLAN_NOTE } from "./agents.ts";
 
 /**
  * A captured project's testing scripts, written by turri's own skills - implement-unit-testing-script and
@@ -31,7 +32,7 @@ export interface ScriptRequest {
 }
 
 /** Writes a testing script of a part, or throws why it could not. */
-export type ScriptWriter = (request: ScriptRequest) => Promise<void>;
+export type ScriptWriter = (request: ScriptRequest) => Promise<string | void>;
 
 const QUIET: Reporter = { step: () => {}, artifact: () => {}, gate: () => {}, judge: () => {}, outcome: () => {} };
 
@@ -44,6 +45,8 @@ export const writeTestingScript: ScriptWriter = async (request) => {
     `It is for ${request.module}.plain${request.configModule !== undefined ? `, built with ${moduleConfigFile(request.configModule)} over ${CONFIG_FILE}` : ""}.`,
     `This project was captured just now from the codebase at ${request.root}, which the code regenerated from its ***plain replaces. Its ***plain says what the code is built on${request.part.stdlibStack !== undefined ? ` - ${request.part.stdlibStack}` : ""}; the original's manifests in that folder show the tools it used, where the ***plain leaves one open.`,
     BACKGROUND_NOTE,
+    CAPTURE_PLAN_NOTE,
+    "In your final reply, give one short sentence for the capture trace: name the runner you wrote and what it checks, or the concrete reason you could not write it.",
   ].join("\n\n");
   const result = await withConfigModule(request.configModule, () =>
     runSkill({
@@ -59,4 +62,6 @@ export const writeTestingScript: ScriptWriter = async (request) => {
     }),
   );
   if (!result.ok) throw new Error("its skill stopped at a review gate, with no approved script");
+  // An ungated skill's output can include its opening text as well as its final reply. The trace already showed the plan.
+  return result.output.replace(/^\s*Plan:[^\r\n]*(?:\r?\n|$)/i, "").trim();
 };

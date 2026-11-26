@@ -7,13 +7,13 @@ import { slashed } from "../regenerate/paths.ts";
 import { findTestScripts, testingScriptSkill, type ScriptKind } from "../regenerate/test-scripts.ts";
 import { checkPlainFile, type CheckResult } from "../plain/check.ts";
 import { conformanceOf, stdlibCatalogue, stdlibTemplates } from "../stdlib.ts";
-import { AREAS_TOOL, askAgent, watched, COMPACT_TOOL, CONCEPTS_TOOL, CONVENTIONS_TOOL, CORRECTIONS_TOOL, definitionsOf, EDITS_TOOL, FEATURE_TOOL, FEATURES_TOOL, INTERFACE_TOOL, leftOutOf, MODULES_TOOL, OWNERS_TOOL, records, REFERENCE_CHECKED_TOOL, REFERENCE_TOOL, strings, SURVEY_TOOL, text, TRIAL_TOOL, type AgentOptions } from "./agents.ts";
+import { AREAS_TOOL, askAgent, capturePrompt, watched, COMPACT_TOOL, CONCEPTS_TOOL, CONVENTIONS_TOOL, CORRECTIONS_TOOL, definitionsOf, EDITS_TOOL, FEATURE_TOOL, FEATURES_TOOL, INTERFACE_TOOL, leftOutOf, MODULES_TOOL, OWNERS_TOOL, records, REFERENCE_CHECKED_TOOL, REFERENCE_TOOL, strings, SURVEY_TOOL, text, TRIAL_TOOL, type AgentOptions } from "./agents.ts";
 import { buildOrder, covers, entriesOf, filesOf, kebab, linesOf, renderArea, testEvidence, type TestEvidence } from "./area.ts";
 import { entriesIn, entryFile, entrySurface, interfaceConcept, renderReference, interfaceDefinition, interfaceGaps, interfaceIn, leftOutPaths, namedExactly, namedIn, optionsNotInReference, referenceOf, shownSurface } from "./interface.ts";
 import { assemble, featureKey, featurePaths, featuresOf, leavesOf, mergedInto, MODULE_SPECS, outlinedFeature, sharedName, writeCapture, type AssembledModule, type Assembly, type ConceptConflict } from "./assemble.ts";
 import { conventionProblems, correctionProblems, divisionProblems, moduleProblems, referenceProblems, editProblems, featureProblems, gapProblems, outlineProblems, reconciledProblems, scenarioBudget, splitProblems, surveyProblems, trialProblems, unplaced, type CheckedModule, type GatheringGiven } from "./checks.ts";
 import { buildMap, INTERFACE_KINDS, type CodeMap } from "./map.ts";
-import { CaptureTracker, type CaptureStatus } from "./progress.ts";
+import { CaptureTracker, findingLine, type CaptureStatus } from "./progress.ts";
 import { capturePlan } from "./plan.ts";
 import { pythonInterface } from "./python-interface.ts";
 import { configInUse, configInUseProblem, startingConfig } from "./config.ts";
@@ -244,7 +244,7 @@ class CaptureRun {
       ...(model !== undefined ? { model } : {}),
       ...(this.options.signal !== undefined ? { signal: this.options.signal } : {}),
       label: `capture ${label}`,
-      watch: this.tracker.agent(label),
+      watch: this.tracker.agent(label, capturePrompt([prompt].flat().at(-1)!).split("\n", 1)[0]!.replace(/^#\s+/, "")),
       prompt,
       context,
       ...extra,
@@ -1167,7 +1167,7 @@ class CaptureRun {
           this.save();
           this.tracker.worked();
           const { what } = testingScriptSkill(item.kind);
-          this.progress("written" in outcome ? `wrote the ${what} of ${item.part.name}: ${outcome.written}` : `no ${what} for ${item.part.name}: ${outcome.failed}`);
+          this.progress("written" in outcome ? `wrote the ${what} of ${item.part.name}: ${outcome.written}${outcome.finding ? ` - ${outcome.finding}` : ""}` : `no ${what} for ${item.part.name}: ${outcome.failed}`);
         }),
       ),
     );
@@ -1176,12 +1176,14 @@ class CaptureRun {
   private async script(item: { part: Part; module: string; configModule?: string; kind: ScriptKind }): Promise<ScriptOutcome> {
     const { plainDir, root, signal } = this.options;
     const model = this.models.capture;
+    let finding: string | void;
     try {
       if (!this.options.writeScript) {
         const reused = reuseRunner(plainDir, this.map, item.part, item.kind, item.configModule);
         if (reused) return reused;
       }
-      await watched(this.tracker.agent(testingScriptSkill(item.kind).what), signal, () =>
+      const what = testingScriptSkill(item.kind).what;
+      finding = await watched(this.tracker.agent(`${what} ${item.part.name}`, `Write the ${what} for ${item.module}.`), signal, () =>
         (this.options.writeScript ?? writeTestingScript)({
           plainDir,
           root,
@@ -1202,7 +1204,7 @@ class CaptureRun {
     const written = slashed(relative(plainDir, found));
     // A single-part runner may have been found by name alone. Put its path in the exported config too.
     if (item.configModule === undefined) writeSetting(plainDir, item.kind === "unit" ? "unittests-script" : "conformance-tests-script", written);
-    return { written };
+    return { written, ...(finding ? { finding: findingLine(finding) } : {}) };
   }
 
   /** Check the ***plain, write the report, and mark the capture finished. */
