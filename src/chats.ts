@@ -199,6 +199,9 @@ export interface TurriCore {
   readonly canOpen: boolean;
   /** Whether the chats are the terminal's, switched between with /chat and its keys. */
   readonly terminal: boolean;
+  /** Only the first terminal chat shows the welcome, until a non-empty submission anywhere in the session. */
+  welcomeVisible(chat: string): boolean;
+  dismissWelcome(): void;
   chats(): ChatInfo[];
   /** The chat's pi session. */
   session(id: string): AgentSession | undefined;
@@ -352,6 +355,8 @@ export function createChats(options: CoreOptions): TurriCore {
   const listeners = new Set<() => void>();
   let driver: ChatDriver | undefined;
   let shownId: string | undefined;
+  let welcomeChat: string | undefined;
+  let welcomeDismissed = false;
   /** The chat whose extension pi is building now. */
   let attaching: ChatState | undefined;
   /** Chats are opened one at a time: each one's extension is built while it is the one attaching. */
@@ -428,6 +433,7 @@ export function createChats(options: CoreOptions): TurriCore {
 
   const newChat = (title?: string, role?: ChatRole): ChatState => {
     const id = randomUUID().slice(0, 8);
+    if (role === undefined) welcomeChat ??= id;
     const chat: ChatState = {
       id,
       scope: { id, asking: new Set() },
@@ -481,6 +487,12 @@ export function createChats(options: CoreOptions): TurriCore {
     },
     get terminal() {
       return driver?.terminal === true;
+    },
+    welcomeVisible: (id) => !core.terminal || (!welcomeDismissed && welcomeChat === id),
+    dismissWelcome() {
+      if (!core.terminal || welcomeDismissed) return;
+      welcomeDismissed = true;
+      changed();
     },
     chats: () => chats.map((chat) => ({ id: chat.id, title: titleFor(chat), status: statusOf(chat), shown: chat.id === shownId, ...(chat.role !== undefined ? { role: chat.role } : {}) })),
     session: (id) => chats.find((chat) => chat.id === id)?.session,

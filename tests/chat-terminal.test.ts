@@ -136,11 +136,27 @@ describe("the terminal's chats", () => {
     // pi's screen comes up on its first session.
     await runtime.rebindSession();
     expect(core.chats()).toHaveLength(1);
+    const firstId = core.shown()!;
+    expect(core.welcomeVisible(firstId)).toBe(true);
 
     // /new: a chat beside it, shown, the first one kept.
     await (AgentSessionRuntime.prototype as unknown as { newSession(this: unknown): Promise<unknown> }).newSession.call(runtime);
     expect(core.chats().map((chat) => chat.shown)).toEqual([false, true]);
     expect(runtime.session).toBe(second);
+    const secondId = core.shown()!;
+    expect(core.welcomeVisible(secondId)).toBe(false);
+    expect(core.welcomeVisible(firstId)).toBe(true);
+
+    // Exercise pi's real submit handler: an extension command is dispatched without a normal message input event.
+    const submitted: string[] = [];
+    const editor = { onSubmit: async (_text: string) => {}, addToHistory() {} };
+    const submitScreen = { defaultEditor: editor, editor, session: second, flushPendingBashComponents() {}, onInputCallback: (text: string) => submitted.push(text) };
+    (InteractiveMode.prototype as unknown as { setupEditorSubmitHandler(): void }).setupEditorSubmitHandler.call(submitScreen);
+    await editor.onSubmit("   ");
+    expect(core.welcomeVisible(firstId)).toBe(true);
+    await editor.onSubmit("/regenerate");
+    expect(submitted).toEqual(["/regenerate"]);
+    expect(core.welcomeVisible(firstId)).toBe(false);
     expect(first.disposed).toBe(false);
     expect(cleared).toBe(1);
     // The side panel, an overlay, stays on the screen as another chat is shown - and pi still takes it off on a reload.
@@ -159,6 +175,7 @@ describe("the terminal's chats", () => {
     first.extensionRunner.getUIContext()!.notify("said", "info");
     expect(real.did).toEqual(["select Which CRM?", "notify said"]);
     expect(runtime.session).toBe(first);
+    expect(core.welcomeVisible(firstId)).toBe(false);
 
     // Leaving turri lets the other chat go; pi lets go of the one it shows itself.
     await (AgentSessionRuntime.prototype as unknown as { dispose(this: unknown): Promise<void> }).dispose.call(runtime).catch(() => {});

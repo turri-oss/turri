@@ -2,6 +2,8 @@ import { type Component, type Container, type ScrollView, type TUI, VStack } fro
 import type { ChatTabs } from "./chat-tabs.ts";
 import { terminalPointer } from "./pointer-hover.ts";
 
+export const BANNER_ENTRY = "turri_banner";
+
 export interface ChatScreen {
   fullscreenLayoutRoot: Component;
   documentContainer: Container;
@@ -24,11 +26,17 @@ function rowOf(parent: Container, child: Component): number | undefined {
 
 /** The inline tabs are a sibling of the banner in the transcript. A single fixed row takes over when they scroll
  * off the top (or a resumed conversation has no banner). The banner itself scrolls normally. */
-export function chatTabHeader(tabs: ChatTabs) {
+export function chatTabHeader(tabs: ChatTabs, tabsOnly: () => boolean) {
   let pinned = true;
+  // Once the welcome is gone, only the fixed tab row is needed.
+  const inline: Component = {
+    render: (width) => tabsOnly() ? [] : tabs.render(width),
+    handleMouse: (event) => tabs.handleMouse?.(event),
+    invalidate() {},
+  };
   const sticky: Component = {
-    render: (width) => pinned ? tabs.render(width) : [],
-    handleMouse: (event) => pinned ? tabs.handleMouse?.(event) : undefined,
+    render: (width) => pinned || tabsOnly() ? tabs.render(width) : [],
+    handleMouse: (event) => pinned || tabsOnly() ? tabs.handleMouse?.(event) : undefined,
     invalidate() {},
   };
   return {
@@ -37,10 +45,14 @@ export function chatTabHeader(tabs: ChatTabs) {
       screen.fullscreenLayoutRoot = new VStack([sticky, { component: screen.fullscreenLayoutRoot, basis: 0, grow: 1, minSize: 1 }]);
       return [sticky, ...components];
     },
-    afterBanner(chat: Container, entry: unknown) {
-      if (chat.children.includes(tabs)) return;
+    afterBanner(chat: Container, entry: unknown, visible: () => boolean) {
       const at = chat.children.findIndex((child) => (child as { entry?: unknown }).entry === entry);
-      if (at !== -1) chat.children.splice(at + 1, 0, tabs);
+      if (at === -1) return;
+      // Hide pi's whole entry (including its spacer), but keep the neighbouring tabs and their mouse targets.
+      const banner = chat.children[at]!;
+      const render = banner.render.bind(banner);
+      banner.render = (width) => visible() ? render(width) : [];
+      if (!chat.children.includes(inline)) chat.children.splice(at + 1, 0, inline);
     },
     watch(screen: ChatScreen, tui: TUI): () => void {
       if (tui.mode !== "fullscreen") {
@@ -53,8 +65,9 @@ export function chatTabHeader(tabs: ChatTabs) {
       const update = view.updateLayout;
       view.updateLayout = function (height, viewport, redraw) {
         update.call(this, height, viewport, redraw);
+        if (tabsOnly()) return;
         const chat = rowOf(screen.documentContainer, screen.chatContainer);
-        const tab = rowOf(screen.chatContainer, tabs);
+        const tab = rowOf(screen.chatContainer, inline);
         const row = chat === undefined || tab === undefined ? -1 : chat + tab;
         const next = row < this.scrollTop || row >= this.scrollTop + viewport;
         if (next !== pinned) {

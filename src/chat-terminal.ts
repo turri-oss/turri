@@ -1,6 +1,6 @@
 import { AgentSessionRuntime, InteractiveMode, SessionManager, type AgentSession, type ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
-import { chatTabHeader, type ChatScreen } from "./chat-tab-header.ts";
+import { BANNER_ENTRY, chatTabHeader, type ChatScreen } from "./chat-tab-header.ts";
 import type { RunRecord } from "./chat-records.ts";
 import { chatTabs, closeTerminalChat } from "./chat-tabs.ts";
 import { showWaitingMessages } from "./chat-waiting.ts";
@@ -43,6 +43,9 @@ interface Runtime {
 }
 
 interface Patched extends ChatScreen {
+  session: AgentSession;
+  defaultEditor: { onSubmit(text: string): Promise<void> };
+  setupEditorSubmitHandler(): void;
   addCustomEntryToChat(entry: { customType: string }): void;
   mountInteractiveTui(tui: TUI, components: Component[]): void;
   rebindCurrentSession(...args: unknown[]): Promise<void>;
@@ -134,11 +137,28 @@ export function driveTerminal(core: TurriCore, options: { restore?: RunRecord; s
     return { notifications: core.notifications.count, open: panel?.open() === true, busy: panel?.busy() === true };
   });
 
-  const header = chatTabHeader(tabs);
+  const header = chatTabHeader(tabs, () => {
+    const id = core.shown();
+    return id !== undefined && !core.welcomeVisible(id);
+  });
+  // pi dispatches slash commands before the extension's input event. Catch the submission before either path.
+  const setupSubmit = prototype.setupEditorSubmitHandler;
+  prototype.setupEditorSubmitHandler = function () {
+    setupSubmit.call(this);
+    const editor = this.defaultEditor;
+    const submit = editor.onSubmit;
+    editor.onSubmit = (text) => {
+      if (text.trim()) core.dismissWelcome();
+      return submit.call(editor, text);
+    };
+  };
   const addEntry = prototype.addCustomEntryToChat;
   prototype.addCustomEntryToChat = function (entry) {
     addEntry.call(this, entry);
-    if (entry.customType === "turri_banner") header.afterBanner(this.chatContainer, entry);
+    if (entry.customType === BANNER_ENTRY) header.afterBanner(this.chatContainer, entry, () => {
+      const chat = core.chatOfSession(this.session);
+      return chat !== undefined && core.welcomeVisible(chat.id);
+    });
   };
   let stopWatchingTabs: (() => void) | undefined;
   const mount = prototype.mountInteractiveTui;

@@ -61,6 +61,7 @@ import { createSidePanel } from "./regenerate/side-panel.ts";
 import { createSpecMapSource, defaultMapFiles } from "./regenerate/spec-map.ts";
 import { createSpecMapState, type SpecMapState } from "./regenerate/spec-map-view.ts";
 import { notificationView } from "./terminal-notifications.ts";
+import { BANNER_ENTRY } from "./chat-tab-header.ts";
 import { createJobsTreeState, selectJob } from "./regenerate/jobs-tree.ts";
 import { describeDiagnosis, diagnoseFailure } from "./regenerate/diagnose.ts";
 import { HISTORY_DIR, historyLog } from "./regenerate/lineage.ts";
@@ -659,6 +660,9 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink, b
   });
   pi.on("session_start", (_event, ctx) => {
     lastContext = ctx;
+    if (session.terminal && session.welcomeVisible(link.id) && ctx.sessionManager.getBranch().some((entry) =>
+      (entry.type === "message" && entry.message.role === "user") || (entry.type === "custom" && entry.customType === COMMAND_OUTCOME),
+    )) session.dismissWelcome();
   });
   pi.on("before_agent_start", (_event, ctx) => {
     lastContext = ctx;
@@ -725,6 +729,7 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink, b
   /** While a skill runs in this chat: what passes the person's message to its agent. */
   let skillMessage: ((text: string) => void) | undefined;
   pi.on("input", (event) => {
+    if (event.source === "interactive" && (event.text.trim() || event.images?.length)) session.dismissWelcome();
     if (event.source !== "extension") lastUserMessage = event.text;
     // A skill running in this chat holds its agent for the whole run: what the person types meanwhile is for the
     // skill's agent. It stays queued here too, shown waiting, until that agent reads it - or, the run over first, this one.
@@ -796,7 +801,7 @@ function turriExtension(api: ExtensionAPI, session: TurriCore, link: ChatLink, b
   pi.on("agent_end", endTurnCapture);
   pi.on("agent_settled", endTurnCapture);
 
-  registerBranding(pi, discoveredSkills);
+  registerBranding(pi, discoveredSkills, () => session.welcomeVisible(link.id));
   registerInterviewLog(pi);
   registerJobTools(pi, session);
   // The skills the person starts themselves - a project's, marked command-only: each has its command, and cultivate starts it only
@@ -3321,8 +3326,6 @@ function recentUserMessages(ctx: ExtensionContext, limit: number): string[] {
 }
 
 
-const BANNER_ENTRY = "turri_banner";
-
 /**
  * The name on the door.
  *
@@ -3338,7 +3341,7 @@ export function chatRulesBlock(rules = loadRules(join(PACKAGE_ROOT, "genome", "r
   return renderRulesBlock(rules);
 }
 
-function registerBranding(pi: ExtensionAPI, skills: SkillCatalogue) {
+function registerBranding(pi: ExtensionAPI, skills: SkillCatalogue, welcomeVisible: () => boolean) {
   pi.registerCommand("stdlib", {
     description: "List the ***plain standard library: the stacks a spec can import instead of writing its implementation reqs.",
     handler: async (_args, ctx) => {
@@ -3396,7 +3399,7 @@ function registerBranding(pi: ExtensionAPI, skills: SkillCatalogue) {
   pi.on("session_start", (_event, ctx) => {
     if (ctx.hasUI) {
       padTheScreen(ctx);
-      animateJellyfish(ctx);
+      if (welcomeVisible()) animateJellyfish(ctx, welcomeVisible);
       // ***plain an agent shows in the chat, highlighted in the theme of the moment.
       highlightPlainCodeBlocks(() => ctx.ui.theme);
     }
@@ -3452,7 +3455,7 @@ let jellyfishTimer: ReturnType<typeof setInterval> | undefined;
  * jellyfish stops for the rest of the session - swimming, whole, drawn once more if it was not, rather than on whatever
  * frame it was at, a polyp half grown.
  */
-export function animateJellyfish(ctx: ExtensionContext): void {
+export function animateJellyfish(ctx: ExtensionContext, visible = () => true): void {
   if (jellyfishTimer !== undefined) clearInterval(jellyfishTimer);
   jellyfishTimer = undefined;
   ctx.ui.setWidget(
@@ -3460,6 +3463,10 @@ export function animateJellyfish(ctx: ExtensionContext): void {
     (tui) => {
       drawOverlaysBesidePicture(tui);
       const timer = setInterval(() => {
+        if (!visible()) {
+          clearInterval(timer);
+          return;
+        }
         if (tui.render(tui.terminal.columns).length > tui.terminal.rows) {
           clearInterval(timer);
           if (shownFrame() !== JELLYFISH_SEQUENCE[JELLYFISH_REST]) {
