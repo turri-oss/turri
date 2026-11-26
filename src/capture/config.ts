@@ -1,7 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import { CONFIG_FILE, CONFIG_KEYS, configFileProblem, projectConfigFile, projectModels, readConfigFile, splitModelSpec } from "../config.ts";
-import { currentValue, withSetting } from "../config-edit.ts";
+import { CONFIG_FILE, CONFIG_KEYS, configFileProblem, projectConfigFile, splitModelSpec } from "../config.ts";
+import { quickStartForCapture } from "../init-config.ts";
+import { currentValue, shownValue, withSetting } from "../config-edit.ts";
 import { isProjectDir } from "../regenerate/paths.ts";
 
 /**
@@ -38,20 +39,24 @@ export function configInUseProblem(file: string | undefined): string | undefined
  * config.yaml - without what was the original project's own, conformance tests on, and the models given for the capture
  * where the config in use says otherwise.
  */
-export function startingConfig(source: string | undefined, given: { harnessModel?: string; codingModel?: string }): string {
+export async function startingConfig(source: string | undefined, given: { harnessModel?: string; codingModel?: string }): Promise<string> {
   const carried = source !== undefined && basename(source) === CONFIG_FILE && existsSync(source) ? readFileSync(source, "utf8") : "";
-  let text = carried;
+  let text = carried || await quickStartForCapture(splitModelSpec(given.harnessModel).model, splitModelSpec(given.codingModel).model);
   for (const key of ORIGINAL_ONLY) text = withSetting(text, key, undefined);
   text = withSetting(text, CONFIG_KEYS.conformanceTests, true);
-  const models = projectModels(source !== undefined && carried !== "" ? readConfigFile(source) : {});
   // A model given - the chat's own, or one named on the command line - is written where the config in use says another:
   // under models: when it names the role there, which wins over the key.
-  const set = (role: "chat" | "coding", key: string, value: string | undefined, now: string | undefined) => {
-    if (value === undefined || splitModelSpec(value).model === now) return;
-    text = currentValue(text, `models.${role}`) !== undefined ? withSetting(text, `models.${role}`, value) : withSetting(text, key, value);
+  const set = (role: "chat" | "coding", key: string, value: string | undefined) => {
+    if (value === undefined) return;
+    const target = currentValue(text, `models.${role}`) !== undefined ? `models.${role}` : key;
+    // Naming the same model without a level keeps its configured thinking; an explicit level wins.
+    const current = shownValue(currentValue(text, target));
+    const spec = splitModelSpec(value);
+    if (current === value || (spec.thinking === undefined && splitModelSpec(current).model === spec.model)) return;
+    text = withSetting(text, target, value);
   };
-  set("chat", CONFIG_KEYS.harnessModel, given.harnessModel, models.harness?.model);
-  set("coding", CONFIG_KEYS.codingModel, given.codingModel, models.coding?.model);
+  set("chat", CONFIG_KEYS.harnessModel, given.harnessModel);
+  set("coding", CONFIG_KEYS.codingModel, given.codingModel);
   const header = [
     "# Written by turri capture.",
     ...(carried !== "" ? [`# It started as the config in use where the capture was started - ${source} - without what was that project's own:`, "# its module, testing scripts, base folder and test folder."] : []),

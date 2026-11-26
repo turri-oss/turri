@@ -454,6 +454,22 @@ export function quickStartConfig(vendor: Vendor = "other", bedrock?: BedrockChoi
 /** The quick start config for the mix of vendors: what turri wrote before it asked. */
 export const QUICK_START_CONFIG = quickStartConfig("other");
 
+/** A capture without a config starts with init-config's settings. Resolve an omitted model from the vendor's pair,
+ * including the maker and geography on Bedrock, just as the wizard does. */
+export async function quickStartForCapture(harness?: string, coding?: string): Promise<string> {
+  if (harness && coding) return quickStartConfig("other", undefined, { harness, coding, strong: harness });
+  const spec = harness ?? coding;
+  const provider = spec?.split("/")[0] ?? (process.env.AWS_BEARER_TOKEN_BEDROCK || process.env.AWS_PROFILE || process.env.CLAUDE_CODE_USE_BEDROCK === "1" ? "amazon-bedrock" : "other");
+  // A custom provider has no default pair. Stay on its named model rather than switching providers.
+  if (!Object.hasOwn(VENDORS, provider) && spec) return quickStartConfig("other", undefined, { harness: spec, coding: spec, strong: spec });
+  const vendor = provider as Vendor;
+  const place = vendor === "amazon-bedrock" && spec ? bedrockPlaceOf(spec) : undefined;
+  const chosen = await chosenModels({ vendor, ...(place ? { bedrock: { maker: place.maker, region: place.geography } } : {}) });
+  if ("problem" in chosen) throw new Error(chosen.problem);
+  const models = chosen.models;
+  return quickStartConfig(vendor, chosen.bedrock, { ...models, harness: harness ?? models.harness, coding: coding ?? models.coding });
+}
+
 /** A vendor from what was typed: its number in the list, or its name. */
 export function vendorOf(answer: string): Vendor | undefined {
   const typed = answer.trim().toLowerCase();

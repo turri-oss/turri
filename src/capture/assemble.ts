@@ -2,7 +2,6 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { dirname, join } from "node:path";
 import { CONFIG_FILE, CONFIG_KEYS } from "../config.ts";
 import { withSetting } from "../config-edit.ts";
-import { startingConfig } from "./config.ts";
 import { referenceOf, referencePath, renderReference } from "./interface.ts";
 import { moduleConfigFile } from "../config.ts";
 import { conformanceOf } from "../stdlib.ts";
@@ -465,18 +464,8 @@ export function assetsToCopy(map: CodeMap, state: CaptureState): string[] {
     .map((file) => file.path);
 }
 
-/**
- * The project's config, over what it holds already - the config in use it started as (`capture/config.ts`): conformance
- * tests on, the assets as the base folder, the models when they were named. A capture started before it held one starts
- * from nothing.
- */
-export function configText(existing: string, options: { assets: boolean; harnessModel?: string; codingModel?: string }): string {
-  const from = existing.trim() === "" ? startingConfig(undefined, options) : existing;
-  return withSetting(withSetting(from, CONFIG_KEYS.conformanceTests, true), CONFIG_KEYS.baseFolder, options.assets ? "assets" : undefined);
-}
-
 /** Put a capture on disk: its ***plain, its config, the assets copied, and what keeps the regenerated code's histories out of the repo. */
-export function writeCapture(plainDir: string, map: CodeMap, state: CaptureState, assembly: Assembly, models: { harnessModel?: string; codingModel?: string }): string[] {
+export function writeCapture(plainDir: string, map: CodeMap, state: CaptureState, assembly: Assembly): string[] {
   const written: string[] = [];
   const put = (path: string, text: string) => {
     const file = join(plainDir, ...path.split("/"));
@@ -498,7 +487,8 @@ export function writeCapture(plainDir: string, map: CodeMap, state: CaptureState
     if (entries.length > 0 || api) put(referencePath(part.name), renderReference(part.name, entries) + (api ? `\n## Public Python imports\n\n${api}\n` : ""));
   }
   const config = join(plainDir, CONFIG_FILE);
-  put(CONFIG_FILE, configText(existsSync(config) ? readFileSync(config, "utf8") : "", { assets: assets.length > 0, ...models }));
+  const tested = withSetting(readFileSync(config, "utf8"), CONFIG_KEYS.conformanceTests, true);
+  put(CONFIG_FILE, withSetting(tested, CONFIG_KEYS.baseFolder, assets.length > 0 ? "assets" : undefined));
   // A part of its own: its testing scripts go in a config file of its own, on its first module, which the rest of its chain reads.
   if ((state.survey?.parts.length ?? 0) > 1) {
     for (const part of state.survey!.parts) {

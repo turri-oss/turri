@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NOTES_APP, writeCodebase } from "./fixture.ts";
 import { newState, saveState } from "../../src/capture/state.ts";
+import { projectModels, readProjectConfig } from "../../src/config.ts";
+import { findTestScripts } from "../../src/regenerate/test-scripts.ts";
 
 /**
  * A whole capture with stand-in agents: the survey names one part on Flask, the codebase is split into storage and an
@@ -315,7 +317,8 @@ describe("a capture", () => {
 
   it("captures the codebase into modules in build order, with an import module, scenarios, config and a report", async () => {
     // A module of one functional spec at most: each area is a module of its own.
-    const result = await runCapture({ root, leafLines: leafLines(), parallel: 2, moduleSpecs: 1 });
+    const harnessModel = "amazon-bedrock/global.anthropic.claude-opus-5-5:medium";
+    const result = await runCapture({ root, harnessModel, leafLines: leafLines(), parallel: 2, moduleSpecs: 1 });
     const plain = join(root, "plain");
     const read = (path: string) => readFileSync(join(plain, ...path.split("/")), "utf8");
 
@@ -350,7 +353,10 @@ describe("a capture", () => {
     );
     expect(existsSync(join(plain, "tests", "api", "list-notes.plain"))).toBe(false);
 
-    expect(read("config.turri.yaml")).toContain("conformance-tests: true\nbase-folder: assets\n");
+    const config = readProjectConfig(plain);
+    expect(projectModels(config)).toMatchObject({ harness: { model: harnessModel.split(":")[0], thinking: "medium" }, coding: { model: "amazon-bedrock/global.anthropic.claude-haiku-5-5", thinking: "low" } });
+    expect(config).toMatchObject({ conformanceTests: true, baseFolder: "assets", testingScriptsRunOn: "in-place", unittestsScript: "test_scripts/run_unittests_python.sh", conformanceTestsScript: "test_scripts/run_conformance_tests_python.sh" });
+    expect(findTestScripts(plain, join(plain, "api.plain"))).toMatchObject({ unit: join(plain, "test_scripts", "run_unittests_python.sh"), conformance: join(plain, "test_scripts", "run_conformance_tests_python.sh") });
     expect(existsSync(join(plain, "assets", "app", "static", "logo.png"))).toBe(true);
     expect(read(".gitignore")).toBe("plain_modules/**/.plaingit/\n");
 

@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync 
 import { join, relative, resolve } from "node:path";
 import { CONFIG_FILE, inheritModel, modelSpec, projectModels, readProjectConfig, roleModel, withConfigModule } from "../config.ts";
 import { captureDefaults, type CaptureRole } from "./models.ts";
+import { writeSetting } from "../config-edit.ts";
 import { slashed } from "../regenerate/paths.ts";
 import { findTestScripts, testingScriptSkill, type ScriptKind } from "../regenerate/test-scripts.ts";
 import { checkPlainFile, type CheckResult } from "../plain/check.ts";
@@ -62,7 +63,7 @@ export interface CaptureOptions {
   writeScript?: ScriptWriter;
   /**
    * The folder whose config is in use where the capture was started - the chat's, the command line's: the captured
-   * project's config starts as it (`capture/config.ts`). None: it starts empty.
+   * project's config starts as it (`capture/config.ts`). Without one it starts with the init-config defaults.
    */
   configFrom?: string;
 }
@@ -132,7 +133,9 @@ export async function runCapture(options: CaptureOptions): Promise<CaptureResult
   }
   if (found.kind === "taken") throw new CaptureError(`Nothing captured: ${found.why}. Capture writes into a folder of its own - name another.`);
   const source = options.configFrom !== undefined ? configInUse(options.configFrom) : undefined;
-  const unusable = found.kind === "empty" ? configInUseProblem(source) : undefined;
+  const configPath = join(plainDir, CONFIG_FILE);
+  const needsConfig = !existsSync(configPath);
+  const unusable = needsConfig ? configInUseProblem(source) : undefined;
   if (unusable !== undefined) throw new CaptureError(unusable);
   const tracker = new CaptureTracker(root, options.progress, options.watch);
   const map = buildMap(root, { exclude: [plainDir] });
@@ -144,17 +147,17 @@ export async function runCapture(options: CaptureOptions): Promise<CaptureResult
     saveState(plainDir, state);
     tracker.counted(state);
   };
+  const initialConfig = needsConfig ? await startingConfig(source, { harnessModel: options.harnessModel ?? options.model, codingModel: options.codingModel }) : undefined;
   save();
   tracker.said(`${state.plan.kind} capture: ${state.plan.reason}`);
   // The config in use, from the start - after the state, so a capture stopped here goes on: its agents run on its models,
   // and the project it writes keeps them.
-  const given = { ...(options.harnessModel !== undefined ? { harnessModel: options.harnessModel } : {}), ...(options.codingModel !== undefined ? { codingModel: options.codingModel } : {}) };
-  if (found.kind === "empty") writeFileSync(join(plainDir, CONFIG_FILE), startingConfig(source, given));
+  if (initialConfig !== undefined) writeFileSync(configPath, initialConfig);
   const inUse = projectModels(readProjectConfig(plainDir));
-  const model = options.model ?? modelSpec(inUse.harness);
+  const model = options.model ?? options.harnessModel ?? modelSpec(inUse.harness);
   const codingModel = options.codingModel ?? modelSpec(inUse.coding);
 
-  const run = new CaptureRun({ ...options, root, plainDir, ...(model !== undefined ? { model } : {}), ...(codingModel !== undefined ? { codingModel } : {}), given }, map, state, save, tracker);
+  const run = new CaptureRun({ ...options, root, plainDir, ...(model !== undefined ? { model } : {}), ...(codingModel !== undefined ? { codingModel } : {}) }, map, state, save, tracker);
   tracker.stage("surveying");
   await run.survey();
   await run.checkConventions();
@@ -199,7 +202,7 @@ function limiter(limit: number): <T>(work: () => Promise<T>) => Promise<T> {
 }
 
 class CaptureRun {
-  private readonly options: CaptureOptions & { root: string; plainDir: string; given: { harnessModel?: string; codingModel?: string } };
+  private readonly options: CaptureOptions & { plainDir: string };
   private readonly map: CodeMap;
   private readonly state: CaptureState;
   private readonly save: () => void;
@@ -210,7 +213,7 @@ class CaptureRun {
   private readonly budget: number;
   private readonly models: Record<CaptureRole, string | undefined>;
 
-  constructor(options: CaptureOptions & { root: string; plainDir: string; given: { harnessModel?: string; codingModel?: string } }, map: CodeMap, state: CaptureState, save: () => void, tracker: CaptureTracker) {
+  constructor(options: CaptureOptions & { plainDir: string }, map: CodeMap, state: CaptureState, save: () => void, tracker: CaptureTracker) {
     this.options = options;
     const defaults = captureDefaults(options.model, options.codingModel);
     const config = readProjectConfig(options.plainDir);
@@ -1133,7 +1136,7 @@ class CaptureRun {
     const assembly = assemble(this.state, this.options.moduleSpecs);
     if (assembly.modules.length === 0) throw new CaptureError("Nothing could be captured: no feature of the codebase held. Run it again to try the areas and features that failed once more.");
     if (this.state.written === true) return;
-    writeCapture(this.options.plainDir, this.map, this.state, assembly, this.options.given);
+    writeCapture(this.options.plainDir, this.map, this.state, assembly);
     this.state.written = true;
     this.save();
   }
@@ -1190,7 +1193,11 @@ class CaptureRun {
       return { failed: error instanceof Error ? error.message : String(error) };
     }
     const found = withConfigModule(item.configModule, () => findTestScripts(plainDir, join(plainDir, `${item.module}.plain`)))[item.kind];
-    return found !== undefined ? { written: slashed(relative(plainDir, found)) } : { failed: "its skill ended with no script written" };
+    if (found === undefined) return { failed: "its skill ended with no script written" };
+    const written = slashed(relative(plainDir, found));
+    // A single-part runner may have been found by name alone. Put its path in the exported config too.
+    if (item.configModule === undefined) writeSetting(plainDir, item.kind === "unit" ? "unittests-script" : "conformance-tests-script", written);
+    return { written };
   }
 
   /** Check the ***plain, write the report, and mark the capture finished. */
