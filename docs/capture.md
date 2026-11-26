@@ -128,6 +128,8 @@ Only a survey that never holds stops the capture, before anything is written.
 
 ## What it writes
 
+When a captured program itself uses Liquid templates, literal tags and expressions in its examples are emitted as literal text. Markdown backticks alone do not prevent Liquid from evaluating them before the module is parsed. This applies to shared requirements, functional specs and their scenarios.
+
 ```
 my-app/
   ...                          the original - read only, never written

@@ -372,11 +372,20 @@ export function inDefinitionOrder(definitions: Definition[]): Definition[] {
 
 /** A YAML scalar that reads back as the text, whatever it holds. */
 function yamlText(text: string): string {
-  return JSON.stringify(text.replace(/\s+/g, " ").trim());
+  return JSON.stringify(capturedText(text.replace(/\s+/g, " ").trim()));
+}
+
+/** Captured examples are data. Backticks alone do not protect them: Liquid runs before Markdown. Normal examples
+ * stay readable in a single raw block. Escape just the opening delimiter for a literal raw/endraw or incomplete tag. */
+export function capturedText(text: string): string {
+  return text.replace(/\{(?:\{[^\n{}]*?\}\}|%[^\n{}]*?%\}|[\{%])/g, tag => {
+    if (tag.length === 2 || /^\{%[-\s]*(?:raw|endraw)\b/.test(tag)) return `{% raw %}${tag.slice(0, 2)}{% endraw %}${tag.slice(2)}`;
+    return `{% raw %}${tag}{% endraw %}`;
+  });
 }
 
 function section(title: string, bullets: string[]): string[] {
-  return bullets.length === 0 ? [] : [`***${title}***`, "", ...bullets.map((bullet) => `- ${bullet}`), ""];
+  return bullets.length === 0 ? [] : [`***${title}***`, "", ...bullets.map((bullet) => `- ${capturedText(bullet)}`), ""];
 }
 
 function frontmatter(fields: Array<[string, string[] | string | undefined]>): string[] {
@@ -406,7 +415,7 @@ export function renderShared(module: SharedModule): string {
 }
 
 export function renderModule(module: AssembledModule): string {
-  const specs = module.features.flatMap((feature) => feature.specs.flatMap((spec) => [`# ${spec.funcId}`, spec.text.trim(), ""]));
+  const specs = module.features.flatMap((feature) => feature.specs.flatMap((spec) => [`# ${spec.funcId}`, capturedText(spec.text.trim()), ""]));
   return [
     ...frontmatter([
       ["import", [module.shared]],
@@ -425,7 +434,7 @@ export function renderModule(module: AssembledModule): string {
 
 export function renderTestPlainFile(module: string, spec: CapturedSpec): string | undefined {
   if (spec.conformance.length === 0 && spec.acceptance.length === 0) return undefined;
-  const scenarios = (title: string, list: CapturedSpec["conformance"]) => (list.length === 0 ? [] : [`***${title}***`, "", ...list.flatMap((scenario) => [`# ${scenario.id}`, scenario.text.trim(), ""])]);
+  const scenarios = (title: string, list: CapturedSpec["conformance"]) => (list.length === 0 ? [] : [`***${title}***`, "", ...list.flatMap((scenario) => [`# ${scenario.id}`, capturedText(scenario.text.trim()), ""])]);
   return ["---", `module: ${module}`, `func_id: ${spec.funcId}`, "---", "", ...scenarios("conformance tests", spec.conformance), ...scenarios("acceptance tests", spec.acceptance)].join("\n").trimEnd().concat("\n");
 }
 

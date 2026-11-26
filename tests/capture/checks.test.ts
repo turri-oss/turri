@@ -4,6 +4,8 @@ import { correctionProblems, divisionProblems, editProblems, featureProblems, ga
 import { buildMap } from "../../src/capture/map.ts";
 import type { CapturedFeature, InterfaceEntry, Survey } from "../../src/capture/state.ts";
 import { writeCodebase } from "./fixture.ts";
+import { capturedText } from "../../src/capture/assemble.ts";
+import { createEnvironment } from "../../src/plain/liquid.ts";
 
 const made: string[] = [];
 afterEach(() => {
@@ -19,6 +21,12 @@ function map() {
 const part = { name: "notes", about: "notes", paths: ["."], stdlibStack: "stdlib/backend/python-flask", stdlibConformance: true, implementationReqs: [], testReqs: [], definitions: [{ concept: ":Note:", text: ":Note: is a short text." }] };
 
 describe("what capture checks of an answer", () => {
+  it("keeps literal Liquid examples readable and round-trips them rather than executing them", () => {
+    const liquid = createEnvironment({ strictVariables: true, loadTemplateSource: () => { throw new Error("a captured example is not an import"); } });
+    for (const sample of ["`{% assign %}` then `{{ name }}`", "`{% include 'example' %}`", "literal {% raw %} and {% endraw %}", "open {{\non the next line }}", "plain text"]) {
+      expect(liquid.parseAndRenderSync(capturedText(sample))).toBe(sample);
+    }
+  });
   it("refuses a survey that leaves the original's tests out, names a stack the library lacks, or uses a concept it never defines", () => {
     const survey: Survey = {
       parts: [{ ...part, stdlibStack: "stdlib/backend/python-bottle", implementationReqs: [":Implementation: keeps every :Memo: in SQLite."] }],
