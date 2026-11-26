@@ -54,6 +54,7 @@ export interface Part {
 }
 
 export interface Survey {
+  separateConcerns?: string;
   parts: Part[];
   leftOut: LeftOut[];
   assumptions: string[];

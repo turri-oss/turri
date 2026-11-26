@@ -12,7 +12,7 @@ import { assemble, featureKey, featurePaths, featuresOf, leavesOf, mergedInto, M
 import { conventionProblems, correctionProblems, divisionProblems, moduleProblems, referenceProblems, editProblems, featureProblems, gapProblems, outlineProblems, reconciledProblems, scenarioBudget, splitProblems, surveyProblems, trialProblems, unplaced, type CheckedModule, type GatheringGiven } from "./checks.ts";
 import { buildMap, INTERFACE_KINDS, type CodeMap } from "./map.ts";
 import { CaptureTracker, type CaptureStatus } from "./progress.ts";
-import { capturePlan, COMPACT_SURFACES } from "./plan.ts";
+import { capturePlan } from "./plan.ts";
 import { configInUse, configInUseProblem, startingConfig } from "./config.ts";
 import { renderReport, summaryOf } from "./report.ts";
 import { writeTestingScript, type ScriptWriter } from "./scripts.ts";
@@ -90,7 +90,7 @@ export const LEAF_LINES = Number(process.env.TURRI_CAPTURE_LEAF_LINES ?? 6000);
 /** Characters of the map an agent is shown: about six thousand tokens. */
 export const MAP_BUDGET = 24_000;
 /** How many agents work at once, unless told. */
-export const DEFAULT_PARALLEL = 4;
+export const DEFAULT_PARALLEL = 8;
 /** How many concepts one reconciling agent is given, and how many functional specs one readability pass reads. */
 const CONFLICTS_PER_AGENT = 20;
 const SPECS_PER_PASS = 30;
@@ -137,7 +137,7 @@ export async function runCapture(options: CaptureOptions): Promise<CaptureResult
   if (!map.files.some((file) => file.kind === "source")) throw new CaptureError(`${root} holds no source code to capture.`);
   const state = found.kind === "resume" ? found.state : newState(root);
   if (found.kind === "resume") tracker.said(`going on with the capture started ${state.started}`);
-  state.plan ??= found.kind === "resume" ? { kind: "staged", reason: "continuing a capture started before compact captures" } : capturePlan(map, options.leafLines ?? LEAF_LINES);
+  state.plan ??= found.kind === "resume" ? { kind: "staged", reason: "continuing a capture started before compact captures" } : capturePlan(map);
   const save = () => {
     saveState(plainDir, state);
     tracker.counted(state);
@@ -262,7 +262,7 @@ class CaptureRun {
     const { answer, problems } = await this.limited(() =>
       askAgent(
         this.agent("survey", "survey", context, { reads: true, rules: true, calls: 45 }),
-        { ...SURVEY_TOOL, convert: (params): Survey => ({ parts: records(params.parts).map(partOf), leftOut: leftOutOf(params.left_out), assumptions: strings(params.assumptions) }) },
+        { ...SURVEY_TOOL, convert: (params): Survey => ({ parts: records(params.parts).map(partOf), leftOut: leftOutOf(params.left_out), assumptions: strings(params.assumptions), separateConcerns: text(params.separate_concerns) || undefined }) },
         (survey) => surveyProblems(this.map, survey),
       ),
     );
@@ -514,12 +514,14 @@ class CaptureRun {
       this.progress(`staged capture: ${this.state.plan.reason}`);
     };
     if (parts.length !== 1) return expand(`the survey found ${parts.length} parts`);
+    if (this.state.survey?.separateConcerns) return expand(this.state.survey.separateConcerns);
     const part = parts[0]!;
     const key = featureKey(part.name, part.name);
     if (this.state.features[key]?.captured !== undefined) return;
     const { entries, unlisted } = this.interfaceFor(part.name, part.paths);
     const surfaces = [...entries.map(entrySurface), ...unlisted];
-    if (surfaces.length > COMPACT_SURFACES) return expand(`the interface contains ${surfaces.length} entries`);
+    const checkedPlan = capturePlan(this.map, surfaces.length);
+    if (checkedPlan.kind === "staged") return expand(checkedPlan.reason);
     this.stopIfAsked();
     this.tracker.stage("compact-writing");
     const evidence = testEvidence(this.map, part.paths);

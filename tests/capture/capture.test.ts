@@ -51,6 +51,8 @@ vi.mock("../../src/pi.ts", async (importOriginal) => {
 });
 
 const STUB: Record<string, (label: string, given: string, task: string) => [string, Record<string, unknown>] | undefined> = {
+  // Most tests exercise staged writers on this deliberately small fixture. Its compact writer asks for them.
+  compact: () => ["submit_capture_compact", { expand: "capture storage and the HTTP interface separately" }],
   survey: () => [
     "submit_capture_survey",
     {
@@ -240,6 +242,7 @@ describe("a capture", () => {
     const entries = ["POST /notes", "GET /notes"].map((name) => ({ kind: "route", name, where: "app/routes.py:6", aliases: [], choices: [], details: [], also: [] }));
     STUB.reference = () => ["submit_capture_reference", { entries, excluded: [] }];
     STUB.checkReference = () => ["submit_capture_reference_checked", { entries, excluded: [], changes: [] }];
+    const original = STUB.compact!;
     STUB.compact = () => ["submit_capture_compact", { feature: {
       functional_specs: [{ func_id: "keep-notes", text: "Using :NotesInterface:, `POST /notes` keeps a :Note: and `GET /notes` lists them.", conformance: [{ scenario_id: "one-note", text: "Adding a :Note: with text `hi` answers 201." }] }],
       definitions: [], assumptions: [], uncertain: [], dropped: [],
@@ -271,13 +274,14 @@ describe("a capture", () => {
       expect(asked).not.toContain("compact notes");
       expect(asked.length).toBeGreaterThan(compactAgents);
     } finally {
-      delete STUB.compact;
+      STUB.compact = original;
       delete STUB.reference;
       delete STUB.checkReference;
     }
   });
 
   it("expands a small project's pipeline when its behaviour needs separate writers, keeping the survey and reference", async () => {
+    const original = STUB.compact!;
     STUB.compact = () => ["submit_capture_compact", { expand: "separate concerns" }];
     try {
       crashes.add("outline notes");
@@ -290,11 +294,12 @@ describe("a capture", () => {
       expect(result.failing).toBe(0);
       expect(readFileSync(result.reportFile, "utf8")).toContain("Pipeline: staged - expanded from compact: separate concerns");
     } finally {
-      delete STUB.compact;
+      STUB.compact = original;
     }
   });
 
   it("does not accept an incomplete compact draft or mix it with the staged writers' specs", async () => {
+    const original = STUB.compact!;
     STUB.compact = () => ["submit_capture_compact", { feature: { functional_specs: [{ func_id: "partial-draft", text: "A :User: stores notes." }] } }];
     try {
       const result = await runCapture({ root });
@@ -304,7 +309,7 @@ describe("a capture", () => {
       expect(result.failing).toBe(0);
       expect(readFileSync(join(result.plainDir, "notes.plain"), "utf8")).not.toContain("partial-draft");
     } finally {
-      delete STUB.compact;
+      STUB.compact = original;
     }
   });
 
@@ -403,7 +408,7 @@ describe("a capture", () => {
       watch: (status) => seen.push({ stage: status.stage, agents: status.agents.map((agent) => agent.label), did: status.agents.map((agent) => agent.did), ...status.features, cost: status.cost }),
     });
 
-    expect(seen.map((status) => status.stage).filter((stage, at, all) => stage !== all[at - 1])).toEqual(["mapping", "surveying", "checking", "extracting", "outlining", "dividing", "capturing", "gathering", "reconciling", "reading", "verifying", "trying", "writing", "scripts"]);
+    expect(seen.map((status) => status.stage).filter((stage, at, all) => stage !== all[at - 1])).toEqual(["mapping", "surveying", "checking", "extracting", "compact-writing", "outlining", "dividing", "capturing", "gathering", "reconciling", "reading", "verifying", "trying", "writing", "scripts"]);
     expect(seen.some((status) => status.agents[0] === "survey" && status.did[0] === "○ read app/routes.py")).toBe(true);
     expect(seen.some((status) => status.agents[0] === "feature notes/api#add-note" && status.outlined === 3)).toBe(true);
     expect(seen.at(-1)).toMatchObject({ agents: [], outlined: 3, done: 3 });

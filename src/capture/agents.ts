@@ -235,6 +235,7 @@ export const SURVEY_TOOL = {
     ),
     left_out: LeftOutSchema,
     assumptions: Strings("What you decided where the codebase left it open, a line each."),
+    separate_concerns: Type.Optional(Type.String({ description: "Only for a single part whose behaviour demonstrably needs separate writers: name distinct independently useful concerns that cannot fit one readable module of eight functional specs. Omit when one compact writer can capture it." })),
   }),
 };
 

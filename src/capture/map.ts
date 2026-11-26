@@ -34,8 +34,6 @@ export interface MapFile {
   path: string;
   kind: FileKind;
   lines: number;
-  /** Size on disk for a readable text file. */
-  bytes?: number;
   surfaces: Surface[];
   /** The codebase's files it imports, as paths like its own. */
   imports: string[];
@@ -244,7 +242,7 @@ export function buildMap(root: string, options: { exclude?: string[] } = {}): Co
     }
     const lines = countLines(text);
     if (size <= MAX_SCANNED_BYTES && (kind === "source" || kind === "test" || kind === "contract")) texts.set(path, text);
-    return { path, kind, lines, bytes: size, surfaces: [], imports: [] };
+    return { path, kind, lines, surfaces: [], imports: [] };
   });
   const resolver = importResolver(absoluteRoot, paths);
   for (const file of files) {
