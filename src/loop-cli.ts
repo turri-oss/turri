@@ -1,5 +1,5 @@
 import { createInterface } from "node:readline/promises";
-import { createTurri, pulseName, type Job, type ModuleStatus, type SessionOverrides, type Turri, type TurriEvent, type WorkResult } from "@turri-dev/core";
+import { createTurri, pulseName, type Job, type SessionOverrides, type StartOverQuestion, type Turri, type TurriEvent, type WorkResult } from "@turri-dev/core";
 import { describeModules } from "@turri-dev/core/project";
 import { clientInfo } from "./cli-root.ts";
 import { c } from "./module-report.ts";
@@ -86,44 +86,35 @@ function pulseFinished(job: Job, final: boolean): void {
 
 async function runOn(turri: Turri, run: LoopRun, signal: AbortSignal): Promise<number> {
   if (run.work === "preview") return lookAhead(turri, run.plainFile);
-  const kind = run.work;
-  const ask = (startOver: boolean) =>
-    turri.work[kind]({
-      plainFile: run.plainFile,
-      ...(run.funcIds !== undefined && run.funcIds.length > 0 ? { funcIds: run.funcIds } : {}),
-      ...(run.fromScratch !== undefined ? { fromScratch: run.fromScratch } : {}),
-      ...(run.work === "conform" && run.separately === true ? { separately: true } : {}),
-      ...(run.buildDir !== undefined ? { exportTo: run.buildDir } : {}),
-      ...(run.report !== undefined ? { report: run.report } : {}),
-      command: run.command,
-      startOver,
-      signal,
-    });
-
-  let { planned, done } = await ask(run.startOver);
+  // A codebase built without a module it now requires is started over only when the person says so: `--start-over`, or
+  // asked at the terminal. Said no, the rest of the chain is regenerated and the run ends incomplete; with no terminal,
+  // nobody is asked and the run ends there.
+  let unasked: StartOverQuestion | undefined;
+  const startOver = run.startOver
+    ? true
+    : async (question: StartOverQuestion): Promise<boolean | undefined> => {
+        if (process.stdin.isTTY !== true) {
+          unasked = question;
+          return undefined;
+        }
+        return askAtTerminal(question.title, question.body);
+      };
+  const { planned, done } = await turri.work[run.work]({
+    plainFile: run.plainFile,
+    ...(run.funcIds !== undefined && run.funcIds.length > 0 ? { funcIds: run.funcIds } : {}),
+    ...(run.fromScratch !== undefined ? { fromScratch: run.fromScratch } : {}),
+    ...(run.work === "conform" && run.separately === true ? { separately: true } : {}),
+    ...(run.buildDir !== undefined ? { exportTo: run.buildDir } : {}),
+    ...(run.report !== undefined ? { report: run.report } : {}),
+    command: run.command,
+    startOver,
+    signal,
+  });
   console.log(describeModules(planned, { for: "command line" }));
-  let result = await done;
-
-  // core-gap: a session with no front end asks nobody, and a front end with only `ask` would get chats and the
-  // sentinel - so the start over is asked here. Run without it, a codebase that has to be started over ends the run
-  // incomplete, nothing drained; asked at the terminal and agreed to, it runs again, starting over. Declined - or with no
-  // terminal - the run ends there, where the old headless run drained the rest of the chain first.
-  const toStartOver = planned.filter((status) => status.startOver !== undefined);
-  if (!run.startOver && result.status === "incomplete" && toStartOver.length > 0) {
-    const why = startOverWhy(toStartOver);
-    if (process.stdin.isTTY !== true) {
-      console.error(c.error(`${why}\nThere is no terminal to ask whether to start over: run it again with --start-over to start over without asking.`));
-    } else if (await askAtTerminal("Start over?", `${why}\nStarting over takes its code and conformance tests out - they stay in its history - and builds it again from the bottom of the chain.`)) {
-      ({ planned, done } = await ask(true));
-      console.log(describeModules(planned, { for: "command line" }));
-      result = await done;
-    } else {
-      console.error(c.error(`${why}\nNot started over: run it again with --start-over to start over without asking.`));
-    }
-  }
-
+  const result = await done;
+  if (unasked !== undefined) console.error(c.error(`${unasked.body}\nThere is no terminal to ask whether to start over: run it again with --start-over to start over without asking.`));
   // Drained: how each codebase stands now.
-  if (result.reason === undefined) console.log(`\n${describeModules(turri.work.status().modules, { for: "command line" })}`);
+  else console.log(`\n${describeModules(turri.work.status().modules, { for: "command line" })}`);
   printEnd(result);
   return result.status === "completed" ? 0 : result.status === "stopped" ? 130 : 1;
 }
@@ -137,17 +128,6 @@ async function lookAhead(turri: Turri, plainFile: string): Promise<number> {
     console.log(pulse.task ?? c.dim(pulse.why ?? "(no task)"));
   }
   return 0;
-}
-
-/** Why a codebase has to be started over, a line each. */
-function startOverWhy(statuses: ModuleStatus[]): string {
-  return statuses
-    .map(({ startOver }) =>
-      startOver!.old === true
-        ? `${startOver!.codebases.join(", ")} was built when functional specs were numbered, before they had func-ids: nothing more can be built on it.`
-        : `${startOver!.codebases.join(", ")} was built without ${startOver!.requires.join(", ")}, which it now requires: no change to its code can bring it in.`,
-    )
-    .join("\n");
 }
 
 /** How the run ended: the verdict, every pulse, where to try what landed, and the code exported. */
