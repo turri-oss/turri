@@ -32,7 +32,7 @@ export type LoopRun = LoopWork & {
 };
 
 export async function runLoop(run: LoopRun): Promise<never> {
-  const turri = await createTurri({ client: clientInfo(), overrides: run.overrides, onEvent: printEvent() });
+  const turri = await createTurri({ client: clientInfo(run.command[0] ?? "regenerate"), overrides: run.overrides, onEvent: printEvent() });
   // ctrl+c stops the run - its running pulses rolled back, nothing more started - and it ends as it would; a second
   // one leaves at once. What its agents left running goes either way (the core stops its process groups on exit).
   const stopping = new AbortController();

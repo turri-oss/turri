@@ -36,10 +36,16 @@ export function turriIdentity(): { version: string | null; git_commit: string | 
   };
 }
 
-/** Who runs turri, as the core is told it: the banner shows it, the ledger and run reports record it. */
-export function clientInfo(identity: ReturnType<typeof turriIdentity> = turriIdentity()): ClientInfo {
+/**
+ * Who runs turri, and how this time, as the core is told it: the banner shows it, the ledger and run reports record it.
+ * `mode` is the CLI's own word - `chat` for the terminal, pi's `print`, `json` or `rpc`, and a command's name for a command
+ * (`regenerate`, `conform`, `launch`, `cultivate`) - which turri-app reads too: `chat` is the terminal, `regenerate` a
+ * headless run.
+ */
+export function clientInfo(mode: string, identity: ReturnType<typeof turriIdentity> = turriIdentity()): ClientInfo {
   return {
     name: "turri",
+    mode,
     version: identity.version ?? "0.0.0",
     ...(identity.git_commit !== null ? { commit: identity.git_commit } : {}),
     ...(identity.git_dirty !== null ? { changed: identity.git_dirty } : {}),

@@ -54,7 +54,7 @@ async function main() {
   }
   const plainFile = resolve(named);
   // A session with no front end: the launch agent runs on its coding model - the config's, or --model.
-  const turri = await createTurri({ client: clientInfo(), ...(args.model !== undefined ? { overrides: { codingModel: args.model } } : {}) });
+  const turri = await createTurri({ client: clientInfo("launch"), ...(args.model !== undefined ? { overrides: { codingModel: args.model } } : {}) });
   // ctrl+c: everything the launch started stopped - and the launch itself, while it is under way - and turri leaves.
   const stopping = new AbortController();
   process.on("SIGINT", () => {

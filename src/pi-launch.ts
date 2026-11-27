@@ -92,14 +92,17 @@ if (interactive) {
   const captured = takeCaptured();
   turri = await createTurri({
     frontend: { ...terminal.frontend, sessions: driveTerminal(terminal, { restore }) },
-    client: clientInfo(),
+    client: clientInfo("chat"),
     overrides,
     // Opened again in the project a capture wrote (reopen.ts): its report, told in the first chat.
     ...(captured !== undefined ? { captured } : {}),
   });
   terminal.attach(turri);
 } else {
-  turri = await createTurri({ client: clientInfo(), overrides, persist: false });
+  // pi's own mode, as its arguments name it: json or rpc with --mode, else print.
+  const modeAt = args.indexOf("--mode");
+  const mode = args.find((arg) => arg.startsWith("--mode="))?.slice("--mode=".length) ?? (modeAt !== -1 ? args[modeAt + 1] : undefined) ?? "print";
+  turri = await createTurri({ client: clientInfo(mode), overrides, persist: false });
   adoptAsBound(turri);
 }
 setProcessTurri(turri);

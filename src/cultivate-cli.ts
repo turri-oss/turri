@@ -48,7 +48,7 @@ async function main(): Promise<number> {
 
   // Its questions and review gates are put here, at the terminal: a front end that asks, and has no chats - nor a sentinel.
   const turri = await createTurri({
-    client: clientInfo(),
+    client: clientInfo("cultivate"),
     frontend: { ask: (question, { signal }) => askAtTerminal(question, signal), sessions: { kind: "none" } },
   });
   const stopping = new AbortController();
