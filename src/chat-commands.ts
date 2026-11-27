@@ -14,8 +14,8 @@ export const CLOSE_CHAT_KEY = "alt+w";
 const SHOW_KEYS = Array.from({ length: MAX_CHATS }, (_, index) => `alt+${index + 1}`);
 
 /**
- * On a Mac, alt is Option, which types ¡ and ñ unless the terminal sends it as Meta: said once a session, as the second
- * chat opens - when the keys are first worth having.
+ * On a Mac, alt is Option, which types ¡ and ñ unless the terminal sends it as Meta: said once a session, as the person's
+ * second chat opens - when the keys are first worth having. The sentinel's chat, opened by turri, is not one.
  */
 export const OPTION_AS_META =
   "Chats: ⌥1…⌥9 switch, ⌥N opens one, ⌥W closes the one shown - on macOS only once your terminal sends Option as Meta: " +
@@ -25,12 +25,12 @@ export const OPTION_AS_META =
 /** The sessions told already. */
 const toldOfOption = new WeakSet<TerminalChats>();
 
-/** Said once a session, as its second chat opens, on a Mac. */
+/** Said once a session, as the person's second chat opens, on a Mac. */
 export function tellOfOptionOnce(session: TerminalChats, platform: NodeJS.Platform = process.platform): void {
   if (platform !== "darwin" || toldOfOption.has(session)) return;
   toldOfOption.add(session);
   const stop = session.onChange(() => {
-    if (session.chats().length < 2) return;
+    if (session.chats().filter((chat) => chat.role === undefined).length < 2) return;
     stop();
     // Once the new chat is on the screen: said there.
     setTimeout(() => session.notify(OPTION_AS_META, "info"), 0);
