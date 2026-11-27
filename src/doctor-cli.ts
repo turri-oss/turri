@@ -1,7 +1,7 @@
 import { rmSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
-import { asksModels, checkNode, doctor, verdictOf, type Check, type Level } from "@turri-dev/core/system";
-import { clientInfo, globalExtensionFile } from "./cli-root.ts";
+import { asksModels, checkNode, doctor, verdictOf, type Check, type DoctorOptions, type Level } from "@turri-dev/core/system";
+import { globalExtensionFile } from "./cli-root.ts";
 import { checkGlobal, checkTurri } from "./turri-versions.ts";
 import { configKeyOptions, parseArgs } from "./cli-options.ts";
 import { brand } from "./brand.ts";
@@ -72,7 +72,7 @@ const USAGE = [
  * Every check: the core's of the machine and the project (`doctor`), with this turri's own after the machine's - its
  * version, the turris on the PATH, and an older turri's file in every pi.
  */
-async function allChecks(checking: { dir: string; models: boolean }): Promise<Check[]> {
+async function allChecks(checking: DoctorOptions & { dir: string }): Promise<Check[]> {
   const [checks, turri] = await Promise.all([doctor(checking), checkTurri()]);
   const machine = checks.findIndex((check) => check.name === "Model provider") + 1 || checks.length;
   return [...checks.slice(0, machine), ...turri, ...checkGlobal(), ...checks.slice(machine)];
@@ -84,18 +84,12 @@ export async function main(args: string[]): Promise<number> {
   console.log(brand.bold(brand.accent("Checking what turri needs.")));
   const node = checkNode();
   if (node.level !== "ok") return report([node]);
-  const checking = { dir: process.cwd(), models: options["no-models"] === undefined };
-  // core-gap: doctor() takes no models of its own - it reads them, as config.turri.yaml's keys, from the session open in
-  // the process. Models named on the command line, to be asked, are held by a session with no front end while it checks.
-  const session = checking.models && Object.keys(overrides).length > 0 ? await (await import("@turri-dev/core")).createTurri({ client: clientInfo(), overrides }) : undefined;
-  let checks: Check[];
-  try {
-    if (asksModels(checking)) console.log(brand.muted("Asking each model the config names for a word..."));
-    checks = await allChecks(checking);
-  } finally {
-    await session?.dispose();
-  }
-  const code = report(checks);
+  // The models named on the command line are checked and asked in place of the config's.
+  const { harnessModel, codingModel, judgeModel } = overrides;
+  const named = { ...(harnessModel !== undefined ? { harnessModel } : {}), ...(codingModel !== undefined ? { codingModel } : {}), ...(judgeModel !== undefined ? { judgeModel } : {}) };
+  const checking = { dir: process.cwd(), models: options["no-models"] === undefined, ...(Object.keys(named).length > 0 ? { overrides: named } : {}) };
+  if (asksModels(checking)) console.log(brand.muted("Asking each model the config names for a word..."));
+  const code = report(await allChecks(checking));
   // turri and pi are kept apart: a plain pi does not start turri. An older turri's file that made it do so goes, asked.
   const global = globalExtensionFile();
   if (global !== undefined && (await confirm(`\nA plain \`pi\` loads turri too, through ${global}. Remove it, so pi stays pi?`, true, options.yes !== undefined || args.includes("-y")))) {

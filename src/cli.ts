@@ -170,17 +170,6 @@ if (command === "-v" || command === "--version") {
   process.exit(0);
 }
 
-// The AWS region the project's Bedrock models need, set before any model is called - unless the person set one
-// (bedrock-region.ts) - for a command that calls models with no session: a session sets it itself as it opens, the chat's
-// among them. The models named on the command line count too.
-if (command === "doctor" || command === "capture") {
-  const { applyBedrockRegion } = await import("./bedrock-region.ts");
-  const named = argv.flatMap((arg, at) =>
-    ["--harness-model", "--coding-model", "--model"].includes(arg) ? [argv[at + 1] ?? ""] : arg.startsWith("--harness-model=") || arg.startsWith("--coding-model=") || arg.startsWith("--model=") ? [arg.slice(arg.indexOf("=") + 1)] : [],
-  );
-  applyBedrockRegion(process.cwd(), { also: named.filter((model) => model !== "") });
-}
-
 // turri alone is the conversation, and so is turri with pi's options - `turri -c`, `turri --harness-model <m>`. A word
 // turri does not know is an error below, not a conversation started on it.
 if (command === undefined || command.startsWith("-")) chat(argv);
