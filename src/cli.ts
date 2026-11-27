@@ -175,11 +175,11 @@ if (command === "-v" || command === "--version") {
   process.exit(0);
 }
 
-// The AWS region the project's Bedrock models need, set before any model is called - here, and in the pi the chat starts,
-// which inherits it - unless the person set one (bedrock-region.ts). The models named on the command line count too. A
-// command that calls no model is left alone.
-if (!["parse", "drift", "lineage", "init-config", ...Object.keys(PACKAGE_COMMANDS)].includes(command ?? "")) {
-  const { applyBedrockRegion } = await import("@turri-dev/core/commands");
+// The AWS region the project's Bedrock models need, set before any model is called - unless the person set one
+// (bedrock-region.ts) - for a command that calls models with no session: a session sets it itself as it opens, the chat's
+// among them. The models named on the command line count too.
+if (command === "doctor" || command === "capture") {
+  const { applyBedrockRegion } = await import("./bedrock-region.ts");
   const named = argv.flatMap((arg, at) =>
     ["--harness-model", "--coding-model", "--model"].includes(arg) ? [argv[at + 1] ?? ""] : arg.startsWith("--harness-model=") || arg.startsWith("--coding-model=") || arg.startsWith("--model=") ? [arg.slice(arg.indexOf("=") + 1)] : [],
   );
@@ -228,11 +228,14 @@ process.argv = [
   ...(entry.args ?? []),
 ];
 
-// A headless run is stopped by a signal - SIGTERM, SIGHUP, Ctrl-C - whatever else listens for it: it exits, and what
-// its agents left running goes with it (shell.ts kills every process group on exit). Left to the libraries' own
-// handlers, one ran on for minutes after it was told to stop, building in the same codebase as the run after it.
+// A headless run is stopped by a signal - SIGTERM, SIGHUP - whatever else listens for it: it exits, and what its agents
+// left running goes with it (the core kills every process group it started on exit). Left to the libraries' own
+// handlers, one ran on for minutes after it was told to stop, building in the same codebase as the run after it. Ctrl-C
+// too - except where the command stops its work with it, and ends as it would: regenerate, conform, launch, cultivate.
 if (!["parse", "drift", "lineage"].includes(command)) {
-  for (const [signal, code] of [["SIGTERM", 143], ["SIGHUP", 129], ["SIGINT", 130]] as const) {
+  const ownInterrupt = ["regenerate", "conform", "launch", "cultivate"].includes(command);
+  const signals: Array<[NodeJS.Signals, number]> = [["SIGTERM", 143], ["SIGHUP", 129], ...(ownInterrupt ? [] : [["SIGINT", 130] as [NodeJS.Signals, number]])];
+  for (const [signal, code] of signals) {
     process.on(signal, () => {
       console.error(`\nstopped (${signal})`);
       process.exit(code);

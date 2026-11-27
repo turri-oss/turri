@@ -1,8 +1,7 @@
 import { resolve } from "node:path";
-import { configForSpec, readProjectConfig, launchModule } from "@turri-dev/core/project";
-import { modelSpec, projectModels } from "@turri-dev/core/models";
-import { launchText } from "@turri-dev/core";
-import { followLaunchedLogs, runningLaunched, stopLaunched } from "@turri-dev/core/commands";
+import { createTurri, launchText } from "@turri-dev/core";
+import { readProjectConfig } from "@turri-dev/core/project";
+import { clientInfo } from "./cli-root.ts";
 import { c } from "./module-report.ts";
 
 const USAGE = `usage: turri launch [file.plain] [options]
@@ -54,41 +53,54 @@ async function main() {
     process.exit(1);
   }
   const plainFile = resolve(named);
-  // A launch follows steps - a script, a start command: the coding model does that well, thinking low.
-  const model = args.model ?? modelSpec(projectModels(configForSpec(plainFile)).coding);
-
-  const stopAll = async () => {
-    const stopped = await stopLaunched();
-    if (stopped.length > 0) console.log(c.dim(`\nStopped ${stopped.join(", ")}.`));
-  };
+  // A session with no front end: the launch agent runs on its coding model - the config's, or --model.
+  const turri = await createTurri({ client: clientInfo(), ...(args.model !== undefined ? { overrides: { codingModel: args.model } } : {}) });
+  // ctrl+c: everything the launch started stopped - and the launch itself, while it is under way - and turri leaves.
+  const stopping = new AbortController();
   process.on("SIGINT", () => {
-    void stopAll().then(() => process.exit(0));
+    if (stopping.signal.aborted) process.exit(130);
+    stopping.abort();
+    void turri.work
+      .halt({ launched: "all" })
+      .then((said) => console.log(c.dim(`\n${said}`)))
+      .finally(() => void turri.dispose().then(() => process.exit(0)));
   });
 
-  console.log(c.dim(`\nworking out how to start it${model !== undefined ? ` (${model})` : ""}…\n`));
-  // One launch, on a track of its own: the code exported first, then the agent, its words as they come.
-  let streamed = "";
-  const ended = await launchModule(plainFile, {
-    model, inModule: args.inModule, guidance: args.guidance,
-    onDelta(delta) { streamed += delta; process.stdout.write(delta); },
-  });
-  // What the agent said as it went is on the screen already: its summary only when it said nothing - what turri stopped
-  // for it, always.
-  const text = launchText(streamed.trim() === "" ? ended : { ...ended, summary: undefined });
-  const said = text !== "" ? `\n${text}` : "";
-  console.log(`\n\n${ended.status === "launched" ? c.success(`Launched.${said}`) : c.error(`It did not come up.${said}`)}`);
-  if (ended.status !== "launched") console.log(`\n${c.dim(PROBLEMS)}`);
+  try {
+    console.log(c.dim(`\nworking out how to start it${args.model !== undefined ? ` (${args.model})` : ""}…\n`));
+    // The code exported first, then the agent, its words as they come.
+    let streamed = "";
+    const ended = await turri.launches.launch(plainFile, {
+      ...(args.inModule !== undefined ? { inModule: args.inModule } : {}),
+      ...(args.guidance !== undefined ? { guidance: args.guidance } : {}),
+      onOutput(text) {
+        streamed += text;
+        process.stdout.write(text);
+      },
+      signal: stopping.signal,
+    });
+    // What the agent said as it went is on the screen already: its summary only when it said nothing - what turri stopped
+    // for it, always.
+    const text = launchText(streamed.trim() === "" ? ended : { ...ended, summary: undefined });
+    const said = text !== "" ? `\n${text}` : "";
+    console.log(`\n\n${ended.status === "launched" ? c.success(`Launched.${said}`) : c.error(`It did not come up.${said}`)}`);
+    if (ended.status !== "launched") console.log(`\n${c.dim(PROBLEMS)}`);
 
-  if (runningLaunched().length === 0) process.exit(ended.status === "launched" ? 0 : 1);
-  console.log(c.success(c.bold("\nRunning - Ctrl-C stops it.")) + c.dim(" Its output follows.\n"));
-  await followLaunchedLogs((name, line) => console.log(`${c.accent(`[${name}]`)} ${line}`));
-  console.log(c.dim("Everything it started has ended."));
-  process.exit(0);
+    if (turri.launches.running().length === 0) return ended.status === "launched" ? 0 : 1;
+    console.log(c.success(c.bold("\nRunning - Ctrl-C stops it.")) + c.dim(" Its output follows.\n"));
+    await turri.launches.followLogs((name, line) => console.log(`${c.accent(`[${name}]`)} ${line}`), { signal: stopping.signal });
+    if (stopping.signal.aborted) return new Promise<never>(() => {});
+    console.log(c.dim("Everything it started has ended."));
+    return 0;
+  } catch (error) {
+    if (stopping.signal.aborted) return new Promise<never>(() => {});
+    console.error(error instanceof Error ? error.message : error);
+    console.error(`\n${PROBLEMS}`);
+    return 1;
+  } finally {
+    // Leaving with ctrl+c, the handler above lets the session go once what it started is stopped.
+    if (!stopping.signal.aborted) await turri.dispose();
+  }
 }
 
-main().catch(async (error) => {
-  await stopLaunched();
-  console.error(error instanceof Error ? error.message : error);
-  console.error(`\n${PROBLEMS}`);
-  process.exit(1);
-});
+process.exit(await main());

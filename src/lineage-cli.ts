@@ -1,5 +1,5 @@
-import { defaultBuildDir } from "@turri-dev/core/commands";
-import { historyLog, historyShow } from "@turri-dev/core/project";
+import { join } from "node:path";
+import { historyLog, historyShow, MODULES_DIR } from "@turri-dev/core/project";
 
 const USAGE = `usage: turri lineage <module> [commit]
 
@@ -11,5 +11,7 @@ if (module === undefined || process.argv.includes("--help")) {
   console.log(USAGE);
   process.exit(module === undefined ? 1 : 0);
 }
-const buildDir = defaultBuildDir(module, process.cwd());
+// core-gap: where a module's code is built - plain_modules/<module>/code - is the core's defaultBuildDir, which is not
+// public: the layout is written out here until it is.
+const buildDir = join(process.cwd(), MODULES_DIR, module, "code");
 console.log(commit !== undefined ? historyShow(buildDir, commit) : historyLog(buildDir));

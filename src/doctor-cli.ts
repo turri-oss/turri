@@ -1,8 +1,8 @@
 import { rmSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
-import { asksModels, verdictOf, checkNode, type Check, type Level } from "@turri-dev/core/system";
-import { allChecks } from "@turri-dev/core/commands";
-import { globalExtensionFile } from "./cli-root.ts";
+import { asksModels, checkNode, doctor, verdictOf, type Check, type Level } from "@turri-dev/core/system";
+import { clientInfo, globalExtensionFile } from "./cli-root.ts";
+import { checkGlobal, checkTurri } from "./turri-versions.ts";
 import { configKeyOptions, parseArgs } from "./cli-options.ts";
 import { brand } from "./brand.ts";
 
@@ -68,16 +68,34 @@ const USAGE = [
   "plain pi. --yes answers yes.",
 ].join("\n");
 
+/**
+ * Every check: the core's of the machine and the project (`doctor`), with this turri's own after the machine's - its
+ * version, the turris on the PATH, and an older turri's file in every pi.
+ */
+async function allChecks(checking: { dir: string; models: boolean }): Promise<Check[]> {
+  const [checks, turri] = await Promise.all([doctor(checking), checkTurri()]);
+  const machine = checks.findIndex((check) => check.name === "Model provider") + 1 || checks.length;
+  return [...checks.slice(0, machine), ...turri, ...checkGlobal(), ...checks.slice(machine)];
+}
+
 export async function main(args: string[]): Promise<number> {
   const { options } = parseArgs(args, ["--no-models", "--yes", "-y"], USAGE, ["--harness-model", "--judge-model"]);
-  configKeyOptions(options);
+  const overrides = configKeyOptions(options);
   console.log(brand.bold(brand.accent("Checking what turri needs.")));
   const node = checkNode();
   if (node.level !== "ok") return report([node]);
-  const modelsGiven = ["harness-model", "model", "judge-model"].some((name) => options[name] !== undefined);
-  const checking = { dir: process.cwd(), models: options["no-models"] === undefined, cli: true, modelsGiven };
-  if (asksModels(checking)) console.log(brand.muted("Asking each model the config names for a word..."));
-  const code = report(await allChecks(checking));
+  const checking = { dir: process.cwd(), models: options["no-models"] === undefined };
+  // core-gap: doctor() takes no models of its own - it reads them, as config.turri.yaml's keys, from the session open in
+  // the process. Models named on the command line are held by a session with no front end while it checks.
+  const session = Object.keys(overrides).length > 0 ? await (await import("@turri-dev/core")).createTurri({ client: clientInfo(), overrides }) : undefined;
+  let checks: Check[];
+  try {
+    if (asksModels(checking)) console.log(brand.muted("Asking each model the config names for a word..."));
+    checks = await allChecks(checking);
+  } finally {
+    await session?.dispose();
+  }
+  const code = report(checks);
   // turri and pi are kept apart: a plain pi does not start turri. An older turri's file that made it do so goes, asked.
   const global = globalExtensionFile();
   if (global !== undefined && (await confirm(`\nA plain \`pi\` loads turri too, through ${global}. Remove it, so pi stays pi?`, true, options.yes !== undefined || args.includes("-y")))) {
