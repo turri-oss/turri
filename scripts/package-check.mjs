@@ -22,9 +22,21 @@ try {
     lock.packages[`node_modules/${name}`] = { ...deps, version, resolved, integrity };
   };
   if (process.argv[2]) {
-    const core = pack(resolve(process.argv[2]));
+    // A clone's package.json keeps the version it was last given - a release takes its version from the tag - so the
+    // clone is installed as the version the CLI pins: its packed manifest's version changed here, in a copy, never in it.
+    let core = pack(resolve(process.argv[2]));
     assert.equal(core.name, "@turri-dev/core");
-    assert.equal(core.version, pkg.dependencies[core.name]);
+    const pinned = pkg.dependencies[core.name];
+    if (core.version !== pinned) {
+      console.log(`Checking against the core clone at ${core.version}, installed as ${pinned}, the version the CLI pins.`);
+      const unpacked = join(dir, "core-unpacked");
+      mkdirSync(unpacked);
+      execFileSync("tar", ["-xzf", core.filename, "-C", "core-unpacked"], { cwd: dir });
+      const manifest = join(unpacked, "package", "package.json");
+      writeFileSync(manifest, JSON.stringify({ ...JSON.parse(readFileSync(manifest, "utf8")), version: pinned }, null, 2));
+      rmSync(join(dir, core.filename));
+      core = JSON.parse(npm(join(unpacked, "package"), "pack", "--json", "--ignore-scripts", "--pack-destination", dir))[0];
+    }
     local(core, lock.packages[`node_modules/${core.name}`]);
   }
   const cli = pack(root);

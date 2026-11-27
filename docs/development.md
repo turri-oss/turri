@@ -20,7 +20,7 @@ In PowerShell set `$env:NODE_OPTIONS = '--conditions=turri-source'`. The link he
 
 `npm test` runs the CLI and terminal suite without calling a model. `npm run typecheck` checks `src/`; with a linked core it follows the `turri-source` condition. To run one file: `npx vitest run tests/regenerate/jobs-tree.test.ts`. The harness suite and mutation tests run [in the core](https://github.com/turri-oss/turri-core/blob/main/docs/development.md).
 
-`npm run build` compiles the CLI against the core's built declarations. On an unbuilt core checkout, run its `npm run build` first. `npm run test:package` installs the packed CLI in a temporary project and runs its commands there. Pass the core checkout to pack and install both packages, including before the core version is published:
+`npm run build` compiles the CLI against the core's built declarations. On an unbuilt core checkout, run its `npm run build` first. `npm run test:package` installs the packed CLI in a temporary project and runs its commands there. Pass the core checkout to pack and install both packages, including before the core version is published - the clone is installed as the version the CLI pins, as its own package.json keeps the version it was last given:
 
 ```bash
 npm run test:package -- ../turri-core
