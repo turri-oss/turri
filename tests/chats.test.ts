@@ -1,36 +1,45 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { OPTION_AS_META, tellOfOptionOnce } from "../src/chat-commands.ts";
-import { createTurriCore } from "@turri-dev/core/terminal";
+import { openTerminal, type OpenTerminal } from "./terminal-session.ts";
 
-function session() {
-  const core = createTurriCore();
-  core.setDriver({ async create() { core.extension(new Proxy({}, { get: () => () => {} }) as never); }, async dispose() {} });
-  return { core };
-}
 const settled = () => new Promise((resolve) => setTimeout(resolve, 20));
+
 describe("the alt keys on a Mac", () => {
+  let open: OpenTerminal;
+  let platform: PropertyDescriptor | undefined;
+  beforeEach(async () => {
+    // The chats' own /chat says it on this machine's platform: here, the platform each test names.
+    platform = Object.getOwnPropertyDescriptor(process, "platform");
+    Object.defineProperty(process, "platform", { value: "linux" });
+    open = await openTerminal();
+  });
+  afterEach(async () => {
+    await open.close();
+    if (platform !== undefined) Object.defineProperty(process, "platform", platform);
+  });
+
   it("says once, as the second chat opens, that Option has to be sent as Meta", async () => {
-    const { core } = session();
+    const { turri, terminal } = open;
     const said: string[] = [];
-    core.notify = (message) => said.push(message);
-    tellOfOptionOnce(core, "darwin");
-    tellOfOptionOnce(core, "darwin");
-    await core.open();
+    terminal.notify = (message) => void said.push(message);
+    tellOfOptionOnce(terminal, "darwin");
+    tellOfOptionOnce(terminal, "darwin");
+    await turri.chats.open();
     await settled();
     expect(said).toEqual([]);
-    await core.open();
-    await core.open();
+    await turri.chats.open();
+    await turri.chats.open();
     await settled();
     expect(said).toEqual([OPTION_AS_META]);
   });
 
   it("says nothing where alt is alt", async () => {
-    const { core } = session();
+    const { turri, terminal } = open;
     const said: string[] = [];
-    core.notify = (message) => said.push(message);
-    tellOfOptionOnce(core, "linux");
-    await core.open();
-    await core.open();
+    terminal.notify = (message) => void said.push(message);
+    tellOfOptionOnce(terminal, "linux");
+    await turri.chats.open();
+    await turri.chats.open();
     await settled();
     expect(said).toEqual([]);
   });

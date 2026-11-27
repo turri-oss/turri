@@ -3,11 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { configuredModel, readProjectConfig } from "@turri-dev/core/project";
-import { projectModels } from "@turri-dev/core/models";
-import { booleanOption, overrideConfig } from "@turri-dev/core/config";
-import { moduleStates } from "@turri-dev/core/commands";
-import { configKeyOptions, parseArgs } from "../src/cli-options.ts";
+import { booleanOption, configKeyOptions, parseArgs } from "../src/cli-options.ts";
 import { headlessOptions } from "../src/loop-cli.ts";
 const TURRI = resolve("bin/turri.mjs");
 let dir: string;
@@ -16,7 +12,6 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "turri-report-"));
 });
 afterEach(() => {
-  overrideConfig({});
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -32,27 +27,6 @@ function spec(name: string, specs: string[], requires?: string): string {
   );
   return file;
 }
-describe("each codebase's state", () => {
-  it("is complete only with nothing left to regenerate, and says why when it is not", () => {
-    const base = { plainFile: "x.plain", scheduled: [] };
-    expect(
-      moduleStates([
-        { ...base, module: "a", code: null, conformance: undefined },
-        { ...base, module: "b", code: null, conformance: { fresh: false, add: [], patch: [], again: [], delete: [], mechanical: true } },
-        { ...base, module: "c", code: null, conformance: null, why: "pulse 1 did not land" },
-        { ...base, module: "d", code: null, conformance: null, startOver: { requires: ["base"], codebases: ["d"] } },
-        { ...base, module: "e", code: null, conformance: null, running: { jobId: "j", title: "t" } },
-      ]),
-    ).toEqual([
-      { module: "a", state: "complete" },
-      { module: "b", state: "incomplete", why: "its conformance tests are not written for what is built" },
-      { module: "c", state: "halted", why: "pulse 1 did not land" },
-      { module: "d", state: "start_over_needed", why: "built without base, which it now requires: run with --start-over" },
-      { module: "e", state: "running" },
-    ]);
-  });
-});
-
 describe("a headless run's options", () => {
   const exits = () =>
     vi.spyOn(process, "exit").mockImplementation(((code?: number) => {
@@ -74,21 +48,14 @@ describe("a headless run's options", () => {
     error.mockRestore();
   });
 
-  it("reads --harness-model, --coding-model, --judge-model and --review as the config's keys, the config's order kept", () => {
-    writeFileSync(join(dir, "config.yaml"), "review: true\njudge-model: p/old\nmodels:\n  judge: { model: p/own-judge, thinking: high }\nunittests-script: run_unittests.sh\n");
+  it("reads --harness-model, --coding-model, --judge-model and --review as the session's overrides of the config's keys", () => {
     const options = { "harness-model": "p/harness", model: "p/coding:low", "judge-model": "p/judge", review: "false", report: "r.json" };
-    expect(headlessOptions(options)).toEqual({ report: "r.json" });
-    const config = readProjectConfig(dir);
-    expect(config).toMatchObject({
-      harnessModel: { model: "p/harness" },
-      codingModel: { model: "p/coding", thinking: "low" },
-      judgeModel: { model: "p/judge" },
-      review: false,
-      unittestsScript: "run_unittests.sh",
+    expect(headlessOptions(options)).toEqual({
+      report: "r.json",
+      overrides: { harnessModel: "p/harness", codingModel: "p/coding:low", judgeModel: "p/judge", review: false },
     });
-    // A models: entry wins over judge-model, as it does when the file names both.
-    expect(configuredModel(config, "models.judge")).toEqual({ model: "p/own-judge", thinking: "high" });
-    expect(projectModels(config)).toMatchObject({ harness: { model: "p/harness" }, coding: { model: "p/coding", thinking: "low" } });
+    // Only a run takes --review: doctor reads the models alone.
+    expect(configKeyOptions({ review: "false", "harness-model": "p/harness" })).toEqual({ harnessModel: "p/harness" });
   });
 
   it("takes the config's own values, and only those", () => {
@@ -104,11 +71,8 @@ describe("a headless run's options", () => {
     error.mockRestore();
   });
 
-  it("reads --mutation-testing as the config's mutation-testing, over what the file says, and refuses anything but true or false", () => {
-    writeFileSync(join(dir, "config.turri.yaml"), "mutation-testing: true\n");
-    expect(readProjectConfig(dir).mutationTesting).toBe(true);
-    configKeyOptions({ "mutation-testing": "false" }, { review: true });
-    expect(readProjectConfig(dir).mutationTesting).toBe(false);
+  it("reads --mutation-testing as the config's mutation-testing, and refuses anything but true or false", () => {
+    expect(configKeyOptions({ "mutation-testing": "false" }, { review: true })).toEqual({ mutationTesting: false });
     const run = spawnSync(process.execPath, [TURRI, "regenerate", "app.plain", "--mutation-testing", "maybe"], { cwd: dir, encoding: "utf8" });
     expect(run.status).toBe(1);
     expect(run.stderr).toContain("--mutation-testing takes true or false, not maybe");

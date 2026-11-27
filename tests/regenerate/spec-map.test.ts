@@ -1,18 +1,19 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { DEFINITIONS, FUNCTIONAL_REQUIREMENTS, NON_FUNCTIONAL_REQUIREMENTS, TEST_REQUIREMENTS } from "@turri-dev/core/plain";
-import { focusOf, lineDiff, rungOf, type MapPage, type MapItem, type MarkedPage } from "@turri-dev/core";
-import { createSpecMapSource, markSpecMap, pageItems } from "@turri-dev/core/terminal";
-type MarshalledPlainSource = Parameters<typeof pageItems>[0]["spec"];
-type MapPlan = Parameters<typeof markSpecMap>[1];
-type MapCodebase = MapPlan["codebases"][number];
-type MapPulse = MapCodebase["pulses"][number];
+import { focusOf, lineDiff, type MarkedPage } from "@turri-dev/core";
 import { createSidePanel } from "../../src/regenerate/side-panel.ts";
 import { createSpecMapState, columnHeadings, legendLines, specMapHeader, specMapLines, switchTab, tabBar, wordDiff } from "../../src/regenerate/spec-map-view.ts";
 import type { TranscriptStyle } from "../../src/regenerate/transcript-view.ts";
 import { PLAIN_PAINT } from "../../src/regenerate/diff-view.ts";
+
+/**
+ * What the CLI draws of the spec map. The map itself - each module's items, marked built, regenerating, planned or
+ * waiting - is the core's (`work.map()`, `map` events): its marking is tested there. Here the pages are as the core
+ * marked them for each case, kept in marked-pages.json, the project's folder written <dir>.
+ */
+const MARKED = JSON.parse(readFileSync(new URL("./marked-pages.json", import.meta.url), "utf8")) as Record<string, MarkedPage[][]>;
 
 let dir: string;
 let cwd: string;
@@ -27,18 +28,9 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-const item = (markdown: string) => ({ markdown });
-/** A functional spec's func-id from its text: its first words but the filler - "A user can log in." is `log-in`. */
-const funcIdOf = (text: string) =>
-  text.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter((word) => word !== "" && !["a", "an", "the", "user", "can"].includes(word)).slice(0, 2).join("-");
-/** A tree of the sections given; a functional spec is its text - its func-id taken from it - or [func-id, text]. */
-const tree = (sections: Record<string, Array<string | [string, string]>>): MarshalledPlainSource =>
-  Object.fromEntries(
-    Object.entries(sections).map(([key, items]) => [
-      key,
-      items.map((entry) => (key === FUNCTIONAL_REQUIREMENTS ? (typeof entry === "string" ? { id: funcIdOf(entry), markdown: entry } : { id: entry[0], markdown: entry[1] }) : item(entry as string))),
-    ]),
-  );
+/** The pages the core marked for a case - its `at`th map - in this test's project folder. */
+const marked = (name: string, at = 0): MarkedPage[] => JSON.parse(JSON.stringify(MARKED[name]![at]).split("<dir>").join(dir)) as MarkedPage[];
+
 const id = (text: string) => text;
 /** A style that shows what is struck, added and removed as text. */
 const style: TranscriptStyle = {
@@ -51,29 +43,11 @@ const style: TranscriptStyle = {
   added: (text) => `{+${text}+}`,
   removed: (text) => `[-${text.replace(/\x1b\[\d+m/g, "")}-]`,
 };
-const noPlan: MapPlan = { files: [], codebases: [] };
-
-/** The page of one module built from `record`, its spec now `spec`. */
-function page(spec: MarshalledPlainSource, record: MarshalledPlainSource | null, tested?: MarshalledPlainSource): MapPage {
-  return { module: "app", plainFile: join(dir, "app.plain"), buildDir: join(dir, "code"), imports: [], items: pageItems({ module: "app", own: true, spec, record, tested: tested ?? null }) };
-}
-
-/** A pulse that regenerates the items given: from their record lines to their lines now. */
-function pulseOf(items: MapItem[], number: number, running: boolean, title = `pulse ${number}`): MapPulse {
-  const lines = (pick: (entry: MapItem) => string | undefined) => `["${FUNCTIONAL_REQUIREMENTS}"]\n${items.map(pick).filter((line) => line !== undefined).join("\n")}\n`;
-  return { number, title, track: "code", running, rowId: running ? `job${number}` : `planned-app-${number}`, before: lines((entry) => entry.wasLine), after: lines((entry) => entry.line) };
-}
-
-const codebase = (first: MapPage, rest: Partial<MapCodebase> = {}): MapCodebase => ({ module: "app", plainFile: first.plainFile, buildDir: first.buildDir, pulses: [], conformance: true, ...rest });
 
 describe("the regeneration drawn", () => {
   it("strikes a ghost through, word-diffs a changed first line, and shows only the sub-bullet that changed under a changed item", () => {
-    const first = page(
-      tree({ [FUNCTIONAL_REQUIREMENTS]: ["- Register a user.\n  - The response is 201.\n  - Emails are lowercased.", "- Log in."] }),
-      tree({ [FUNCTIONAL_REQUIREMENTS]: ["- Register a user.\n  - The response is 200.\n  - Emails are lowercased.", "- Search for users by name."] }),
-    );
-    const [marked] = markSpecMap([first], noPlan);
-    const { lines } = specMapLines([marked!], createSpecMapState(), 100, style);
+    // Its first item changed in a sub-bullet, its second removed and another added.
+    const { lines } = specMapLines(marked("ghost"), createSpecMapState(), 100, style);
     const text = lines.join("\n");
     expect(text).toContain("- Register a user.");
     expect(text).toContain("  - The response is [-200.-]{+201.+}");
@@ -84,9 +58,7 @@ describe("the regeneration drawn", () => {
 
   it("wraps an item too long for the width, its lines after the first hanging past the bullet, never cutting it short", () => {
     const long = "- :UserAdmin: is the local administration entry point whose successful provisioning output follows `[resource]user-created.schema.json` exactly.";
-    const first = page(tree({ [DEFINITIONS]: [long] }), tree({ [DEFINITIONS]: [long] }));
-    const [marked] = markSpecMap([first], noPlan);
-    const lines = specMapLines([marked!], createSpecMapState(), 60, style).lines;
+    const lines = specMapLines(marked("wraps"), createSpecMapState(), 60, style).lines;
     const at = lines.findIndex((line) => line.includes(":UserAdmin:"));
     const rows = lines.slice(at).filter((line) => line.includes("│"));
     expect(lines.join("\n")).not.toContain("…");
@@ -98,27 +70,18 @@ describe("the regeneration drawn", () => {
   });
 
   it("opens an item to the rest of its text and its acceptance tests - where it stands is beside its mark, not repeated under it", () => {
-    const first = page(
-      tree({ [DEFINITIONS]: ["- :User: is a person."], [FUNCTIONAL_REQUIREMENTS]: ["- A :User: can register.\n  - The response is 201.", "- A :User: can log in."] }),
-      tree({ [DEFINITIONS]: ["- :User: is a person."], [FUNCTIONAL_REQUIREMENTS]: ["- A :User: can log in."] }),
-      tree({ [FUNCTIONAL_REQUIREMENTS]: ["- A :User: can log in."] }),
-    );
-    const register = first.items.find((entry) => entry.text.startsWith("- A :User: can register"))!;
-    const [marked] = markSpecMap([first], { files: [], codebases: [codebase(first, { pulses: [pulseOf([register], 2, false, "registration")] })] });
+    // A new functional spec planned in a pulse, beside one built.
+    const [planned] = marked("opens-item", 0);
     const state = createSpecMapState();
-    for (const entry of marked!.items) state.open.add(`${marked!.plainFile}\n${entry.key}`);
-    const lines = specMapLines([marked!], state, 120, style).lines;
+    for (const entry of planned!.items) state.open.add(`${planned!.plainFile}\n${entry.key}`);
+    const lines = specMapLines([planned!], state, 120, style).lines;
     const text = lines.join("\n");
     expect(text).not.toMatch(/│ [◇○◆] /);
     // Nor what its first line was: the word diff on the row says it.
     expect(text).not.toContain("was:");
     expect(text).not.toContain("not regenerated yet");
     // A changed item's lines that did not change are the spec's, as any: not dimmed.
-    const changed = page(
-      tree({ [FUNCTIONAL_REQUIREMENTS]: ["- Read the contacts.\n  - Active contacts first.\n  - In the order received."] }),
-      tree({ [FUNCTIONAL_REQUIREMENTS]: ["- Read the contacts.\n  - Archived contacts are not read.\n  - In the order received."] }),
-    );
-    const [markedChange] = markSpecMap([changed], noPlan);
+    const [markedChange] = marked("opens-item", 1);
     const openChange = createSpecMapState();
     for (const entry of markedChange!.items) openChange.open.add(`${markedChange!.plainFile}\n${entry.key}`);
     const shownChange = specMapLines([markedChange!], openChange, 120, { ...style, muted: (t: string) => `<dim>${t}</dim>` }).lines.join("\n");
@@ -129,14 +92,12 @@ describe("the regeneration drawn", () => {
   });
 
   it("opens a functional spec's scenarios as its test plain file has them - each kind under a heading drawn as a section's, each scenario under its id - and says nothing of tests where it has none", () => {
-    const spec: MarshalledPlainSource = {
-      [FUNCTIONAL_REQUIREMENTS]: [{ id: "patch", markdown: "Patch the records.\n- Lookups first.", conformance_tests: [{ id: "patches", text: "A record is patched." }], acceptance_tests: [{ id: "lookup", text: "A lookup becomes an `@odata.bind` entry." }, { id: "empty-record", text: "An empty record patches nothing." }] }],
-    } as MarshalledPlainSource;
-    const [marked] = markSpecMap([page(spec, spec)], noPlan);
+    // A functional spec with conformance and acceptance tests.
+    const [patched] = marked("scenarios");
     const state = createSpecMapState();
-    for (const entry of marked!.items) state.open.add(`${marked!.plainFile}\n${entry.key}`);
+    for (const entry of patched!.items) state.open.add(`${patched!.plainFile}\n${entry.key}`);
     const painted: TranscriptStyle = { ...style, diff: { ...PLAIN_PAINT, syntax: (role, text) => (role === "section" ? `<section>${text}</section>` : text) } };
-    const lines = specMapLines([marked!], state, 120, painted).lines;
+    const lines = specMapLines([patched!], state, 120, painted).lines;
     const row = lines.findIndex((line) => line.includes("# patch"));
     expect(lines[row]).toMatch(/│ # patch$/);
     expect(lines[row + 1]).toBe("        │ Patch the records.");
@@ -153,16 +114,10 @@ describe("the regeneration drawn", () => {
   });
 
   it("shows the files a module imports under its own text, each closed until opened - the module it requires is a tab of its own", () => {
-    const items: MapItem[] = [
-      { key: "a", section: FUNCTIONAL_REQUIREMENTS, state: "built", text: "- Say hello.", scenarios: { conformance: [], acceptance: [] } },
-      { key: "b", section: NON_FUNCTIONAL_REQUIREMENTS, state: "built", text: "- Use Python 3.12.", scenarios: { conformance: [], acceptance: [] }, file: "stdlib/lang/python" },
-      { key: "c", section: NON_FUNCTIONAL_REQUIREMENTS, state: "changed", text: "- Use FastAPI.", was: "- Use Flask.", scenarios: { conformance: [], acceptance: [] }, file: "stdlib/backend/python-fastapi" },
-    ];
-    const top: MapPage = { module: "top", plainFile: join(dir, "top.plain"), buildDir: "", imports: ["stdlib/lang/python", "stdlib/backend/python-fastapi"], items, requires: "base" };
-    const base: MapPage = { module: "base", plainFile: join(dir, "base.plain"), buildDir: "", imports: [], items: [{ key: "d", section: FUNCTIONAL_REQUIREMENTS, state: "built", text: "- Store a value.", scenarios: { conformance: [], acceptance: [] } }] };
-    const marked = markSpecMap([base, top], { files: [], codebases: [codebase(base)] });
+    // top requires base, and imports two files of the standard library - one of its items changed.
+    const pages = marked("imports");
     const state = createSpecMapState();
-    const text = specMapLines(marked, state, 100, style).lines.join("\n");
+    const text = specMapLines(pages, state, 100, style).lines.join("\n");
     // The module asked for is shown; the one it requires is not drawn under it.
     expect(text).toContain("- Say hello.");
     expect(text).toContain("imported (2)");
@@ -172,66 +127,43 @@ describe("the regeneration drawn", () => {
     expect(text).not.toContain("required (");
     expect(text).not.toContain("- Store a value.");
     // Opened, an import block shows its items, word by word where they changed.
-    state.imports.set(`${top.plainFile}\nstdlib/backend/python-fastapi`, true);
-    expect(specMapLines(marked, state, 100, style).lines.join("\n")).toContain("- Use [-Flask.-]{+FastAPI.+}");
+    state.imports.set(`${join(dir, "top.plain")}\nstdlib/backend/python-fastapi`, true);
+    expect(specMapLines(pages, state, 100, style).lines.join("\n")).toContain("- Use [-Flask.-]{+FastAPI.+}");
     // ← goes to the module it requires.
-    switchTab(marked, state, -1);
-    expect(specMapLines(marked, state, 100, style).lines.join("\n")).toContain("- Store a value.");
+    switchTab(pages, state, -1);
+    expect(specMapLines(pages, state, 100, style).lines.join("\n")).toContain("- Store a value.");
   });
 
   it("has a tab a module of the chain, in its order, the one shown marked - fitted to the width around it, the rest counted", () => {
-    const module = (name: string, requires?: string): MapPage => ({
-      module: name,
-      plainFile: join(dir, `${name}.plain`),
-      buildDir: join(dir, name),
-      imports: [],
-      items: [{ key: name, section: FUNCTIONAL_REQUIREMENTS, state: "new", text: `- ${name} works.`, scenarios: { conformance: [], acceptance: [] } }],
-      ...(requires !== undefined ? { requires } : {}),
-    });
+    // A chain of seven modules, each requiring the one before.
     const names = ["version_api", "function_executor", "http_client", "auth", "utils", "listing", "restore_api"];
-    const pages = names.map((name, index) => module(name, index > 0 ? names[index - 1] : undefined));
-    const marked = markSpecMap(pages, { files: [], codebases: [codebase(pages[0]!)] });
-    const shown = marked.find((page) => page.module === "auth")!;
-    expect(tabBar(marked, shown, 200, style, 0).line).toBe("version_api  function_executor  http_client  [auth]  utils  listing  restore_api");
-    const { line: narrow } = tabBar(marked, shown, 40, style, 0);
+    const chain = marked("chain-tabs");
+    const shown = chain.find((page) => page.module === "auth")!;
+    expect(tabBar(chain, shown, 200, style, 0).line).toBe("version_api  function_executor  http_client  [auth]  utils  listing  restore_api");
+    const { line: narrow } = tabBar(chain, shown, 40, style, 0);
     expect(narrow).toContain("[auth]");
     expect(narrow).toMatch(/^‹ \d+ {2}.*\[auth\].* \d+ ›$/);
     expect(narrow.length).toBeLessThanOrEqual(40);
     // A chain of many modules draws only the one shown, not each nested in the next.
-    const lines = specMapLines(marked, createSpecMapState(), 120, style).lines.join("\n");
-    const focus = focusOf(marked)!;
+    const lines = specMapLines(chain, createSpecMapState(), 120, style).lines.join("\n");
+    const focus = focusOf(chain)!;
     expect(lines).toContain(`- ${focus.module} works.`);
     expect(names.filter((name) => name !== focus.module).some((name) => lines.includes(`- ${name} works.`))).toBe(false);
   });
 
   it("heads the map with its count and status, and its two columns with status and the module's file", () => {
-    const top = markSpecMap([{ ...page(tree({ [FUNCTIONAL_REQUIREMENTS]: ["- Two.", "- Three."] }), tree({ [FUNCTIONAL_REQUIREMENTS]: ["- Two."] })), module: "top", plainFile: join(dir, "top.plain") }], noPlan)[0]!;
+    // One of its two functional specs built, nothing asked of it.
+    const top = marked("header")[0]!;
     const head = specMapHeader(top, 160, style);
     expect(head).not.toContain("top.plain");
     expect(columnHeadings(top, 160, style)).toEqual([" status │ top.plain", "        │"]);
     expect(head).toContain("1 of 2 functionalities built · not asked to build - regenerate plans it");
   });
 
-  it("opens the module regenerating now, and the one asked for, before the others", () => {
-    const base = { ...page(tree({ [FUNCTIONAL_REQUIREMENTS]: ["- One."] }), null), module: "base", plainFile: join(dir, "base.plain") };
-    const top = { ...page(tree({ [FUNCTIONAL_REQUIREMENTS]: ["- Two."] }), null), module: "top", plainFile: join(dir, "top.plain") };
-    // The chain's codebase is asked for: the module at its top is in focus.
-    const asked = markSpecMap([base, top], { files: [], codebases: [codebase(base)] });
-    expect(focusOf(asked)?.module).toBe("top");
-    // A pulse regenerates the module below: that one is.
-    const one = base.items[0]!;
-    const regenerating = markSpecMap([base, top], { files: [], codebases: [codebase(base, { pulses: [pulseOf([one], 1, true)] })] });
-    expect(focusOf(regenerating)?.module).toBe("base");
-  });
-
   it("highlights the spec as plyn does - its section headings, concepts and literals - the words a diff keeps too", () => {
     const paint = { ...PLAIN_PAINT, syntax: (role: string, text: string) => `<${role}>${text}</${role}>` };
-    const first = page(
-      tree({ [FUNCTIONAL_REQUIREMENTS]: ["- A :User: can log in via `POST /auth/login`.", ["log-out", "- A :User: can sign out via `POST /auth/logout`."]] }),
-      tree({ [FUNCTIONAL_REQUIREMENTS]: ["- A :User: can log in via `POST /auth/login`.", ["log-out", "- A :User: can log out via `POST /auth/logout`."]] }),
-    );
-    const [marked] = markSpecMap([first], noPlan);
-    const text = specMapLines([marked!], createSpecMapState(), 300, { ...style, diff: paint }).lines.join("\n");
+    // log-out changed a word: "log out" is "sign out" now.
+    const text = specMapLines(marked("highlights"), createSpecMapState(), 300, { ...style, diff: paint }).lines.join("\n");
     expect(text).toContain("<section>***functional specs***</section>");
     expect(text).toContain("<bullet>-</bullet> A <concept>:User:</concept> can log in via <literal>`POST /auth/login`</literal>.");
     expect(text).toContain("A <concept>:User:</concept> can [-log-]{+sign+} out via <literal>`POST /auth/logout`</literal>.");
@@ -259,12 +191,10 @@ describe("the side panel's two views", () => {
   }
 
   it("opens a spec on a wrapped summary after scrolling, and leaves keyboard navigation on that spec", () => {
-    const first = page(tree({ [FUNCTIONAL_REQUIREMENTS]: [
-      ...Array.from({ length: 12 }, (_, i): [string, string] => [`above-${i}`, `Earlier spec ${i}.`]),
-      ["follow-link", "Follow the link and send the visitor to its saved destination.\nKeep the original query."],
-    ] }), null);
+    // Twelve functional specs, then follow-link: none built.
+    const pages = marked("scroll");
     const mapState = createSpecMapState();
-    const panel = createSidePanel({ jobs: () => [], map: () => markSpecMap([first], noPlan), mapState, rows: () => 25, style, key: "ctrl+h", back() {}, close() {} });
+    const panel = createSidePanel({ jobs: () => [], map: () => pages, mapState, rows: () => 25, style, key: "ctrl+h", back() {}, close() {} });
     panel.render(40);
     panel.handleInput("G");
     panel.render(40);
@@ -278,12 +208,10 @@ describe("the side panel's two views", () => {
   });
 
   it("toggles an imported file and switches to another module by clicking its name", () => {
-    const first = page(tree({ [FUNCTIONAL_REQUIREMENTS]: ["Say hello."] }), null);
+    // app requires base, and imports Python from the standard library.
     const lib = "stdlib/lang/python";
-    const base = { ...first, module: "base", plainFile: join(dir, "base.plain") };
-    const upper = { ...first, requires: "base", imports: [lib], items: [...first.items, { ...first.items[0]!, file: lib, key: "req", text: "Use Python." }] };
-    const marked = markSpecMap([base, upper], { files: [], codebases: [codebase(base)] });
-    const panel = createSidePanel({ jobs: () => [], map: () => marked, rows: () => 40, style, key: "ctrl+h", back() {}, close() {} });
+    const pages = marked("import-click");
+    const panel = createSidePanel({ jobs: () => [], map: () => pages, rows: () => 40, style, key: "ctrl+h", back() {}, close() {} });
     expect(clickLabel(panel, `▸ from ${lib}`, 90).join("\n")).toContain("Use Python.");
     expect(clickLabel(panel, `▾ from ${lib}`, 90).join("\n")).not.toContain("Use Python.");
     expect(clickLabel(panel, "base  [app]", 90).join("\n")).toContain("status │ base.plain");
@@ -322,10 +250,9 @@ describe("the side panel's two views", () => {
   });
 
   it("opens on regen, and p goes to the pulse regenerating the item under the cursor and back to the item", () => {
-    const first = page(tree({ [FUNCTIONAL_REQUIREMENTS]: ["- Register.", "- Log in."] }), tree({ [FUNCTIONAL_REQUIREMENTS]: ["- Register."] }));
-    const login = first.items.find((entry) => entry.text === "- Log in.")!;
-    const marked = markSpecMap([first], { files: [], codebases: [codebase(first, { pulses: [pulseOf([login], 1, true)] })] });
-    const panel = createSidePanel({ jobs: () => [job("job1")], map: () => marked, rows: () => 20, style, back() {}, close() {}, key: "ctrl+h" });
+    // log-in regenerating in pulse 1, the row job1.
+    const pages = marked("regen-p");
+    const panel = createSidePanel({ jobs: () => [job("job1")], map: () => pages, rows: () => 20, style, back() {}, close() {}, key: "ctrl+h" });
     const [, gap, title] = panel.render(100);
     expect(gap).toBe("");
     expect(title).toContain("regen");
@@ -345,22 +272,9 @@ describe("the side panel's two views", () => {
   });
 
   it("draws one mark a row on the ladder - planned, working, regenerated, validating, conform - the same whatever the config says of conformance tests, named in the legend in the corner", () => {
-    const first = page(
-      tree({ [DEFINITIONS]: ["- :User: is a person."], [FUNCTIONAL_REQUIREMENTS]: ["- Register.", "- Log in.", "- Log out.", "- Search."] }),
-      tree({ [DEFINITIONS]: ["- :User: is a person."], [FUNCTIONAL_REQUIREMENTS]: ["- Register.", "- Log in.", "- Log out."] }),
-      tree({ [FUNCTIONAL_REQUIREMENTS]: ["- Register."] }),
-    );
-    const rungs = (conformance: boolean) => markSpecMap([{ ...first, conformance }], noPlan)[0]!.items.map((entry) => [entry.text, rungOf(entry)]);
-    expect(rungs(true)).toEqual([
-      ["- :User: is a person.", "regenerated"],
-      ["- Register.", "conform"],
-      ["- Log in.", "regenerated"],
-      ["- Log out.", "regenerated"],
-      ["- Search.", "toRegenerate"],
-    ]);
-    expect(rungs(false)).toEqual(rungs(true));
-    const [marked] = markSpecMap([first], noPlan);
-    const lines = specMapLines([marked!], createSpecMapState(), 100, style).lines;
+    // register conforms, log-in and log-out are built, search is to regenerate.
+    const [ladder] = marked("ladder");
+    const lines = specMapLines([ladder!], createSpecMapState(), 100, style).lines;
     // A mark alone, under the status column's heading.
     expect(lines.find((line) => line.includes("# register"))).toMatch(/^[ ›] {2}◆ {4}│ # register/);
     expect(lines.find((line) => line.includes("# log-in"))).toMatch(/^[ ›] {2}◇ {4}│ # log-in/);
@@ -372,13 +286,13 @@ describe("the side panel's two views", () => {
     // A functional spec with no scenarios says nothing of it on its row: its mark says where it stands.
     expect(lines.find((line) => line.includes("# log-in"))!.trimEnd()).toMatch(/# log-in$/);
     // The legend: up the ladder, every rung whatever the page has - to take out only where something is.
-    expect(legendLines(marked!, style)).toEqual(["○ planned", "⠋ working", "◇ regenerated", "⠋ validating", "◆ conform", "! needs you"]);
-    const panel = createSidePanel({ jobs: () => [], map: () => [marked!], rows: () => 20, style, back() {}, close() {}, key: "ctrl+h" });
+    expect(legendLines(ladder!, style)).toEqual(["○ planned", "⠋ working", "◇ regenerated", "⠋ validating", "◆ conform", "! needs you"]);
+    const panel = createSidePanel({ jobs: () => [], map: () => [ladder!], rows: () => 20, style, back() {}, close() {}, key: "ctrl+h" });
     const drawn = panel.render(100);
     // In the upper right corner, beside the title and the keys - the keys at the top, where they are seen first.
     const plain = drawn.slice(2).map((line) => line.replace(/\x1b\[[0-9;]*m/g, "").trimEnd());
     // Validating spins in the green of the rungs it is between, working in the accent: told apart at a glance.
-    const painted = legendLines(marked!, { ...style, accent: (text: string) => `<accent>${text}`, success: (text: string) => `<green>${text}` });
+    const painted = legendLines(ladder!, { ...style, accent: (text: string) => `<accent>${text}`, success: (text: string) => `<green>${text}` });
     expect(painted[1]).toBe("<accent>⠋ working");
     expect(painted[3]).toBe("<green>⠋ validating");
     const legend = ["○ planned", "⠋ working", "◇ regenerated", "⠋ validating", "◆ conform", "! needs you"];
@@ -399,17 +313,15 @@ describe("the side panel's two views", () => {
   });
 
   it("hands a module that needs the person to the chat on d, and offers the key only then", () => {
-    const first = page(tree({ [FUNCTIONAL_REQUIREMENTS]: ["- Register.", "- Log in."] }), tree({ [FUNCTIONAL_REQUIREMENTS]: ["- Register."] }));
-    const login = first.items.find((entry) => entry.text === "- Log in.")!;
-    const failed = pulseOf([login], 3, false);
-    const stuck = markSpecMap([first], { files: [], codebases: [codebase(first, { stuck: { why: "pulse abc did not land", pulse: { number: 3, before: failed.before, after: failed.after } } })] });
+    // Pulse 3, which was to build log-in, did not land; then the same page with nothing wrong.
+    const stuck = marked("stuck", 0);
     const discussed: string[] = [];
-    let marked = markSpecMap([first], noPlan);
-    const panel = createSidePanel({ jobs: () => [], map: () => marked, rows: () => 20, style, back() {}, close() {}, key: "ctrl+h", discuss: (shown) => discussed.push(shown.status) });
+    let pages = marked("stuck", 1);
+    const panel = createSidePanel({ jobs: () => [], map: () => pages, rows: () => 20, style, back() {}, close() {}, key: "ctrl+h", discuss: (shown) => discussed.push(shown.status) });
     expect(panel.render(100).join("\n")).not.toContain("d talk it through");
     panel.handleInput("d");
     expect(discussed).toEqual([]);
-    marked = stuck;
+    pages = stuck;
     const lines = panel.render(100);
     expect(lines[2]).toContain("! needs you");
     expect(lines[4]).toMatch(/^d talk it through in the chat · /);
@@ -427,17 +339,10 @@ describe("the side panel's two views", () => {
     expect(panel.render(100)[2]).toMatch(/^pulses/);
   });
 
-  it("reads a plan that fails as a page saying so", () => {
-    writeFileSync(join(dir, "app.plain"), "***implementation reqs***\n\n- Use Python.\n\n***functional specs***\n\n# say-hello\nSay hello.\n");
-    const source = createSpecMapSource({ files: () => [join(dir, "app.plain")], plan: () => { throw new Error("no plan"); } });
-    expect(source.read()[0]).toMatchObject({ status: "the map could not be read: no plan", stuck: true });
-  });
-
   it("goes from one module's tab to the next with ←→, follows the module regenerating until another tab is chosen, and opens an item with enter", () => {
-    const base = { ...page(tree({ [FUNCTIONAL_REQUIREMENTS]: ["- One."] }), null), module: "base", plainFile: join(dir, "base.plain") };
-    const top = { ...page(tree({ [FUNCTIONAL_REQUIREMENTS]: ["- Two."] }), null), module: "top", plainFile: join(dir, "top.plain"), requires: "base" };
-    let marked = markSpecMap([base, top], { files: [], codebases: [codebase(base)] });
-    const panel = createSidePanel({ jobs: () => [], map: () => marked, rows: () => 20, style, back() {}, close() {}, key: "ctrl+h" });
+    // top requires base, top asked for; then top's "- Two." regenerating in pulse 1.
+    let pages = marked("tabs-keys", 0);
+    const panel = createSidePanel({ jobs: () => [], map: () => pages, rows: () => 20, style, back() {}, close() {}, key: "ctrl+h" });
     // The module asked for is shown, its tab marked, the other beside it.
     let lines = panel.render(100);
     const heading = () => lines.find((line) => line.startsWith(" status │"))?.split("  ")[0];
@@ -455,8 +360,7 @@ describe("the side panel's two views", () => {
     panel.handleInput("\r");
     expect(panel.render(100).length).toBe(20);
     // Another module starts regenerating: the tab chosen gives way, and it is shown.
-    const two = top.items[0]!;
-    marked = markSpecMap([base, top], { files: [], codebases: [codebase(base, { pulses: [pulseOf([two], 1, true)] })] });
+    pages = marked("tabs-keys", 1);
     // The top line wraps beside the legend as long as it needs to: the tabs are on the line after it.
     expect(panel.render(100).find((line) => line.startsWith("base"))).toMatch(/^base {2}\[\S+ top\] /);
   });

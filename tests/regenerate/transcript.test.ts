@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { createJobRegistry } from "../../src/host.ts";
+import type { Job, JobDetails } from "@turri-dev/core";
+
+/** A pulse as the session tells it (`work.jobs()`, `job` events): finished, unless `status` says otherwise. */
+let sequence = 0;
+function job(fields: Partial<Job> & Pick<Job, "kind" | "summary">): Job {
+  sequence += 1;
+  const now = Date.now();
+  return {
+    id: `job${sequence}`, status: "succeeded", sequence, queuedAt: now, startedAt: now, finishedAt: now, waitingOn: [], tail: "", activity: [], agents: [], transcript: [],
+    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 }, report: "",
+    ...fields,
+  } as Job;
+}
 /** Open the finished section and the first job in it, with the keys: it starts collapsed. */
 function openFinished(panel: { render(width: number): string[]; handleInput(data: string): void }, width = 100): void {
   const down = "\x1b[B";
@@ -16,14 +28,15 @@ describe("the side panel", () => {
 
   it("shows the queue alone - not the agents' traces, which are in each pulse's log", async () => {
     const { createSidePanel } = await import("../../src/regenerate/side-panel.ts");
-    const jobs = createJobRegistry();
-    const job = jobs.start({ kind: "regenerate", summary: "app.plain fs 1", run: async () => ({ report: "" }) });
-    await jobs.wait(job.id);
-    job.building = { spec: { module: "app", funcId: "print-hello" }, label: "app 1 of 1", text: "The app prints hello.\n\nMore of it." };
-    job.transcript.push({ kind: "text", text: "The code drops the /api/v2 prefix.", agent: judge }, { kind: "tool", text: "edit StorageServiceClient.java", agent: coder });
+    const pulse = job({
+      kind: "regenerate",
+      summary: "app.plain fs 1",
+      building: { spec: { module: "app", funcId: "print-hello" }, label: "app 1 of 1", text: "The app prints hello.\n\nMore of it." },
+      transcript: [{ kind: "text", text: "The code drops the /api/v2 prefix.", agent: judge }, { kind: "tool", text: "edit StorageServiceClient.java", agent: coder }],
+    });
     let back = 0;
     let closed = false;
-    const panel = createSidePanel({ jobs: () => [job], rows: () => 40, style: PLAIN, key: "alt+o", back: () => (back += 1), close: () => (closed = true) });
+    const panel = createSidePanel({ jobs: () => [pulse], rows: () => 40, style: PLAIN, key: "alt+o", back: () => (back += 1), close: () => (closed = true) });
     const text = () => panel.render(100).join("\n");
 
     // Jobs first: the queue, with what finished - and, opened, what each was about.
@@ -69,13 +82,10 @@ describe("the side panel", () => {
 
   it("shows under each finished spec diff the whole change, and says which render a conformance job was the conformance of", async () => {
     const { createSidePanel } = await import("../../src/regenerate/side-panel.ts");
-    const registry = createJobRegistry();
     const diff = "--- a/backend.plain\n+++ b/backend.plain\n@@ -1 +1,2 @@\n+- :OrderController: takes the :AuthData: from the request.\n";
-    const job = registry.start({ kind: "regenerate", summary: "backend.plain render spec diff", diff, run: async () => ({ report: "" }) });
-    await registry.wait(job.id);
-    const conformance = registry.start({ kind: "conformance", summary: "backend.plain spec diff conformance", diff, follows: job.id, run: async () => ({ report: "" }) });
-    await registry.wait(conformance.id);
-    const panel = createSidePanel({ jobs: () => registry.list(), rows: () => 30, style: PLAIN, key: "ctrl+h", back: () => {}, close: () => {} });
+    const render = job({ kind: "regenerate", summary: "backend.plain render spec diff", diff });
+    const conformance = job({ kind: "conformance", summary: "backend.plain spec diff conformance", diff, follows: render.id });
+    const panel = createSidePanel({ jobs: () => [render, conformance], rows: () => 30, style: PLAIN, key: "ctrl+h", back: () => {}, close: () => {} });
     // Newest first: the conformance job, then the spec diff - each opened, past the row of the conformance job's file.
     const down = "\x1b[B";
     for (const key of [down, down, "\r", down, "\r", down, down, "\r"]) {
@@ -86,22 +96,19 @@ describe("the side panel", () => {
     expect(lines).toContain("backend.plain render spec diff");
     expect(lines).toContain("+ - :OrderController: takes the :AuthData: from the request.");
     expect(lines).not.toContain("+++ b/backend.plain");
-    expect(lines).toContain(`the conformance of backend.plain render spec diff (pulse ${job.id}, succeeded)`);
+    expect(lines).toContain(`the conformance of backend.plain render spec diff (pulse ${render.id}, succeeded)`);
   });
 
   it("says what a module's render planned - the spec diffs it queued - and, under each, which job planned it", async () => {
     const { createSidePanel } = await import("../../src/regenerate/side-panel.ts");
-    const registry = createJobRegistry();
     const diff = "--- a/backend.plain\n+++ b/backend.plain\n@@ -1 +1,2 @@\n+- Comments on study sessions.\n";
-    const step = registry.start({ kind: "regenerate", summary: "backend.plain render spec diff", diff, run: async () => ({ report: "" }) });
-    const planner = registry.start({
+    const step = job({ kind: "regenerate", summary: "backend.plain render spec diff", diff });
+    const planner = job({
       kind: "regenerate",
       summary: "backend.plain module",
-      run: async () => ({ report: "", details: { passed: true, planned: [{ title: "Implement comments on study sessions", jobId: step.id }] } }),
+      details: { passed: true, planned: [{ title: "Implement comments on study sessions", jobId: step.id }] } as JobDetails,
     });
-    await registry.wait(planner.id);
-    await registry.wait(step.id);
-    const panel = createSidePanel({ jobs: () => registry.list(), rows: () => 40, style: PLAIN, key: "ctrl+h", back: () => {}, close: () => {} });
+    const panel = createSidePanel({ jobs: () => [step, planner], rows: () => 40, style: PLAIN, key: "ctrl+h", back: () => {}, close: () => {} });
     const down = "\x1b[B";
     for (const key of [down, down, "\r", down, "o"]) {
       panel.render(140);
