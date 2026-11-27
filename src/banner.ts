@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { allocateImageId, Box, type Component, getCapabilities, getPngDimensions, type ImageDimensions, renderImage, Text, type TUI, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { BANNER_ENTRY, VERSION_ENTRY, type BannerData } from "@turri-dev/core";
-import { turriRoot } from "@turri-dev/core/startup";
+import { CLI_ROOT } from "./cli-root.ts";
 import { brandPink } from "./regenerate/plain-palette.ts";
 import { halfBlocks, JELLYFISH_FRAME_MS, JELLYFISH_REST, JELLYFISH_SEQUENCE, JELLYFISH_TEXT_FRAMES } from "./jellyfish.ts";
 import { overPictureRow, PICTURE_AT } from "./picture-row.ts";
@@ -245,7 +245,7 @@ const jellyfishFrameCache = new Map<string, string[]>();
  * small one in half blocks. None when the pictures cannot be read.
  */
 function jellyfishArt(appearance: "dark" | "light", truecolor: boolean): JellyfishArt | undefined {
-  const dir = join(turriRoot(), "assets", "jellyfish");
+  const dir = join(CLI_ROOT, "assets", "jellyfish");
   try {
     if (getCapabilities().images === null) {
       const frames = JELLYFISH_TEXT_FRAMES.map((pixels) => halfBlocks(pixels, appearance, truecolor));

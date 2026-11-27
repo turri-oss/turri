@@ -1,5 +1,5 @@
 import { splitModelSpec } from "@turri-dev/core/models";
-import { booleanOption, overrideConfig } from "@turri-dev/core/config";
+import { overrideConfig } from "@turri-dev/core/config";
 
 /**
  * The command line of turri's commands: their words, and the options that stand for the config's own keys - kept apart
@@ -39,6 +39,12 @@ export function parseArgs(argv: string[], flags: string[], usage: string, valued
     } else positional.push(arg);
   }
   return { positional, options };
+}
+
+/** `--review <value>`, `--mutation-testing <value>`: the config's own, true or false. Undefined for anything else. */
+export function booleanOption(value: string): boolean | undefined {
+  const word = value.trim().toLowerCase();
+  return word === "true" ? true : word === "false" ? false : undefined;
 }
 
 /** An option's value, as parseArgs left it: refused when it was given with none. */

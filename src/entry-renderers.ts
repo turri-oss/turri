@@ -1,7 +1,7 @@
 import { getMarkdownTheme, UserMessageComponent, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Box, Text } from "@earendil-works/pi-tui";
 import { type Conclusion, type Notice, COMMAND_OUTCOME, SKILL_MESSAGE_ENTRY, SIDE_ENTRY, NOTICE_ENTRY, NOTICE_OVER_ENTRY, CONCLUDED_ENTRY, SKILL_RUN_ENTRY, JOB_ENTRY, HISTORY_ENTRY, JOBS_LIST_ENTRY, MILESTONE_ENTRY, INTERVIEW_ENTRY, type CommandOutcome, type Exchange, type JobAnnouncement } from "@turri-dev/core";
-import { PANEL_KEY } from "@turri-dev/core/terminal";
+import { PANEL_KEY } from "./terminal-marks.ts";
 
 /**
  * A skill's question as the transcript keeps it: who asked, what it said before asking - a brief to confirm, the choices

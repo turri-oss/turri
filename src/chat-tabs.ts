@@ -2,7 +2,7 @@ import { stripTerminalSequences, truncateToWidth, visibleWidth, type Component }
 import type { ChatInfo } from "@turri-dev/core";
 import type { TurriCore } from "@turri-dev/core/terminal";
 import { PointerHover, type ButtonPaint, type ButtonRole } from "./pointer-hover.ts";
-import { spinner } from "@turri-dev/core/terminal";
+import { spinner } from "./terminal-marks.ts";
 
 /** Shared by the tabs and the /chat picker. */
 export function chatMark(chat: ChatInfo): string {

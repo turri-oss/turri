@@ -1,8 +1,7 @@
 import { existsSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
-import { BEDROCK_DEFAULT, BEDROCK_IN_REGION, VENDORS, bedrockDefaultModels, bedrockMakers, bedrockModels, bedrockModelsIn, bedrockPlaceOf, hasBedrockPreset, makerLabel, piModelCatalogue, type BedrockMaker, type ModelCatalogue, type ModelChoice, type Vendor, bedrockMakerOf, bedrockRegionOf, priced, vendorOf } from "@turri-dev/core/models";
-import { initConfig } from "@turri-dev/core/project";
-import type { Asked } from "@turri-dev/core/commands";
+import { BEDROCK_DEFAULT, BEDROCK_IN_REGION, VENDORS, bedrockDefaultModels, bedrockMakers, bedrockModels, bedrockModelsIn, bedrockPlaceOf, hasBedrockPreset, makerLabel, piModelCatalogue, type BedrockMaker, type ModelCatalogue, type BedrockChoice, type Vendor, bedrockMakerOf, bedrockRegionOf, priced, vendorOf } from "@turri-dev/core/models";
+import { initConfig, type ModelPair } from "@turri-dev/core/project";
 import { brand } from "./brand.ts";
 
 const USAGE = [
@@ -29,6 +28,14 @@ async function askUntil<T>(rl: ReturnType<typeof createInterface>, prompt: strin
     if (chosen !== undefined) return chosen;
     console.log(again);
   }
+}
+
+/** What the choice of vendor asked: the vendor, and for Amazon Bedrock whose, where and which two. */
+interface Asked {
+  /** Left out with the models named: read from them. */
+  vendor?: Vendor;
+  bedrock?: BedrockChoice;
+  models?: ModelPair;
 }
 
 /**
@@ -157,7 +164,7 @@ export async function main(args: string[]): Promise<number> {
     console.error(`Name both models - --harness-model and --coding-model - or neither.\n\n${USAGE}`);
     return 1;
   }
-  const named: ModelChoice | undefined = harness !== undefined && coding !== undefined ? { harness, coding, ...(judge !== undefined ? { strong: judge } : {}) } : undefined;
+  const named: ModelPair | undefined = harness !== undefined && coding !== undefined ? { harness, coding, ...(judge !== undefined ? { strong: judge } : {}) } : undefined;
   let maker: BedrockMaker | undefined;
   if (flags.maker.value !== undefined) {
     const typed = flags.maker.value.trim().toLowerCase();

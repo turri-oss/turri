@@ -71,8 +71,9 @@ export function diffFiles(diff: string, width: number, paint: DiffPaint = PLAIN_
   const digits = where === undefined || Object.keys(where).length === 0 ? 0 : String(Math.max(...Object.values(where).map((at) => at.line))).length;
 
   // Every line highlighted in the diff's order, so front matter one opens is carried to the lines after it on its side.
-  let before: HighlightState = [];
-  let after: HighlightState = [];
+  // A side's highlighter state: none at the start of a file - the state is the parser's, opaque.
+  let before: HighlightState | undefined;
+  let after: HighlightState | undefined;
   let headerFile: string | undefined;
   let removedFrom: string | undefined;
   let rendered: string | undefined;
@@ -87,8 +88,8 @@ export function diffFiles(diff: string, width: number, paint: DiffPaint = PLAIN_
       const named = line.slice(4).replace(/^b\//, "");
       headerFile = named === "/dev/null" ? (removedFrom ?? named) : named;
       rendered ??= headerFile;
-      before = [];
-      after = [];
+      before = undefined;
+      after = undefined;
       // A new file starts in no section: a test plain file never has the module's.
       sectionBefore = undefined;
       sectionAfter = undefined;

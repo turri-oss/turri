@@ -1,10 +1,13 @@
 import { rmSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { asksModels, verdictOf, checkNode, type Check, type Level } from "@turri-dev/core/system";
-import { allChecks, MARK } from "@turri-dev/core/commands";
-import { globalExtensionFile } from "@turri-dev/core/startup";
+import { allChecks } from "@turri-dev/core/commands";
+import { globalExtensionFile } from "./cli-root.ts";
 import { configKeyOptions, parseArgs } from "./cli-options.ts";
 import { brand } from "./brand.ts";
+
+/** Each check's mark, by its level. */
+const MARK: Record<Level, string> = { ok: "✓", missing: "✗", limited: "!", info: "·" };
 
 function report(checks: Check[]): number {
   const paint: Record<Level, (text: string) => string> = { ok: brand.success, missing: brand.error, limited: brand.warning, info: brand.muted };

@@ -1,5 +1,5 @@
 import type { SkillProgress as Progress } from "@turri-dev/core";
-import { spinner } from "@turri-dev/core/terminal";
+import { spinner } from "./terminal-marks.ts";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 

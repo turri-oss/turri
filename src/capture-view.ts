@@ -1,9 +1,41 @@
 import { basename } from "node:path";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { capturePhases, captureStageText, type CaptureStatus } from "@turri-dev/core";
-import { duration, spinner, workOf, type CaptureProgressView } from "@turri-dev/core/terminal";
+import { capturePhases, captureStageText, type CaptureStage, type CaptureStatus } from "@turri-dev/core";
+import { spinner } from "./terminal-marks.ts";
 import { skillProgressLine } from "./skill-progress.ts";
+
+/** A capture's status above the input. `close` may be called more than once. */
+export interface CaptureProgressView {
+  update(status: CaptureStatus): void;
+  close(): void;
+}
+
+/** The stages whose work is counted as they start - parts, concepts, modules, scripts - rather than from the features. */
+const COUNTED_STAGES = new Set<CaptureStage>(["checking", "extracting", "dividing", "filling", "gathering", "reconciling", "reading", "verifying", "trying", "scripts"]);
+
+/** The phase's work, for its strip: how much there is, how much is done, how much is at work - none while it is not counted. */
+export function workOf(status: CaptureStatus): { total: number; done: number; running: number } | undefined {
+  if (status.stage === "capturing") {
+    const { outlined, done } = status.features;
+    if (outlined === 0) return undefined;
+    const running = status.agents.filter((agent) => agent.label.startsWith("feature ")).length;
+    return { total: outlined, done, running: Math.min(running, outlined - done) };
+  }
+  if (!COUNTED_STAGES.has(status.stage)) return undefined;
+  const { total, done } = status.work;
+  if (total === 0) return undefined;
+  return { total, done, running: Math.min(status.agents.length, total - done) };
+}
+
+/** `40s`, `2m 10s`, `1h 05m`. */
+export function duration(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ${String(seconds % 60).padStart(2, "0")}s`;
+  return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, "0")}m`;
+}
 
 export interface StatusStyle {
   heading(text: string): string;

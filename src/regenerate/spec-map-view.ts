@@ -3,7 +3,7 @@ import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works
 import { highlightLine, roleOf, type PlainRole, ACCEPTANCE_TEST_HEADING, CONFORMANCE_TEST_HEADING, DEFINITIONS, FUNCTIONAL_REQUIREMENTS, NON_FUNCTIONAL_REQUIREMENTS, TEST_REQUIREMENTS } from "@turri-dev/core/plain";
 import type { DiffPaint } from "./diff-view.ts";
 import { type Job, countOf, focusOf, lineDiff, rungOf, type Mark, type MarkedItem, type MarkedPage, type Rung } from "@turri-dev/core";
-import { spinner } from "@turri-dev/core/terminal";
+import { spinner } from "../terminal-marks.ts";
 import type { TranscriptStyle } from "./transcript-view.ts";
 
 /**
