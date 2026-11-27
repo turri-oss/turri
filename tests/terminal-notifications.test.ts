@@ -72,8 +72,8 @@ it("shows evidence beside pulses and answers a notice only on an explicit choice
 it("keeps what turri warned of to read later, but not a provider waited out - the chat says that as it happens", () => {
   const { terminal } = open;
   terminal.inbox.hear({ type: "incident", text: "anthropic is overloaded - trying again in 30s", event: { kind: "provider_retry", job: "j1" } });
-  terminal.inbox.hear({ type: "notification", text: "j1: anthropic is overloaded - trying again in 30s", level: "warning" });
-  terminal.inbox.hear({ type: "notification", text: "Stopped 2 process groups a turri that was killed left running.", level: "info" });
+  terminal.inbox.hear({ type: "orphansStopped", count: 2 });
+  terminal.inbox.hear({ type: "notification", text: "The project's chats were not recorded.", level: "info" });
   expect(terminal.inbox.items).toEqual([]);
   terminal.inbox.hear({ type: "notification", text: "The sentinel could not be opened: no room", level: "warning" });
   expect(terminal.inbox.items.map((item) => [item.title, item.warning])).toEqual([["The sentinel could not be opened: no room", true]]);

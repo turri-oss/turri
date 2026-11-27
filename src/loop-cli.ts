@@ -61,10 +61,12 @@ function printEvent(): (event: TurriEvent) => void {
       seen.set(job.id, line);
       if (job.status === "running") pulseRunning(job);
       else if (job.status !== "queued") pulseFinished(job, final);
+    } else if (event.type === "orphansStopped") {
+      console.log(`Stopped ${event.count} process group${event.count === 1 ? "" : "s"} a turri that was killed left running.`);
     } else if (event.type === "incident") {
       console.log(c.warning(`  ${event.event.job !== undefined ? `${event.event.job}: ` : ""}${event.text}`));
     } else if (event.type === "notification") {
-      // What turri says outside a pulse: a ledger it cannot write, what a killed turri left running and was stopped.
+      // What turri says outside a pulse: a ledger it cannot write, say.
       if (event.level === "info") console.log(event.text);
       else console.error(event.level === "error" ? c.error(event.text) : c.warning(event.text));
     }

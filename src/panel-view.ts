@@ -32,7 +32,7 @@ export function peekKeyListener(panel: { open(): void; shown(): boolean }): (dat
  * asking in it, is stopped by ctrl+c with no question open. Over without an answer - declined, its turn stopped - the
  * dialog closes.
  */
-export function terminalAsk(chatUi: (chat: string) => ExtensionUIContext | undefined, decline: (chat: string) => void): NonNullable<Frontend["ask"]> {
+export function terminalAsk(chatUi: (chat: string | undefined) => ExtensionUIContext | undefined, decline: (chat: string | undefined) => void): NonNullable<Frontend["ask"]> {
   return async (question, { chat, signal }) => {
     const ui = chatUi(chat);
     if (ui === undefined || signal.aborted) return undefined;

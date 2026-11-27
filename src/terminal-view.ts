@@ -98,7 +98,7 @@ export function createTerminal(): Terminal {
   };
   /** What a chat draws on - none named, the chat shown, else the screen itself. */
   const drawOn = (chat: string | undefined): ExtensionUIContext | undefined => {
-    const id = chat !== undefined && chat !== "" ? chat : focused();
+    const id = chat ?? focused();
     return id !== undefined ? uiOf(id).ui : real;
   };
   const workNow = () => (work ??= { status: turri().work.status(), all: turri().work.jobs() });
@@ -259,8 +259,9 @@ export function createTerminal(): Terminal {
         registerChats(pi, terminal);
       },
     ],
+    // A question of no chat's - a skill run's, a start over - is put in the chat shown.
     ask: terminalAsk(drawOn, (chat) => {
-      const id = chat !== "" ? chat : focused();
+      const id = chat ?? focused();
       void (id !== undefined ? session?.chats.get(id)?.decline() : undefined)?.catch(() => undefined);
     }),
     // /pulses: the side panel, on the pulses - or the map, or one pulse.

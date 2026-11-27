@@ -20,12 +20,6 @@ export interface TerminalNotification {
 export class TerminalNotifications {
   readonly items: TerminalNotification[] = [];
   private readonly reviews = new Map<string, TerminalNotification>();
-  /**
-   * An incident's line, said again as a notification at once: left out, as the chat shows it.
-   * core-gap: an incident comes as an `incident` event and again as a `notification`, with nothing to tell the second for
-   * the first but its text - matched here until a notification says what it is about.
-   */
-  private incident: string | undefined;
 
   get count(): number {
     return this.items.filter((item) => !item.seen || this.needsAnswer(item)).length;
@@ -58,18 +52,12 @@ export class TerminalNotifications {
       case "concluded":
         this.concluded(event.conclusion);
         return true;
-      case "incident":
-        this.incident = event.event.job !== undefined ? `${event.event.job}: ${event.text}` : event.text;
-        return false;
-      case "notification": {
-        const incident = this.incident;
-        this.incident = undefined;
-        // What turri warned of - the sentinel that could not open, a config not written - kept to be read later; a
-        // provider waited out is the chat's line only, as it was said there.
-        if (event.level === "info" || event.text === incident) return false;
+      case "notification":
+        // What turri warned of - the sentinel that could not open, a config not written - kept to be read later. A
+        // provider waited out is an `incident`, said in the chat shown as it happens, and not kept.
+        if (event.level === "info") return false;
         this.add(event.text, "", { warning: true });
         return true;
-      }
       default:
         return false;
     }
