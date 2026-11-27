@@ -3,7 +3,9 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { booleanOption, configuredModel, overrideConfig, projectModels, readProjectConfig } from "@turri-dev/core/config";
+import { configuredModel, readProjectConfig } from "@turri-dev/core/project";
+import { projectModels } from "@turri-dev/core/models";
+import { booleanOption, overrideConfig } from "@turri-dev/core/config";
 import { moduleStates } from "@turri-dev/core/commands";
 import { configKeyOptions, parseArgs } from "../src/cli-options.ts";
 import { headlessOptions } from "../src/loop-cli.ts";

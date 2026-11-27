@@ -1,6 +1,6 @@
 import { visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import { highlightLine, roleOf, type HighlightState, type PlainRole } from "@turri-dev/core/plain";
-import { DIFF_HEADER as HEADER, type DiffWhere } from "@turri-dev/core/terminal";
+import { highlightLine, roleOf, type HighlightState, type PlainRole, DIFF_HEADER as HEADER } from "@turri-dev/core/plain";
+import type { DiffWhere } from "@turri-dev/core";
 
 /**
  * A spec diff as the panels show it: each line's ***plain highlighted by turri's own grammar

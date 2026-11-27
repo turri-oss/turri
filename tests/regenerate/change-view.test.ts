@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { diffView } from "../../src/regenerate/diff-view.ts";
-import { locateDiffLines } from "@turri-dev/core/terminal";
+import { locateDiffLines } from "@turri-dev/core/plain";
 const app = [
   "***definitions***",
   "",

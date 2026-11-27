@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { readdirSync, readFileSync } from "node:fs";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { allocateImageId, Box, type Component, getCapabilities, getPngDimensions, type ImageDimensions, renderImage, Text, type TUI, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import { BANNER_ENTRY, VERSION_ENTRY, type BannerData } from "@turri-dev/core/terminal";
+import { BANNER_ENTRY, VERSION_ENTRY, type BannerData } from "@turri-dev/core";
 import { turriRoot } from "@turri-dev/core/startup";
 import { brandPink } from "./regenerate/plain-palette.ts";
 import { halfBlocks, JELLYFISH_FRAME_MS, JELLYFISH_REST, JELLYFISH_SEQUENCE, JELLYFISH_TEXT_FRAMES } from "./jellyfish.ts";

@@ -1,7 +1,8 @@
 import { resolve } from "node:path";
-import { configForSpec, modelSpec, projectModels, readProjectConfig } from "@turri-dev/core/config";
+import { configForSpec, readProjectConfig, launchModule } from "@turri-dev/core/project";
+import { modelSpec, projectModels } from "@turri-dev/core/models";
 import { launchText } from "@turri-dev/core";
-import { followLaunchedLogs, launchModule, runningLaunched, stopLaunched } from "@turri-dev/core/commands";
+import { followLaunchedLogs, runningLaunched, stopLaunched } from "@turri-dev/core/commands";
 import { c } from "./module-report.ts";
 
 const USAGE = `usage: turri launch [file.plain] [options]

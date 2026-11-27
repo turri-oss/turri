@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describeGates, discoverSkills, loadSkill, PACKAGE_ROOT, runAsk, runSkill, skillRunDir, type Decision, type Reporter } from "@turri-dev/core/commands";
 import { c } from "./module-report.ts";
-import { skillModel } from "@turri-dev/core/config";
+import { skillModel } from "@turri-dev/core/project";
 
 
 const reporter: Reporter = {

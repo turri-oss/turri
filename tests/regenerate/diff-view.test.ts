@@ -1,4 +1,4 @@
-import { locateDiffLines } from "@turri-dev/core/terminal";
+import { locateDiffLines } from "@turri-dev/core/plain";
 import { describe, expect, it } from "vitest";
 import { diffFiles, diffView, NOT_FOUND, type DiffPaint } from "../../src/regenerate/diff-view.ts";
 import { brandNeon, plainPaint } from "../../src/regenerate/plain-palette.ts";

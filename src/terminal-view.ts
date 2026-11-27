@@ -1,4 +1,5 @@
-import { didNotPass, type TurriCore, type TurriView } from "@turri-dev/core/terminal";
+import { didNotPass } from "@turri-dev/core";
+import type { TurriCore, TurriView } from "@turri-dev/core/terminal";
 import { registerBanner } from "./banner.ts";
 import { captureProgress } from "./capture-view.ts";
 import { registerChats } from "./chat-commands.ts";

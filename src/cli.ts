@@ -12,7 +12,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import "./cli-root.ts";
-import { CODING_MODEL_ENV, describeVersion, dropNoise, extensionInstalledGlobally, readProjectConfig, REOPEN_FILE_ENV, takeReopening, themesInstalledGlobally, turriRoot, versionLine } from "@turri-dev/core/startup";
+import { readProjectConfig } from "@turri-dev/core/project";
+import { CODING_MODEL_ENV, describeVersion, dropNoise, extensionInstalledGlobally, REOPEN_FILE_ENV, takeReopening, themesInstalledGlobally, turriRoot, versionLine } from "@turri-dev/core/startup";
 import { chatModels } from "./chat-models.ts";
 /**
  * Start pi with this project's extension and themes already wired in.

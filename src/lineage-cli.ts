@@ -1,5 +1,5 @@
 import { defaultBuildDir } from "@turri-dev/core/commands";
-import { historyLog, historyShow } from "@turri-dev/core/commands";
+import { historyLog, historyShow } from "@turri-dev/core/project";
 
 const USAGE = `usage: turri lineage <module> [commit]
 

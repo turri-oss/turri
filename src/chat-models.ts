@@ -1,5 +1,5 @@
-import { modelSpec, projectModels } from "@turri-dev/core/startup";
-import type { ProjectConfig } from "@turri-dev/core/config";
+import { modelSpec, projectModels } from "@turri-dev/core/models";
+import type { ProjectConfig } from "@turri-dev/core/project";
 
 /**
  * The two models of `turri`, from its arguments and the project's config.turri.yaml.

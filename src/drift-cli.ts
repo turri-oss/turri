@@ -1,5 +1,4 @@
-import { readProjectConfig, CONFIG_FILE } from "@turri-dev/core/config";
-import { describeDrift, readDrift } from "@turri-dev/core/commands";
+import { readProjectConfig, CONFIG_FILE, describeDrift, readDrift } from "@turri-dev/core/project";
 
 const USAGE = `usage: turri drift [file.plain]
 

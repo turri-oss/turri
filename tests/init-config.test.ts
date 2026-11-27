@@ -2,7 +2,8 @@ import { existsSync, mkdirSync, mkdtempSync, realpathSync, readFileSync, rmSync,
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { projectModels, readProjectConfig } from "@turri-dev/core/config";
+import { projectModels } from "@turri-dev/core/models";
+import { readProjectConfig } from "@turri-dev/core/project";
 import { main } from "../src/init-config-cli.ts";
 
 // pi's catalogue is read from a folder of the test's own: never the real ~/.pi/agent, which reading it writes to.

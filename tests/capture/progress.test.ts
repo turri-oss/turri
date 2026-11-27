@@ -2,7 +2,8 @@ import { join, sep } from "node:path";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
 import { captureStatusLines, workStrip } from "../../src/capture-view.ts";
-import { workOf, type CaptureStatus } from "@turri-dev/core/terminal";
+import type { CaptureStatus } from "@turri-dev/core";
+import { workOf } from "@turri-dev/core/terminal";
 
 const ROOT = join(sep, "home", "node", "shorty");
 

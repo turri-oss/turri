@@ -1,8 +1,8 @@
 import { rmSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
-import { allChecks, asksModels, MARK, verdictOf } from "@turri-dev/core/commands";
-import { checkNode, globalExtensionFile } from "@turri-dev/core/startup";
-import type { Check, Level } from "@turri-dev/core/host";
+import { asksModels, verdictOf, checkNode, type Check, type Level } from "@turri-dev/core/system";
+import { allChecks, MARK } from "@turri-dev/core/commands";
+import { globalExtensionFile } from "@turri-dev/core/startup";
 import { configKeyOptions, parseArgs } from "./cli-options.ts";
 import { brand } from "./brand.ts";
 

@@ -1,7 +1,8 @@
 import { basename } from "node:path";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { capturePhases, captureStageText, duration, spinner, workOf, type CaptureProgressView, type CaptureStatus } from "@turri-dev/core/terminal";
+import { capturePhases, captureStageText, type CaptureStatus } from "@turri-dev/core";
+import { duration, spinner, workOf, type CaptureProgressView } from "@turri-dev/core/terminal";
 import { skillProgressLine } from "./skill-progress.ts";
 
 export interface StatusStyle {

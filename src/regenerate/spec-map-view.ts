@@ -1,10 +1,9 @@
 import { basename } from "node:path";
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import { highlightLine, roleOf, type PlainRole } from "@turri-dev/core/plain";
-import { ACCEPTANCE_TEST_HEADING, CONFORMANCE_TEST_HEADING, DEFINITIONS, FUNCTIONAL_REQUIREMENTS, NON_FUNCTIONAL_REQUIREMENTS, TEST_REQUIREMENTS } from "@turri-dev/core/plain";
+import { highlightLine, roleOf, type PlainRole, ACCEPTANCE_TEST_HEADING, CONFORMANCE_TEST_HEADING, DEFINITIONS, FUNCTIONAL_REQUIREMENTS, NON_FUNCTIONAL_REQUIREMENTS, TEST_REQUIREMENTS } from "@turri-dev/core/plain";
 import type { DiffPaint } from "./diff-view.ts";
-import type { Job } from "@turri-dev/core";
-import { countOf, focusOf, lineDiff, rungOf, spinner, type Mark, type MarkedItem, type MarkedPage, type Rung } from "@turri-dev/core/terminal";
+import { type Job, countOf, focusOf, lineDiff, rungOf, type Mark, type MarkedItem, type MarkedPage, type Rung } from "@turri-dev/core";
+import { spinner } from "@turri-dev/core/terminal";
 import type { TranscriptStyle } from "./transcript-view.ts";
 
 /**

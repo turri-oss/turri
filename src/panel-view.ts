@@ -2,7 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { type Component, type OverlayHandle, isKeyRelease, isKeyRepeat, matchesKey } from "@earendil-works/pi-tui";
 import type { Job, AskUserIO } from "@turri-dev/core";
 import { PANEL_KEY, createSpecMapSource, defaultMapFiles, plannedLoop, shownJobs, type Declining, type TurriCore } from "@turri-dev/core/terminal";
-import { earlierPulses, ledgerProjects } from "@turri-dev/core/ledger";
+import { earlierPulses, ledgerProjects } from "@turri-dev/core/project";
 import { plainPaint, brandNeon } from "./regenerate/plain-palette.ts";
 import { clickToFocus, dockedWidth, narrowChat, shade, shadeChat } from "./regenerate/panel-dock.ts";
 import { paddedColumns, paddedRows, SCREEN_PADDING } from "./screen-padding.ts";

@@ -1,4 +1,4 @@
-import { CONFIG_FILE, readProjectConfig } from "@turri-dev/core/config";
+import { CONFIG_FILE, readProjectConfig } from "@turri-dev/core/project";
 import { parseArgs } from "./cli-options.ts";
 import { headlessOptions, runLoop } from "./loop-cli.ts";
 

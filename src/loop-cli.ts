@@ -1,6 +1,7 @@
 import { createInterface } from "node:readline/promises";
-import { describeModules, runHeadless, type HeadlessRun, type HeadlessView } from "@turri-dev/core/commands";
-import { pulseName, type SpecGap } from "@turri-dev/core/terminal";
+import { describeModules } from "@turri-dev/core/project";
+import { runHeadless, type HeadlessRun, type HeadlessView } from "@turri-dev/core/commands";
+import { pulseName, type SpecGap } from "@turri-dev/core";
 import { c } from "./module-report.ts";
 import { tryItCommand } from "./regenerate/delivery.ts";
 import { configKeyOptions, optionValue } from "./cli-options.ts";

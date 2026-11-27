@@ -1,8 +1,7 @@
 import { AgentSessionRuntime, InteractiveMode, SessionManager, type AgentSession, type ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
-import { BANNER_ENTRY } from "@turri-dev/core/terminal";
+import { BANNER_ENTRY, type RunRecord } from "@turri-dev/core";
 import { chatTabHeader, type ChatScreen } from "./chat-tab-header.ts";
-import type { RunRecord } from "@turri-dev/core/terminal";
 import { chatTabs, closeTerminalChat } from "./chat-tabs.ts";
 import { showWaitingMessages } from "./chat-waiting.ts";
 import { buttonLabel } from "./pointer-hover.ts";

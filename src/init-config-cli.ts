@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
-import { BEDROCK_DEFAULT, BEDROCK_IN_REGION, VENDORS, bedrockDefaultModels, bedrockMakers, bedrockModels, bedrockModelsIn, bedrockPlaceOf, hasBedrockPreset, initConfig, makerLabel, piModelCatalogue, type BedrockMaker, type ModelCatalogue, type ModelChoice, type Vendor } from "@turri-dev/core/config";
-import { bedrockMakerOf, bedrockRegionOf, priced, vendorOf, type Asked } from "@turri-dev/core/commands";
+import { BEDROCK_DEFAULT, BEDROCK_IN_REGION, VENDORS, bedrockDefaultModels, bedrockMakers, bedrockModels, bedrockModelsIn, bedrockPlaceOf, hasBedrockPreset, makerLabel, piModelCatalogue, type BedrockMaker, type ModelCatalogue, type ModelChoice, type Vendor, bedrockMakerOf, bedrockRegionOf, priced, vendorOf } from "@turri-dev/core/models";
+import { initConfig } from "@turri-dev/core/project";
+import type { Asked } from "@turri-dev/core/commands";
 import { brand } from "./brand.ts";
 
 const USAGE = [
