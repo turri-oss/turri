@@ -11,6 +11,7 @@ import { driveTerminal } from "./chat-terminal.ts";
 import { clientInfo } from "./cli-root.ts";
 import { setProcessTurri } from "./extension.ts";
 import { takeOverSettings } from "./pi-settings.ts";
+import { adoptAsBound } from "./print-mode.ts";
 import { quietBrandThemeOverrides } from "./pi-themes.ts";
 import { takeCaptured } from "./reopen.ts";
 import { createTerminal } from "./terminal-view.ts";
@@ -98,9 +99,8 @@ if (interactive) {
   });
   terminal.attach(turri);
 } else {
-  // core-gap: nothing hands the CLI the pi session print mode makes, so it is never adopted: its chat has no session -
-  // no title of its own, no entry events, its cost outside spending() - as before. It runs, on harness-model.
   turri = await createTurri({ client: clientInfo(), overrides, persist: false });
+  adoptAsBound(turri);
 }
 setProcessTurri(turri);
 
