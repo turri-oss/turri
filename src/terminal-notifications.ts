@@ -20,7 +20,11 @@ export interface TerminalNotification {
 export class TerminalNotifications {
   readonly items: TerminalNotification[] = [];
   private readonly reviews = new Map<string, TerminalNotification>();
-  /** An incident's line, said again as a notification at once: left out, as the chat shows it. */
+  /**
+   * An incident's line, said again as a notification at once: left out, as the chat shows it.
+   * core-gap: an incident comes as an `incident` event and again as a `notification`, with nothing to tell the second for
+   * the first but its text - matched here until a notification says what it is about.
+   */
   private incident: string | undefined;
 
   get count(): number {
