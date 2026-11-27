@@ -1,6 +1,6 @@
 import { basename } from "node:path";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { capturePhases, captureStageText, type CaptureStage, type CaptureStatus } from "@turri-dev/core";
 import { spinner } from "./terminal-marks.ts";
 import { skillProgressLine } from "./skill-progress.ts";
@@ -91,11 +91,12 @@ export function workStrip(work: { total: number; done: number; running: number }
   return out + style.muted("░".repeat(Math.max(0, cells - used)));
 }
 
-export function captureProgress(ctx: ExtensionContext): CaptureProgressView {
+/** A capture's status above the chat's input, as its `captureProgress` events tell it, until it ends. */
+export function captureProgress(ui: ExtensionUIContext): CaptureProgressView {
   const CAPTURE_WIDGET = "turri-capture";
   let status: CaptureStatus | undefined;
   let redrawNow: (() => void) | undefined;
-  ctx.ui.setWidget(CAPTURE_WIDGET, (tui, theme) => {
+  ui.setWidget(CAPTURE_WIDGET, (tui, theme) => {
     const redraw = setInterval(() => tui.requestRender(), 1000);
     redraw.unref?.();
     redrawNow = () => tui.requestRender();
@@ -112,5 +113,5 @@ export function captureProgress(ctx: ExtensionContext): CaptureProgressView {
     };
   });
 
-  return { update(next) { status = next; redrawNow?.(); }, close() { ctx.ui.setWidget(CAPTURE_WIDGET, undefined); } };
+  return { update(next) { status = next; redrawNow?.(); }, close() { ui.setWidget(CAPTURE_WIDGET, undefined); } };
 }

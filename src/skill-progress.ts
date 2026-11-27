@@ -1,6 +1,6 @@
 import type { SkillProgress as Progress } from "@turri-dev/core";
 import { spinner } from "./terminal-marks.ts";
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 /**
@@ -114,10 +114,10 @@ export function skillAboutLine(progress: SkillProgress, width: number, style: Pr
   return `${" ".repeat(left)}${style.muted(text)}`;
 }
 
-/** The legacy desktop host also reads this widget through its pi UI context. */
-export function skillProgress(ctx: ExtensionContext, progress: Progress | null): void {
-  if (!progress) return ctx.ui.setWidget("turri-skill", undefined);
-  ctx.ui.setWidget("turri-skill", (tui, theme) => {
+/** A foreground skill's place in its phases, above the chat's input (`skillProgress` events); null takes it off. */
+export function skillProgress(ui: ExtensionUIContext, progress: Progress | null): void {
+  if (!progress) return ui.setWidget("turri-skill", undefined);
+  ui.setWidget("turri-skill", (tui, theme) => {
     const redraw = setInterval(() => tui.requestRender(), 1000);
     redraw.unref?.();
     const style = {

@@ -14,9 +14,7 @@ import { fileURLToPath } from "node:url";
 import { CLI_ROOT, extensionInstalledGlobally, themesInstalledGlobally, versionLine } from "./cli-root.ts";
 import { dropNoise } from "./quiet.ts";
 import { describeVersion } from "./turri-versions.ts";
-import { readProjectConfig } from "@turri-dev/core/project";
-import { CODING_MODEL_ENV, REOPEN_FILE_ENV, takeReopening } from "@turri-dev/core/startup";
-import { chatModels } from "./chat-models.ts";
+import { REOPEN_FILE_ENV, takeReopening } from "./reopen.ts";
 /**
  * Start pi with this project's extension and themes already wired in.
  *
@@ -64,23 +62,20 @@ function chat(args: string[]): never {
     // are left as they are, so a plain `pi` keeps its theme.
     const useTheme = run.args.some((arg) => arg === "--use-theme" || arg.startsWith("--use-theme=")) ? [] : ["--use-theme", DEFAULT_THEME];
 
-    // The model the person talks to, and the one every render runs on - see chat-models.ts.
-    const { piArgs, codingModel } = chatModels(run.args, readProjectConfig(run.cwd));
-
     // Fullscreen: pi owns the viewport, so the conversation stays where it is scrolled to while the
     // jobs redraw - in the terminal's own scrollback, every redraw pulls it back to the bottom.
     const tuiMode = run.args.some((arg) => arg === "--tui-mode" || arg.startsWith("--tui-mode=")) ? [] : ["--tui-mode", "fullscreen"];
 
     // A condition passed directly to node (rather than through NODE_OPTIONS) must reach the chat too.
     const conditions = import.meta.resolve("@turri-dev/core/project").endsWith(".ts") ? ["--conditions=turri-source"] : [];
-    const result = spawnSync(process.execPath, [...conditions, launcher, ...themes, ...useTheme, ...tuiMode, ...piArgs], {
+    // The models named - --harness-model, --coding-model - are the chat's to read (chat-models.ts): pi's arguments with them.
+    const result = spawnSync(process.execPath, [...conditions, launcher, ...themes, ...useTheme, ...tuiMode, ...run.args], {
       stdio: "inherit",
       cwd: run.cwd,
       env: {
         ...process.env,
         ...run.env,
         [REOPEN_FILE_ENV]: reopenFile,
-        ...(codingModel ? { [CODING_MODEL_ENV]: codingModel } : {}),
         ...(inPi ? { TURRI_EXTENSION_IN_PI: "1" } : {}),
       },
     });

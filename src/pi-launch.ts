@@ -1,16 +1,19 @@
 import "./terminal-images.ts";
-import "./cli-root.ts";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { main, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { ProcessTerminal } from "@earendil-works/pi-tui";
-import { withoutResumeLine } from "./resume-line.ts";
+import { createTurri, type Turri } from "@turri-dev/core";
 import { lastRun } from "@turri-dev/core/project";
-import type { RunRecord } from "@turri-dev/core";
+import { withoutResumeLine } from "./resume-line.ts";
+import { chatModels } from "./chat-models.ts";
 import { driveTerminal } from "./chat-terminal.ts";
+import { clientInfo } from "./cli-root.ts";
+import { setProcessTurri } from "./extension.ts";
 import { takeOverSettings } from "./pi-settings.ts";
 import { quietBrandThemeOverrides } from "./pi-themes.ts";
-import turri, { cliSession } from "./extension.ts";
+import { takeCaptured } from "./reopen.ts";
+import { createTerminal } from "./terminal-view.ts";
 
 /**
  * pi, started the way its own CLI starts it, for `turri`.
@@ -21,7 +24,8 @@ import turri, { cliSession } from "./extension.ts";
  * quiet every `pi` on the machine, so it is answered for this run instead. `--verbose` still shows it.
  */
 
-const args = process.argv.slice(2);
+// turri's own options - the two models - taken out of pi's arguments, as the session's overrides (chat-models.ts).
+const { piArgs: args, overrides } = chatModels(process.argv.slice(2));
 
 /** Set by cli.ts when pi loads turri's extension itself - an older turri installed it into every pi. */
 const GLOBAL_EXTENSION = "TURRI_EXTENSION_IN_PI";
@@ -60,31 +64,46 @@ const setup = pathToFileURL(join(dirname(fileURLToPath(import.meta.resolve("@ear
 const { setupCli } = (await import(setup)) as { setupCli: () => void };
 setupCli();
 
-// turri's session, with its chats: built into pi here, in this process, rather than loaded from a file - one session
-// the terminal's chats share (chats.ts). An older turri installed into every pi loads it itself: cli.ts says so, and
-// it is not built in twice.
-const extensionFactories = process.env[GLOBAL_EXTENSION] === "1" ? [] : [turri];
-
 // pi's terminal - not its print, json or rpc modes, nor a run given its input on stdin - holds several chats, and
 // records them for `turri --continue`, which opens them all again: the first as pi's own session, the rest beside it.
 const interactive =
   process.stdin.isTTY === true && !args.some((arg) => ["-p", "--print", "--mode", "--help", "-h", "--version", "-v", "--list-models"].includes(arg) || arg.startsWith("--mode="));
+
+// turri's session - one a process - opened before pi's main, on this folder's project. The terminal is its front end: its
+// chats made on pi's screen, its questions asked in turri's dialog, regen and the inbox drawn from its events. Print, json
+// and rpc modes run one chat with nobody to ask: a session with no front end, whose extension pi builds into its one
+// session - no other chat, no sentinel, nothing recorded for `turri --continue`.
+let turri: Turri;
 if (interactive) {
-  let restore: RunRecord | undefined;
+  let restore = false;
   const asked = args.findIndex((arg) => arg === "--continue" || arg === "-c");
   const saved = asked !== -1 ? lastRun(process.cwd()) : undefined;
   // pi reopens the first of the person's chats as its own; the rest - the sentinel among them - are opened beside it.
+  // With none of the person's chats saved - only the sentinel's - pi starts a fresh one, and every saved chat is
+  // opened beside it.
   const first = saved?.chats.find((chat) => chat.role === undefined);
   if (saved !== undefined) {
     if (first !== undefined) args.splice(asked, 1, "--session", first.sessionFile);
     else args.splice(asked, 1);
-    restore = saved;
+    restore = true;
   }
-  driveTerminal(
-    cliSession(true),
-    // With none of the person's chats saved - only the sentinel's - pi starts a fresh one, and every saved chat is opened beside it.
-    restore !== undefined ? { restore, skipFirst: restore.chats.some((chat) => chat.role === undefined) } : {},
-  );
+  const terminal = createTerminal();
+  const captured = takeCaptured();
+  turri = await createTurri({
+    frontend: { ...terminal.frontend, sessions: driveTerminal(terminal, { restore }) },
+    client: clientInfo(),
+    overrides,
+    // Opened again in the project a capture wrote (reopen.ts): its report, told in the first chat.
+    ...(captured !== undefined ? { captured } : {}),
+  });
+  terminal.attach(turri);
+} else {
+  turri = await createTurri({ client: clientInfo(), overrides, persist: false });
 }
+setProcessTurri(turri);
+
+// turri built into pi here, in this process, rather than loaded from a file. An older turri installed into every pi
+// loads it itself (extension.ts finds this session): cli.ts says so, and it is not built in twice.
+const extensionFactories = process.env[GLOBAL_EXTENSION] === "1" ? [] : [turri.extension];
 
 await main(args, { extensionFactories });

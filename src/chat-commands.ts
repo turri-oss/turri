@@ -1,7 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { MAX_CHATS, type ChatInfo } from "@turri-dev/core";
-import type { TurriCore } from "@turri-dev/core/terminal";
-import { chatMark, closeTerminalChat } from "./chat-tabs.ts";
+import { chatMark, closeTerminalChat, type TerminalChats } from "./chat-tabs.ts";
 
 /**
  * The keyboard counterparts to the terminal's chat tabs: `/chat` - new, close, a number, or a pick - and its keys.
@@ -24,13 +23,13 @@ export const OPTION_AS_META =
   "Use Option as Meta key; Kitty, macos_option_as_alt yes. /chat works without it.";
 
 /** The sessions told already. */
-const toldOfOption = new WeakSet<TurriCore>();
+const toldOfOption = new WeakSet<TerminalChats>();
 
 /** Said once a session, as its second chat opens, on a Mac. */
-export function tellOfOptionOnce(session: TurriCore, platform: NodeJS.Platform = process.platform): void {
+export function tellOfOptionOnce(session: TerminalChats, platform: NodeJS.Platform = process.platform): void {
   if (platform !== "darwin" || toldOfOption.has(session)) return;
   toldOfOption.add(session);
-  const stop = session.onChats(() => {
+  const stop = session.onChange(() => {
     if (session.chats().length < 2) return;
     stop();
     // Once the new chat is on the screen: said there.
@@ -41,7 +40,7 @@ export function tellOfOptionOnce(session: TurriCore, platform: NodeJS.Platform =
 const label = (chat: ChatInfo, index: number) => `${index + 1}  ${chatMark(chat)} ${chat.title}${chat.shown ? "  (shown)" : ""}`;
 
 /** What the person asked of the chats, done once pi has finished with the command or key that asked it. */
-function later(ctx: ExtensionContext, session: TurriCore, work: () => Promise<unknown>): void {
+function later(ctx: ExtensionContext, session: TerminalChats, work: () => Promise<unknown>): void {
   setTimeout(() => {
     work().catch((error: unknown) => {
       try {
@@ -54,7 +53,7 @@ function later(ctx: ExtensionContext, session: TurriCore, work: () => Promise<un
 }
 
 /** The chat `which` names - its number, or the shown one when none - or why there is none. */
-function chatNamed(session: TurriCore, which: string): ChatInfo | string {
+function chatNamed(session: TerminalChats, which: string): ChatInfo | string {
   const chats = session.chats();
   if (which === "") return chats.find((chat) => chat.shown) ?? "No chat is shown.";
   const number = Number.parseInt(which, 10);
@@ -62,19 +61,19 @@ function chatNamed(session: TurriCore, which: string): ChatInfo | string {
   return chat ?? `There is no chat ${which}: ${chats.length === 1 ? "there is one" : `there are ${chats.length}`}.`;
 }
 
-function closeChat(ctx: ExtensionContext, session: TurriCore, which: string): void {
+function closeChat(ctx: ExtensionContext, session: TerminalChats, which: string): void {
   const chat = chatNamed(session, which);
   if (typeof chat === "string") return ctx.ui.notify(chat, "warning");
   later(ctx, session, () => closeTerminalChat(session, chat.id));
 }
 
-function showChat(ctx: ExtensionContext, session: TurriCore, which: string): void {
+function showChat(ctx: ExtensionContext, session: TerminalChats, which: string): void {
   const chat = chatNamed(session, which);
   if (typeof chat === "string") return ctx.ui.notify(chat, "warning");
   later(ctx, session, () => session.show(chat.id));
 }
 
-export function registerChats(pi: ExtensionAPI, session: TurriCore): void {
+export function registerChats(pi: ExtensionAPI, session: TerminalChats): void {
   tellOfOptionOnce(session);
   pi.registerCommand("chat", {
     description: `Chats beside this one, each working while another is shown: /chat [new | close [n] | n] - ${NEW_CHAT_KEY} a new one, alt+1…9 to switch, ${CLOSE_CHAT_KEY} to close${process.platform === "darwin" ? " (alt is ⌥, once the terminal sends Option as Meta)" : ""}`,

@@ -4,13 +4,24 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { allocateImageId, Box, type Component, getCapabilities, getPngDimensions, type ImageDimensions, renderImage, Text, type TUI, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { BANNER_ENTRY, VERSION_ENTRY, type BannerData } from "@turri-dev/core";
 import { CLI_ROOT } from "./cli-root.ts";
+import { bannerWarnings } from "./turri-versions.ts";
 import { brandPink } from "./regenerate/plain-palette.ts";
 import { halfBlocks, JELLYFISH_FRAME_MS, JELLYFISH_REST, JELLYFISH_SEQUENCE, JELLYFISH_TEXT_FRAMES } from "./jellyfish.ts";
 import { overPictureRow, PICTURE_AT } from "./picture-row.ts";
 import { padScreen, SCREEN_PADDING } from "./screen-padding.ts";
 import { highlightPlainCodeBlocks } from "./plain-code-blocks.ts";
 
+/**
+ * A newer turri out, or one installed and hidden behind this one - from what npm said at the last check, never waiting
+ * on the network - and what npm says once it answers, asked again behind it: once a process.
+ */
+let versions: ReturnType<typeof bannerWarnings> | undefined;
+/** Whether what npm said later was told: once, in the chat that heard it first. */
+let toldLater = false;
+
 export function registerBanner(pi: ExtensionAPI, welcomeVisible: () => boolean): void {
+  versions ??= bannerWarnings();
+  const { lines: newer, later } = versions;
   pi.registerEntryRenderer(BANNER_ENTRY, (entry, _options, theme) => {
     const data = entry.data as BannerData | undefined;
     if (data === undefined) return undefined;
@@ -19,7 +30,7 @@ export function registerBanner(pi: ExtensionAPI, welcomeVisible: () => boolean):
       `${brandPink(theme)("turri")}  ${theme.fg("muted", `v${data.version}`)}` +
         (data.commit !== undefined ? theme.fg("dim", `  from a clone, ${data.commit}${data.changed ? " with changes" : ""}`) : ""),
       // A newer turri out, or one installed and hidden behind this one: said first, under the version it is about.
-      ...(data.versions ?? []).map((line) => theme.fg("warning", line)),
+      ...(data.versions ?? newer).map((line) => theme.fg("warning", line)),
       // A key renamed is information; one that does not parse stops everything that reads it; the rest are the person's to take out.
       ...(data.config ?? []).map((line) => theme.fg(line.kind === "renamed" ? "muted" : line.kind === "broken" ? "error" : "warning", line.text)),
       `${theme.fg("text", "the first coding agent with the power of ")}${brandPink(theme)("regenerative software")}`,
@@ -44,6 +55,12 @@ export function registerBanner(pi: ExtensionAPI, welcomeVisible: () => boolean):
   });
 
   pi.on("session_start", (_event, ctx) => {
+    // A newer turri npm told of once turri had started: said in the chat, as the banner would have said it.
+    void later.then((text) => {
+      if (text === undefined || toldLater || !ctx.hasUI) return;
+      toldLater = true;
+      ctx.ui.notify(text, "warning");
+    });
     if (ctx.hasUI) {
       padTheScreen(ctx);
       if (welcomeVisible()) animateJellyfish(ctx, welcomeVisible);

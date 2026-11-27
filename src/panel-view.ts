@@ -1,17 +1,16 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { type Component, type OverlayHandle, isKeyRelease, isKeyRepeat, matchesKey } from "@earendil-works/pi-tui";
-import type { Job, AskUserIO } from "@turri-dev/core";
-import { PANEL_KEY, createSpecMapSource, defaultMapFiles, plannedLoop, shownJobs, type Declining, type TurriCore } from "@turri-dev/core/terminal";
-import { earlierPulses, ledgerProjects } from "@turri-dev/core/project";
+import type { Frontend, Job, MarkedPage } from "@turri-dev/core";
 import { plainPaint, brandNeon } from "./regenerate/plain-palette.ts";
 import { clickToFocus, dockedWidth, narrowChat, shade, shadeChat } from "./regenerate/panel-dock.ts";
 import { paddedColumns, paddedRows, SCREEN_PADDING } from "./screen-padding.ts";
 import { createSidePanel } from "./regenerate/side-panel.ts";
 import { createSpecMapState, type SpecMapState } from "./regenerate/spec-map-view.ts";
-import { notificationView } from "./terminal-notifications.ts";
+import { notificationView, type NotificationsSource } from "./terminal-notifications.ts";
 import { createJobsTreeState, selectJob } from "./regenerate/jobs-tree.ts";
 import { QuestionDialog } from "./question-dialog.ts";
 import { buttonLabel, terminalPointer } from "./pointer-hover.ts";
+import { PANEL_KEY } from "./terminal-marks.ts";
 
 /**
  * While a question is open, what catches ctrl+h on the terminal's input: pi gives an extension's shortcut only the keys
@@ -25,44 +24,53 @@ export function peekKeyListener(panel: { open(): void; shown(): boolean }): (dat
     return { consume: true };
   };
 }
+
 /**
- * The terminal's dialogs: turri's own, a long brief scrolling above the question and the options always showing
- * (question-dialog.ts). ctrl+c declines the question - each one it is pressed at, however many in a row; what asked
- * goes on. The turn, and a skill asking in it, is stopped by ctrl+c with no question open.
+ * The terminal's questions (`Frontend.ask`): turri's own dialog, a long brief scrolling above the question and the
+ * options always showing (question-dialog.ts), in the chat that asks - waiting, while it is hidden, until it is shown
+ * (chat-ui.ts). ctrl+c at it declines the chat's questions (`Chat.decline`); what asked goes on. The turn, and a skill
+ * asking in it, is stopped by ctrl+c with no question open. Over without an answer - declined, its turn stopped - the
+ * dialog closes.
  */
-export function terminalDialogs(ctx: ExtensionContext, declining: Declining, decline: () => void): AskUserIO {
-  const dialog = (question: string, context: string | undefined, options?: string[], selected?: number) =>
-    declining.declined
-      ? Promise.resolve(undefined)
-      : ctx.ui.custom<string | undefined>((tui, theme, _keybindings, done) => {
-          const shown: QuestionDialog = new QuestionDialog({
-            question,
-            ...(context !== undefined ? { context } : {}),
-            ...(options !== undefined ? { options } : {}),
-            ...(selected !== undefined ? { selected } : {}),
-            rows: () => paddedRows(tui.terminal.rows),
-            style: { accent: (text) => theme.fg("accent", text), muted: (text) => theme.fg("muted", text), bold: (text) => theme.bold(text) },
-            done: (answer) => {
-              if (questionShown === shown) questionShown = undefined;
-              done(answer);
-            },
-            requestRender: () => tui.requestRender(),
-            interrupt: decline,
-          });
-          declining.close = () => shown.dismiss();
-          questionShown = shown;
-          return shown;
+export function terminalAsk(chatUi: (chat: string) => ExtensionUIContext | undefined, decline: (chat: string) => void): NonNullable<Frontend["ask"]> {
+  return async (question, { chat, signal }) => {
+    const ui = chatUi(chat);
+    if (ui === undefined || signal.aborted) return undefined;
+    ui.setWorkingMessage("waiting for your answer");
+    const unhook = hookPeekKey(ui);
+    try {
+      return await ui.custom<string | undefined>((tui, theme, _keybindings, done) => {
+        const shown: QuestionDialog = new QuestionDialog({
+          question: question.title,
+          ...(question.context !== undefined ? { context: question.context } : {}),
+          ...(question.kind === "select" ? { options: question.options } : {}),
+          ...(question.kind === "select" && question.at !== undefined ? { selected: question.at } : {}),
+          rows: () => paddedRows(tui.terminal.rows),
+          style: { accent: (text) => theme.fg("accent", text), muted: (text) => theme.fg("muted", text), bold: (text) => theme.bold(text) },
+          done: (answer) => {
+            if (questionShown === shown) questionShown = undefined;
+            done(answer);
+          },
+          requestRender: () => tui.requestRender(),
+          interrupt: () => decline(chat),
         });
-  return {
-    select: (title, options, context, at) => dialog(title, context, options, at),
-    input: (title, context) => dialog(title, context),
+        // Over while it waited to be shown, or as it opens: closed at once.
+        if (signal.aborted) queueMicrotask(() => shown.dismiss());
+        else signal.addEventListener("abort", () => shown.dismiss(), { once: true });
+        questionShown = shown;
+        return shown;
+      });
+    } finally {
+      unhook();
+      ui.setWorkingMessage();
+    }
   };
 }
 
 /** The side panel, as a question open in the chat reaches it: set once the extension has its panel. */
 let questionPeek:
   | {
-      open(ctx: ExtensionContext): void;
+      open(ui: ExtensionUIContext): void;
       /** It shows now: its own listener has the keys, ctrl+h among them. */
       shown(): boolean;
     }
@@ -83,18 +91,18 @@ const PEEK_KEY_WIDGET = "turri-peek-key";
  * shortcut only the keys its editor sees, and a question has the focus: the key is caught on the terminal's input
  * instead. While the panel shows, its own listener has ctrl+h - to close it - and this lets it be.
  */
-export function hookPeekKey(ctx: ExtensionContext): () => void {
+export function hookPeekKey(ui: ExtensionUIContext): () => void {
   if (questionPeek === undefined) return () => {};
   const peek = questionPeek;
-  ctx.ui.setWidget(
+  ui.setWidget(
     PEEK_KEY_WIDGET,
     (tui) => {
-      const unlisten = tui.addInputListener(peekKeyListener({ open: () => peek.open(ctx), shown: () => peek.shown() }));
+      const unlisten = tui.addInputListener(peekKeyListener({ open: () => peek.open(ui), shown: () => peek.shown() }));
       return { render: () => [], invalidate() {}, dispose: unlisten };
     },
     { placement: "belowEditor" },
   );
-  return () => ctx.ui.setWidget(PEEK_KEY_WIDGET, undefined);
+  return () => ui.setWidget(PEEK_KEY_WIDGET, undefined);
 }
 
 export function registerPanelKey(pi: ExtensionAPI, sidePanel: SidePanelHost): void {
@@ -104,7 +112,7 @@ export function registerPanelKey(pi: ExtensionAPI, sidePanel: SidePanelHost): vo
   });
   // A question open in the chat on the screen peeks at this chat's panel.
   const peek = {
-    open: (ctx: ExtensionContext) => openPanel(ctx),
+    open: (ui: ExtensionUIContext) => openPanel(ui),
     shown: () => sidePanel.shown(),
   };
   questionPeek = peek;
@@ -116,15 +124,31 @@ export function registerPanelKey(pi: ExtensionAPI, sidePanel: SidePanelHost): vo
     description: "Peek at regen and the pulses - a question waiting in the chat waits for you - or go back to it",
     handler: async (ctx) => {
       if (!ctx.hasUI) return;
-      openPanel(ctx);
+      openPanel(ctx.ui);
+    },
+  });
+}
+
+/** /notifications: the side panel on finished pulses and the sentinel's notices, beside the chat. */
+export function registerNotifications(pi: ExtensionAPI, sidePanel: SidePanelHost): void {
+  pi.registerCommand("notifications", {
+    description: "Open the side panel on finished pulses and sentinel notices",
+    handler: async (_args, ctx) => {
+      if (ctx.hasUI) sidePanel.open(ctx.ui, "notifications", "beside");
     },
   });
 }
 
 const WATCH_REDRAW_MS = 500;
 /** The session's side panel: opened from any chat, and the same panel whichever chat is shown. */
-interface SidePanelHost {
-  open(ctx: ExtensionContext, view?: SpecMapState["view"], placement?: "beside"): void;
+export interface SidePanelHost {
+  open(ui: ExtensionUIContext, view?: SpecMapState["view"], placement?: "beside"): void;
+  /** Opened on a pulse, in the pulse list. */
+  openOn(ui: ExtensionUIContext, pulse: string): void;
+  /** Open, or closed when it is open: the tabs' toggle. */
+  toggle(ui: ExtensionUIContext): void;
+  /** Drawing a regeneration under way: the tabs' spinner. */
+  busy(): boolean;
   visible(): boolean;
   close(): void;
   /** It shows now, with the keys. */
@@ -133,10 +157,29 @@ interface SidePanelHost {
   say?: (text: string) => void;
 }
 
-export function makePanel(session: TurriCore, needsLooking: () => string | undefined): SidePanelHost {
-  const { jobs, cwd } = session;
+/** What the side panel reads of the session: its pulses, the spec map, earlier sessions' pulses and the inbox. */
+export interface PanelSource extends NotificationsSource {
+  /** The pulses planned, then every pulse this session ran. */
+  jobs(): Job[];
+  /** The spec map, its items marked, as the session last sent it. */
+  map(): MarkedPage[];
+  /** The spec map's files read again: they may have changed while the panel was closed. */
+  refreshMap(): void;
+  /** Earlier sessions' pulses here, newest runs first, and how many more there are. */
+  history(): { jobs: Job[]; more: number };
+  /** Planning or regenerating now. */
+  busy(): boolean;
+}
+
+export function makePanel(session: PanelSource, needsLooking: () => string | undefined): SidePanelHost {
   const self: SidePanelHost = {
-    open: (ctx, view, placement) => openPanel(ctx, view, placement),
+    open: (ui, view, placement) => openPanel(ui, view, placement),
+    openOn: (ui, pulse) => {
+      if (selectJob(session.jobs(), jobsTree, pulse)) mapState.view = "pulses";
+      openPanel(ui);
+    },
+    toggle: (ui) => (self.visible() ? self.close() : openPanel(ui)),
+    busy: () => session.busy(),
     visible: () => panel !== undefined && panel.handle?.isHidden() !== true,
     close: () => panel?.close(),
     shown: () => panel !== undefined && panel.keys,
@@ -155,7 +198,7 @@ export function makePanel(session: TurriCore, needsLooking: () => string | undef
   const earlierJobs = (): Job[] => {
     if (earlier !== undefined) return earlier;
     try {
-      const found = earlierPulses(ledgerProjects(cwd), new Set(jobs.list().map((job) => job.id)));
+      const found = session.history();
       earlier = found.jobs;
       jobsTree.earlierMore = found.more;
     } catch {
@@ -164,22 +207,14 @@ export function makePanel(session: TurriCore, needsLooking: () => string | undef
     return earlier;
   };
   const mapState = createSpecMapState();
-  // The map from the files - the .plain files asked for, else the project's - with the work loop's plan laid over them.
-  const specMap = createSpecMapSource({
-    files: () => {
-      const asked = plannedLoop(jobs)?.mapPlan().files ?? [];
-      return asked.length > 0 ? asked : defaultMapFiles(cwd);
-    },
-    plan: () => plannedLoop(jobs)?.mapPlan() ?? { files: [], codebases: [] },
-  });
 
   /** Open the side panel - on the view named, or as it was left. */
-  const openPanel = (ctx: ExtensionContext, view?: SpecMapState["view"], placement?: "beside") => {
+  const openPanel = (ui: ExtensionUIContext, view?: SpecMapState["view"], placement?: "beside") => {
     const id = needsLooking();
     if (view !== undefined) mapState.view = view;
     // A pulse that failed or stopped since the panel was last opened: opened as it is, it is on that pulse - what went
     // wrong is what the person opens it to see.
-    else if (id !== undefined && selectJob(shownJobs(jobs), jobsTree, id)) mapState.view = "pulses";
+    else if (id !== undefined && selectJob(session.jobs(), jobsTree, id)) mapState.view = "pulses";
 
     if (placement === "beside") panelDocked = true;
     if (panel !== undefined) {
@@ -191,7 +226,7 @@ export function makePanel(session: TurriCore, needsLooking: () => string | undef
       return;
     }
     // Not awaited: the panel lives on while the jobs it shows run.
-    void ctx.ui.custom<void>(
+    void ui.custom<void>(
       (tui, theme, _keybindings, done) => {
         // What the chat shows when the panel takes the keys - its editor, or a pi dialog - for when it gives them back.
         const focusedNow = () => (tui as unknown as { getFocusedComponent?(): Component | null }).getFocusedComponent?.() ?? null;
@@ -250,18 +285,18 @@ export function makePanel(session: TurriCore, needsLooking: () => string | undef
         };
         const back = () => (panelBeside() > 0 ? toChat() : close());
         // Opened, it reads the files again at once: they may have changed while it was closed.
-        specMap.refresh();
+        session.refreshMap();
         const view = createSidePanel({
-          ...(session.terminal ? { notifications: notificationView(session, {
+          notifications: notificationView(session, {
             accent: (text) => theme.fg("accent", text), muted: (text) => theme.fg("muted", text), bold: (text) => theme.bold(text),
             warning: (text) => theme.fg("warning", text), button: (text, selected) => buttonLabel(theme, text, selected, false, "panel"),
-          }, back) } : {}),
+          }, back),
           pointer: terminalPointer(tui.terminal),
           tabLabel: (text, active, hovered, role) => buttonLabel(theme, text, active, hovered, role),
-          jobs: () => shownJobs(jobs),
+          jobs: () => session.jobs(),
           earlier: earlierJobs,
           tree: jobsTree,
-          map: () => specMap.read(),
+          map: () => session.map(),
           mapState,
           rows: () => paddedRows(tui.terminal.rows),
           key: PANEL_KEY,

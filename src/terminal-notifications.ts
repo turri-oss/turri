@@ -1,7 +1,123 @@
-import type { TurriCore, TerminalNotification } from "@turri-dev/core/terminal";
-import type { Notice } from "@turri-dev/core";
+import { didNotPass, formatDuration, pulseName, type ChatInfo, type Conclusion, type Notice, type NoticeAnswer, type TurriEvent } from "@turri-dev/core";
 import { Container, SelectList, Text, truncateToWidth, visibleWidth, type Component, type TuiMouseEvent } from "@earendil-works/pi-tui";
 import { QuestionDialog, type DialogStyle } from "./question-dialog.ts";
+
+/**
+ * The terminal's inbox: what the person looks at later in the side panel's notifications - each pulse that ended, the
+ * sentinel's notices and what it concluded, and what turri warned of outside any transcript - built from the session's
+ * events. A notice is answered here (`notices.answer`): the chat never puts it as a question (`shows.notices`).
+ */
+export interface TerminalNotification {
+  title: string;
+  detail: string;
+  conclusion?: string;
+  warning?: boolean;
+  /** The notice as the session last said it: open, or how it ended. */
+  notice?: Notice;
+  seen: boolean;
+}
+
+export class TerminalNotifications {
+  readonly items: TerminalNotification[] = [];
+  private readonly reviews = new Map<string, TerminalNotification>();
+  /** An incident's line, said again as a notification at once: left out, as the chat shows it. */
+  private incident: string | undefined;
+
+  get count(): number {
+    return this.items.filter((item) => !item.seen || this.needsAnswer(item)).length;
+  }
+
+  needsAnswer(item: TerminalNotification): boolean {
+    return item.notice?.state === "open" && item.notice.kind !== "fixed";
+  }
+
+  add(title: string, detail: string, options: Pick<TerminalNotification, "notice" | "warning"> = {}): void {
+    this.items.unshift({ title, detail, seen: false, ...options });
+  }
+
+  /** What an event puts in the inbox, put: true when it changed. */
+  hear(event: TurriEvent): boolean {
+    switch (event.type) {
+      case "job": {
+        if (!event.final) return false;
+        const { job } = event;
+        const wrong = didNotPass(job);
+        const result = job.status === "succeeded" ? (wrong ? "did not pass" : "finished") : job.status;
+        this.add(`${pulseName(job)} · ${result} after ${formatDuration(job)}`, job.error ?? job.report ?? job.note ?? "", { warning: job.status === "failed" || wrong });
+        return true;
+      }
+      case "notice":
+        this.put(event.notice);
+        return true;
+      case "noticeOver":
+        return this.over(event.notice);
+      case "concluded":
+        this.concluded(event.conclusion);
+        return true;
+      case "incident":
+        this.incident = event.event.job !== undefined ? `${event.event.job}: ${event.text}` : event.text;
+        return false;
+      case "notification": {
+        const incident = this.incident;
+        this.incident = undefined;
+        // What turri warned of - the sentinel that could not open, a config not written - kept to be read later; a
+        // provider waited out is the chat's line only, as it was said there.
+        if (event.level === "info" || event.text === incident) return false;
+        this.add(event.text, "", { warning: true });
+        return true;
+      }
+      default:
+        return false;
+    }
+  }
+
+  /** Only the sentinel's review shares a row. The pulse result and the question whether to start it are independent. */
+  private review(about: { job?: string; check?: string }, title: string): TerminalNotification {
+    const key = about.check ? `check:${about.check}` : about.job ? `pulse:${about.job}` : undefined;
+    const known = key && this.reviews.get(key);
+    if (known) return known;
+    const item = { title, detail: "", seen: false };
+    this.items.unshift(item);
+    if (key) this.reviews.set(key, item);
+    return item;
+  }
+
+  put(notice: Notice): void {
+    const about = [notice.module, notice.pulse !== undefined ? `pulse ${notice.pulse}` : undefined].filter(Boolean).join(" · ");
+    const heading = notice.kind === "fixed" ? "Fixed" : "Sentinel";
+    const title = [heading, about, notice.summary].filter(Boolean).join(" · ");
+    const detail = notice.evidence.join("\n\n");
+    if (notice.kind === "sentinel-start") return this.add(title, detail, { notice });
+    const item = this.review(notice, title);
+    if (!item.conclusion) item.warning = notice.severity !== "info";
+    Object.assign(item, { title, detail, notice, seen: false });
+  }
+
+  /** A notice answered, dismissed or superseded: its row says so. */
+  over(notice: Notice): boolean {
+    const item = this.items.find((each) => each.notice?.id === notice.id);
+    if (item === undefined) return false;
+    item.notice = notice;
+    return true;
+  }
+
+  concluded(result: Conclusion): void {
+    const what = result.pulse !== undefined ? `pulse ${result.pulse}` : result.job ?? result.check;
+    const verdict = result.verdict === "holds" ? "it holds" : result.verdict === "wrong" ? "found something wrong" : "not checked";
+    const item = this.review(result, ["Sentinel", result.module, what, verdict].filter(Boolean).join(" · "));
+    item.conclusion = `${verdict}: ${result.summary}`;
+    item.warning = result.verdict !== "holds";
+  }
+}
+
+/** What the notifications view reaches of the terminal: the inbox, the chats a notice may go to, and answering one. */
+export interface NotificationsSource {
+  inbox: TerminalNotifications;
+  chats(): ChatInfo[];
+  answer(id: string, answer: NoticeAnswer): void;
+  /** Something the view changed - a row read: the tabs' count drawn again. */
+  changed(): void;
+}
 
 /** The notifications tab. Opening or leaving a detail never answers its notice. Only an explicit choice does. */
 interface NotificationStyle extends DialogStyle {
@@ -9,13 +125,13 @@ interface NotificationStyle extends DialogStyle {
   button(text: string, selected: boolean): string;
 }
 
-export function notificationView(session: TurriCore, style: NotificationStyle, leave: () => void) {
-  const inbox = session.notifications;
+export function notificationView(source: NotificationsSource, style: NotificationStyle, leave: () => void) {
+  const { inbox } = source;
   const { accent, muted } = style;
   const listBox = new Container();
   const markRead = () => {
     for (const item of inbox.items) item.seen = true;
-    session.changed();
+    source.changed();
   };
   const readLabel = " mark all as read ";
   let pressedRead = false;
@@ -42,44 +158,45 @@ export function notificationView(session: TurriCore, style: NotificationStyle, l
   let labels: string[] = [];
   let visible = 0;
   let detail: QuestionDialog | undefined;
-  let selectedNotice: Notice | undefined;
+  // The row open, and its notice's state as it opened: a notice the session ends meanwhile takes the detail away.
+  let selected: TerminalNotification | undefined;
   let detailState: Notice["state"] | undefined;
   let height = 20;
-  const back = () => { detail = undefined; selectedNotice = undefined; };
+  const back = () => { detail = undefined; selected = undefined; };
   const show = (item: TerminalNotification, steering = false) => {
     item.seen = true;
     const notice = item.notice;
-    selectedNotice = notice;
+    selected = item;
     detailState = notice?.state;
     const open = notice?.state === "open";
     const actions = open && notice.kind !== "fixed" ? notice.actions.map((action, index) => `${index + 1}. ${action.label}`) : [];
     const steer = "Say what to do instead…";
     const ignore = "Ignore - leave it as the build has it";
     const options = [...actions, ...(open && notice.ignorable ? [ignore] : []), ...(open && notice.kind === undefined ? [steer] : []), ...(open ? ["Dismiss"] : []), "Back"];
-    const target = notice && session.chats().find((chat) => chat.id === notice.chat);
+    const target = notice && source.chats().find((chat) => chat.id === notice.chat);
     detail = new QuestionDialog({
       question: steering ? "What should be done about it?" : "notifications",
       context: [item.warning ? style.warning(item.title) : item.title, item.detail, item.conclusion, ...(open && notice.kind === undefined && target ? [`Accepted work goes to ${target.title}.`] : [])].filter(Boolean).join("\n\n"),
       ...(steering ? {} : { options, choiceButton: style.button }), rows: () => height,
       style, requestRender: () => {},
       done(answer) {
-        if (!answer || !notice || notice.state !== "open" || (!steering && answer === "Back")) return back();
+        if (!answer || !notice || item.notice?.state !== "open" || (!steering && answer === "Back")) return back();
         if (!steering && answer === steer) return show(item, true);
-        if (steering) session.answer(notice.id, { steer: answer });
-        else if (answer === "Dismiss") session.answer(notice.id, { dismiss: true });
-        else if (answer === ignore) session.answer(notice.id, { ignore: true });
-        else session.answer(notice.id, { action: actions.indexOf(answer) });
+        if (steering) source.answer(notice.id, { steer: answer });
+        else if (answer === "Dismiss") source.answer(notice.id, { dismiss: true });
+        else if (answer === ignore) source.answer(notice.id, { ignore: true });
+        else source.answer(notice.id, { action: actions.indexOf(answer) });
         back();
       },
     });
-    session.changed();
+    source.changed();
   };
   return {
     count: () => inbox.count,
     inDetail: () => detail !== undefined,
     render(width: number, available: number) {
       height = available;
-      if (selectedNotice && selectedNotice.state !== detailState) back();
+      if (selected?.notice !== undefined && selected.notice.state !== detailState) back();
       if (detail) return detail.render(width);
       const next = inbox.items;
       const lines = next.map((item) => {
