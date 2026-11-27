@@ -48,7 +48,7 @@ async function main(): Promise<number> {
   // core-gap: skills.run runs a skill it finds by name - turri's own or the project's - and none from a folder: a folder
   // with a SKILL.md is refused until the core can run one.
   if (existsSync(join(skillArg, "SKILL.md"))) {
-    console.error(`${skillArg} is a skill's folder: turri cultivate runs a skill by its name for now - turri's own, or one in the project's .turri/skills.`);
+    console.error(`${skillArg} is a skill's folder: turri cultivate runs a skill by its name for now - turri's own, or one of the project's, in .turri/skills or .agents/skills.`);
     return 1;
   }
 

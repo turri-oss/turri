@@ -8,7 +8,7 @@ Each chat has its own:
 
 - **history** - what was said in it, and nothing said in another; a chat asked about another's says so and asks;
 - **turns** - a hidden chat keeps working, and starts a turn of its own when a pulse it asked for ends;
-- **model and thinking level** - [pi](https://pi.dev)'s `/model`, and `/settings harness-model` in that chat;
+- **model and thinking level** - it starts on `harness-model`, and is put on it again whenever `harness-model` changes; [pi](https://pi.dev)'s `/model` chooses another for it until then. While `harness-model` cannot be reached - no such model here, or its provider not signed in - a line above the input says so, and the chat sends nothing to a model, rather than running on [pi](https://pi.dev)'s own choice: `/login`, or another `harness-model` with `/settings`, and it goes on;
 - **questions** - what it asks waits in it until you look at it.
 
 The session's, shared by every chat:
@@ -46,7 +46,7 @@ On macOS, `alt` is Option (⌥), and reaches turri only when the terminal sends 
 - **A hidden chat's questions** wait until you show it, then come up one after another. What it says in passing is said as you show it; what it keeps on the screen - a skill's progress, the job panel - is put back each time; what you had typed in its editor and not sent is still there.
 - **The side panel** belongs to the session and stays open when you switch chats. Click `***plain ›` at the right end of the chat tabs to open it; click `***plain ‹` to close it. The button turns pink and spins while turri plans or runs pulses. Its tabs are `***plain`, `pulses` and `notifications`; `× close` also closes it. From the keyboard, `ctrl+h` opens the panel, `p` switches between the map and pulses, and `n` opens notifications. A terminal under 104 columns shows the panel full screen.
 - **A long command** - `/regenerate`, planning a module from scratch - does its work in the background once it is under way: the chat, and switching to another, stay free while the planner plans.
-- **`ctrl+c`** reaches the chat shown and nothing else: another chat's turn and skill go on, and so do the pulses - `/halt` stops one. A skill stopped keeps its run, for the model to continue with `resume`. At a question - the chat's `ask_user`, a skill's interview - `ctrl+c` declines it, and the asker is told so and goes on - each question it is pressed at, however many in a row. A skill is stopped by `ctrl+c` with no question open. A second press straight after one that stopped something does nothing, so pressing twice to be sure does not leave turri; once the chat is doing nothing, the next one does - with what every other chat is doing. A host has the same as `interrupt(id)`, and `decline(id)` for a question ([hosting](hosting.md)).
+- **`ctrl+c`** reaches the chat shown and nothing else: another chat's turn and skill go on, and so do the pulses - `/halt` stops one. A skill stopped keeps its run, for the model to continue with `resume`. At a question - the chat's `ask_user`, a skill's interview - `ctrl+c` declines it, and the asker is told so and goes on - each question it is pressed at, however many in a row. A skill is stopped by `ctrl+c` with no question open. A second press straight after one that stopped something does nothing, so pressing twice to be sure does not leave turri; once the chat is doing nothing, the next one does - with what every other chat is doing. Another front end of the core has the same as `Chat.stop()`, and `Chat.decline()` for a question ([the core's interface](https://github.com/turri-oss/turri-core/blob/main/docs/core.md)).
 - **The sentinel** is a chat in the strip like the others, `sentinel`, and never shown by itself: it closes like any chat, and the next pulse that finishes opens it again. Each pulse it checks in a fresh conversation, replacing the one in its tab. With it on, you open up to eight chats - the ninth slot is its. See [the sentinel](sentinel.md).
 - **The last chat** of yours is not closed: `/quit` leaves turri. Leaving turri leaves the terminal as it was: the conversation is not written out to it, nor a line on how to resume - the command run is all that stays. `turri --continue` opens the chats again.
 - **`/fork`** and **`/reload`** work on the chat shown, as [pi](https://pi.dev)'s do: the chat's history forked, or turri's extension rebuilt in it.
@@ -71,7 +71,7 @@ In [debug mode](config.md#debug-mode) nothing is deleted.
 
 ## In a host
 
-A host - turri's desktop app - runs the same session with `createTurri`, opening, closing and showing chats in its own windows: see [running turri in a host](hosting.md#the-session-in-a-host).
+A host - turri's desktop app - runs the same session with the core's `createTurri`, opening, closing and showing chats in its own windows: see [running turri in a host](hosting.md).
 
 ## How it works
 

@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-This repository is `@turri-dev/cli`: the command line and the terminal for turri. `@turri-dev/core` owns the sessions, work loop, agents, sandbox, parser, genome and standard library. See `docs/development.md` for the package boundary, linked development and release checks. Behavioural docs in `docs/` describe the installed CLI; a harness change belongs in turri-core with its tests and rules.
+This repository is `@turri-dev/cli`: the command line and the terminal for turri. `@turri-dev/core` owns the session, work loop, agents, sandbox, parser, genome and standard library; the terminal is one front end of its session (`../turri-core/docs/core.md`). See `docs/development.md` for the package boundary, linked development and release checks. Behavioural docs in `docs/` describe the installed CLI; a harness change belongs in turri-core with its tests and rules.
 
 ## Commands
 
@@ -37,15 +37,17 @@ turri is developed for all three, as equals: no code assumes the OS it is writte
 
 ## Architecture
 
-`src/cli.ts` and the `*-cli.ts` files own arguments, console output, prompts, signals and exits. Regenerate and conform select a named operation in `@turri-dev/core/commands`; `loop-cli.ts` supplies its `HeadlessView`. Keep core imports on the public package entries. Startup before pi loads uses `/startup`.
+Import the core through its five public entries alone: `@turri-dev/core` (the session, its events and data), `/plain`, `/project`, `/models` and `/system` - never its `src/`. Every entry but `/plain` loads pi: what runs before pi loads (`cli.ts` on the chat's path, `cli-root.ts`) imports none.
 
-`src/cli-root.ts` identifies this CLI to the core in each process. `src/pi-launch.ts` sets up the pi terminal (including the chat driver and prototype patches), and `src/extension.ts` is both its built-in factory and the entry pi can load independently. Both load `terminal-images.ts` before the core. They share one process session with one `terminalView()` from `src/terminal-view.ts`. Keep view hooks about presentation: read the session's data rather than reproducing decisions in this package.
+`src/cli.ts` and the `*-cli.ts` files own arguments, console output, prompts, signals and exits. `regenerate`, `conform`, `launch` and `cultivate` open a session with no front end (`createTurri()`, the options that name config keys as its `overrides`) and print from its events; `drift`, `parse`, `lineage`, `init-config`, `capture` and `doctor` call `/project` and `/system`.
 
-`src/host.ts` is the existing `@turri-dev/cli/host` desktop bridge. It delegates to the core, retains the old session registry and loop shapes, and exports the same pi peer as the session uses. The core's `/cli-compat` is for this bridge only.
+`src/pi-launch.ts` opens one `createTurri({ frontend, client, overrides })` per process, before pi's `main`, and builds `turri.extension` into pi; `src/extension.ts` is what pi loads when it is given turri's file, and finds that session. The terminal's `Frontend` is `src/terminal-view.ts`, its chats made on pi's runtime by `src/chat-terminal.ts` (`sessions: external`), whose prototype patches hold several chats on one screen. Keep the front end about presentation: read the session's events and methods rather than reproducing its decisions here. What the CLI needs and the core does not offer is marked `// core-gap:` where it is worked around.
+
+turri-app builds on the core directly; this package exports nothing for it.
 
 ## Testing patterns
 
-Run the CLI without a model when possible: parse a small project, inspect its drift or exercise the real CLI in a temporary folder. Terminal tests use pi's installed classes, render the components and drive their keys. `tests/packed-host.mts` is compiled and run in a clean install by `scripts/package-check.mjs`. Never reach into a core checkout's private files to test the CLI.
+Run the CLI without a model when possible: parse a small project, inspect its drift or exercise the real CLI in a temporary folder. Terminal tests open a real session with the terminal as its front end (`tests/terminal-session.ts`), on stand-in pi sessions, use pi's installed classes, render the components and drive their keys. What the core decides is tested in the core; here, what the CLI draws and does with it. Never reach into a core checkout's private files to test the CLI.
 
 ## Conventions
 

@@ -79,7 +79,7 @@ The CLI runs from this clone; `npm install` gets the pinned `@turri-dev/core` fr
 Start in the **CLI checkout**. Link the core checkout once, then restart turri after editing either repo. No build or global `npm link` is needed.
 
 ```bash
-core=../turri-core              # use ../turri-core-cli-compat for the migration worktrees
+core=../turri-core
 npm --prefix "$core" ci
 npm run link:core -- "$core"
 ```

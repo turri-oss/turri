@@ -10,7 +10,7 @@ A security problem is not an issue: report it privately, as [SECURITY.md](SECURI
 
 ## Where a change belongs
 
-This repository owns the `turri` command, the terminal UI and the console for unattended runs. The [core](https://github.com/turri-oss/turri-core) owns the sessions, work loop, agents, parser, genome and standard library. [turri desktop](https://github.com/turri-oss/turri-desktop) owns the desktop window and uses the [compatible CLI host entry](docs/hosting.md). See [development](docs/development.md) to work on the CLI and core together.
+This repository owns the `turri` command, the terminal UI and the console for unattended runs. The [core](https://github.com/turri-oss/turri-core) owns the sessions, work loop, agents, parser, genome and standard library. [turri desktop](https://github.com/turri-oss/turri-desktop) owns the desktop window and builds on the core directly (see [running turri in a host](docs/hosting.md)). See [development](docs/development.md) to work on the CLI and core together.
 
 ## Making a change
 

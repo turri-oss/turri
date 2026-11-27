@@ -65,7 +65,7 @@ Useful options - `turri regenerate --help` lists all of them:
 | `--from-scratch` | delete the module's code and conformance tests (its lineage keeps them) and regenerate all of it |
 | `--from-scratch-chain` | the same for every module of its requires chain, the base's included, built again from the bottom |
 | `turri conform --from-scratch` | take out the tests folder at the tip of the module's chain (its lineage keeps it) and write the tests again from a copy of the tests of the module the tip requires, the code untouched; `--from-scratch-chain`, from nothing |
-| `--start-over` | start over, unasked, a codebase built without a module it now requires - without a terminal, a run that needs it and lacks it stops |
+| `--start-over` | start over, unasked, a codebase built without a module it now requires - without it, a terminal is asked, and a run that needs it with no terminal, or a no, stops there |
 | `--build-dir <dir>` | as the run ends, export the code there - see below |
 | `--report <file.json>` | write [the run report](#the-run-report) there |
 
@@ -180,6 +180,8 @@ A module that `requires` others is built in its own codebase on top of theirs: t
 **Completed functional specs** - the pass rate, the figure to compare runs by. A functional spec is completed when the code record of the codebase the run delivers - the furthest-built of the chain, the one `--build-dir` exports - as last committed, holds it as \*\*\*plain has it now: the same text, every file it links holding the same, no definition it uses changed, and not marked to regenerate again. A record moves only when a pulse lands, and a pulse lands only once the code's unit tests pass (its conformance tests too, when they are on), so completed means landed and passing. Each module counts its own functional specs: a module below the tip counts from what the tip's code was built on, and a module above the delivered codebase has none completed. `with_scenarios` is those with scenarios - the ones that are tested; one with no test plain file, or an empty one, is not - and `conformance_tested` those of the completed ones whose conformance tests are recorded as written for them as they are now, their text and their scenarios, in the tests record of the delivered codebase, whose suite holds the chain's (`plain_modules/<tip>/tests/.turri.json`): tested of specified is `conformance_tested` of `with_scenarios`.
 
 ## If it stopped
+
+`Ctrl-C` stops a run as it would end: its running pulses stopped and rolled back, nothing more started, the code exported to `--build-dir` and the report written - `interrupted`, exit `130`. A second `Ctrl-C` leaves at once. `SIGTERM` and `SIGHUP` leave at once too, what its agents started stopped with it.
 
 Run the same command again. Functionalities already built from the current \*\*\*plain description are left alone, and modules that are complete are skipped, so it picks up where it stopped - after a crash, a provider outage, or a machine that went to sleep anyway. Whatever the stopped run left half-written is undone first: each step starts from the module's last commit. A functionality whose \*\*\*plain has changed since counts as not built, so editing \*\*\*plain and re-running rebuilds what changed. `--from-scratch` rebuilds the module; `--from-scratch-chain` rebuilds every module of its chain.
 
