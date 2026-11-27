@@ -86,8 +86,8 @@ export async function main(args: string[]): Promise<number> {
   if (node.level !== "ok") return report([node]);
   const checking = { dir: process.cwd(), models: options["no-models"] === undefined };
   // core-gap: doctor() takes no models of its own - it reads them, as config.turri.yaml's keys, from the session open in
-  // the process. Models named on the command line are held by a session with no front end while it checks.
-  const session = Object.keys(overrides).length > 0 ? await (await import("@turri-dev/core")).createTurri({ client: clientInfo(), overrides }) : undefined;
+  // the process. Models named on the command line, to be asked, are held by a session with no front end while it checks.
+  const session = checking.models && Object.keys(overrides).length > 0 ? await (await import("@turri-dev/core")).createTurri({ client: clientInfo(), overrides }) : undefined;
   let checks: Check[];
   try {
     if (asksModels(checking)) console.log(brand.muted("Asking each model the config names for a word..."));
