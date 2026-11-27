@@ -69,7 +69,7 @@ function chat(args: string[]): never {
     const tuiMode = run.args.some((arg) => arg === "--tui-mode" || arg.startsWith("--tui-mode=")) ? [] : ["--tui-mode", "fullscreen"];
 
     // A condition passed directly to node (rather than through NODE_OPTIONS) must reach the chat too.
-    const conditions = import.meta.resolve("@turri-dev/core/startup").endsWith(".ts") ? ["--conditions=turri-source"] : [];
+    const conditions = import.meta.resolve("@turri-dev/core/project").endsWith(".ts") ? ["--conditions=turri-source"] : [];
     const result = spawnSync(process.execPath, [...conditions, launcher, ...themes, ...useTheme, ...tuiMode, ...piArgs], {
       stdio: "inherit",
       cwd: run.cwd,
