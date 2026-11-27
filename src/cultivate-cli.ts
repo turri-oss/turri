@@ -1,17 +1,18 @@
 import { createInterface } from "node:readline/promises";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
-import { createTurri, TurriError, type Question } from "@turri-dev/core";
+import { join, relative } from "node:path";
+import { createTurri, type Question } from "@turri-dev/core";
 import { clientInfo } from "./cli-root.ts";
 import { c } from "./module-report.ts";
+import { printReport } from "./skill-report.ts";
 
 /**
- * `turri cultivate <skill>`: one of turri's gated skills - or the project's - run end to end from the command line, its
- * steps and review gates enforced by the core. Its questions are asked here, at the terminal; its phases are said as it
- * moves through them.
+ * `turri cultivate <skill>`: one of turri's gated skills - the project's, or one in a folder - run end to end from the
+ * command line, its steps and review gates enforced by the core. Its questions are asked here, at the terminal; each
+ * step, artifact, judge and gate decision is printed as it is made.
  */
 
-const USAGE = "usage: turri cultivate <skill name> [--model provider/id]";
+const USAGE = "usage: turri cultivate <skill name | path-to-skill-dir> [--model provider/id]";
 
 /** A question at the terminal: options numbered, the number or the words taken; a long brief printed whole above it. */
 async function askAtTerminal(question: Question, signal: AbortSignal): Promise<string | undefined> {
@@ -45,27 +46,10 @@ async function main(): Promise<number> {
     return 1;
   }
 
-  // core-gap: skills.run runs a skill it finds by name - turri's own or the project's - and none from a folder: a folder
-  // with a SKILL.md is refused until the core can run one.
-  if (existsSync(join(skillArg, "SKILL.md"))) {
-    console.error(`${skillArg} is a skill's folder: turri cultivate runs a skill by its name for now - turri's own, or one of the project's, in .turri/skills or .agents/skills.`);
-    return 1;
-  }
-
-  // Its questions and review gates are put here, at the terminal. A front end that asks makes chats, so the session is
-  // told its chats' pi sessions are made elsewhere - and refuses them: cultivate opens none.
-  // core-gap: a front end that asks the person but has no chats cannot say so - the sentinel, on, would try to open a
-  // chat as a pulse a skill queued ends, and be refused.
+  // Its questions and review gates are put here, at the terminal: a front end that asks, and has no chats - nor a sentinel.
   const turri = await createTurri({
     client: clientInfo(),
-    persist: false,
-    frontend: {
-      ask: (question, { signal }) => askAtTerminal(question, signal),
-      sessions: {
-        kind: "external",
-        create: () => Promise.reject(new TurriError("refused", "turri cultivate runs one skill, with no chats.")),
-      },
-    },
+    frontend: { ask: (question, { signal }) => askAtTerminal(question, signal), sessions: { kind: "none" } },
   });
   const stopping = new AbortController();
   process.on("SIGINT", () => {
@@ -74,29 +58,15 @@ async function main(): Promise<number> {
     stopping.abort();
   });
   try {
-    const skills = turri.skills.list();
-    const skill = skills.find((found) => found.name === skillArg);
-    if (skill === undefined) {
-      console.error(`No skill named ${skillArg}. The skills: ${skills.map((found) => found.name).join(", ")}.`);
+    // A folder with a SKILL.md, or a skill by name: turri's own or the project's.
+    const folder = existsSync(join(skillArg, "SKILL.md"));
+    if (!folder && !turri.skills.list().some((found) => found.name === skillArg)) {
+      console.error(`No skill named ${skillArg}, and no SKILL.md in a folder of that name. The skills: ${turri.skills.list().map((found) => found.name).join(", ")}.`);
       return 1;
     }
-    console.log(c.bold(`skill: ${skill.name}`));
-    // core-gap: describeGates is gone, and skills.run reports no gate's decision as it is made (the old Reporter): each
-    // phase is said as it starts, from the skillProgress events, and the gates' judges and decisions are not.
-    let shown = "";
-    turri.on("skillProgress", ({ progress }) => {
-      const step = progress?.phases[progress.current];
-      if (progress === null || step === undefined) return;
-      const line = `${step}:${progress.attempt}`;
-      if (line === shown) return;
-      shown = line;
-      console.log(`\n${c.bold(c.accent(`> step ${step}`))} ${c.dim(`attempt ${progress.attempt}`)}${progress.about !== undefined ? c.dim(` - ${progress.about}`) : ""}`);
-    });
     // A skill that names the coding model runs on it, harness-model on the rest; --model wins.
-    const result = await turri.skills.run(skill.name, { ...(model !== undefined ? { model } : {}), signal: stopping.signal });
-    // core-gap: skills.run keeps the run's folder to resume from, and does not say where it is: what each step left is named.
-    const steps = Object.keys(result.artifacts);
-    console.log(`\n${result.ok ? c.success(c.bold("run complete")) : c.error(c.bold("run aborted at a gate"))}${steps.length > 0 ? c.dim(` - artifacts of ${steps.join(", ")}`) : ""}`);
+    const result = await turri.skills.run(folder ? { dir: skillArg } : skillArg, { ...(model !== undefined ? { model } : {}), signal: stopping.signal, onReport: printReport });
+    console.log(`\n${result.ok ? c.success(c.bold("run complete")) : c.error(c.bold("run aborted at a gate"))} ${c.dim(`artifacts in ${relative(process.cwd(), result.runDir) || result.runDir}`)}`);
     return result.ok ? 0 : 1;
   } finally {
     await turri.dispose();

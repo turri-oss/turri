@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -30,6 +30,15 @@ describe("turri cultivate", () => {
   it("ends on what went wrong, not on a stack trace, as the other commands do", () => {
     const said = cultivate("implement-unit-testing-script", "--model", "nope/no-such-model");
     expect(said).toContain("is not a model pi knows");
+    expect(said).not.toMatch(/^\s+at /m);
+  });
+
+  it("takes a skill's folder, and says what is wrong with one that does not load", () => {
+    mkdirSync(join(dir, "mine"));
+    writeFileSync(join(dir, "mine", "SKILL.md"), "no front matter here\n");
+    const said = cultivate("mine");
+    expect(said).not.toContain("No skill named");
+    expect(said).toContain("'name' and 'description' are required");
     expect(said).not.toMatch(/^\s+at /m);
   });
 
