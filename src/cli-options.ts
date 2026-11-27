@@ -1,4 +1,4 @@
-import { booleanOption, overrideConfig, splitModelSpec } from "./config.ts";
+import { booleanOption, overrideConfig, splitModelSpec } from "@turri-dev/core/config";
 
 /**
  * The command line of turri's commands: their words, and the options that stand for the config's own keys - kept apart

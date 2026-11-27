@@ -1,7 +1,8 @@
 import { stripTerminalSequences, truncateToWidth, visibleWidth, type Component } from "@earendil-works/pi-tui";
-import type { ChatInfo, TurriCore } from "./chats.ts";
+import type { ChatInfo } from "@turri-dev/core";
+import type { TurriCore } from "@turri-dev/core/terminal";
 import { PointerHover, type ButtonPaint, type ButtonRole } from "./pointer-hover.ts";
-import { spinner } from "./regenerate/job-panel.ts";
+import { spinner } from "@turri-dev/core/terminal";
 
 /** Shared by the tabs and the /chat picker. */
 export function chatMark(chat: ChatInfo): string {

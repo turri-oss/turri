@@ -2,8 +2,6 @@ import { type Component, type Container, type ScrollView, type TUI, VStack } fro
 import type { ChatTabs } from "./chat-tabs.ts";
 import { terminalPointer } from "./pointer-hover.ts";
 
-export const BANNER_ENTRY = "turri_banner";
-
 export interface ChatScreen {
   fullscreenLayoutRoot: Component;
   documentContainer: Container;

@@ -1,5 +1,5 @@
-import { defaultBuildDir } from "./regenerate/paths.ts";
-import { historyLog, historyShow } from "./regenerate/lineage.ts";
+import { defaultBuildDir } from "@turri-dev/core/commands";
+import { historyLog, historyShow } from "@turri-dev/core/commands";
 
 const USAGE = `usage: turri lineage <module> [commit]
 

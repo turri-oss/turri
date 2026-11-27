@@ -1,4 +1,4 @@
-import { checkPlainTargets, formatCheckResults } from "./plain/check.ts";
+import { checkPlainTargets, formatCheckResults } from "@turri-dev/core/plain";
 import { c } from "./module-report.ts";
 
 const USAGE = `usage: turri parse <file.plain | directory> [options]

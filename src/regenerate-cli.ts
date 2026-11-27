@@ -1,4 +1,4 @@
-import { CONFIG_FILE, readProjectConfig } from "./config.ts";
+import { CONFIG_FILE, readProjectConfig } from "@turri-dev/core/config";
 import { parseArgs } from "./cli-options.ts";
 import { headlessOptions, runLoop } from "./loop-cli.ts";
 
@@ -63,17 +63,10 @@ runLoop({
   ...(buildDir !== undefined ? { buildDir } : {}),
   ...(report !== undefined ? { report } : {}),
   command: ["regenerate", ...process.argv.slice(2)],
-  dryRun,
   startOver: options["start-over"] !== undefined,
-  // A dry run is a look ahead: planned as regenerate plans it, nothing started.
-  ask: (loop) =>
-    dryRun
-      ? loop.lookAhead(named)
-      : again.length > 0
-      ? loop.regenerateAgain(named, again)
-      : scratch !== undefined
-        ? loop.fromScratch(named, { chain: scratch === "chain" })
-        : loop.bringUp(named),
+  ...(dryRun ? { work: "preview" }
+    : scratch !== undefined && again.length === 0 ? { work: "fromScratch", chain: scratch === "chain" }
+    : { work: "regenerate", again }),
 }).catch((error) => {
   console.error(error instanceof Error ? error.message : error);
   process.exit(1);

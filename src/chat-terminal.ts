@@ -1,11 +1,12 @@
 import { AgentSessionRuntime, InteractiveMode, SessionManager, type AgentSession, type ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
-import { BANNER_ENTRY, chatTabHeader, type ChatScreen } from "./chat-tab-header.ts";
-import type { RunRecord } from "./chat-records.ts";
+import { BANNER_ENTRY } from "@turri-dev/core/terminal";
+import { chatTabHeader, type ChatScreen } from "./chat-tab-header.ts";
+import type { RunRecord } from "@turri-dev/core/terminal";
 import { chatTabs, closeTerminalChat } from "./chat-tabs.ts";
 import { showWaitingMessages } from "./chat-waiting.ts";
 import { buttonLabel } from "./pointer-hover.ts";
-import { interruptChat, terminalUi, type ChatState, type Stoppable, type TurriCore } from "./chats.ts";
+import { interruptChat, terminalUi, type ChatState, type Stoppable, type TurriCore } from "@turri-dev/core/terminal";
 
 /**
  * The terminal's chats: pi's screen, showing one chat while the others go on working.

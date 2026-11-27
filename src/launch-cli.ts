@@ -1,10 +1,7 @@
-import { closeSync, openSync, readSync, statSync } from "node:fs";
-import { refuseTestPlainFile } from "./test-plain-files.ts";
-import { join, resolve } from "node:path";
-import { configForSpec, modelSpec, projectModels, readProjectConfig } from "./config.ts";
-import { createLaunchTrack, launchText } from "./launch-track.ts";
-import { runLaunchAgent } from "./launch-agent.ts";
-import { listLaunched, runningLaunched, stopLaunched } from "./regenerate/launch.ts";
+import { resolve } from "node:path";
+import { configForSpec, modelSpec, projectModels, readProjectConfig } from "@turri-dev/core/config";
+import { launchText } from "@turri-dev/core";
+import { followLaunchedLogs, launchModule, runningLaunched, stopLaunched } from "@turri-dev/core/commands";
 import { c } from "./module-report.ts";
 
 const USAGE = `usage: turri launch [file.plain] [options]
@@ -48,38 +45,6 @@ function parseArgs(argv: string[]) {
   return { plainFile: positional[0], model, inModule, guidance };
 }
 
-/** Follow every running server's output, prefixed with its name, until Ctrl-C or they have all ended. */
-function followLogs(): Promise<void> {
-  const offsets = new Map<string, number>();
-  return new Promise((done) => {
-    const tick = () => {
-      const running = runningLaunched();
-      for (const item of listLaunched()) {
-        let size = 0;
-        try {
-          size = statSync(item.log).size;
-        } catch {
-          continue;
-        }
-        const from = offsets.get(item.log) ?? 0;
-        if (size <= from) continue;
-        const buffer = Buffer.alloc(size - from);
-        const fd = openSync(item.log, "r");
-        readSync(fd, buffer, 0, buffer.length, from);
-        closeSync(fd);
-        offsets.set(item.log, size);
-        for (const line of buffer.toString("utf8").split("\n").filter((l) => l !== "")) console.log(`${c.accent(`[${item.name}]`)} ${line}`);
-      }
-      if (running.length === 0) {
-        clearInterval(timer);
-        console.log(c.dim("Everything it started has ended."));
-        done();
-      }
-    };
-    const timer = setInterval(tick, 500);
-  });
-}
-
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const named = args.plainFile ?? readProjectConfig(process.cwd()).module;
@@ -88,7 +53,6 @@ async function main() {
     process.exit(1);
   }
   const plainFile = resolve(named);
-  refuseTestPlainFile(plainFile);
   // A launch follows steps - a script, a start command: the coding model does that well, thinking low.
   const model = args.model ?? modelSpec(projectModels(configForSpec(plainFile)).coding);
 
@@ -103,29 +67,10 @@ async function main() {
   console.log(c.dim(`\nworking out how to start it${model !== undefined ? ` (${model})` : ""}…\n`));
   // One launch, on a track of its own: the code exported first, then the agent, its words as they come.
   let streamed = "";
-  const track = createLaunchTrack({
-    cwd: process.cwd(),
-    run: (launch, code, signal, freed) =>
-      runLaunchAgent({
-        launch,
-        code,
-        cwd: process.cwd(),
-        signal,
-        freed,
-        ...(model !== undefined ? { model } : {}),
-        onDelta: (delta: string) => {
-          streamed += delta;
-          process.stdout.write(delta);
-        },
-      }),
+  const ended = await launchModule(plainFile, {
+    model, inModule: args.inModule, guidance: args.guidance,
+    onDelta(delta) { streamed += delta; process.stdout.write(delta); },
   });
-  const { launch } = track.request({
-    plainFile,
-    ...(args.inModule !== undefined ? { inModule: args.inModule } : {}),
-    ...(args.guidance !== undefined ? { guidance: args.guidance } : {}),
-    cause: {},
-  });
-  const ended = await track.done(launch.id);
   // What the agent said as it went is on the screen already: its summary only when it said nothing - what turri stopped
   // for it, always.
   const text = launchText(streamed.trim() === "" ? ended : { ...ended, summary: undefined });
@@ -135,7 +80,8 @@ async function main() {
 
   if (runningLaunched().length === 0) process.exit(ended.status === "launched" ? 0 : 1);
   console.log(c.success(c.bold("\nRunning - Ctrl-C stops it.")) + c.dim(" Its output follows.\n"));
-  await followLogs();
+  await followLaunchedLogs((name, line) => console.log(`${c.accent(`[${name}]`)} ${line}`));
+  console.log(c.dim("Everything it started has ended."));
   process.exit(0);
 }
 

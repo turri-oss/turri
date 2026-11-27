@@ -72,7 +72,27 @@ npm link        # puts `turri` on your PATH, pointing at this clone
 turri doctor
 ```
 
-The clone runs its TypeScript sources directly, so there is nothing to build. To pick up new commits, run `git pull` and `npm install`, then start **turri** again - a running one keeps the code it started with. More in the [installation guide](docs/installation.md#from-a-clone).
+The CLI runs from this clone; `npm install` gets the pinned `@turri-dev/core` from npm. See the [installation guide](docs/installation.md#from-a-clone) for more.
+
+### Develop the CLI and core together
+
+Start in the **CLI checkout**. Link the core checkout once, then restart turri after editing either repo. No build or global `npm link` is needed.
+
+```bash
+core=../turri-core              # use ../turri-core-cli-compat for the migration worktrees
+npm --prefix "$core" ci
+npm run link:core -- "$core"
+```
+
+To open a project with both checkouts' sources, run this from the CLI checkout:
+
+```bash
+cli="$PWD/bin/turri.mjs"
+cd /path/to/your/project
+node --conditions=turri-source "$cli"
+```
+
+The link is local to this CLI checkout. Published CLIs use the core version in `package.json`. To switch the checkout back to that version once it is published, run `npm ci` in the CLI checkout and start it without `--conditions=turri-source`. See [linked development](docs/development.md#linked-development) for testing and PowerShell instructions.
 
 ## Why
 
@@ -198,7 +218,7 @@ Start at the [documentation index](docs/README.md), or go straight to a page:
 | [Skills and gates](docs/skills-and-gates.md) | the gate syntax, what the harness enforces, judges, rules |
 | [The \*\*\*plain parser](docs/parser.md) | the TypeScript port, `turri parse`, fidelity to the reference parser |
 | [Theming](docs/theming.md) | the two brand themes |
-| [Development](docs/development.md) | tests, layout, known edges |
+| [Development](docs/development.md) | working on the CLI and core together, tests and layout |
 | [Contributing](CONTRIBUTING.md) | reporting a bug, making a change, the conventions a pull request follows |
 | [Security](SECURITY.md) | reporting a vulnerability, privately |
 

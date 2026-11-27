@@ -1,9 +1,0 @@
----
-module: task-manager
-func_id: add-task
----
-
-# works
-It works.
-
-***conformance tests***

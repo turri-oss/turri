@@ -1,5 +1,0 @@
----
-import:
-  - stdlib/frontend/conformance/common
-description: Conformance tests for stdlib/frontend/vue-vite in Playwright, as for every stdlib frontend.
----

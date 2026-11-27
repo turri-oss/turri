@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { MAX_CHATS, type ChatInfo, type TurriCore } from "./chats.ts";
+import { MAX_CHATS, type ChatInfo } from "@turri-dev/core";
+import type { TurriCore } from "@turri-dev/core/terminal";
 import { chatMark, closeTerminalChat } from "./chat-tabs.ts";
 
 /**

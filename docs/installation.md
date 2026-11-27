@@ -71,6 +71,8 @@ npm link              # puts `turri` on your PATH, pointing at this clone
 
 A clone runs its TypeScript sources directly - Node strips the types - so edits take effect immediately. The package on npm runs JavaScript compiled from them instead (`npm run build`, into `dist/`, run by `npm pack` and `npm publish` before they pack), as Node runs no `.ts` file inside a `node_modules`. `bin/turri.mjs` runs `src/` where there is one, and `dist/` otherwise.
 
+To use a local `@turri-dev/core`, including before the matching core release is on npm, follow [linked development](development.md#linked-development) in place of `npm install`.
+
 To update, `git pull` and `npm install` - the second picks up a dependency that changed, [pi](https://pi.dev)'s say. `npm link` needs running only once. A **turri** already running keeps the code it started with: start it again to run what you pulled.
 
 ## In Docker

@@ -1,5 +1,5 @@
 import type { DiffPaint } from "./diff-view.ts";
-import type { DiffStyle } from "./job-panel.ts";
+import type { DiffStyle } from "@turri-dev/core/terminal";
 
 /**
  * How the side panel colours things. Plain text when there is no theme, as in tests.

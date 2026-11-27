@@ -1,9 +1,10 @@
 {
   // The published package: src/ compiled to dist/, file for file, so each file sits as deep as its source and finds
-  // turri's own folders (genome/, stdlib/, .pi/) the same way. Node does not run .ts files inside node_modules.
+  // the CLI's assets and themes the same way. A release builds against the core's published declarations.
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": false,
+    "customConditions": [],
     "rootDir": "src",
     "outDir": "dist",
     "rewriteRelativeImportExtensions": true,

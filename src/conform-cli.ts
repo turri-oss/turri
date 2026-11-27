@@ -41,12 +41,7 @@ runLoop({
   ...(buildDir !== undefined ? { buildDir } : {}),
   ...(report !== undefined ? { report } : {}),
   command: ["conform", ...process.argv.slice(2)],
-  ask: (loop) =>
-    loop.conformance(plainFile, {
-      ...(funcIds.length > 0 ? { funcIds } : {}),
-      ...(options["one-by-one"] !== undefined ? { separately: true } : {}),
-      ...(scratch !== undefined ? { fromScratch: scratch } : {}),
-    }),
+  work: "conform", funcIds, separately: options["one-by-one"] !== undefined, fromScratch: scratch,
 }).catch((error) => {
   console.error(error instanceof Error ? error.message : error);
   process.exit(1);

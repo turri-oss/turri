@@ -3,12 +3,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AgentSessionRuntime, InteractiveMode, type AgentSession, type ExtensionAPI, type ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import { createChats, INTERRUPT_SETTLE_MS } from "../src/chats.ts";
+import { createTurriCore } from "@turri-dev/core/terminal";
 import { chatTabs, type TabAction } from "../src/chat-tabs.ts";
 import { pressCtrlC, type CtrlCScreen } from "../src/chat-terminal.ts";
-import { Shade, showWaiting, unqueue, type QueueOf, type WaitingScreen } from "../src/chat-waiting.ts";
+import { Shade, showWaiting, type WaitingScreen } from "../src/chat-waiting.ts";
 import { Container, Text, visibleWidth, type TuiMouseEvent } from "@earendil-works/pi-tui";
-import { createJobRegistry } from "../src/regenerate/jobs.ts";
+import { unqueue, type QueueOf } from "@turri-dev/core/terminal";
 
 const PI = dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent")));
 const piFile = (path: string) => readFileSync(join(PI, path), "utf8");
@@ -46,6 +46,7 @@ function fakeSession(name: string) {
     sessionFile: undefined,
     messages: [],
     isStreaming: false,
+    getSessionStats: () => ({ cost: 0 }),
     agent: { state: {} },
     subscribe: () => () => {},
     sessionManager: { getSessionName: () => undefined, getSessionDir: () => "/sessions", isPersisted: () => false },
@@ -94,7 +95,7 @@ describe("the terminal's chats", () => {
     const real = realScreen();
     const first = fakeSession("first");
     const second = fakeSession("second");
-    const core = createChats({ cwd: process.cwd(), host: {}, jobs: createJobRegistry(), extension: () => {} });
+    const core = createTurriCore();
     driveTerminal(core);
 
     let cleared = 0;
@@ -126,7 +127,7 @@ describe("the terminal's chats", () => {
         await (InteractiveMode.prototype as unknown as { rebindCurrentSession: (this: unknown) => Promise<void> }).rebindCurrentSession.call(screen);
       },
       createRuntime: async () => {
-        core.extension({} as ExtensionAPI);
+        core.extension(new Proxy({}, { get: () => () => {} }) as ExtensionAPI);
         return { session: second, services: {} };
       },
     };
@@ -314,7 +315,7 @@ describe("ctrl+c in the chat shown", () => {
     const now = 10_000;
     const { screen, did } = screenDoing();
     expect(pressCtrlC(screen, now - 100, now)).toBe("ignored");
-    expect(pressCtrlC(screen, now - INTERRUPT_SETTLE_MS, now)).toBe("left");
+    expect(pressCtrlC(screen, now - 500, now)).toBe("left");
     expect(did).toEqual(["leave"]);
   });
 });

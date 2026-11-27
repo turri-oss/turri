@@ -11,12 +11,9 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CODING_MODEL_ENV, chatModels } from "./chat-models.ts";
-import { readProjectConfig } from "./config.ts";
-import { extensionInstalledGlobally, PACKAGE_ROOT, themesInstalledGlobally, versionLine } from "./environment.ts";
-import { dropNoise } from "./quiet.ts";
-import { REOPEN_FILE_ENV, takeReopening } from "./reopen.ts";
-
+import "./cli-root.ts";
+import { CODING_MODEL_ENV, describeVersion, dropNoise, extensionInstalledGlobally, readProjectConfig, REOPEN_FILE_ENV, takeReopening, themesInstalledGlobally, turriRoot, versionLine } from "@turri-dev/core/startup";
+import { chatModels } from "./chat-models.ts";
 /**
  * Start pi with this project's extension and themes already wired in.
  *
@@ -45,7 +42,7 @@ const DEFAULT_THEME = "turri-dark";
 
 function chat(args: string[]): never {
   if (!piInstalled()) {
-    console.error(`pi is not installed beside turri (${PACKAGE_ROOT}). Run npm install there, or install turri again.`);
+    console.error(`pi is not installed beside turri (${turriRoot()}). Run npm install there, or install turri again.`);
     process.exit(1);
   }
   // pi itself, through a launcher that leaves out pi's startup header - see pi-launch.ts.
@@ -54,7 +51,7 @@ function chat(args: string[]): never {
   // turri is built into pi by the launcher - unless an older turri's file still loads it into every pi, which builds it
   // in as well: pi-launch.ts is told, and leaves it to that. turri doctor offers to remove the file.
   const inPi = extensionInstalledGlobally();
-  const themes = themesInstalledGlobally() ? [] : ["--theme", join(PACKAGE_ROOT, ".pi", "themes")];
+  const themes = themesInstalledGlobally() ? [] : ["--theme", join(turriRoot(), ".pi", "themes")];
   // A chat that quits asking to open again elsewhere - after a capture, in the project it wrote - writes where in this
   // file, and is started again there, as the first was (reopen.ts).
   const reopenFile = join(tmpdir(), `turri-reopen-${process.pid}.json`);
@@ -71,7 +68,9 @@ function chat(args: string[]): never {
     // jobs redraw - in the terminal's own scrollback, every redraw pulls it back to the bottom.
     const tuiMode = run.args.some((arg) => arg === "--tui-mode" || arg.startsWith("--tui-mode=")) ? [] : ["--tui-mode", "fullscreen"];
 
-    const result = spawnSync(process.execPath, [launcher, ...themes, ...useTheme, ...tuiMode, ...piArgs], {
+    // A condition passed directly to node (rather than through NODE_OPTIONS) must reach the chat too.
+    const conditions = import.meta.resolve("@turri-dev/core/startup").endsWith(".ts") ? ["--conditions=turri-source"] : [];
+    const result = spawnSync(process.execPath, [...conditions, launcher, ...themes, ...useTheme, ...tuiMode, ...piArgs], {
       stdio: "inherit",
       cwd: run.cwd,
       env: {
@@ -168,7 +167,6 @@ if (command === "-h" || command === "--help" || command === "help") {
 // turri's version, not pi's alone: pi's --version would answer for it - and where this turri is, the newest on npm,
 // every turri on the PATH, and what to do when the one that runs is not the newest (turri-versions.ts).
 if (command === "-v" || command === "--version") {
-  const { describeVersion } = await import("./turri-versions.ts");
   console.log(await describeVersion(versionLine()));
   process.exit(0);
 }
@@ -177,7 +175,7 @@ if (command === "-v" || command === "--version") {
 // which inherits it - unless the person set one (bedrock-region.ts). The models named on the command line count too. A
 // command that calls no model is left alone.
 if (!["parse", "drift", "lineage", "init-config", ...Object.keys(PACKAGE_COMMANDS)].includes(command ?? "")) {
-  const { applyBedrockRegion } = await import("./bedrock-region.ts");
+  const { applyBedrockRegion } = await import("@turri-dev/core/commands");
   const named = argv.flatMap((arg, at) =>
     ["--harness-model", "--coding-model", "--model"].includes(arg) ? [argv[at + 1] ?? ""] : arg.startsWith("--harness-model=") || arg.startsWith("--coding-model=") || arg.startsWith("--model=") ? [arg.slice(arg.indexOf("=") + 1)] : [],
   );
@@ -189,12 +187,12 @@ if (!["parse", "drift", "lineage", "init-config", ...Object.keys(PACKAGE_COMMAND
 if (command === undefined || command.startsWith("-")) chat(argv);
 
 if (command === "init-config") {
-  const { main } = await import("./init-config.ts");
+  const { main } = await import("./init-config-cli.ts");
   process.exit(await main(rest));
 }
 
 if (command === "doctor") {
-  const { main } = await import("./setup.ts");
+  const { main } = await import("./doctor-cli.ts");
   process.exit(await main(rest));
 }
 
@@ -237,4 +235,4 @@ if (!["parse", "drift", "lineage"].includes(command)) {
     });
   }
 }
-await import(entry.module);
+await import(entry.module.replace(/\.ts$/, OWN_EXTENSION));

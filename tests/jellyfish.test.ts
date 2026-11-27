@@ -1,6 +1,6 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { animateJellyfish, shownFrame } from "../src/extension.ts";
+import { animateJellyfish, shownFrame } from "../src/banner.ts";
 import { JELLYFISH_FRAME_MS, JELLYFISH_FRAMES, JELLYFISH_REST, JELLYFISH_SEQUENCE } from "../src/jellyfish.ts";
 
 /** A chat on a screen `rows` tall, its conversation `lines()` long: the jellyfish's clock started on it. */

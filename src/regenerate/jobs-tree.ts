@@ -1,7 +1,6 @@
 import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import { describeAgents } from "./activity.ts";
-import { didNotPass, finishedMark, pulseCost, spinner } from "./job-panel.ts";
-import { formatDuration, pulseName, type Job } from "./jobs.ts";
+import { describeAgents, didNotPass, finishedMark, formatDuration, pulseCost, pulseName, spinner } from "@turri-dev/core/terminal";
+import type { Job } from "@turri-dev/core";
 import { diffFiles, fileHeader, PLAIN_PAINT } from "./diff-view.ts";
 import type { TranscriptStyle } from "./transcript-view.ts";
 

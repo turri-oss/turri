@@ -1,4 +1,5 @@
-import { modelSpec, projectModels, type ProjectConfig } from "./config.ts";
+import { modelSpec, projectModels } from "@turri-dev/core/startup";
+import type { ProjectConfig } from "@turri-dev/core/config";
 
 /**
  * The two models of `turri`, from its arguments and the project's config.turri.yaml.
@@ -9,9 +10,6 @@ import { modelSpec, projectModels, type ProjectConfig } from "./config.ts";
  * nothing of it, so it reaches the extension through the environment. Either can still be
  * changed in the conversation: pi's /model, and the settings tool or /settings for the coding model.
  */
-
-/** The environment variable a chat's --coding-model reaches the extension through. */
-export const CODING_MODEL_ENV = "TURRI_CODING_MODEL";
 
 /** Take a `--name value` or `--name=value` out of the arguments: its value, and the rest. The last one wins. */
 export function takeOption(args: string[], name: string): { value?: string; rest: string[] } {

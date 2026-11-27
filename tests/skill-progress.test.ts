@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { skillAboutLine, skillProgressLine, type SkillProgress } from "../src/skill-progress.ts";
-import { loadSkill } from "../src/skill.ts";
+import { loadSkill } from "@turri-dev/core/commands";
 import { join } from "node:path";
 
 const probe = (current: number, attempt = 1): SkillProgress => ({

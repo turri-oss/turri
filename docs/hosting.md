@@ -2,6 +2,8 @@
 
 `turri` runs its chats in a terminal. A host - a desktop app, an editor - can run the same session itself, its chats in its own windows, and show what turri's terminal would draw in its own way: the jobs, the questions, the \*\*\*plain description. It imports turri from npm as `@turri-dev/cli/host`.
 
+This is the compatibility entry for the pre-split desktop. The session, registry and work loop it returns come from one `@turri-dev/core` instance. Hosts using this entry can keep their imports, the `pi` namespace, the `jobs` property, the lazy `loop` getter and the skill widget they already render. For a new integration, see [the core's host API](https://github.com/turri-oss/turri-core/blob/main/docs/hosting.md).
+
 ## What the host entry gives
 
 `@turri-dev/cli/host` is turri's compiled code (`dist/host.js`, with its types) - the conversation and what a host shows beside it:

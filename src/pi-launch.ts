@@ -1,14 +1,15 @@
+import "./terminal-images.ts";
+import "./cli-root.ts";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { main, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { ProcessTerminal } from "@earendil-works/pi-tui";
-import "./terminal-images.ts";
 import { withoutResumeLine } from "./resume-line.ts";
-import { lastRun, type RunRecord } from "./chat-records.ts";
+import { lastRun, type RunRecord } from "@turri-dev/core/terminal";
 import { driveTerminal } from "./chat-terminal.ts";
 import { takeOverSettings } from "./pi-settings.ts";
 import { quietBrandThemeOverrides } from "./pi-themes.ts";
-import turri, { createTurriCore, processSession } from "./extension.ts";
+import turri, { cliSession } from "./extension.ts";
 
 /**
  * pi, started the way its own CLI starts it, for `turri`.
@@ -79,7 +80,7 @@ if (interactive) {
     restore = saved;
   }
   driveTerminal(
-    processSession(() => createTurriCore({}, { persist: true })),
+    cliSession(true),
     // With none of the person's chats saved - only the sentinel's - pi starts a fresh one, and every saved chat is opened beside it.
     restore !== undefined ? { restore, skipFirst: restore.chats.some((chat) => chat.role === undefined) } : {},
   );
