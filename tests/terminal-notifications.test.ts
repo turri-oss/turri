@@ -1,4 +1,6 @@
-import type { Job, Notice, NoticeAnswer } from "@turri-dev/core";
+import { CONCLUDED_ENTRY, JOB_ENTRY, NOTICE_ENTRY, NOTICE_OVER_ENTRY, type Job, type Notice, type NoticeAnswer } from "@turri-dev/core";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { registerEntries } from "../src/entry-renderers.ts";
 import { stripTerminalSequences } from "@earendil-works/pi-tui";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createSidePanel } from "../src/regenerate/side-panel.ts";
@@ -80,4 +82,18 @@ it("keeps what turri warned of to read later, but not a provider waited out - th
   // A pulse run again as another is not over yet.
   terminal.inbox.hear({ type: "job", job: pulse({ status: "failed", summary: "change greeting", replacedBy: "j2" }), final: false });
   expect(terminal.inbox.items).toHaveLength(1);
+});
+
+it("says with the sentinel's conclusion how to try what it tested, in the launch's own words", () => {
+  const { terminal } = open;
+  terminal.inbox.hear({ type: "concluded", chat: "c", conclusion: { job: "j1", pulse: 1, module: "tidy", verdict: "holds", summary: "plan prints each file's kind.", tryIt: "Try it from dist/tidy: `go run ./cmd/tidy plan <folder>`" } });
+  expect(terminal.inbox.items[0]!.conclusion).toBe("it holds: plan prints each file's kind.\n\nTry it from dist/tidy: `go run ./cmd/tidy plan <folder>`");
+});
+
+it("leaves the sentinel's notices, their answers and its conclusions to the inbox, and draws a pulse's end in the chat", () => {
+  const drawn: string[] = [];
+  const pi = new Proxy({}, { get: (_target, key) => (key === "registerEntryRenderer" ? (type: string) => void drawn.push(type) : () => undefined) }) as ExtensionAPI;
+  registerEntries(pi);
+  expect(drawn).toContain(JOB_ENTRY);
+  for (const type of [NOTICE_ENTRY, NOTICE_OVER_ENTRY, CONCLUDED_ENTRY]) expect(drawn).not.toContain(type);
 });

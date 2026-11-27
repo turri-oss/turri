@@ -97,7 +97,8 @@ export class TerminalNotifications {
     const what = result.pulse !== undefined ? `pulse ${result.pulse}` : result.job ?? result.check;
     const verdict = result.verdict === "holds" ? "it holds" : result.verdict === "wrong" ? "found something wrong" : "not checked";
     const item = this.review(result, ["Sentinel", result.module, what, verdict].filter(Boolean).join(" · "));
-    item.conclusion = `${verdict}: ${result.summary}`;
+    // How to try what it tested in - the launch's own words - for the person: the terminal shows no launch.
+    item.conclusion = `${verdict}: ${result.summary}${result.tryIt !== undefined && result.tryIt.trim() !== "" ? `\n\n${result.tryIt.trim()}` : ""}`;
     item.warning = result.verdict !== "holds";
   }
 }

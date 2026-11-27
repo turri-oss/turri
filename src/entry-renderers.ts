@@ -1,6 +1,6 @@
 import { getMarkdownTheme, UserMessageComponent, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Box, Text } from "@earendil-works/pi-tui";
-import { type Conclusion, type Notice, COMMAND_OUTCOME, SKILL_MESSAGE_ENTRY, SIDE_ENTRY, NOTICE_ENTRY, NOTICE_OVER_ENTRY, CONCLUDED_ENTRY, SKILL_RUN_ENTRY, JOB_ENTRY, HISTORY_ENTRY, JOBS_LIST_ENTRY, MILESTONE_ENTRY, INTERVIEW_ENTRY, type CommandOutcome, type Exchange, type JobAnnouncement } from "@turri-dev/core";
+import { COMMAND_OUTCOME, SKILL_MESSAGE_ENTRY, SIDE_ENTRY, SKILL_RUN_ENTRY, JOB_ENTRY, HISTORY_ENTRY, JOBS_LIST_ENTRY, MILESTONE_ENTRY, INTERVIEW_ENTRY, type CommandOutcome, type Exchange, type JobAnnouncement } from "@turri-dev/core";
 import { PANEL_KEY } from "./terminal-marks.ts";
 
 /**
@@ -38,53 +38,9 @@ export function registerEntries(pi: ExtensionAPI): void {
     box.addChild(new Text([theme.fg("muted", `btw: ${data.question}`), theme.fg("text", data.answer)].join("\n"), 0, 0));
     return box;
   });
-  pi.registerEntryRenderer(NOTICE_ENTRY, (entry, _options, theme) => {
-    const notice = entry.data as Notice | undefined;
-    if (notice === undefined) return undefined;
-    const mark = notice.severity === "error" ? theme.fg("error", "✗") : notice.severity === "warning" ? theme.fg("warning", "!") : theme.fg("accent", "·");
-    const about = notice.module !== undefined ? `${notice.module}${notice.pulse !== undefined ? ` · pulse ${notice.pulse}` : ""}` : "";
-    const lines = [
-      `${mark} ${theme.fg("muted", `sentinel${about !== "" ? ` · ${about}` : ""}`)}`,
-      `  ${theme.fg("text", notice.summary)}`,
-      ...notice.evidence.map((line) => theme.fg("muted", `    ${line}`)),
-      ...notice.actions.map((action, index) => `  ${theme.fg("accent", `${index + 1}.`)} ${action.label}`),
-    ];
-    const box = new Box(1, 0);
-    box.addChild(new Text(lines.join("\n"), 0, 0));
-    return box;
-  });
-  pi.registerEntryRenderer(CONCLUDED_ENTRY, (entry, _options, theme) => {
-    const data = entry.data as Conclusion | undefined;
-    if (data === undefined) return undefined;
-    const about =
-      data.check !== undefined
-        ? `${data.module !== undefined ? `${data.module} · ` : ""}check ${data.check}`
-        : data.module !== undefined
-          ? `${data.module}${data.pulse !== undefined ? ` · pulse ${data.pulse}` : ""}`
-          : (data.job ?? "");
-    const mark = data.verdict === "holds" ? theme.fg("success", "✓") : data.verdict === "unchecked" ? theme.fg("muted", "·") : theme.fg("error", "✗");
-    const said = data.verdict === "holds" ? "checked, it holds" : data.verdict === "unchecked" ? "not checked" : "found something wrong";
-    const box = new Box(1, 0);
-    box.addChild(new Text(`${mark} ${theme.fg("muted", `sentinel · ${about} · ${said}`)}\n  ${theme.fg("text", data.summary)}`, 0, 0));
-    return box;
-  });
-  pi.registerEntryRenderer(NOTICE_OVER_ENTRY, (entry, _options, theme) => {
-    const data = entry.data as { state: Notice["state"]; summary: string } | undefined;
-    if (data === undefined) return undefined;
-    const said =
-      data.state === "superseded"
-        ? "superseded by a newer notice"
-        : data.state === "dismissed"
-          ? "dismissed"
-          : data.state === "ignored"
-            ? "ignored - left as the build has it, not raised again"
-            : data.state === "steered"
-              ? "answered in your words"
-              : "accepted";
-    const box = new Box(1, 0);
-    box.addChild(new Text(theme.fg("muted", `  ${said}: ${data.summary}`), 0, 0));
-    return box;
-  });
+  // The sentinel's notices, their answers and its conclusions are the inbox's (terminal-notifications.ts): answered and
+  // read there, and the chat says each conclusion in its own words. No renderer: pi draws none of them in the chat.
+
   pi.registerEntryRenderer(SKILL_RUN_ENTRY, (entry, _options, theme) => {
     const data = entry.data as { text: string } | undefined;
     if (data === undefined) return undefined;
