@@ -1,8 +1,8 @@
-// Exercise the published CLI and the old desktop import from outside either checkout.
+// Exercise the published CLI from outside either checkout.
 // Before core is published, pass its checkout to install a local tarball of the same version instead.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -29,7 +29,7 @@ try {
   }
   const cli = pack(root);
   const files = new Set(cli.files.map(({ path }) => path));
-  for (const required of ["bin/turri.mjs", "dist/extension.js", "dist/cli.js", "dist/host.js", "dist/host.d.ts", ".pi/themes/turri-dark.json"]) assert.ok(files.has(required), required);
+  for (const required of ["bin/turri.mjs", "dist/extension.js", "dist/cli.js", ".pi/themes/turri-dark.json"]) assert.ok(files.has(required), required);
   for (const file of files) assert.doesNotMatch(file, /^(src|genome|stdlib)\/|^dist\/(plain\/|regenerate\/loop\.js)/);
   local(cli, { bin: pkg.bin, dependencies: pkg.dependencies, engines: pkg.engines });
   lock.name = consumer.name;
@@ -60,11 +60,7 @@ try {
   assert.match(preview, /planned, nothing started/);
   assert.match(preview, /<testing scripts>/);
   for (const path of ["run.json", "out"]) assert.equal(existsSync(join(dir, path)), false);
-
-  copyFileSync(join(root, "tests", "packed-host.mts"), join(dir, "packed-host.mts"));
-  node(resolve("node_modules/typescript/bin/tsc"), "--noEmit", "--strict", "--skipLibCheck", "--module", "NodeNext", "--target", "ES2023", "packed-host.mts");
-  node("packed-host.mts");
-  console.log("Packed CLI: command dispatch, core resources, declarations, desktop session and shared pi passed.");
+  console.log("Packed CLI: command dispatch, core resources and the regenerate look ahead passed.");
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }

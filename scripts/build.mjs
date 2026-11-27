@@ -1,4 +1,4 @@
-// A clone runs the sources directly. The npm package ships the CLI and its host declarations in dist/.
+// A clone runs the sources directly. The npm package ships the CLI compiled, in dist/.
 import { execFileSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import { dirname, join } from "node:path";

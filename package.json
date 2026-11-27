@@ -17,11 +17,6 @@
     "turri": "bin/turri.mjs"
   },
   "exports": {
-    "./host": {
-      "turri-source": "./src/host.ts",
-      "types": "./dist/host.d.ts",
-      "import": "./dist/host.js"
-    },
     "./package.json": "./package.json"
   },
   "scripts": {
