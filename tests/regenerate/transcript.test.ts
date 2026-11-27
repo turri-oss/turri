@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Job, JobDetails } from "@turri-dev/core";
+import type { Job } from "@turri-dev/core";
 
 /** A pulse as the session tells it (`work.jobs()`, `job` events): finished, unless `status` says otherwise. */
 let sequence = 0;
@@ -97,26 +97,5 @@ describe("the side panel", () => {
     expect(lines).toContain("+ - :OrderController: takes the :AuthData: from the request.");
     expect(lines).not.toContain("+++ b/backend.plain");
     expect(lines).toContain(`the conformance of backend.plain render spec diff (pulse ${render.id}, succeeded)`);
-  });
-
-  it("says what a module's render planned - the spec diffs it queued - and, under each, which job planned it", async () => {
-    const { createSidePanel } = await import("../../src/regenerate/side-panel.ts");
-    const diff = "--- a/backend.plain\n+++ b/backend.plain\n@@ -1 +1,2 @@\n+- Comments on study sessions.\n";
-    const step = job({ kind: "regenerate", summary: "backend.plain render spec diff", diff });
-    const planner = job({
-      kind: "regenerate",
-      summary: "backend.plain module",
-      details: { passed: true, planned: [{ title: "Implement comments on study sessions", jobId: step.id }] } as JobDetails,
-    });
-    const panel = createSidePanel({ jobs: () => [step, planner], rows: () => 40, style: PLAIN, key: "ctrl+h", back: () => {}, close: () => {} });
-    const down = "\x1b[B";
-    for (const key of [down, down, "\r", down, "o"]) {
-      panel.render(140);
-      panel.handleInput(key);
-    }
-    const lines = panel.render(140).join("\n");
-    expect(lines).toContain("planned 1 spec diff:");
-    expect(lines).toContain(`1. Implement comments on study sessions → backend.plain render spec diff (pulse ${step.id}, succeeded)`);
-    expect(lines).toContain(`planned by backend.plain module (pulse ${planner.id}, succeeded)`);
   });
 });

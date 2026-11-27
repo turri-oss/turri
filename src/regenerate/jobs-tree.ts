@@ -142,12 +142,6 @@ function wrap(text: string, width: number, indent: string, colour: (text: string
     .map((line) => colour(`${indent}${line}`));
 }
 
-/** The spec diffs a module's render planned and queued, from its details. */
-function plannedOf(job: Job): Array<{ title: string; jobId: string }> {
-  const planned = (job.details as { planned?: Array<{ title: string; jobId: string }> } | undefined)?.planned;
-  return Array.isArray(planned) ? planned : [];
-}
-
 /** A job named for the one reading about another: what it was, and its id. */
 function named(jobs: Job[], id: string): string {
   const job = jobs.find((other) => other.id === id);
@@ -165,13 +159,6 @@ function detailLines(job: Job, jobs: Job[], width: number, style: TranscriptStyl
     lines.push(style.muted(`${indent}${job.building.label}:`), ...wrap(job.building.text, width, `${indent}  `, style.accent));
   }
   if (job.follows !== undefined) lines.push(style.muted(`${indent}the conformance of ${named(jobs, job.follows)}`));
-  // The job that planned it, for a spec diff a module's render queued; what a planning job planned, in order.
-  const planner = jobs.find((other) => plannedOf(other).some((step) => step.jobId === job.id));
-  if (planner !== undefined) lines.push(style.muted(`${indent}planned by ${named(jobs, planner.id)}`));
-  plannedOf(job).forEach((step, index, all) => {
-    if (index === 0) lines.push(style.muted(`${indent}planned ${all.length} spec diff${all.length === 1 ? "" : "s"}:`));
-    lines.push(style.muted(`${indent}  ${index + 1}. ${step.title} → ${named(jobs, step.jobId)}`));
-  });
   if (job.status === "queued" && job.waitingOn.length > 0) lines.push(style.muted(`${indent}waits for ${job.waitingOn.map((id) => `pulse ${id}`).join(", ")}`));
   if (job.note !== undefined) lines.push(...wrap(job.note, width, indent, style.accent));
   if (job.status === "running") {
