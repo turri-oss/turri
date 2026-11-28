@@ -23,15 +23,32 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # The core's branch the CLI is checked against, and its sources run unbuilt, as with a linked core.
+      CORE_REF: feat/one-interface
+      NODE_OPTIONS: --conditions=turri-source
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
+      # The core this CLI is written against is not on npm yet: the CLI runs on the core's branch with that interface,
+      # linked as in linked development (docs/development.md). Once that core is released and pinned, `npm ci` alone again.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: turri-oss/turri-core
+          ref: ${{ env.CORE_REF }}
+          path: .core
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            .core/package-lock.json
       - run: npm ci
+        working-directory: .core
+      - run: npm run link:core -- .core
       - run: npm run typecheck
       - run: npm test
-      - run: npm run test:package
+      - run: npm run test:package -- .core
