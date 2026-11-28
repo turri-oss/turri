@@ -1,4 +1,4 @@
-import { booleanOption, overrideConfig, splitModelSpec } from "./config.ts";
+import type { SessionOverrides } from "@turri-dev/core";
 
 /**
  * The command line of turri's commands: their words, and the options that stand for the config's own keys - kept apart
@@ -40,6 +40,12 @@ export function parseArgs(argv: string[], flags: string[], usage: string, valued
   return { positional, options };
 }
 
+/** `--review <value>`, `--mutation-testing <value>`: the config's own, true or false. Undefined for anything else. */
+export function booleanOption(value: string): boolean | undefined {
+  const word = value.trim().toLowerCase();
+  return word === "true" ? true : word === "false" ? false : undefined;
+}
+
 /** An option's value, as parseArgs left it: refused when it was given with none. */
 export function optionValue(options: Record<string, string | undefined>, name: string): string | undefined {
   const value = options[name];
@@ -49,11 +55,11 @@ export function optionValue(options: Record<string, string | undefined>, name: s
 
 /**
  * The options that stand for the config's own keys - `--harness-model`, `--coding-model` (`--model`), `--judge-model`
- * and, as asked, `--review` and `--mutation-testing` - read as if config.turri.yaml had them, in their place in the
- * order the config resolves them in (overrideConfig): a run, or doctor, with them is the same as one with them in the
- * file. Exits on a value it cannot read.
+ * and, as asked, `--review` and `--mutation-testing` - as the session's overrides: read as if config.turri.yaml had
+ * them, a `models:` entry still winning over them, while the session is open. A run, or doctor, with them is the same
+ * as one with them in the file. Exits on a value it cannot read.
  */
-export function configKeyOptions(options: Record<string, string | undefined>, take: { review?: boolean } = {}): void {
+export function configKeyOptions(options: Record<string, string | undefined>, take: { review?: boolean } = {}): SessionOverrides {
   const flag = (name: string): boolean | undefined => {
     const given = take.review === true ? optionValue(options, name) : undefined;
     const value = given !== undefined ? booleanOption(given) : undefined;
@@ -64,15 +70,15 @@ export function configKeyOptions(options: Record<string, string | undefined>, ta
   const mutationTesting = flag("mutation-testing");
   const model = (name: string, key: "harnessModel" | "codingModel" | "judgeModel") => {
     const spec = optionValue(options, name);
-    return spec !== undefined ? { [key]: splitModelSpec(spec) } : {};
+    return spec !== undefined ? { [key]: spec } : {};
   };
-  overrideConfig({
+  return {
     ...model("harness-model", "harnessModel"),
     ...model("model", "codingModel"),
     ...model("judge-model", "judgeModel"),
     ...(review !== undefined ? { review } : {}),
     ...(mutationTesting !== undefined ? { mutationTesting } : {}),
-  });
+  };
 }
 
 function failOption(message: string): never {

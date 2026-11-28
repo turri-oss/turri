@@ -25,7 +25,7 @@ again: deleted and written anew from its scenarios, its code untouched.
   --report <file.json>     write a report of the run there (see turri regenerate --help)`;
 
 const { positional, options } = parseArgs(process.argv.slice(2), ["--one-by-one", "--from-scratch", "--from-scratch-chain"], USAGE, ["--build-dir", "--report", "--harness-model", "--judge-model", "--review"]);
-const { report, buildDir } = headlessOptions(options);
+const { report, buildDir, overrides } = headlessOptions(options);
 const [plainFile, ...funcIds] = positional;
 if (plainFile === undefined) {
   console.error(USAGE);
@@ -38,15 +38,12 @@ if (scratch !== undefined && funcIds.length > 0) {
 }
 runLoop({
   plainFile,
+  overrides,
   ...(buildDir !== undefined ? { buildDir } : {}),
   ...(report !== undefined ? { report } : {}),
   command: ["conform", ...process.argv.slice(2)],
-  ask: (loop) =>
-    loop.conformance(plainFile, {
-      ...(funcIds.length > 0 ? { funcIds } : {}),
-      ...(options["one-by-one"] !== undefined ? { separately: true } : {}),
-      ...(scratch !== undefined ? { fromScratch: scratch } : {}),
-    }),
+  startOver: false,
+  work: "conform", funcIds, separately: options["one-by-one"] !== undefined, ...(scratch !== undefined ? { fromScratch: scratch } : {}),
 }).catch((error) => {
   console.error(error instanceof Error ? error.message : error);
   process.exit(1);

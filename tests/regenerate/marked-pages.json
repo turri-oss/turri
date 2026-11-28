@@ -1,0 +1,1252 @@
+{
+ "ghost": [
+  [
+   {
+    "module": "app",
+    "plainFile": "<dir>/app.plain",
+    "buildDir": "<dir>/code",
+    "imports": [],
+    "items": [
+     {
+      "key": "functional specs\n+# register-response",
+      "section": "functional specs",
+      "state": "changed",
+      "text": "- Register a user.\n  - The response is 201.\n  - Emails are lowercased.",
+      "was": "- Register a user.\n  - The response is 200.\n  - Emails are lowercased.",
+      "funcId": "register-response",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"register-response\",\"markdown\":\"- Register a user.\\n  - The response is 201.\\n  - Emails are lowercased.\"}",
+      "wasLine": "{\"id\":\"register-response\",\"markdown\":\"- Register a user.\\n  - The response is 200.\\n  - Emails are lowercased.\"}",
+      "mark": "waiting"
+     },
+     {
+      "key": "functional specs\n-# search-for",
+      "section": "functional specs",
+      "state": "removed",
+      "text": "- Search for users by name.",
+      "funcId": "search-for",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "wasLine": "{\"id\":\"search-for\",\"markdown\":\"- Search for users by name.\"}",
+      "mark": "waiting"
+     },
+     {
+      "key": "functional specs\n+# log-in",
+      "section": "functional specs",
+      "state": "new",
+      "text": "- Log in.",
+      "funcId": "log-in",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"log-in\",\"markdown\":\"- Log in.\"}",
+      "mark": "waiting"
+     }
+    ],
+    "tracked": false,
+    "status": "not asked to build - regenerate plans it",
+    "stuck": false
+   }
+  ]
+ ],
+ "wraps": [
+  [
+   {
+    "module": "app",
+    "plainFile": "<dir>/app.plain",
+    "buildDir": "<dir>/code",
+    "imports": [],
+    "items": [
+     {
+      "key": "definitions\n+- :UserAdmin: is the local administration entry point whose successful provisioning output follows `[resource]user-created.schema.json` exactly.",
+      "section": "definitions",
+      "state": "built",
+      "text": "- :UserAdmin: is the local administration entry point whose successful provisioning output follows `[resource]user-created.schema.json` exactly.",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"markdown\":\"- :UserAdmin: is the local administration entry point whose successful provisioning output follows `[resource]user-created.schema.json` exactly.\"}",
+      "mark": "built"
+     }
+    ],
+    "tracked": false,
+    "status": "all built",
+    "stuck": false
+   }
+  ]
+ ],
+ "opens-item": [
+  [
+   {
+    "module": "app",
+    "plainFile": "<dir>/app.plain",
+    "buildDir": "<dir>/code",
+    "imports": [],
+    "items": [
+     {
+      "key": "definitions\n+- :User: is a person.",
+      "section": "definitions",
+      "state": "built",
+      "text": "- :User: is a person.",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"markdown\":\"- :User: is a person.\"}",
+      "mark": "built"
+     },
+     {
+      "key": "functional specs\n+# register-response",
+      "section": "functional specs",
+      "state": "new",
+      "text": "- A :User: can register.\n  - The response is 201.",
+      "funcId": "register-response",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"register-response\",\"markdown\":\"- A :User: can register.\\n  - The response is 201.\"}",
+      "mark": "planned",
+      "pulse": {
+       "number": 2,
+       "title": "registration",
+       "track": "code",
+       "running": false,
+       "rowId": "planned-app-2",
+       "before": "[\"functional specs\"]\n\n",
+       "after": "[\"functional specs\"]\n{\"id\":\"register-response\",\"markdown\":\"- A :User: can register.\\n  - The response is 201.\"}\n"
+      }
+     },
+     {
+      "key": "functional specs\n+# log-in",
+      "section": "functional specs",
+      "state": "built",
+      "text": "- A :User: can log in.",
+      "funcId": "log-in",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"log-in\",\"markdown\":\"- A :User: can log in.\"}",
+      "tests": "now",
+      "mark": "built"
+     }
+    ],
+    "tracked": true,
+    "codebase": {
+     "module": "app",
+     "plainFile": "<dir>/app.plain",
+     "buildDir": "<dir>/code",
+     "pulses": [
+      {
+       "number": 2,
+       "title": "registration",
+       "track": "code",
+       "running": false,
+       "rowId": "planned-app-2",
+       "before": "[\"functional specs\"]\n\n",
+       "after": "[\"functional specs\"]\n{\"id\":\"register-response\",\"markdown\":\"- A :User: can register.\\n  - The response is 201.\"}\n"
+      }
+     ],
+     "conformance": true
+    },
+    "status": "pulse 2 of 2 next",
+    "stuck": false
+   }
+  ],
+  [
+   {
+    "module": "app",
+    "plainFile": "<dir>/app.plain",
+    "buildDir": "<dir>/code",
+    "imports": [],
+    "items": [
+     {
+      "key": "functional specs\n+# read-contacts",
+      "section": "functional specs",
+      "state": "changed",
+      "text": "- Read the contacts.\n  - Active contacts first.\n  - In the order received.",
+      "was": "- Read the contacts.\n  - Archived contacts are not read.\n  - In the order received.",
+      "funcId": "read-contacts",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"read-contacts\",\"markdown\":\"- Read the contacts.\\n  - Active contacts first.\\n  - In the order received.\"}",
+      "wasLine": "{\"id\":\"read-contacts\",\"markdown\":\"- Read the contacts.\\n  - Archived contacts are not read.\\n  - In the order received.\"}",
+      "mark": "waiting"
+     }
+    ],
+    "tracked": false,
+    "status": "not asked to build - regenerate plans it",
+    "stuck": false
+   }
+  ]
+ ],
+ "scenarios": [
+  [
+   {
+    "module": "app",
+    "plainFile": "<dir>/app.plain",
+    "buildDir": "<dir>/code",
+    "imports": [],
+    "items": [
+     {
+      "key": "functional specs\n+# patch",
+      "section": "functional specs",
+      "state": "built",
+      "text": "Patch the records.\n- Lookups first.",
+      "funcId": "patch",
+      "scenarios": {
+       "conformance": [
+        {
+         "id": "patches",
+         "text": "A record is patched."
+        }
+       ],
+       "acceptance": [
+        {
+         "id": "lookup",
+         "text": "A lookup becomes an `@odata.bind` entry."
+        },
+        {
+         "id": "empty-record",
+         "text": "An empty record patches nothing."
+        }
+       ]
+      },
+      "line": "{\"id\":\"patch\",\"markdown\":\"Patch the records.\\n- Lookups first.\"}",
+      "mark": "built"
+     }
+    ],
+    "tracked": false,
+    "status": "all built",
+    "stuck": false
+   }
+  ]
+ ],
+ "imports": [
+  [
+   {
+    "module": "base",
+    "plainFile": "<dir>/base.plain",
+    "buildDir": "",
+    "imports": [],
+    "items": [
+     {
+      "key": "d",
+      "section": "functional specs",
+      "state": "built",
+      "text": "- Store a value.",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "mark": "built"
+     }
+    ],
+    "tracked": true,
+    "codebase": {
+     "module": "app",
+     "plainFile": "<dir>/base.plain",
+     "buildDir": "",
+     "pulses": [],
+     "conformance": true
+    },
+    "status": "all built",
+    "stuck": false
+   },
+   {
+    "module": "top",
+    "plainFile": "<dir>/top.plain",
+    "buildDir": "",
+    "imports": [
+     "stdlib/lang/python",
+     "stdlib/backend/python-fastapi"
+    ],
+    "items": [
+     {
+      "key": "a",
+      "section": "functional specs",
+      "state": "built",
+      "text": "- Say hello.",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "mark": "built"
+     },
+     {
+      "key": "b",
+      "section": "implementation reqs",
+      "state": "built",
+      "text": "- Use Python 3.12.",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "file": "stdlib/lang/python",
+      "mark": "built"
+     },
+     {
+      "key": "c",
+      "section": "implementation reqs",
+      "state": "changed",
+      "text": "- Use FastAPI.",
+      "was": "- Use Flask.",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "file": "stdlib/backend/python-fastapi",
+      "mark": "waiting"
+     }
+    ],
+    "requires": "base",
+    "tracked": true,
+    "codebase": {
+     "module": "app",
+     "plainFile": "<dir>/base.plain",
+     "buildDir": "",
+     "pulses": [],
+     "conformance": true
+    },
+    "status": "waiting",
+    "stuck": false
+   }
+  ]
+ ],
+ "chain-tabs": [
+  [
+   {
+    "module": "version_api",
+    "plainFile": "<dir>/version_api.plain",
+    "buildDir": "<dir>/version_api",
+    "imports": [],
+    "items": [
+     {
+      "key": "version_api",
+      "section": "functional specs",
+      "state": "new",
+      "text": "- version_api works.",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "mark": "waiting"
+     }
+    ],
+    "tracked": true,
+    "codebase": {
+     "module": "app",
+     "plainFile": "<dir>/version_api.plain",
+     "buildDir": "<dir>/version_api",
+     "pulses": [],
+     "conformance": true
+    },
+    "status": "waiting",
+    "stuck": false
+   },
+   {
+    "module": "function_executor",
+    "plainFile": "<dir>/function_executor.plain",
+    "buildDir": "<dir>/function_executor",
+    "imports": [],
+    "items": [
+     {
+      "key": "function_executor",
+      "section": "functional specs",
+      "state": "new",
+      "text": "- function_executor works.",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "mark": "waiting"
+     }
+    ],
+    "requires": "version_api",
+    "tracked": false,
+    "status": "not asked to build - regenerate plans it",
+    "stuck": false
+   },
+   {
+    "module": "http_client",
+    "plainFile": "<dir>/http_client.plain",
+    "buildDir": "<dir>/http_client",
+    "imports": [],
+    "items": [
+     {
+      "key": "http_client",
+      "section": "functional specs",
+      "state": "new",
+      "text": "- http_client works.",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "mark": "waiting"
+     }
+    ],
+    "requires": "function_executor",
+    "tracked": false,
+    "status": "not asked to build - regenerate plans it",
+    "stuck": false
+   },
+   {
+    "module": "auth",
+    "plainFile": "<dir>/auth.plain",
+    "buildDir": "<dir>/auth",
+    "imports": [],
+    "items": [
+     {
+      "key": "auth",
+      "section": "functional specs",
+      "state": "new",
+      "text": "- auth works.",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "mark": "waiting"
+     }
+    ],
+    "requires": "http_client",
+    "tracked": false,
+    "status": "not asked to build - regenerate plans it",
+    "stuck": false
+   },
+   {
+    "module": "utils",
+    "plainFile": "<dir>/utils.plain",
+    "buildDir": "<dir>/utils",
+    "imports": [],
+    "items": [
+     {
+      "key": "utils",
+      "section": "functional specs",
+      "state": "new",
+      "text": "- utils works.",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "mark": "waiting"
+     }
+    ],
+    "requires": "auth",
+    "tracked": false,
+    "status": "not asked to build - regenerate plans it",
+    "stuck": false
+   },
+   {
+    "module": "listing",
+    "plainFile": "<dir>/listing.plain",
+    "buildDir": "<dir>/listing",
+    "imports": [],
+    "items": [
+     {
+      "key": "listing",
+      "section": "functional specs",
+      "state": "new",
+      "text": "- listing works.",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "mark": "waiting"
+     }
+    ],
+    "requires": "utils",
+    "tracked": false,
+    "status": "not asked to build - regenerate plans it",
+    "stuck": false
+   },
+   {
+    "module": "restore_api",
+    "plainFile": "<dir>/restore_api.plain",
+    "buildDir": "<dir>/restore_api",
+    "imports": [],
+    "items": [
+     {
+      "key": "restore_api",
+      "section": "functional specs",
+      "state": "new",
+      "text": "- restore_api works.",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "mark": "waiting"
+     }
+    ],
+    "requires": "listing",
+    "tracked": false,
+    "status": "not asked to build - regenerate plans it",
+    "stuck": false
+   }
+  ]
+ ],
+ "header": [
+  [
+   {
+    "module": "top",
+    "plainFile": "<dir>/top.plain",
+    "buildDir": "<dir>/code",
+    "imports": [],
+    "items": [
+     {
+      "key": "functional specs\n+# two",
+      "section": "functional specs",
+      "state": "built",
+      "text": "- Two.",
+      "funcId": "two",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"two\",\"markdown\":\"- Two.\"}",
+      "mark": "built"
+     },
+     {
+      "key": "functional specs\n+# three",
+      "section": "functional specs",
+      "state": "new",
+      "text": "- Three.",
+      "funcId": "three",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"three\",\"markdown\":\"- Three.\"}",
+      "mark": "waiting"
+     }
+    ],
+    "tracked": false,
+    "status": "not asked to build - regenerate plans it",
+    "stuck": false
+   }
+  ]
+ ],
+ "highlights": [
+  [
+   {
+    "module": "app",
+    "plainFile": "<dir>/app.plain",
+    "buildDir": "<dir>/code",
+    "imports": [],
+    "items": [
+     {
+      "key": "functional specs\n+# log-in",
+      "section": "functional specs",
+      "state": "built",
+      "text": "- A :User: can log in via `POST /auth/login`.",
+      "funcId": "log-in",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"log-in\",\"markdown\":\"- A :User: can log in via `POST /auth/login`.\"}",
+      "mark": "built"
+     },
+     {
+      "key": "functional specs\n+# log-out",
+      "section": "functional specs",
+      "state": "changed",
+      "text": "- A :User: can sign out via `POST /auth/logout`.",
+      "was": "- A :User: can log out via `POST /auth/logout`.",
+      "funcId": "log-out",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"log-out\",\"markdown\":\"- A :User: can sign out via `POST /auth/logout`.\"}",
+      "wasLine": "{\"id\":\"log-out\",\"markdown\":\"- A :User: can log out via `POST /auth/logout`.\"}",
+      "mark": "waiting"
+     }
+    ],
+    "tracked": false,
+    "status": "not asked to build - regenerate plans it",
+    "stuck": false
+   }
+  ]
+ ],
+ "scroll": [
+  [
+   {
+    "module": "app",
+    "plainFile": "<dir>/app.plain",
+    "buildDir": "<dir>/code",
+    "imports": [],
+    "items": [
+     {
+      "key": "functional specs\n+# above-0",
+      "section": "functional specs",
+      "state": "new",
+      "text": "Earlier spec 0.",
+      "funcId": "above-0",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"above-0\",\"markdown\":\"Earlier spec 0.\"}",
+      "mark": "waiting"
+     },
+     {
+      "key": "functional specs\n+# above-1",
+      "section": "functional specs",
+      "state": "new",
+      "text": "Earlier spec 1.",
+      "funcId": "above-1",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"above-1\",\"markdown\":\"Earlier spec 1.\"}",
+      "mark": "waiting"
+     },
+     {
+      "key": "functional specs\n+# above-2",
+      "section": "functional specs",
+      "state": "new",
+      "text": "Earlier spec 2.",
+      "funcId": "above-2",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"above-2\",\"markdown\":\"Earlier spec 2.\"}",
+      "mark": "waiting"
+     },
+     {
+      "key": "functional specs\n+# above-3",
+      "section": "functional specs",
+      "state": "new",
+      "text": "Earlier spec 3.",
+      "funcId": "above-3",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"above-3\",\"markdown\":\"Earlier spec 3.\"}",
+      "mark": "waiting"
+     },
+     {
+      "key": "functional specs\n+# above-4",
+      "section": "functional specs",
+      "state": "new",
+      "text": "Earlier spec 4.",
+      "funcId": "above-4",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"above-4\",\"markdown\":\"Earlier spec 4.\"}",
+      "mark": "waiting"
+     },
+     {
+      "key": "functional specs\n+# above-5",
+      "section": "functional specs",
+      "state": "new",
+      "text": "Earlier spec 5.",
+      "funcId": "above-5",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"above-5\",\"markdown\":\"Earlier spec 5.\"}",
+      "mark": "waiting"
+     },
+     {
+      "key": "functional specs\n+# above-6",
+      "section": "functional specs",
+      "state": "new",
+      "text": "Earlier spec 6.",
+      "funcId": "above-6",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"above-6\",\"markdown\":\"Earlier spec 6.\"}",
+      "mark": "waiting"
+     },
+     {
+      "key": "functional specs\n+# above-7",
+      "section": "functional specs",
+      "state": "new",
+      "text": "Earlier spec 7.",
+      "funcId": "above-7",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"above-7\",\"markdown\":\"Earlier spec 7.\"}",
+      "mark": "waiting"
+     },
+     {
+      "key": "functional specs\n+# above-8",
+      "section": "functional specs",
+      "state": "new",
+      "text": "Earlier spec 8.",
+      "funcId": "above-8",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"above-8\",\"markdown\":\"Earlier spec 8.\"}",
+      "mark": "waiting"
+     },
+     {
+      "key": "functional specs\n+# above-9",
+      "section": "functional specs",
+      "state": "new",
+      "text": "Earlier spec 9.",
+      "funcId": "above-9",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"above-9\",\"markdown\":\"Earlier spec 9.\"}",
+      "mark": "waiting"
+     },
+     {
+      "key": "functional specs\n+# above-10",
+      "section": "functional specs",
+      "state": "new",
+      "text": "Earlier spec 10.",
+      "funcId": "above-10",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"above-10\",\"markdown\":\"Earlier spec 10.\"}",
+      "mark": "waiting"
+     },
+     {
+      "key": "functional specs\n+# above-11",
+      "section": "functional specs",
+      "state": "new",
+      "text": "Earlier spec 11.",
+      "funcId": "above-11",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"above-11\",\"markdown\":\"Earlier spec 11.\"}",
+      "mark": "waiting"
+     },
+     {
+      "key": "functional specs\n+# follow-link",
+      "section": "functional specs",
+      "state": "new",
+      "text": "Follow the link and send the visitor to its saved destination.\nKeep the original query.",
+      "funcId": "follow-link",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"follow-link\",\"markdown\":\"Follow the link and send the visitor to its saved destination.\\nKeep the original query.\"}",
+      "mark": "waiting"
+     }
+    ],
+    "tracked": false,
+    "status": "not asked to build - regenerate plans it",
+    "stuck": false
+   }
+  ]
+ ],
+ "import-click": [
+  [
+   {
+    "module": "base",
+    "plainFile": "<dir>/base.plain",
+    "buildDir": "<dir>/code",
+    "imports": [],
+    "items": [
+     {
+      "key": "functional specs\n+# say-hello",
+      "section": "functional specs",
+      "state": "new",
+      "text": "Say hello.",
+      "funcId": "say-hello",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"say-hello\",\"markdown\":\"Say hello.\"}",
+      "mark": "waiting"
+     }
+    ],
+    "tracked": true,
+    "codebase": {
+     "module": "app",
+     "plainFile": "<dir>/base.plain",
+     "buildDir": "<dir>/code",
+     "pulses": [],
+     "conformance": true
+    },
+    "status": "waiting",
+    "stuck": false
+   },
+   {
+    "module": "app",
+    "plainFile": "<dir>/app.plain",
+    "buildDir": "<dir>/code",
+    "imports": [
+     "stdlib/lang/python"
+    ],
+    "items": [
+     {
+      "key": "functional specs\n+# say-hello",
+      "section": "functional specs",
+      "state": "new",
+      "text": "Say hello.",
+      "funcId": "say-hello",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"say-hello\",\"markdown\":\"Say hello.\"}",
+      "mark": "waiting"
+     },
+     {
+      "key": "req",
+      "section": "functional specs",
+      "state": "new",
+      "text": "Use Python.",
+      "funcId": "say-hello",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"say-hello\",\"markdown\":\"Say hello.\"}",
+      "file": "stdlib/lang/python",
+      "mark": "waiting"
+     }
+    ],
+    "requires": "base",
+    "tracked": true,
+    "codebase": {
+     "module": "app",
+     "plainFile": "<dir>/base.plain",
+     "buildDir": "<dir>/code",
+     "pulses": [],
+     "conformance": true
+    },
+    "status": "waiting",
+    "stuck": false
+   }
+  ]
+ ],
+ "regen-p": [
+  [
+   {
+    "module": "app",
+    "plainFile": "<dir>/app.plain",
+    "buildDir": "<dir>/code",
+    "imports": [],
+    "items": [
+     {
+      "key": "functional specs\n+# register",
+      "section": "functional specs",
+      "state": "built",
+      "text": "- Register.",
+      "funcId": "register",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"register\",\"markdown\":\"- Register.\"}",
+      "mark": "built"
+     },
+     {
+      "key": "functional specs\n+# log-in",
+      "section": "functional specs",
+      "state": "new",
+      "text": "- Log in.",
+      "funcId": "log-in",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"log-in\",\"markdown\":\"- Log in.\"}",
+      "mark": "regenerating",
+      "pulse": {
+       "number": 1,
+       "title": "pulse 1",
+       "track": "code",
+       "running": true,
+       "rowId": "job1",
+       "before": "[\"functional specs\"]\n\n",
+       "after": "[\"functional specs\"]\n{\"id\":\"log-in\",\"markdown\":\"- Log in.\"}\n"
+      }
+     }
+    ],
+    "tracked": true,
+    "codebase": {
+     "module": "app",
+     "plainFile": "<dir>/app.plain",
+     "buildDir": "<dir>/code",
+     "pulses": [
+      {
+       "number": 1,
+       "title": "pulse 1",
+       "track": "code",
+       "running": true,
+       "rowId": "job1",
+       "before": "[\"functional specs\"]\n\n",
+       "after": "[\"functional specs\"]\n{\"id\":\"log-in\",\"markdown\":\"- Log in.\"}\n"
+      }
+     ],
+     "conformance": true
+    },
+    "status": "pulse 1 of 1 regenerating",
+    "stuck": false
+   }
+  ]
+ ],
+ "ladder": [
+  [
+   {
+    "module": "app",
+    "plainFile": "<dir>/app.plain",
+    "buildDir": "<dir>/code",
+    "imports": [],
+    "items": [
+     {
+      "key": "definitions\n+- :User: is a person.",
+      "section": "definitions",
+      "state": "built",
+      "text": "- :User: is a person.",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"markdown\":\"- :User: is a person.\"}",
+      "mark": "built"
+     },
+     {
+      "key": "functional specs\n+# register",
+      "section": "functional specs",
+      "state": "built",
+      "text": "- Register.",
+      "funcId": "register",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"register\",\"markdown\":\"- Register.\"}",
+      "tests": "now",
+      "mark": "built"
+     },
+     {
+      "key": "functional specs\n+# log-in",
+      "section": "functional specs",
+      "state": "built",
+      "text": "- Log in.",
+      "funcId": "log-in",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"log-in\",\"markdown\":\"- Log in.\"}",
+      "mark": "built"
+     },
+     {
+      "key": "functional specs\n+# log-out",
+      "section": "functional specs",
+      "state": "built",
+      "text": "- Log out.",
+      "funcId": "log-out",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"log-out\",\"markdown\":\"- Log out.\"}",
+      "mark": "built"
+     },
+     {
+      "key": "functional specs\n+# search",
+      "section": "functional specs",
+      "state": "new",
+      "text": "- Search.",
+      "funcId": "search",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"search\",\"markdown\":\"- Search.\"}",
+      "mark": "waiting"
+     }
+    ],
+    "tracked": false,
+    "status": "not asked to build - regenerate plans it",
+    "stuck": false
+   }
+  ]
+ ],
+ "stuck": [
+  [
+   {
+    "module": "app",
+    "plainFile": "<dir>/app.plain",
+    "buildDir": "<dir>/code",
+    "imports": [],
+    "items": [
+     {
+      "key": "functional specs\n+# register",
+      "section": "functional specs",
+      "state": "built",
+      "text": "- Register.",
+      "funcId": "register",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"register\",\"markdown\":\"- Register.\"}",
+      "mark": "built"
+     },
+     {
+      "key": "functional specs\n+# log-in",
+      "section": "functional specs",
+      "state": "new",
+      "text": "- Log in.",
+      "funcId": "log-in",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"log-in\",\"markdown\":\"- Log in.\"}",
+      "mark": "stuck",
+      "rolledBack": 3
+     }
+    ],
+    "tracked": true,
+    "codebase": {
+     "module": "app",
+     "plainFile": "<dir>/app.plain",
+     "buildDir": "<dir>/code",
+     "pulses": [],
+     "conformance": true,
+     "stuck": {
+      "why": "pulse abc did not land",
+      "pulse": {
+       "number": 3,
+       "before": "[\"functional specs\"]\n\n",
+       "after": "[\"functional specs\"]\n{\"id\":\"log-in\",\"markdown\":\"- Log in.\"}\n"
+      }
+     }
+    },
+    "status": "pulse 3 didn't land",
+    "stuck": true
+   }
+  ],
+  [
+   {
+    "module": "app",
+    "plainFile": "<dir>/app.plain",
+    "buildDir": "<dir>/code",
+    "imports": [],
+    "items": [
+     {
+      "key": "functional specs\n+# register",
+      "section": "functional specs",
+      "state": "built",
+      "text": "- Register.",
+      "funcId": "register",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"register\",\"markdown\":\"- Register.\"}",
+      "mark": "built"
+     },
+     {
+      "key": "functional specs\n+# log-in",
+      "section": "functional specs",
+      "state": "new",
+      "text": "- Log in.",
+      "funcId": "log-in",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"log-in\",\"markdown\":\"- Log in.\"}",
+      "mark": "waiting"
+     }
+    ],
+    "tracked": false,
+    "status": "not asked to build - regenerate plans it",
+    "stuck": false
+   }
+  ]
+ ],
+ "tabs-keys": [
+  [
+   {
+    "module": "base",
+    "plainFile": "<dir>/base.plain",
+    "buildDir": "<dir>/code",
+    "imports": [],
+    "items": [
+     {
+      "key": "functional specs\n+# one",
+      "section": "functional specs",
+      "state": "new",
+      "text": "- One.",
+      "funcId": "one",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"one\",\"markdown\":\"- One.\"}",
+      "mark": "waiting"
+     }
+    ],
+    "tracked": true,
+    "codebase": {
+     "module": "app",
+     "plainFile": "<dir>/base.plain",
+     "buildDir": "<dir>/code",
+     "pulses": [],
+     "conformance": true
+    },
+    "status": "waiting",
+    "stuck": false
+   },
+   {
+    "module": "top",
+    "plainFile": "<dir>/top.plain",
+    "buildDir": "<dir>/code",
+    "imports": [],
+    "items": [
+     {
+      "key": "functional specs\n+# two",
+      "section": "functional specs",
+      "state": "new",
+      "text": "- Two.",
+      "funcId": "two",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"two\",\"markdown\":\"- Two.\"}",
+      "mark": "waiting"
+     }
+    ],
+    "requires": "base",
+    "tracked": true,
+    "codebase": {
+     "module": "app",
+     "plainFile": "<dir>/base.plain",
+     "buildDir": "<dir>/code",
+     "pulses": [],
+     "conformance": true
+    },
+    "status": "waiting",
+    "stuck": false
+   }
+  ],
+  [
+   {
+    "module": "base",
+    "plainFile": "<dir>/base.plain",
+    "buildDir": "<dir>/code",
+    "imports": [],
+    "items": [
+     {
+      "key": "functional specs\n+# one",
+      "section": "functional specs",
+      "state": "new",
+      "text": "- One.",
+      "funcId": "one",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"one\",\"markdown\":\"- One.\"}",
+      "mark": "waiting"
+     }
+    ],
+    "tracked": true,
+    "codebase": {
+     "module": "app",
+     "plainFile": "<dir>/base.plain",
+     "buildDir": "<dir>/code",
+     "pulses": [
+      {
+       "number": 1,
+       "title": "pulse 1",
+       "track": "code",
+       "running": true,
+       "rowId": "job1",
+       "before": "[\"functional specs\"]\n\n",
+       "after": "[\"functional specs\"]\n{\"id\":\"two\",\"markdown\":\"- Two.\"}\n"
+      }
+     ],
+     "conformance": true
+    },
+    "status": "pulse 1 of 1 regenerating",
+    "stuck": false
+   },
+   {
+    "module": "top",
+    "plainFile": "<dir>/top.plain",
+    "buildDir": "<dir>/code",
+    "imports": [],
+    "items": [
+     {
+      "key": "functional specs\n+# two",
+      "section": "functional specs",
+      "state": "new",
+      "text": "- Two.",
+      "funcId": "two",
+      "scenarios": {
+       "conformance": [],
+       "acceptance": []
+      },
+      "line": "{\"id\":\"two\",\"markdown\":\"- Two.\"}",
+      "mark": "regenerating",
+      "pulse": {
+       "number": 1,
+       "title": "pulse 1",
+       "track": "code",
+       "running": true,
+       "rowId": "job1",
+       "before": "[\"functional specs\"]\n\n",
+       "after": "[\"functional specs\"]\n{\"id\":\"two\",\"markdown\":\"- Two.\"}\n"
+      }
+     }
+    ],
+    "requires": "base",
+    "tracked": true,
+    "codebase": {
+     "module": "app",
+     "plainFile": "<dir>/base.plain",
+     "buildDir": "<dir>/code",
+     "pulses": [
+      {
+       "number": 1,
+       "title": "pulse 1",
+       "track": "code",
+       "running": true,
+       "rowId": "job1",
+       "before": "[\"functional specs\"]\n\n",
+       "after": "[\"functional specs\"]\n{\"id\":\"two\",\"markdown\":\"- Two.\"}\n"
+      }
+     ],
+     "conformance": true
+    },
+    "status": "pulse 1 of 1 regenerating",
+    "stuck": false
+   }
+  ]
+ ]
+}

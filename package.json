@@ -17,23 +17,20 @@
     "turri": "bin/turri.mjs"
   },
   "exports": {
-    "./host": {
-      "types": "./dist/host.d.ts",
-      "import": "./dist/host.js"
-    },
     "./package.json": "./package.json"
   },
   "scripts": {
-    "cultivate": "tsx src/cultivate-cli.ts",
+    "cultivate": "node bin/turri.mjs cultivate",
     "typecheck": "tsc --noEmit",
-    "chat": "pi -e ./src/extension.ts",
-    "ask": "pi -p --no-session -e ./src/extension.ts",
+    "chat": "node bin/turri.mjs",
+    "ask": "node bin/turri.mjs -p --no-session",
     "test": "vitest run",
+    "test:package": "node scripts/package-check.mjs",
     "test:watch": "vitest",
-    "mutation": "node scripts/mutation.mjs",
-    "conform": "tsx src/conform-cli.ts",
-    "regenerate": "tsx src/regenerate-cli.ts",
-    "parse": "tsx src/parse-cli.ts",
+    "link:core": "node scripts/link-core.mjs",
+    "conform": "node bin/turri.mjs conform",
+    "regenerate": "node bin/turri.mjs regenerate",
+    "parse": "node bin/turri.mjs parse",
     "doctor": "node bin/turri.mjs doctor",
     "build": "node scripts/build.mjs",
     "prepack": "npm run build"
@@ -41,23 +38,10 @@
   "dependencies": {
     "@earendil-works/pi-coding-agent": "1.6.0",
     "@earendil-works/pi-tui": "1.6.0",
-    "@langchain/langgraph": "1.4.15",
-    "gray-matter": "^4.0.3",
-    "js-yaml": "^5.4.2",
-    "liquidjs": "^10.29.0",
-    "mdast-util-from-markdown": "^2.0.3",
-    "mdast-util-gfm-table": "^2.0.0",
-    "micromark-extension-gfm-table": "^2.1.1",
-    "remark-parse": "^11.0.0",
-    "typebox": "^1.3.7",
-    "unified": "^11.0.5"
+    "@turri-dev/core": "0.1.1"
   },
   "devDependencies": {
-    "@stryker-mutator/core": "^10.0.0",
-    "@stryker-mutator/vitest-runner": "^10.0.0",
-    "@types/js-yaml": "^4.0.9",
     "@types/node": "^24.0.0",
-    "tsx": "^4.19.0",
     "typescript": "^5.7.0",
     "vitest": "^5.0.1"
   },
@@ -69,8 +53,6 @@
     "bin",
     "dist",
     ".pi",
-    "genome",
-    "stdlib",
     "docs",
     "README.md",
     "LICENSE"

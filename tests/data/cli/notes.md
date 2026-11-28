@@ -1,3 +1,0 @@
-# Notes
-
-Plain text notes.

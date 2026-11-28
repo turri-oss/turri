@@ -1,78 +1,44 @@
-# Development
+# Developing turri's CLI
+
+This repository publishes `@turri-dev/cli`: the `turri` command and the terminal. [`@turri-dev/core`](https://github.com/turri-oss/turri-core) owns the session, harness, agents, parser, genome and standard library; the terminal is one front end of its session, as a [desktop host](hosting.md) is another. A change to how turri builds goes there; a change to how the terminal shows it goes here. The CLI imports the core's five public entries alone - `@turri-dev/core`, `/plain`, `/project`, `/models` and `/system` - as [the core's interface](https://github.com/turri-oss/turri-core/blob/main/docs/core.md) describes them.
+
+## Linked development
+
+With a released core, `npm ci` installs the pinned version. To use a core checkout instead, install its dependencies there first (`npm ci`), then run this **in the CLI checkout**:
 
 ```bash
-npm run typecheck   # types
-npm test            # the whole suite, about a minute
+npm run link:core -- ../turri-core         # or the path to a core worktree
+export NODE_OPTIONS=--conditions=turri-source
+node bin/turri.mjs                        # the CLI and the core both run from src/
+npm run typecheck
+npm test
 ```
 
-The suite runs the projects' testing scripts on this machine, as turri does. The fixture scripts stage each run in a folder of their own, as test files running side by side would otherwise share one.
+In PowerShell set `$env:NODE_OPTIONS = '--conditions=turri-source'`. The link helper also links the core's installed pi and pi-tui into the CLI: the terminal must patch the same pi classes that own its chats. It does not change either manifest or lockfile. `npm ci` restores the release dependencies once that version is on npm. Use the source condition only with a linked checkout: the npm packages ship compiled JS and declarations, not TypeScript sources.
 
-`.github/workflows/test.yml` runs both on GitHub for every pull request and every push to `main`, and `.github/workflows/commits.yml` checks that each of a pull request's commits is a Conventional Commit, with no fixup and no merge commit - a pull request is rebased onto `main`, each commit as it is. A pull request from a fork runs them once the maintainer has approved its run - see [contributing](../CONTRIBUTING.md).
+## Checking a change
 
-## Mutation testing
+`npm test` runs the CLI and terminal suite without calling a model. `npm run typecheck` checks `src/`; with a linked core it follows the `turri-source` condition. To run one file: `npx vitest run tests/regenerate/jobs-tree.test.ts`. The harness suite and mutation tests run [in the core](https://github.com/turri-oss/turri-core/blob/main/docs/development.md).
 
-`npm run mutation` runs [Stryker](https://stryker-mutator.io) over the core of regeneration - the parts in `stryker.config.mjs` - one part at a time, each part's report in `reports/mutation/<part>/`. A part with a report is skipped, so a run that is stopped goes on from the part it was in; `npm run mutation -- <part>` runs one again, and `npm run mutation -- --summary` sums up the reports there are. It takes hours: each part runs the suite once to find which tests reach which mutant (`vitest.stryker.config.ts`, the suite without the files that run real commands behind the sandbox), then each mutant against those tests. `scripts/mutation.mjs` sets two things in Stryker's vitest runner the suite needs - forked workers, and a test-name filter that matches vitest 5's names - again after every `npm install`.
+`npm run build` compiles the CLI against the core's built declarations. On an unbuilt core checkout, run its `npm run build` first. `npm run test:package` installs the packed CLI in a temporary project and runs its commands there. Pass the core checkout to pack and install both packages, including before the core version is published - the clone is installed as the version the CLI pins, as its own package.json keeps the version it was last given:
 
-The `mutation` workflow (`.github/workflows/mutation.yml`) runs it on GitHub, started by hand: Actions, mutation, Run workflow. It takes the parts to run, space-separated (empty for every part), each a job of its own side by side, on four cores (`TURRI_MUTATION_CONCURRENCY`; six here). Each part's `mutation.html` and `mutation.json` are uploaded as an artifact, `mutation-<part>`, and summed up on the run's page. Stryker's incremental file is cached from run to run, so a run tests again only the mutants whose code or tests changed; tick `fresh` to test every one again.
-
-Working on turri itself, `npm link` points the global `turri` at this clone, so edits take effect immediately. `npm run chat` starts [pi](https://pi.dev) with the extension loaded from `src/`.
-
-The package on npm is built: Node runs no `.ts` file inside a `node_modules`, so `npm run build` (`scripts/build.mjs`, over `tsconfig.build.json`) compiles `src/` into `dist/`, file for file - each file as deep as its source, so it finds `genome/`, `stdlib/` and `.pi/` the same way - with its imports' `.ts` rewritten to `.js`, and copies the other files in `src/` beside them. `npm pack` and `npm publish` run it first (`prepack`), and the package holds `dist/`, not `src/`. `bin/turri.mjs` runs `src/cli.ts` where there is one and `dist/cli.js` otherwise; `cli.ts` starts [pi](https://pi.dev) with the launcher and extension beside itself, whichever they are. To try the package as users get it: `npm pack`, then `npm install -g ./turri-dev-cli-<version>.tgz`.
-
-## Publishing
-
-`.github/workflows/publish.yml` publishes `@turri-dev/cli`, after the typecheck and the suite pass:
-
-- every push or merge into `main` publishes a prerelease under the `next` dist-tag - the patch after the `latest` on npm, with the commit's sha: `0.1.2-next.<sha>`. `latest` is not touched; `npm install -g @turri-dev/cli@next` gets it.
-- a GitHub Release tagged `vX.Y.Z`, published by hand, publishes `X.Y.Z` as `latest` (or under `next`, if the release is marked a pre-release). The tag is the version: it is set in the runner and never committed, so `package.json`'s version on `main` is stale by design. Once npm has a release on `latest`, it is posted to the Discord channel whose webhook is the repository secret `DISCORD_RELEASE_WEBHOOK` - its name, its notes and the command that updates; without the secret nothing is posted.
-
-The workflow signs in to npm with npm's trusted publishing (OIDC), not a token: the package's settings on npmjs.com trust `turri-oss/turri`, the workflow `publish.yml` and the environment `npm`. Renaming the workflow file breaks it.
+```bash
+npm run test:package -- ../turri-core
+```
 
 ## Layout
 
-| path | what it is |
-|---|---|
-| `bin/turri.mjs` | the launcher: checks the Node version, then loads `src/cli.ts` |
-| `src/cli.ts` | the `turri` command and its subcommands |
-| `src/setup.ts`, `src/doctor-tool.ts`, `src/environment.ts`, `src/stack.ts` | `turri doctor` and the chat's `doctor` tool, and what they check - this machine, and in a project what its modules need of it |
-| `src/extension.ts` | the [pi](https://pi.dev) extension: every tool and command the conversation has - and `createTurriCore`, the session it is built into |
-| `src/chats.ts`, `src/chat-scope.ts`, `src/chat-records.ts` | the session's [chats](chats.md): which chat a pulse is told to, each chat's scope - its id and stack - and `.turri/chats.json` |
-| `src/sentinel.ts`, `src/sentinel-chat.ts` | [the sentinel](sentinel.md): its prompt, what it is told of a pulse, its fenced tools, its guidance; notices - their cards, the terminal's dialog, their answers |
-| `src/chat-terminal.ts`, `src/chat-ui.ts`, `src/chat-commands.ts` | the terminal's chats: [pi](https://pi.dev)'s screen switched between live sessions, a hidden chat's stand-in for it, `/chat` and its keys |
-| `src/host-session.ts` | `createTurri`, the session for a host |
-| `src/skill.ts` | parses `SKILL.md` into steps and gates |
-| `src/graph.ts` | compiles a skill into a LangGraph `StateGraph`: step -> gate -> route |
-| `src/judge.ts` | runs independent judges, applies the quorum, builds the critique |
-| `src/genome.ts` | `runSkill()` - the one entry point the CLI and the extension share |
-| `src/pi.ts` | [pi](https://pi.dev) session factories for executors, sub-agents and judges |
-| `src/loop-tools.ts` | `regenerate`, `drift` and `halt` - one definition each, for the conversation and the skills alike |
-| `src/plain/` | the [\*\*\*plain](https://plainlang.org/docs/) parser - see [parser](parser.md) - and `highlight.ts`, which highlights \*\*\*plain with turri's own grammar, `plain.tmLanguage.json` - started from [plyn](https://github.com/plainlang/plyn)'s at `f9c02b8`, and changed here since: test plain files' sections and keys, the `# <id>` heading |
-| `src/regenerate/conformance.ts` | conformance tests: writing them, and fixing the test or the code until they pass |
-| `src/regenerate/regenerate.ts`, `src/regenerate/conform.ts` | a code job - a \*\*\*plain diff regenerated in the code - and a conformance job |
-| `src/regenerate/loop.ts`, `src/regenerate/records.ts`, `src/regenerate/drift.ts`, `src/regenerate/jobs.ts` | the work loop, the records and the work derived from them, and background jobs |
-| `src/regenerate/chunk-plan.ts`, `src/regenerate/cases.ts` | cutting the work into jobs, and what a job's agents are told by its cases |
-| `src/regenerate/regression.ts` | the whole conformance suite run, and the repair agent that may not touch tests |
-| `src/regenerate/lineage.ts` | module history in `.plaingit` |
-| `src/regenerate/launch.ts`, `src/launch-track.ts`, `src/launch-session.ts`, `src/launch-agent.ts`, `src/launch-tools.ts`, `src/launch-cli.ts` | launch: a commit to `dist/<module>`, the launch track, the launch agent and what it starts on the host - see [launch](launch.md) |
-| `src/regenerate/confine.ts`, `src/regenerate/agent-shell.ts`, `src/regenerate/command-check.ts`, `src/regenerate/os-sandbox.ts`, `src/regenerate/audit.ts`, `src/regenerate/agent-env.ts`, `src/regenerate/shell.ts` | the file-tool fence and the walls around every agent command: the check, the OS sandbox, the audit, the module's environment, the host runner - see [sandbox](sandbox.md) |
-| `src/regenerate/model-names.ts` | resolving a model named as the person said it - for a call's `model` and the `settings` tool |
-| `src/regenerate/job-panel.ts`, `src/regenerate/transcript-view.ts`, `src/regenerate/diff-view.ts` | the job panel, the side panel's colours, and a \*\*\*plain diff as they show it - highlighted and banded |
-| `src/regenerate/side-panel.ts`, `src/regenerate/panel-dock.ts` | the side panel, and the chat narrowed beside it when it is docked |
-| `src/screen-padding.ts` | the blank row above and below the whole screen and the two columns either side, in both of [pi](https://pi.dev)'s ways of drawing it |
-| `src/regenerate/spec-map.ts`, `src/regenerate/spec-map-view.ts` | regen: each item's mark, from the records, the `.plain` files and the work loop's plan (`mapPlan`), and the map drawn |
-| `src/regenerate/debug-log.ts` | each regenerating agent's whole conversation, streamed to `.turri/debug/` - while its pulse runs, and kept in debug mode |
-| `src/regenerate/pulse-files.ts` | what a pulse writes only for a person - its logs, outputs, temporary files, its chain's installed dependencies - removed as it ends outside debug mode |
-| `src/regenerate/failure-reports.ts` | why a pulse that failed or finished without landing did - what `pulses` says of it - kept in `.turri/pulses/<id>.md` whatever the debug setting, for a later session |
-| `src/regenerate/ledger.ts`, `src/regenerate/ledger-view.ts` | the ledger: what turri did, as typed facts, in `.turri/ledger/` - `record()`, read back for `pulses` - see [the ledger](using.md#the-ledger) |
-| `src/capture/`, `src/capture-cli.ts` | [capture](capture.md): the map, areas folded to a budget, the agents and the checks of what they hand over, assembling the modules, the testing scripts, the report, resuming, its status while it runs - and `turri capture` |
-| `src/reopen.ts` | a chat opened again in another folder by `turri` once it quits - into the project a capture wrote |
-| `src/plain-code-blocks.ts` | \*\*\*plain fenced as ` ```plain ` in the chat, highlighted by turri's grammar - pi-tui's Markdown patched |
-| `genome/` | what turri knows and can do: `genome/skills/`, the skill library, `genome/rules/`, the \*\*\*plain authoring rules, and `genome/capture/`, capture's prompts |
+| Where | What it owns |
+| --- | --- |
+| `bin/turri.mjs`, `src/cli.ts`, `src/*-cli.ts` | Node checks, argument parsing, command dispatch, printing and exit status. `regenerate`, `conform`, `launch` and `cultivate` open a session with no front end; `loop-cli.ts` prints a run from its events. |
+| `src/cli-root.ts`, `src/turri-versions.ts`, `src/reopen.ts` | This turri: its identity for the core (`client`), its version line, update and PATH checks, and the handoff between `turri` and the chat process after a capture. |
+| `src/pi-launch.ts`, `src/extension.ts` | Prepare terminal images, open the process's session before pi's `main` and build its extension into pi. The banner and themes come from this package; the genome comes from the core. |
+| `src/terminal-view.ts`, `src/banner.ts`, `src/entry-renderers.ts` | The terminal's `Frontend` - what it shows, how it asks, its surface - drawn from the session's events; the welcome screen and transcript rendering. |
+| `src/panel-view.ts`, `src/terminal-notifications.ts`, `src/regenerate/*-view.ts`, `src/regenerate/jobs-tree.ts` | The side panel: regen, pulses, the inbox of notifications and keyboard focus. |
+| `src/chat-*.ts`, `src/pi-settings.ts`, `src/skill-progress.ts`, `src/capture-view.ts` | The chats on pi's screen (`sessions: external`), their stand-in UI while hidden, tabs and keys, the settings menu and progress widgets. |
 
-## Known edges
+## Publishing
 
-- Judges default to the executor's model. Real separation wants a different provider - set `model:` on the gate. An unconfigured model falls back to the executor's with a note rather than failing the run.
-- The executor keeps one session across steps and retries, so context builds up with attempts. Long skills want compaction or a session per step.
-- A gate's escalation lives in memory (LangGraph's `MemorySaver`): it must be answered in the same run.
-- The gate machinery has no automated coverage; see [trying the gate semantics](skills-and-gates.md#trying-the-gate-semantics).
-- Jobs live in memory: there is no resuming a job after [pi](https://pi.dev) exits. The work itself is on disk, so a killed job leaves a partial build rather than nothing.
+The compatible core version must be available on npm before releasing the CLI. Pin that version with npm and keep its lockfile resolution. The CLI's `prepack` builds `dist/`; the package includes the CLI's assets, themes, launcher and docs, and exports nothing but its `package.json`. The core is a normal versioned dependency.
+
+The typecheck, suite and packed consumer check run in `.github/workflows/test.yml`. While the core version the CLI pins is not on npm, that workflow checks out turri-core's branch with the interface the CLI is written against (`CORE_REF`), links it as linked development does and runs both from their sources; once that core is released and pinned, it installs it with `npm ci` alone. `.github/workflows/publish.yml` uses npm trusted publishing: a push to `main` publishes a prerelease under `next`; a GitHub release tagged `vX.Y.Z` publishes that version under `latest`, or `next` for a prerelease. See [contributing](../CONTRIBUTING.md) for the commit checks.

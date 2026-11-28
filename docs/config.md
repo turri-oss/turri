@@ -183,11 +183,11 @@ They are defaults. What is asked for wins over them:
 
 | model | wins over the config |
 | --- | --- |
-| harness | `turri --harness-model <m>` (or [pi](https://pi.dev)'s own `--model`), and [pi](https://pi.dev)'s `/model` in the conversation |
-| coding | `turri --coding-model <m>` |
-| judge | - |
+| harness | `--harness-model <m>` (or [pi](https://pi.dev)'s own `--model`, for `turri`), and [pi](https://pi.dev)'s `/model` in the conversation |
+| coding | `--coding-model <m>` (or `--model`, for a command) |
+| judge | `--judge-model <m>`, for `turri regenerate`, `conform` and `doctor` |
 
-`turri regenerate` and `conform` read `--harness-model`, `--coding-model` (or `--model`), `--judge-model` and `--review` differently: as the keys themselves, as if the file had them. Each takes its key's value and its place in the order above - a `models:` entry still wins over it - so a headless run is the same as a chat with those keys in the file.
+The options are read as the keys themselves, for that run: `turri`, `turri regenerate` and `conform` - and `--review` and `--mutation-testing` for the two commands - take each key's value as if the file had it, in its place in the order above, so a `models:` entry still wins over it. A headless run is the same as a chat with those keys in the file.
 
 A job keeps the model it was queued with: choosing another holds for what is queued after.
 

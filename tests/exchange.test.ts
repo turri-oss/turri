@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { exchangeLines } from "../src/extension.ts";
+import { exchangeLines } from "../src/entry-renderers.ts";
 
 const plain = (_color: string, text: string) => text;
 

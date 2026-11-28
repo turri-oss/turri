@@ -1,15 +1,3 @@
-// No test waits out a provider that is failing: the harness retries at once.
-process.env.TURRI_PROVIDER_RETRY_DELAY ??= "0";
-// Nor does a test that loads the conversation or a headless run write a ledger into the folder it runs from: the
-// ledger's own tests start it themselves.
+// A test session writes no ledger and does not check for updates on npm.
 process.env.TURRI_LEDGER ??= "off";
-// No test asks npm for the newest turri: the banner, --version and doctor leave it out.
 process.env.TURRI_UPDATE_CHECK ??= "off";
-import { afterAll } from "vitest";
-import { killAllGroups } from "../src/regenerate/shell.ts";
-
-// Whatever a test file's commands left running on this machine is killed when it finishes: a worker is ended by a
-// signal, and what it started would otherwise outlive it.
-afterAll(() => {
-  killAllGroups();
-});

@@ -2,20 +2,19 @@ import { describe, expect, it } from "vitest";
 import { chatModels } from "../src/chat-models.ts";
 
 describe("the two models of turri", () => {
-  const config = { harnessModel: { model: "anthropic/claude-opus-5-5" } };
-
-  it("start pi on config.yaml's harness model, and take the coding model from --coding-model", () => {
-    expect(chatModels(["--coding-model", "google/gemini-3.1-flash", "-c"], config)).toEqual({
-      piArgs: ["--model", "anthropic/claude-opus-5-5", "-c"],
-      codingModel: "google/gemini-3.1-flash",
+  it("are the session's overrides, taken out of pi's arguments", () => {
+    expect(chatModels(["--coding-model", "google/gemini-3.1-flash", "-c"])).toEqual({
+      piArgs: ["-c"],
+      overrides: { codingModel: "google/gemini-3.1-flash" },
     });
-    expect(chatModels([], {})).toEqual({ piArgs: [], codingModel: undefined });
+    expect(chatModels(["--harness-model=openai/gpt-5.5"])).toEqual({ piArgs: [], overrides: { harnessModel: "openai/gpt-5.5" } });
+    expect(chatModels([])).toEqual({ piArgs: [], overrides: {} });
   });
 
-  it("let --harness-model, and pi's own --model or --provider, win over config.yaml", () => {
-    expect(chatModels(["--harness-model=openai/gpt-5.5"], config).piArgs).toEqual(["--model", "openai/gpt-5.5"]);
-    expect(chatModels(["--model", "sonnet"], config).piArgs).toEqual(["--model", "sonnet"]);
-    expect(chatModels(["--provider=google"], config).piArgs).toEqual(["--provider=google"]);
-    expect(chatModels(["--coding-model=a/b", "--coding-model", "c/d"], {}).codingModel).toBe("c/d");
+  it("take pi's own --model as the chat's harness model, kept for pi, --harness-model winning over it", () => {
+    expect(chatModels(["--model", "anthropic/claude-sonnet-5-5"])).toEqual({ piArgs: ["--model", "anthropic/claude-sonnet-5-5"], overrides: { harnessModel: "anthropic/claude-sonnet-5-5" } });
+    expect(chatModels(["--model=a/b", "--harness-model", "c/d"]).overrides.harnessModel).toBe("c/d");
+    expect(chatModels(["--provider=google"])).toEqual({ piArgs: ["--provider=google"], overrides: {} });
+    expect(chatModels(["--coding-model=a/b", "--coding-model", "c/d"]).overrides.codingModel).toBe("c/d");
   });
 });

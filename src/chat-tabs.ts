@@ -1,7 +1,7 @@
 import { stripTerminalSequences, truncateToWidth, visibleWidth, type Component } from "@earendil-works/pi-tui";
-import type { ChatInfo, TurriCore } from "./chats.ts";
+import type { ChatInfo } from "@turri-dev/core";
 import { PointerHover, type ButtonPaint, type ButtonRole } from "./pointer-hover.ts";
-import { spinner } from "./regenerate/job-panel.ts";
+import { spinner } from "./terminal-marks.ts";
 
 /** Shared by the tabs and the /chat picker. */
 export function chatMark(chat: ChatInfo): string {
@@ -20,8 +20,21 @@ function buttonKey(action: TabAction): string {
   return "id" in action ? `${action.kind}:${action.id}` : action.kind;
 }
 
+/** The terminal's chats, as the tabs, /chat and its keys reach them. */
+export interface TerminalChats {
+  chats(): ChatInfo[];
+  /** A fresh chat, shown. */
+  open(): Promise<unknown>;
+  show(id: string): Promise<void>;
+  close(id: string): Promise<void>;
+  /** Said on the screen, in the chat shown. */
+  notify(message: string, level: "info" | "warning" | "error"): void;
+  /** Something about the chats changed: told until it returns what stops it. */
+  onChange(listener: () => void): () => void;
+}
+
 /** Shared by ×, /chat close and alt+w. The last person's chat stays open even if the sentinel has its own tab. */
-export async function closeTerminalChat(session: TurriCore, id: string): Promise<void> {
+export async function closeTerminalChat(session: TerminalChats, id: string): Promise<void> {
   const chats = session.chats();
   const people = chats.filter((chat) => chat.role === undefined);
   if (people.length === 1 && people[0]!.id === id) return session.notify("This is the only chat - /quit leaves turri.", "info");

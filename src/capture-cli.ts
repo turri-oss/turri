@@ -1,5 +1,5 @@
 import { relative, resolve } from "node:path";
-import { CaptureError, DEFAULT_PARALLEL, runCapture } from "./capture/capture.ts";
+import { CaptureError, DEFAULT_PARALLEL, runCapture } from "@turri-dev/core/project";
 import { c } from "./module-report.ts";
 
 /**

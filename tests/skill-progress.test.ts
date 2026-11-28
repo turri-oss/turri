@@ -1,10 +1,6 @@
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 import { skillAboutLine, skillProgressLine, type SkillProgress } from "../src/skill-progress.ts";
-import { loadSkill } from "../src/skill.ts";
-import { join } from "node:path";
 
 const probe = (current: number, attempt = 1): SkillProgress => ({
   skill: "probe",
@@ -61,12 +57,5 @@ describe("a skill's progress, above the input", () => {
     expect(skillProgressLine(single([]), 120)).toBe("⠹ analyze-func-specs");
     expect(skillProgressLine(single(["analyze-func-specs"], 2), 120)).toBe("⠹ analyze-func-specs   attempt 2");
     expect(skillAboutLine(single(["analyze-func-specs"]), 120)).toBeUndefined();
-  });
-
-  it("reads its phases from the skill itself - its steps, in order", () => {
-    const dir = mkdtempSync(join(tmpdir(), "turri-phases-"));
-    onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
-    writeFileSync(join(dir, "SKILL.md"), "---\nname: probe\ndescription: A skill.\nmetadata:\n  phases:\n    intent: asks\n    stack: chooses\n    product: writes\n---\n\n## Steps\n\n### intent\n\nAsk.\n\n### stack\n\nChoose.\n\n### product\n\nWrite.\n");
-    expect(loadSkill(dir).steps.map((step) => step.name)).toEqual(["intent", "stack", "product"]);
   });
 });

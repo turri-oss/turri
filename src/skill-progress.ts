@@ -1,3 +1,6 @@
+import type { SkillProgress as Progress } from "@turri-dev/core";
+import { spinner } from "./terminal-marks.ts";
+import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 /**
@@ -16,20 +19,7 @@ import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
  *   ⠋ analyze-func-specs
  */
 
-export interface SkillProgress {
-  /** The skill's name. */
-  skill: string;
-  /** Its phases, in order: the `###` headings under its `## Steps`. */
-  phases: string[];
-  /** The phase it is in, by its place in `phases`; -1 before the first has started. */
-  current: number;
-  /** The attempt at the current phase - more than 1 after a gate sent it back. */
-  attempt: number;
-  /** The spinner's frame, for the phase it is in. */
-  frame: string;
-  /** What the phase it is in does, in a line - from the skill's `metadata.phases`. */
-  about?: string;
-}
+export interface SkillProgress extends Progress { frame: string }
 
 export interface ProgressStyle {
   heading(text: string): string;
@@ -122,4 +112,28 @@ export function skillAboutLine(progress: SkillProgress, width: number, style: Pr
   const text = truncateToWidth(`${phase} - ${progress.about}`, width, "…");
   const left = width < NARROW ? 0 : Math.floor((width - visibleWidth(text)) / 2);
   return `${" ".repeat(left)}${style.muted(text)}`;
+}
+
+/** A foreground skill's place in its phases, above the chat's input (`skillProgress` events); null takes it off. */
+export function skillProgress(ui: ExtensionUIContext, progress: Progress | null): void {
+  if (!progress) return ui.setWidget("turri-skill", undefined);
+  ui.setWidget("turri-skill", (tui, theme) => {
+    const redraw = setInterval(() => tui.requestRender(), 1000);
+    redraw.unref?.();
+    const style = {
+      heading: (text: string) => theme.bold(theme.fg("accent", text)),
+      done: (text: string) => theme.fg("success", text),
+      now: (text: string) => theme.bold(theme.fg("accent", text)),
+      muted: (text: string) => theme.fg("muted", text),
+    };
+    return {
+      render: (width: number) => {
+        const now = { ...progress, frame: spinner(Date.now()) };
+        const under = skillAboutLine(now, width, style);
+        return [skillProgressLine(now, width, style), ...(under !== undefined ? [under] : [])];
+      },
+      invalidate: () => {},
+      dispose: () => clearInterval(redraw),
+    };
+  });
 }

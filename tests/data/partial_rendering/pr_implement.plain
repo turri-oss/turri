@@ -1,2 +1,0 @@
-something configurable
-    - the configurable thing should be really {{ variable_name | code_variable }}

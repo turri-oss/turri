@@ -1,7 +1,6 @@
 import { Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type TuiMouseEvent, type TuiMouseEventResult } from "@earendil-works/pi-tui";
-import type { Job } from "./jobs.ts";
+import type { Job, MarkedPage } from "@turri-dev/core";
 import { createJobsTreeState, jobsTreeLines, jobsTreeRows, keepCursorInView, scrollTree, sectionOf, treeKey, type JobsTreeState, type TreeRow } from "./jobs-tree.ts";
-import type { MarkedPage } from "./spec-map.ts";
 import { columnHeadings, createSpecMapState, DISCUSS_KEY, legendLines, minimap, shownPage, specMapHeader, specMapLines, switchTab, tabBar, type MapRow, type SpecMapState } from "./spec-map-view.ts";
 import type { TranscriptStyle } from "./transcript-view.ts";
 import type { ButtonPaint, PointerHover } from "../pointer-hover.ts";

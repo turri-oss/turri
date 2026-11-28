@@ -1,12 +1,12 @@
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  // Vite resolves workspace links itself. Honour the same opt-in as Node, including in a test's child processes.
+  ...(process.execArgv.includes("--conditions=turri-source") || process.env.NODE_OPTIONS?.includes("--conditions=turri-source")
+    ? { ssr: { resolve: { conditions: ["turri-source", "node", "module", "development|production"] } } } : {}),
   test: {
     include: ["tests/**/*.test.ts"],
-    // The parser resolves linked resources relative to the process cwd, exactly as the
-    // Python implementation does, and the fixtures carry repo-relative targets.
-    root: ".",
-    // A test that runs the testing scripts or real commands behind the sandbox can take a while.
+    // Some CLI tests start several separate Node processes.
     testTimeout: 60_000,
     setupFiles: ["tests/setup.ts"],
   },

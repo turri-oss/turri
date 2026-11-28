@@ -1,5 +1,4 @@
-import { defaultBuildDir } from "./regenerate/paths.ts";
-import { historyLog, historyShow } from "./regenerate/lineage.ts";
+import { historyLog, historyShow } from "@turri-dev/core/project";
 
 const USAGE = `usage: turri lineage <module> [commit]
 
@@ -11,5 +10,4 @@ if (module === undefined || process.argv.includes("--help")) {
   console.log(USAGE);
   process.exit(module === undefined ? 1 : 0);
 }
-const buildDir = defaultBuildDir(module, process.cwd());
-console.log(commit !== undefined ? historyShow(buildDir, commit) : historyLog(buildDir));
+console.log(commit !== undefined ? historyShow(module, commit) : historyLog(module));

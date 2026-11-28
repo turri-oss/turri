@@ -1,5 +1,5 @@
 import { Markdown } from "@earendil-works/pi-tui";
-import { highlightLines, roleOf, type PlainRole } from "./plain/highlight.ts";
+import { highlightLines, roleOf, type PlainRole } from "@turri-dev/core/plain";
 import { plainPaint } from "./regenerate/plain-palette.ts";
 
 /**

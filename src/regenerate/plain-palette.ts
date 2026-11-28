@@ -1,4 +1,4 @@
-import type { PlainRole } from "../plain/highlight.ts";
+import type { PlainRole } from "@turri-dev/core/plain";
 import type { DiffPaint } from "./diff-view.ts";
 
 /**

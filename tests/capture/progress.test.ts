@@ -1,8 +1,8 @@
 import { join, sep } from "node:path";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
-import { activityLine, captureStatusLines, CaptureTracker, duration, workOf, workStrip, type CaptureStatus } from "../../src/capture/progress.ts";
-import { newState } from "../../src/capture/state.ts";
+import { captureStatusLines, workOf, workStrip } from "../../src/capture-view.ts";
+import type { CaptureStatus } from "@turri-dev/core";
 
 const ROOT = join(sep, "home", "node", "shorty");
 
@@ -83,46 +83,4 @@ describe("a capture's status", () => {
     expect(lines.every((line) => visibleWidth(line) <= 60)).toBe(true);
   });
 
-  it("says a tool call without the agent's role, the model's time or the codebase's own folder", () => {
-    expect(activityLine(`(capture) ○ read ${join(ROOT, "app", "main.py")}   (model 3.2s)`, ROOT)).toBe(`○ read ${join("app", "main.py")}`);
-    expect(activityLine("  ✗ read failed", ROOT)).toBe("✗ read failed");
-  });
-
-  it("says a duration in seconds, minutes or hours", () => {
-    expect([duration(9_400), duration(130_000), duration(3_900_000)]).toEqual(["9s", "2m 10s", "1h 05m"]);
-  });
-
-  it("follows each agent from its start to its end, and counts the features from the state", () => {
-    const changes: string[] = [];
-    const tracker = new CaptureTracker(ROOT, undefined, (now) => changes.push(`${now.stage} ${now.agents.map((agent) => `${agent.label}:${agent.did ?? ""}`).join(",")}`));
-    const agent = tracker.agent("survey", "Survey the codebase");
-    agent.did("(capture) ○ read pyproject.toml");
-    agent.started();
-    agent.did("(capture) ○ read pyproject.toml");
-    agent.spent(0.5);
-    expect(tracker.status.agents).toMatchObject([{ label: "survey", did: "○ read pyproject.toml" }]);
-    agent.ended();
-    expect(tracker.status.agents).toEqual([]);
-    expect(tracker.status.cost).toBe(0.5);
-    // What an agent says before it starts, or after it ends, is not shown.
-    expect(changes).toEqual(["mapping ", "mapping survey:", "mapping survey:", "mapping survey:○ read pyproject.toml", "mapping survey:○ read pyproject.toml", "mapping "]);
-
-    const state = newState(ROOT);
-    state.areas.api = { id: "api", name: "api", about: "", paths: ["."], part: "api", features: [{ name: "a", title: "", about: "", paths: [] }, { name: "b", title: "", about: "", paths: [] }] };
-    state.features["api#a"] = { key: "api#a", failed: "never held" };
-    state.areas.web = { id: "web", name: "web", about: "", paths: ["web"], part: "web" };
-    tracker.counted(state);
-    expect(tracker.status.features).toEqual({ outlined: 2, done: 1 });
-    expect(tracker.status.outlining).toBe(1);
-    // A feature merged into another is never written: no longer among those to capture.
-    state.divided = { api: { owns: { "api#a": "all of it" }, merged: { "api#b": { into: ["api#a"], why: "a slice of a" } } } };
-    tracker.counted(state);
-    expect(tracker.status.features).toEqual({ outlined: 1, done: 1 });
-
-    tracker.stage("scripts", 2);
-    tracker.worked();
-    expect(tracker.status.work).toEqual({ done: 1, total: 2 });
-    tracker.stage("writing");
-    expect(tracker.status.work).toEqual({ done: 0, total: 0 });
-  });
 });

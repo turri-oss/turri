@@ -20,7 +20,7 @@ turri init-config   # a config.turri.yaml with the model you talk to and the one
 turri               # pi, with turri's tools, skills and themes loaded
 ```
 
-The package is `@turri-dev/cli` - npm keeps the name `turri` back, as too like another package's - and the command it puts on your PATH is `turri`. `npm install -g @turri-dev/cli@next` gets the latest prerelease instead, built from the last commit on `main`. Installed again - `@latest` or `@next` - it replaces the one there. `turri --version` says which turri runs, and the [pi](https://pi.dev) under it: `turri 0.1.6 (pi 1.3.0)`, and from a clone its commit too.
+The package is `@turri-dev/cli` - npm keeps the name `turri` back, as too like another package's - and the command it puts on your PATH is `turri`. `npm install -g @turri-dev/cli@next` gets the latest prerelease instead, built from the last commit on `main`. Installed again - `@latest` or `@next` - it replaces the one there. `turri --version` says which turri runs, and the core and the [pi](https://pi.dev) under it: `turri 0.2.0 (core 0.2.0; pi 1.6.0)`, and from a clone the commit too.
 
 ## pi packages
 
@@ -71,6 +71,8 @@ npm link              # puts `turri` on your PATH, pointing at this clone
 
 A clone runs its TypeScript sources directly - Node strips the types - so edits take effect immediately. The package on npm runs JavaScript compiled from them instead (`npm run build`, into `dist/`, run by `npm pack` and `npm publish` before they pack), as Node runs no `.ts` file inside a `node_modules`. `bin/turri.mjs` runs `src/` where there is one, and `dist/` otherwise.
 
+To use a local `@turri-dev/core`, including before the matching core release is on npm, follow [linked development](development.md#linked-development) in place of `npm install`.
+
 To update, `git pull` and `npm install` - the second picks up a dependency that changed, [pi](https://pi.dev)'s say. `npm link` needs running only once. A **turri** already running keeps the code it started with: start it again to run what you pulled.
 
 ## In Docker
@@ -100,7 +102,7 @@ In a project - a folder with `config.turri.yaml` (or the old `config.yaml`) or `
 | the AWS region | for a project whose models are on Amazon Bedrock: the region they are called in, and where it comes from - turri's, set for the geography they need; the person's `AWS_REGION`; the profile's - and wrong when the person's is outside that geography, or the models need two regions, which one `AWS_REGION` cannot serve |
 | the models | each model `config.turri.yaml` names - `harness-model`, `coding-model`, `judge-model`, every role under `models:` - sent one short request through [pi](https://pi.dev), with the credentials turri's agents will use, for any provider [pi](https://pi.dev) supports. One that answers is ready; for one that does not, it says what the provider said and what to do: the credentials [pi](https://pi.dev) reads for that provider (`AWS_PROFILE` and `AWS_REGION` for Amazon Bedrock, `OPENAI_API_KEY`, `/login`, ...), model access in the Bedrock console, the closest model ids [pi](https://pi.dev) knows for one it does not. `--harness-model`, `--coding-model` (`--model`) and `--judge-model` name models as the config's keys, as `turri regenerate` reads them - checked in a project or not. `--no-models` skips it |
 
-Removing that file is the one thing `doctor` changes, and it asks first; `turri doctor --yes` says yes. Run without a terminal - piped, or in CI - it asks nothing and changes nothing. Run it again whenever something breaks; `turri doctor --no-models` leaves out the models' requests. In the chat, ask for a self check: the `doctor` tool runs the same checks, the models only when you ask. A host - a desktop app - runs the same checks through `doctor` and shows them itself (see [doctor in a host](hosting.md#doctor-in-a-host)).
+Removing that file is the one thing `doctor` changes, and it asks first; `turri doctor --yes` says yes. Run without a terminal - piped, or in CI - it asks nothing and changes nothing. Run it again whenever something breaks; `turri doctor --no-models` leaves out the models' requests. In the chat, ask for a self check: the `doctor` tool runs the same checks, the models only when you ask. A host - a desktop app - runs the same checks through the core's `doctor` and shows them itself (see [the core's interface](https://github.com/turri-oss/turri-core/blob/main/docs/core.md)); what is the CLI's own - its version, the turris on the PATH, an older turri's file in every pi - is `turri doctor`'s alone.
 
 The chat is told every turn which wall is up and what the project's modules need of this machine that it lacks. What they need is worked out from all the project's \*\*\*plain - seconds, on a project of long requires chains - so it is worked out when the first turn asks - not as the chat opens - and again after a turn in which \*\*\*plain changed, never while your message waits: a turn is told what was known last.
 

@@ -11,12 +11,10 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CODING_MODEL_ENV, chatModels } from "./chat-models.ts";
-import { readProjectConfig } from "./config.ts";
-import { extensionInstalledGlobally, PACKAGE_ROOT, themesInstalledGlobally, versionLine } from "./environment.ts";
+import { CLI_ROOT, extensionInstalledGlobally, themesInstalledGlobally, versionLine } from "./cli-root.ts";
 import { dropNoise } from "./quiet.ts";
+import { describeVersion } from "./turri-versions.ts";
 import { REOPEN_FILE_ENV, takeReopening } from "./reopen.ts";
-
 /**
  * Start pi with this project's extension and themes already wired in.
  *
@@ -45,7 +43,7 @@ const DEFAULT_THEME = "turri-dark";
 
 function chat(args: string[]): never {
   if (!piInstalled()) {
-    console.error(`pi is not installed beside turri (${PACKAGE_ROOT}). Run npm install there, or install turri again.`);
+    console.error(`pi is not installed beside turri (${CLI_ROOT}). Run npm install there, or install turri again.`);
     process.exit(1);
   }
   // pi itself, through a launcher that leaves out pi's startup header - see pi-launch.ts.
@@ -54,7 +52,7 @@ function chat(args: string[]): never {
   // turri is built into pi by the launcher - unless an older turri's file still loads it into every pi, which builds it
   // in as well: pi-launch.ts is told, and leaves it to that. turri doctor offers to remove the file.
   const inPi = extensionInstalledGlobally();
-  const themes = themesInstalledGlobally() ? [] : ["--theme", join(PACKAGE_ROOT, ".pi", "themes")];
+  const themes = themesInstalledGlobally() ? [] : ["--theme", join(CLI_ROOT, ".pi", "themes")];
   // A chat that quits asking to open again elsewhere - after a capture, in the project it wrote - writes where in this
   // file, and is started again there, as the first was (reopen.ts).
   const reopenFile = join(tmpdir(), `turri-reopen-${process.pid}.json`);
@@ -64,21 +62,20 @@ function chat(args: string[]): never {
     // are left as they are, so a plain `pi` keeps its theme.
     const useTheme = run.args.some((arg) => arg === "--use-theme" || arg.startsWith("--use-theme=")) ? [] : ["--use-theme", DEFAULT_THEME];
 
-    // The model the person talks to, and the one every render runs on - see chat-models.ts.
-    const { piArgs, codingModel } = chatModels(run.args, readProjectConfig(run.cwd));
-
     // Fullscreen: pi owns the viewport, so the conversation stays where it is scrolled to while the
     // jobs redraw - in the terminal's own scrollback, every redraw pulls it back to the bottom.
     const tuiMode = run.args.some((arg) => arg === "--tui-mode" || arg.startsWith("--tui-mode=")) ? [] : ["--tui-mode", "fullscreen"];
 
-    const result = spawnSync(process.execPath, [launcher, ...themes, ...useTheme, ...tuiMode, ...piArgs], {
+    // A condition passed directly to node (rather than through NODE_OPTIONS) must reach the chat too.
+    const conditions = import.meta.resolve("@turri-dev/core/project").endsWith(".ts") ? ["--conditions=turri-source"] : [];
+    // The models named - --harness-model, --coding-model - are the chat's to read (chat-models.ts): pi's arguments with them.
+    const result = spawnSync(process.execPath, [...conditions, launcher, ...themes, ...useTheme, ...tuiMode, ...run.args], {
       stdio: "inherit",
       cwd: run.cwd,
       env: {
         ...process.env,
         ...run.env,
         [REOPEN_FILE_ENV]: reopenFile,
-        ...(codingModel ? { [CODING_MODEL_ENV]: codingModel } : {}),
         ...(inPi ? { TURRI_EXTENSION_IN_PI: "1" } : {}),
       },
     });
@@ -168,20 +165,9 @@ if (command === "-h" || command === "--help" || command === "help") {
 // turri's version, not pi's alone: pi's --version would answer for it - and where this turri is, the newest on npm,
 // every turri on the PATH, and what to do when the one that runs is not the newest (turri-versions.ts).
 if (command === "-v" || command === "--version") {
-  const { describeVersion } = await import("./turri-versions.ts");
-  console.log(await describeVersion(versionLine()));
+  const { coreVersion } = await import("@turri-dev/core/system");
+  console.log(await describeVersion(versionLine(coreVersion())));
   process.exit(0);
-}
-
-// The AWS region the project's Bedrock models need, set before any model is called - here, and in the pi the chat starts,
-// which inherits it - unless the person set one (bedrock-region.ts). The models named on the command line count too. A
-// command that calls no model is left alone.
-if (!["parse", "drift", "lineage", "init-config", ...Object.keys(PACKAGE_COMMANDS)].includes(command ?? "")) {
-  const { applyBedrockRegion } = await import("./bedrock-region.ts");
-  const named = argv.flatMap((arg, at) =>
-    ["--harness-model", "--coding-model", "--model"].includes(arg) ? [argv[at + 1] ?? ""] : arg.startsWith("--harness-model=") || arg.startsWith("--coding-model=") || arg.startsWith("--model=") ? [arg.slice(arg.indexOf("=") + 1)] : [],
-  );
-  applyBedrockRegion(process.cwd(), { also: named.filter((model) => model !== "") });
 }
 
 // turri alone is the conversation, and so is turri with pi's options - `turri -c`, `turri --harness-model <m>`. A word
@@ -189,12 +175,12 @@ if (!["parse", "drift", "lineage", "init-config", ...Object.keys(PACKAGE_COMMAND
 if (command === undefined || command.startsWith("-")) chat(argv);
 
 if (command === "init-config") {
-  const { main } = await import("./init-config.ts");
+  const { main } = await import("./init-config-cli.ts");
   process.exit(await main(rest));
 }
 
 if (command === "doctor") {
-  const { main } = await import("./setup.ts");
+  const { main } = await import("./doctor-cli.ts");
   process.exit(await main(rest));
 }
 
@@ -226,15 +212,18 @@ process.argv = [
   ...(entry.args ?? []),
 ];
 
-// A headless run is stopped by a signal - SIGTERM, SIGHUP, Ctrl-C - whatever else listens for it: it exits, and what
-// its agents left running goes with it (shell.ts kills every process group on exit). Left to the libraries' own
-// handlers, one ran on for minutes after it was told to stop, building in the same codebase as the run after it.
+// A headless run is stopped by a signal - SIGTERM, SIGHUP - whatever else listens for it: it exits, and what its agents
+// left running goes with it (the core kills every process group it started on exit). Left to the libraries' own
+// handlers, one ran on for minutes after it was told to stop, building in the same codebase as the run after it. Ctrl-C
+// too - except where the command stops its work with it, and ends as it would: regenerate, conform, launch, cultivate.
 if (!["parse", "drift", "lineage"].includes(command)) {
-  for (const [signal, code] of [["SIGTERM", 143], ["SIGHUP", 129], ["SIGINT", 130]] as const) {
+  const ownInterrupt = ["regenerate", "conform", "launch", "cultivate"].includes(command);
+  const signals: Array<[NodeJS.Signals, number]> = [["SIGTERM", 143], ["SIGHUP", 129], ...(ownInterrupt ? [] : [["SIGINT", 130] as [NodeJS.Signals, number]])];
+  for (const [signal, code] of signals) {
     process.on(signal, () => {
       console.error(`\nstopped (${signal})`);
       process.exit(code);
     });
   }
 }
-await import(entry.module);
+await import(entry.module.replace(/\.ts$/, OWN_EXTENSION));

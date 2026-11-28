@@ -1,4 +1,5 @@
-import { checkPlainTargets, formatCheckResults } from "./plain/check.ts";
+import { formatCheckResults } from "@turri-dev/core/plain";
+import { checkModules } from "@turri-dev/core/project";
 import { c } from "./module-report.ts";
 
 const USAGE = `usage: turri parse <file.plain | directory> [options]
@@ -32,7 +33,9 @@ for (let i = 0; i < argv.length; i += 1) {
 }
 
 const target = positional[0] ?? ".";
-const results = checkPlainTargets(target, templateDirs);
+// The language's check, then what the project says of each module: its config files, the steps of adding tests it
+// skipped and its base folder.
+const results = checkModules(target, templateDirs);
 
 if (results.length === 0) {
   console.error(`No .plain files found in ${target}.`);

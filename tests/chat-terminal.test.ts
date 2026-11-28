@@ -1,14 +1,13 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { AgentSessionRuntime, InteractiveMode, type AgentSession, type ExtensionAPI, type ExtensionUIContext } from "@earendil-works/pi-coding-agent";
+import { AgentSessionRuntime, InteractiveMode, type AgentSession, type ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import { createChats, INTERRUPT_SETTLE_MS } from "../src/chats.ts";
 import { chatTabs, type TabAction } from "../src/chat-tabs.ts";
 import { pressCtrlC, type CtrlCScreen } from "../src/chat-terminal.ts";
-import { Shade, showWaiting, unqueue, type QueueOf, type WaitingScreen } from "../src/chat-waiting.ts";
+import { Shade, showWaiting, type WaitingScreen } from "../src/chat-waiting.ts";
 import { Container, Text, visibleWidth, type TuiMouseEvent } from "@earendil-works/pi-tui";
-import { createJobRegistry } from "../src/regenerate/jobs.ts";
+import { openTerminal, piApi, standInSession } from "./terminal-session.ts";
 
 const PI = dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent")));
 const piFile = (path: string) => readFileSync(join(PI, path), "utf8");
@@ -18,7 +17,7 @@ describe("what the terminal's chats reach of pi", () => {
   // fields. A pi that changes them fails here, before a person finds it.
   it("finds the methods it patches and calls", () => {
     const screen = InteractiveMode.prototype as unknown as Record<string, unknown>;
-    for (const name of ["mountInteractiveTui", "rebindCurrentSession", "handleEvent", "resetExtensionUI", "handleCtrlC", "clearEditor", "restoreQueuedMessagesToEditor", "shutdown", "updatePendingMessagesDisplay", "getAllQueuedMessages", "addMessageToChat", "getAppKeyDisplay"]) expect(typeof screen[name], name).toBe("function");
+    for (const name of ["mountInteractiveTui", "rebindCurrentSession", "handleEvent", "resetExtensionUI", "handleCtrlC", "clearEditor", "restoreQueuedMessagesToEditor", "shutdown", "updatePendingMessagesDisplay", "getAllQueuedMessages", "addMessageToChat", "getAppKeyDisplay", "updateAvailableProviderCount"]) expect(typeof screen[name], name).toBe("function");
     const runtime = AgentSessionRuntime.prototype as unknown as Record<string, unknown>;
     for (const name of ["newSession", "switchSession", "dispose", "setRebindSession", "setBeforeSessionInvalidate"]) expect(typeof runtime[name], name).toBe("function");
   });
@@ -37,36 +36,7 @@ describe("what the terminal's chats reach of pi", () => {
   });
 });
 
-/** A pi session as the terminal's driver handles it. */
-function fakeSession(name: string) {
-  let ui: ExtensionUIContext | undefined;
-  const session = {
-    name,
-    disposed: false,
-    sessionFile: undefined,
-    messages: [],
-    isStreaming: false,
-    agent: { state: {} },
-    subscribe: () => () => {},
-    sessionManager: { getSessionName: () => undefined, getSessionDir: () => "/sessions", isPersisted: () => false },
-    extensionRunner: {
-      mode: "tui",
-      getUIContext: () => ui,
-      // As pi's runner keeps it: a copy, with its dialogs wrapped.
-      setUIContext: (next: ExtensionUIContext) => {
-        ui = { ...next };
-      },
-    },
-    bindExtensions: async (bindings: { uiContext: ExtensionUIContext }) => {
-      ui = { ...bindings.uiContext };
-    },
-    abort: async () => {},
-    dispose() {
-      this.disposed = true;
-    },
-  };
-  return session as typeof session & AgentSession;
-}
+const settled = () => new Promise((resolve) => setTimeout(resolve, 20));
 
 /** pi's screen: what it asks and says, and how often it was cleared for another session. */
 function realScreen() {
@@ -92,94 +62,103 @@ describe("the terminal's chats", () => {
     const { driveTerminal } = await import("../src/chat-terminal.ts");
 
     const real = realScreen();
-    const first = fakeSession("first");
-    const second = fakeSession("second");
-    const core = createChats({ cwd: process.cwd(), host: {}, jobs: createJobRegistry(), extension: () => {} });
-    driveTerminal(core);
-
+    const first = standInSession("first");
+    const second = standInSession("second");
     let cleared = 0;
     let overlaysHidden = 0;
     const panel = {};
     const screen = {
       runtimeHost: undefined as unknown,
       handleEvent: async () => {},
+      shutdown: async () => {},
       // The side panel, an overlay an extension opened.
       extensionOverlays: new Map<unknown, () => void>([[panel, () => void (overlaysHidden += 1)]]),
     };
-    const runtime = {
-      _session: first as AgentSession,
-      _services: {},
-      get session() {
-        return this._session;
-      },
-      services: { agentDir: "/agent" },
-      cwd: process.cwd(),
-      // pi's reset: the extension's UI cleared, and every overlay an extension opened taken off the screen.
-      beforeSessionInvalidate: () => {
-        cleared += 1;
-        for (const remove of [...screen.extensionOverlays.values()].reverse()) remove();
-        screen.extensionOverlays.clear();
-      },
-      rebindSession: async () => {
-        // pi binds the session to its screen as it draws it.
-        runtime._session.extensionRunner.setUIContext(real.ui, "tui");
-        await (InteractiveMode.prototype as unknown as { rebindCurrentSession: (this: unknown) => Promise<void> }).rebindCurrentSession.call(screen);
-      },
-      createRuntime: async () => {
-        core.extension({} as ExtensionAPI);
-        return { session: second, services: {} };
-      },
-    };
-    screen.runtimeHost = runtime;
-    Object.setPrototypeOf(runtime, AgentSessionRuntime.prototype);
+    let runtime: Record<string, unknown> & { _session: AgentSession; session: AgentSession; rebindSession(): Promise<void> };
+    // The session's chats are made on pi's runtime (chat-terminal.ts): turri's extension built into each.
+    const open = await openTerminal({ sessions: (terminal) => driveTerminal(terminal) });
+    const { turri, terminal } = open;
+    try {
+      runtime = {
+        _session: first as AgentSession,
+        _services: {},
+        get session() {
+          return this._session;
+        },
+        services: { agentDir: "/agent" },
+        cwd: process.cwd(),
+        // pi's reset: the extension's UI cleared, and every overlay an extension opened taken off the screen.
+        beforeSessionInvalidate: () => {
+          cleared += 1;
+          for (const remove of [...screen.extensionOverlays.values()].reverse()) remove();
+          screen.extensionOverlays.clear();
+        },
+        rebindSession: async () => {
+          // pi binds the session to its screen as it draws it.
+          runtime._session.extensionRunner.setUIContext(real.ui, "tui");
+          await (InteractiveMode.prototype as unknown as { rebindCurrentSession: (this: unknown) => Promise<void> }).rebindCurrentSession.call(screen);
+        },
+        createRuntime: async () => {
+          await turri.extension(piApi());
+          return { session: second, services: {} };
+        },
+      };
+      screen.runtimeHost = runtime;
+      Object.setPrototypeOf(runtime, AgentSessionRuntime.prototype);
 
-    // pi's screen comes up on its first session.
-    await runtime.rebindSession();
-    expect(core.chats()).toHaveLength(1);
-    const firstId = core.shown()!;
-    expect(core.welcomeVisible(firstId)).toBe(true);
+      // pi's screen comes up on its first session, turri's extension built into it.
+      await turri.extension(piApi());
+      await runtime.rebindSession();
+      await settled();
+      expect(turri.chats.list()).toHaveLength(1);
+      const firstId = turri.chats.focused()!;
+      expect(turri.chats.get(firstId)?.session).toBe(first);
+      expect(terminal.welcomeVisible(firstId)).toBe(true);
 
-    // /new: a chat beside it, shown, the first one kept.
-    await (AgentSessionRuntime.prototype as unknown as { newSession(this: unknown): Promise<unknown> }).newSession.call(runtime);
-    expect(core.chats().map((chat) => chat.shown)).toEqual([false, true]);
-    expect(runtime.session).toBe(second);
-    const secondId = core.shown()!;
-    expect(core.welcomeVisible(secondId)).toBe(false);
-    expect(core.welcomeVisible(firstId)).toBe(true);
+      // /new: a chat beside it, shown, the first one kept.
+      await (AgentSessionRuntime.prototype as unknown as { newSession(this: unknown): Promise<unknown> }).newSession.call(runtime);
+      expect(turri.chats.list().map((chat) => chat.shown)).toEqual([false, true]);
+      expect(runtime.session).toBe(second);
+      const secondId = turri.chats.focused()!;
+      expect(terminal.welcomeVisible(secondId)).toBe(false);
+      expect(terminal.welcomeVisible(firstId)).toBe(true);
 
-    // Exercise pi's real submit handler: an extension command is dispatched without a normal message input event.
-    const submitted: string[] = [];
-    const editor = { onSubmit: async (_text: string) => {}, addToHistory() {} };
-    const submitScreen = { defaultEditor: editor, editor, session: second, flushPendingBashComponents() {}, onInputCallback: (text: string) => submitted.push(text) };
-    (InteractiveMode.prototype as unknown as { setupEditorSubmitHandler(): void }).setupEditorSubmitHandler.call(submitScreen);
-    await editor.onSubmit("   ");
-    expect(core.welcomeVisible(firstId)).toBe(true);
-    await editor.onSubmit("/regenerate");
-    expect(submitted).toEqual(["/regenerate"]);
-    expect(core.welcomeVisible(firstId)).toBe(false);
-    expect(first.disposed).toBe(false);
-    expect(cleared).toBe(1);
-    // The side panel, an overlay, stays on the screen as another chat is shown - and pi still takes it off on a reload.
-    expect(overlaysHidden).toBe(0);
-    expect([...screen.extensionOverlays.keys()]).toEqual([panel]);
-    screen.extensionOverlays.get(panel)!();
-    expect(overlaysHidden).toBe(1);
+      // Exercise pi's real submit handler: an extension command is dispatched without a normal message input event.
+      const submitted: string[] = [];
+      const editor = { onSubmit: async (_text: string) => {}, addToHistory() {} };
+      const submitScreen = { defaultEditor: editor, editor, session: second, flushPendingBashComponents() {}, onInputCallback: (text: string) => submitted.push(text) };
+      (InteractiveMode.prototype as unknown as { setupEditorSubmitHandler(): void }).setupEditorSubmitHandler.call(submitScreen);
+      await editor.onSubmit("   ");
+      expect(terminal.welcomeVisible(firstId)).toBe(true);
+      await editor.onSubmit("/regenerate");
+      expect(submitted).toEqual(["/regenerate"]);
+      expect(terminal.welcomeVisible(firstId)).toBe(false);
+      expect(first.disposed).toBe(false);
+      expect(cleared).toBe(1);
+      // The side panel, an overlay, stays on the screen as another chat is shown - and pi still takes it off on a reload.
+      expect(overlaysHidden).toBe(0);
+      expect([...screen.extensionOverlays.keys()]).toEqual([panel]);
+      screen.extensionOverlays.get(panel)!();
+      expect(overlaysHidden).toBe(1);
 
-    // The first chat asks while hidden: nothing on the screen until it is shown again.
-    const answer = first.extensionRunner.getUIContext()!.select("Which CRM?", ["a", "b"]);
-    expect(real.did).toEqual([]);
-    expect(core.chats()[0]!.status).toBe("question");
-    await core.show(core.chats()[0]!.id);
-    expect(await answer).toBe("picked");
-    expect(real.did).toEqual(["select Which CRM?"]);
-    first.extensionRunner.getUIContext()!.notify("said", "info");
-    expect(real.did).toEqual(["select Which CRM?", "notify said"]);
-    expect(runtime.session).toBe(first);
-    expect(core.welcomeVisible(firstId)).toBe(false);
+      // The first chat asks while hidden: nothing on the screen until it is shown again.
+      const answer = first.extensionRunner.getUIContext()!.select("Which CRM?", ["a", "b"]);
+      expect(real.did).toEqual([]);
+      expect(terminal.chats()[0]!.status).toBe("question");
+      await turri.chats.focus(firstId);
+      expect(await answer).toBe("picked");
+      expect(real.did).toEqual(["select Which CRM?"]);
+      first.extensionRunner.getUIContext()!.notify("said", "info");
+      expect(real.did).toEqual(["select Which CRM?", "notify said"]);
+      expect(runtime.session).toBe(first);
 
-    // Leaving turri lets the other chat go; pi lets go of the one it shows itself.
-    await (AgentSessionRuntime.prototype as unknown as { dispose(this: unknown): Promise<void> }).dispose.call(runtime).catch(() => {});
-    expect(second.disposed).toBe(true);
+      // Leaving turri lets the other chat go; pi lets go of the one it shows itself.
+      await (AgentSessionRuntime.prototype as unknown as { dispose(this: unknown): Promise<void> }).dispose.call(runtime).catch(() => {});
+      expect(second.disposed).toBe(true);
+      expect(first.disposed).toBe(false);
+    } finally {
+      await open.close();
+    }
   });
 });
 
@@ -267,54 +246,49 @@ describe("ctrl+c in the chat shown", () => {
   const screenDoing = (doing: { streaming?: boolean; bash?: boolean; compacting?: boolean; draft?: string } = {}) => {
     const did: string[] = [];
     const screen: CtrlCScreen = {
-      session: {
-        isStreaming: doing.streaming === true,
-        isBashRunning: doing.bash === true,
-        isCompacting: doing.compacting === true,
-        isRetrying: false,
-        abort: async () => void did.push("abort"),
-        abortBash: () => void did.push("abortBash"),
-      },
+      session: { isStreaming: doing.streaming === true, isBashRunning: doing.bash === true, isCompacting: doing.compacting === true, isRetrying: false },
       editor: { getText: () => doing.draft ?? "" },
       clearEditor: () => void did.push("clear"),
       restoreQueuedMessagesToEditor: (options) => (did.push(options?.abort === true ? "stop turn" : "restore"), 0),
       shutdown: async () => void did.push("leave"),
     };
-    return { screen, did };
+    // The session's chat: what stopping it does is the core's (Chat.stop).
+    const chat = { stop: async () => (did.push("stop"), "stopped" as const) };
+    return { screen, chat, did };
   };
 
-  it("stops the turn it is in - a skill, a tool - keeping the draft and turri", () => {
-    const { screen, did } = screenDoing({ streaming: true, draft: "half a thought" });
-    expect(pressCtrlC(screen, 0)).toBe("stopped");
-    expect(did).toEqual(["stop turn"]);
+  it("stops the turn it is in - a skill, a tool - its queued messages back in the editor, keeping the draft and turri", () => {
+    const { screen, chat, did } = screenDoing({ streaming: true, draft: "half a thought" });
+    expect(pressCtrlC(screen, chat, 0)).toBe("stopped");
+    expect(did).toEqual(["restore", "stop"]);
   });
 
   it("stops a ! command and a compaction", () => {
     const bash = screenDoing({ bash: true });
-    pressCtrlC(bash.screen, 0);
-    expect(bash.did).toEqual(["abortBash"]);
+    expect(pressCtrlC(bash.screen, bash.chat, 0)).toBe("stopped");
+    expect(bash.did).toEqual(["stop"]);
     const compacting = screenDoing({ compacting: true });
-    pressCtrlC(compacting.screen, 0);
-    expect(compacting.did).toEqual(["abort"]);
+    expect(pressCtrlC(compacting.screen, compacting.chat, 0)).toBe("stopped");
+    expect(compacting.did).toEqual(["stop"]);
   });
 
   it("leaves turri when the chat is doing nothing", () => {
-    const { screen, did } = screenDoing();
-    expect(pressCtrlC(screen, 0)).toBe("left");
+    const { screen, chat, did } = screenDoing();
+    expect(pressCtrlC(screen, chat, 0)).toBe("left");
     expect(did).toEqual(["leave"]);
   });
 
   it("clears a draft before it leaves", () => {
-    const { screen, did } = screenDoing({ draft: "not sent" });
-    expect(pressCtrlC(screen, 0)).toBe("cleared");
+    const { screen, chat, did } = screenDoing({ draft: "not sent" });
+    expect(pressCtrlC(screen, chat, 0)).toBe("cleared");
     expect(did).toEqual(["clear"]);
   });
 
   it("does not leave on a press straight after one that stopped something", () => {
     const now = 10_000;
-    const { screen, did } = screenDoing();
-    expect(pressCtrlC(screen, now - 100, now)).toBe("ignored");
-    expect(pressCtrlC(screen, now - INTERRUPT_SETTLE_MS, now)).toBe("left");
+    const { screen, chat, did } = screenDoing();
+    expect(pressCtrlC(screen, chat, now - 100, now)).toBe("ignored");
+    expect(pressCtrlC(screen, chat, now - 500, now)).toBe("left");
     expect(did).toEqual(["leave"]);
   });
 });
@@ -375,30 +349,5 @@ describe("a message sent while the agent works", () => {
     queued.steering = [];
     showWaiting(screen);
     expect(screen.pendingMessagesContainer.children).toEqual([output]);
-  });
-});
-
-describe("a message a skill's agent read", () => {
-  it("is taken out of the chat's queue, the rest put back in order and kind - as turri's, not typed again", async () => {
-    let steering = ["first", "make it blue", "second"];
-    let followUp = ["later"];
-    const put: string[] = [];
-    const session: QueueOf = {
-      getSteeringMessages: () => steering,
-      getFollowUpMessages: () => followUp,
-      clearQueue: () => {
-        const was = { steering, followUp };
-        steering = [];
-        followUp = [];
-        return was;
-      },
-      steer: async (text, _images, options) => (put.push(`${options?.source}: ${text}`), steering.push(text)),
-      followUp: async (text, _images, options) => (put.push(`${options?.source}: ${text}`), followUp.push(text)),
-    };
-    expect(await unqueue(session, "make it blue")).toBe(true);
-    expect(steering).toEqual(["first", "second"]);
-    expect(followUp).toEqual(["later"]);
-    expect(put.every((line) => line.startsWith("extension: "))).toBe(true);
-    expect(await unqueue(session, "never sent")).toBe(false);
   });
 });

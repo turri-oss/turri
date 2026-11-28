@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Job } from "../../src/regenerate/jobs.ts";
+import type { Job } from "@turri-dev/core";
 import { createJobsTreeState, jobsTreeLines, jobsTreeRows, keepCursorInView, scrollTree, selectJob, treeKey } from "../../src/regenerate/jobs-tree.ts";
 
 const PLAIN = { heading: (t: string) => t, muted: (t: string) => t, accent: (t: string) => t, error: (t: string) => t, added: (t: string) => t, removed: (t: string) => t };

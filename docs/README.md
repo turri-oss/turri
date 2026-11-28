@@ -57,5 +57,5 @@ turri is the first coding agent with the power of regenerative software: [\*\*\*
 | [Skills and gates](skills-and-gates.md) | the gate syntax, what the harness enforces, what a step can do, the rules, trying the gates |
 | [The \*\*\*plain parser](parser.md) | the TypeScript port, `turri parse`, inheritance, the iterator, fidelity |
 | [Theming](theming.md) | the turri themes, contrast, backgrounds, the font |
-| [Running turri in a host](hosting.md) | `@turri-dev/cli/host`: the session and its chats in a host's own windows - their jobs, their questions - and what a host shows beside them |
-| [Development](development.md) | tests, the source layout, known edges |
+| [Running turri in a host](hosting.md) | a host builds on `@turri-dev/core`, as the terminal does: one session, its chats in the host's own windows |
+| [Development](development.md) | linked core development, tests, packaging and the source layout |

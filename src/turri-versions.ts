@@ -1,6 +1,7 @@
 import { accessSync, constants, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { delimiter, dirname, join, resolve, win32 } from "node:path";
-import { AGENT_DIR, PACKAGE_ROOT, turriIdentity } from "./environment.ts";
+import type { Check } from "@turri-dev/core/system";
+import { AGENT_DIR, CLI_ROOT, globalExtensionFile, turriIdentity } from "./cli-root.ts";
 
 /**
  * Which turri runs, which is newest, and which others are on this machine - so a person who installed a new turri and
@@ -46,7 +47,7 @@ export function latestKnown(): { version: string; checkedAt: number } | undefine
 export async function fetchLatest(timeoutMs = 3000): Promise<string | undefined> {
   if (checkOff()) return undefined;
   try {
-    const response = await fetch(`https://registry.npmjs.org/${PACKAGE_NAME.replace("/", "%2F")}/latest`, { signal: AbortSignal.timeout(timeoutMs) });
+    const response = await fetch(`https://registry.npmjs.org/${PACKAGE_NAME.replaceAll("/", "%2F")}/latest`, { signal: AbortSignal.timeout(timeoutMs) });
     if (!response.ok) return undefined;
     const version = ((await response.json()) as { version?: unknown }).version;
     if (typeof version !== "string") return undefined;
@@ -129,7 +130,7 @@ function packageOf(command: string): string | undefined {
 }
 
 /** Every turri on the PATH, in its order - the first is what a bare `turri` runs. */
-export function turrisOnPath(path: string = process.env.PATH ?? "", self: string = PACKAGE_ROOT, platform: NodeJS.Platform = process.platform): TurriOnPath[] {
+export function turrisOnPath(path: string = process.env.PATH ?? "", self: string = CLI_ROOT, platform: NodeJS.Platform = process.platform): TurriOnPath[] {
   // On Windows npm writes three launchers for one install - turri.cmd, turri.ps1, turri - side by side: one is taken.
   const names = platform === "win32" ? ["turri.cmd", "turri.ps1", "turri"] : ["turri"];
   const found: TurriOnPath[] = [];
@@ -192,7 +193,7 @@ export function versionFindings(options: { latest?: string; onPath?: TurriOnPath
   const identity = options.self ?? (() => {
     const own = turriIdentity();
     // An image built from a clone (docker/Dockerfile) has no .git, and is updated by building it again from a newer clone.
-    return { ...(own.version !== null ? { version: own.version } : {}), clone: own.git_commit !== null || process.env.TURRI_FROM_CLONE === "1", root: PACKAGE_ROOT };
+    return { ...(own.version !== null ? { version: own.version } : {}), clone: own.git_commit !== null || process.env.TURRI_FROM_CLONE === "1", root: CLI_ROOT };
   })();
   const onPath = options.onPath ?? turrisOnPath();
   const findings: VersionFinding[] = [];
@@ -235,7 +236,7 @@ export async function describeVersion(versionLine: string): Promise<string> {
   const own = turriIdentity();
   const onPath = turrisOnPath();
   const latest = own.git_commit === null ? await fetchLatest() : undefined;
-  const lines = [versionLine, `  this turri:      ${PACKAGE_ROOT}`];
+  const lines = [versionLine, `  this turri:      ${CLI_ROOT}`];
   if (own.git_commit === null) {
     lines.push(
       latest === undefined
@@ -252,7 +253,7 @@ export async function describeVersion(versionLine: string): Promise<string> {
   } else {
     lines.push("  turri on PATH:   none - this one was run by its path");
   }
-  const findings = versionFindings({ ...(latest !== undefined ? { latest } : {}), onPath, self: { ...(own.version !== null ? { version: own.version } : {}), clone: own.git_commit !== null, root: PACKAGE_ROOT } });
+  const findings = versionFindings({ ...(latest !== undefined ? { latest } : {}), onPath, self: { ...(own.version !== null ? { version: own.version } : {}), clone: own.git_commit !== null, root: CLI_ROOT } });
   for (const finding of findings) lines.push("", `! ${finding.text}`, ...finding.fixes.map((fix) => `  → ${fix}`));
   return lines.join("\n");
 }
@@ -282,4 +283,65 @@ export function bannerWarnings(): { lines: string[]; later: Promise<string | und
     }
   });
   return { lines, later };
+}
+
+/**
+ * turri itself, as `turri doctor` checks it: whether it is the newest npm has - asked now - and every turri on the PATH,
+ * which runs, and what hides a newer one behind an older. What to do, said under each.
+ */
+export async function checkTurri(): Promise<Check[]> {
+  const own = turriIdentity();
+  const onPath = turrisOnPath();
+  const latest = own.git_commit === null ? await fetchLatest() : undefined;
+  const findings = versionFindings({ ...(latest !== undefined ? { latest } : {}), onPath });
+  const version = own.version ?? "?";
+  const outdated = findings.find((finding) => finding.kind === "outdated");
+  const versionCheck: Check =
+    own.git_commit !== null
+      ? { level: "info", name: "turri version", detail: `${version}, from a clone - not compared with npm` }
+      : outdated !== undefined
+        ? { level: "limited", name: "turri version", detail: outdated.text, fix: outdated.fixes.join("; ") }
+        : latest === undefined
+          ? { level: "info", name: "turri version", detail: `${version} - npm did not answer, so it is not compared` }
+          : own.version !== null && newerThan(latest, own.version)
+            ? // Older than npm's, with a newer turri installed already: the PATH check says which, and what hides it.
+              { level: "limited", name: "turri version", detail: `${version} - npm has ${latest}, and a newer turri is installed already: see turri on PATH` }
+            : { level: "ok", name: "turri version", detail: `${version} - the newest on npm` };
+  if (onPath.length === 0) {
+    return [
+      versionCheck,
+      {
+        level: "limited",
+        name: "turri on PATH",
+        detail: "not found",
+        // A clone has its sources; the package from npm has only what was compiled from them.
+        fix: existsSync(join(CLI_ROOT, "src")) ? `cd ${CLI_ROOT} && npm link` : `npm install -g ${PACKAGE_NAME}`,
+      },
+    ];
+  }
+  const copies = onPath.map((turri) => `${turri.path}  turri ${turri.version ?? "?"}  (${[turri.runs ? "runs" : "hidden", ...(turri.self ? ["this one"] : []), ...(turri.clone ? ["a clone"] : [])].join(", ")})`);
+  const hidden = findings.filter((finding) => finding.kind !== "outdated");
+  const pathCheck: Check =
+    hidden.length > 0
+      ? // Every turri, then what to do, in order: a step a line.
+        { level: "missing", name: "turri on PATH", detail: hidden[0]!.text, more: [...copies, ...hidden.flatMap((finding) => finding.fixes).map((fix) => `→ ${fix}`)] }
+      : { level: "ok", name: "turri on PATH", detail: onPath.length === 1 ? onPath[0]!.path : `${onPath.length} turris - the first, which runs, is the newest`, ...(onPath.length > 1 ? { more: copies } : {}) };
+  return [versionCheck, pathCheck];
+}
+
+/**
+ * turri loaded into every `pi` - a file an older `turri setup` wrote into pi's extensions. turri and pi are kept apart
+ * now: `turri` starts pi with turri, and a plain `pi` stays pi. Said only when the file is there, for doctor to remove.
+ */
+export function checkGlobal(): Check[] {
+  const file = globalExtensionFile();
+  if (file === undefined) return [];
+  return [
+    {
+      level: "limited",
+      name: "turri in every pi",
+      detail: `${file} loads turri into every plain pi too`,
+      fix: "turri doctor offers to remove it, below - turri keeps starting with turri",
+    },
+  ];
 }

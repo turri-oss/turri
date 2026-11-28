@@ -107,7 +107,7 @@ Each step says what you should see; the first one that does not is where it stop
 
 ## In turri-desktop
 
-The desktop app runs turri's chats itself, and finds the extension as the terminal does: install it and sign in to Claude Code as above - in a terminal, once - and choose **Claude subscription** among the vendors of a new project. The app's engine runs with your login shell's PATH, so it finds the `claude` your terminal finds. The sign-in sheet shows `claude-code` among the providers, connected once Claude Code is signed in; its sign-in is Claude Code's own - `claude auth login` in a terminal - not the app's, and its button says so. Doctor's sheet has the `Claude subscription` line of step 3. A host's own part in it is in [running turri in a host](hosting.md#models-from-a-pi-extension-in-a-host).
+The desktop app runs turri's chats itself, and finds the extension as the terminal does: install it and sign in to Claude Code as above - in a terminal, once - and choose **Claude subscription** among the vendors of a new project. The app's engine runs with your login shell's PATH, so it finds the `claude` your terminal finds. The sign-in sheet shows `claude-code` among the providers, connected once Claude Code is signed in; its sign-in is Claude Code's own - `claude auth login` in a terminal - not the app's, and its button says so. Doctor's sheet has the `Claude subscription` line of step 3. A host's own part in it is in [the core's interface](https://github.com/turri-oss/turri-core/blob/main/docs/core.md).
 
 ## What to know
 

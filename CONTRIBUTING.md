@@ -10,7 +10,7 @@ A security problem is not an issue: report it privately, as [SECURITY.md](SECURI
 
 ## Where a change belongs
 
-turri is the command line, the conversation and everything they know: the \*\*\*plain parser, the work loop and its agents, the sandbox, the skills and rules in `genome/`, the standard library in `stdlib/`. [turri desktop](https://github.com/turri-oss/turri-desktop) is turri in a native window: it runs turri through its host entry (`@turri-dev/cli/host`, [hosting](docs/hosting.md)) and owns only the window - its views, its installer and updates. A change to what turri does goes here; a change to how the app shows it goes there. If you are not sure which side something is on, open an issue and ask.
+This repository owns the `turri` command, the terminal UI and the console for unattended runs. The [core](https://github.com/turri-oss/turri-core) owns the sessions, work loop, agents, parser, genome and standard library. [turri desktop](https://github.com/turri-oss/turri-desktop) owns the desktop window and builds on the core directly (see [running turri in a host](docs/hosting.md)). See [development](docs/development.md) to work on the CLI and core together.
 
 ## Making a change
 
@@ -29,11 +29,11 @@ Before you open the pull request:
 
 ```bash
 npm run typecheck  # src/ only, not tests/
-npm test           # the whole suite, about a minute - calls no model
-npx vitest run tests/regenerate/records.test.ts   # one file, while you work
+npm test           # terminal and CLI tests - calls no model
+npx vitest run tests/regenerate/jobs-tree.test.ts   # one file, while you work
 ```
 
-Add a test in `tests/` for what you change. No test calls a model: an agent is scripted by mocking `src/pi.ts` with a stub that calls the session's tools itself - `tests/regenerate/conformance-loop.test.ts` is the example to follow. The tests that run real commands behind the OS sandbox are skipped on a machine without one. The same typecheck and suite run on every pull request, with a check of its commits; for a contribution from outside, the maintainer starts them, and they must pass before it is merged.
+The CLI tests exercise commands and the terminal using the core's public entries. The core's own suite covers its agents, parser and sandbox. CI also installs the CLI tarball in a separate project to check the commands and desktop host entry as they ship.
 
 The tests spend nothing, but turri itself does: the conversation, `turri regenerate` and `turri doctor` in a project call the models `config.turri.yaml` names, with your keys. Check what you can with what calls none - `turri parse <file.plain>`, `turri doctor --no-models`.
 

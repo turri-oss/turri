@@ -1,7 +1,4 @@
-import { readProjectConfig, CONFIG_FILE } from "./config.ts";
-import { refuseTestPlainFile } from "./test-plain-files.ts";
-import { createJobRegistry } from "./regenerate/jobs.ts";
-import { createWorkLoop, describeDrift } from "./regenerate/loop.ts";
+import { readProjectConfig, CONFIG_FILE, describeDrift, readDrift } from "@turri-dev/core/project";
 
 const USAGE = `usage: turri drift [file.plain]
 
@@ -19,9 +16,7 @@ if (named === undefined) {
   process.exit(1);
 }
 try {
-  refuseTestPlainFile(named);
-  const loop = createWorkLoop({ registry: createJobRegistry(), cwd: process.cwd(), planner: false });
-  console.log(describeDrift(loop.drift(named)));
+  console.log(describeDrift(readDrift(named)));
 } catch (error) {
   console.error(error instanceof Error ? error.message : error);
   process.exit(1);

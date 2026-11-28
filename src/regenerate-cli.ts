@@ -1,4 +1,4 @@
-import { CONFIG_FILE, readProjectConfig } from "./config.ts";
+import { CONFIG_FILE, readProjectConfig } from "@turri-dev/core/project";
 import { parseArgs } from "./cli-options.ts";
 import { headlessOptions, runLoop } from "./loop-cli.ts";
 
@@ -39,7 +39,7 @@ for every functional spec's scenarios.
   PLAIN_TEMPLATE_DIRS      template directories, separated as PATH is (: or ; on Windows)`;
 
 const { positional, options } = parseArgs(process.argv.slice(2), ["--dry-run", "--start-over", "--from-scratch", "--from-scratch-chain"], USAGE, ["--build-dir", "--report", "--harness-model", "--judge-model", "--review", "--mutation-testing"]);
-const { report, buildDir } = headlessOptions(options);
+const { report, buildDir, overrides } = headlessOptions(options);
 const named = positional[0] ?? readProjectConfig(process.cwd()).module;
 // Functional specs named after the file: regenerated again though their spec did not change.
 const again = positional.slice(1);
@@ -60,20 +60,15 @@ if (again.length > 0 && dryRun) {
 }
 runLoop({
   plainFile: named,
+  overrides,
   ...(buildDir !== undefined ? { buildDir } : {}),
   ...(report !== undefined ? { report } : {}),
   command: ["regenerate", ...process.argv.slice(2)],
-  dryRun,
   startOver: options["start-over"] !== undefined,
-  // A dry run is a look ahead: planned as regenerate plans it, nothing started.
-  ask: (loop) =>
-    dryRun
-      ? loop.lookAhead(named)
-      : again.length > 0
-      ? loop.regenerateAgain(named, again)
-      : scratch !== undefined
-        ? loop.fromScratch(named, { chain: scratch === "chain" })
-        : loop.bringUp(named),
+  // Functional specs named are regenerated again, from scratch or not.
+  ...(dryRun ? { work: "preview" as const }
+    : scratch !== undefined && again.length === 0 ? { work: "regenerate" as const, fromScratch: scratch }
+    : { work: "regenerate" as const, funcIds: again }),
 }).catch((error) => {
   console.error(error instanceof Error ? error.message : error);
   process.exit(1);

@@ -1,5 +1,6 @@
+import { locateDiffLines } from "@turri-dev/core/plain";
 import { describe, expect, it } from "vitest";
-import { diffFiles, diffView, locateDiffLines, NOT_FOUND, type DiffPaint } from "../../src/regenerate/diff-view.ts";
+import { diffFiles, diffView, NOT_FOUND, type DiffPaint } from "../../src/regenerate/diff-view.ts";
 import { brandNeon, plainPaint } from "../../src/regenerate/plain-palette.ts";
 
 /**
@@ -185,11 +186,8 @@ describe("placing a spec diff's lines in their files", () => {
     expect(where[7]).toEqual({ file: "tasks.plain", line: 5, section: "***definitions***", written: "  - It looks as [resources/shot.png](resources/shot.png) shows." });
   });
 
-  it("shows a linked resource whose content changed as a file of its own, under its name - not with the lines found in no file", async () => {
-    const { resourceDiff } = await import("../../src/regenerate/spec-steps.ts");
-    const item = (digest: string) => JSON.stringify({ markdown: "- :HubSpotMapping: is described in `[resource]resources/mapping.md`.", linked_resources: [{ digest, target: "resources/mapping.md", text: "resources/mapping.md" }] });
-    const resource = resourceDiff([{ id: "1", section: "definitions", kind: "change", before: item("a1"), after: item("b2"), position: 1 }], "hubspot.plain");
-    expect(resource).toContain("+resources/mapping.md, linked by :HubSpotMapping: in hubspot.plain: its content changed, sha256 b2");
+  it("shows a linked resource whose content changed as a file of its own, under its name - not with the lines found in no file", () => {
+    const resource = "diff --git a/resources/mapping.md b/resources/mapping.md\n--- a/resources/mapping.md\n+++ b/resources/mapping.md\n@@ -1 +1 @@\n-resources/mapping.md, old content\n+resources/mapping.md, linked by :HubSpotMapping: in hubspot.plain: its content changed, sha256 b2\n";
     const both = `${spec}${resource}`;
     const files = diffFiles(both, 60, undefined, locateDiffLines(both, [own, common]));
     expect(files.map((file) => [file.file, file.added])).toEqual([["hubspot.plain", 1], ["resources/mapping.md", 1]]);

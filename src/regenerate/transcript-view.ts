@@ -1,5 +1,4 @@
 import type { DiffPaint } from "./diff-view.ts";
-import type { DiffStyle } from "./job-panel.ts";
 
 /**
  * How the side panel colours things. Plain text when there is no theme, as in tests.
@@ -7,6 +6,12 @@ import type { DiffStyle } from "./job-panel.ts";
  * The panel no longer shows a job's agents at work - every prompt, reply, thought and tool call: that is in each
  * pulse's log (job-log.ts), streamed as it happens.
  */
+/** How a spec diff's added and removed lines are painted. */
+export interface DiffStyle {
+  added(text: string): string;
+  removed(text: string): string;
+}
+
 export interface TranscriptStyle extends DiffStyle {
   heading(text: string): string;
   muted(text: string): string;
