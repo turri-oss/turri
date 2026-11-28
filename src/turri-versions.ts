@@ -47,7 +47,7 @@ export function latestKnown(): { version: string; checkedAt: number } | undefine
 export async function fetchLatest(timeoutMs = 3000): Promise<string | undefined> {
   if (checkOff()) return undefined;
   try {
-    const response = await fetch(`https://registry.npmjs.org/${PACKAGE_NAME.replace("/", "%2F")}/latest`, { signal: AbortSignal.timeout(timeoutMs) });
+    const response = await fetch(`https://registry.npmjs.org/${PACKAGE_NAME.replaceAll("/", "%2F")}/latest`, { signal: AbortSignal.timeout(timeoutMs) });
     if (!response.ok) return undefined;
     const version = ((await response.json()) as { version?: unknown }).version;
     if (typeof version !== "string") return undefined;
