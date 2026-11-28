@@ -18,7 +18,9 @@ describe("turri --version", () => {
     expect(piVersion()).toMatch(/^\d+\.\d+\.\d+/);
     for (const flag of ["--version", "-v"]) {
       const lines = execFileSync(process.execPath, ["bin/turri.mjs", flag], { encoding: "utf8" }).trim().split("\n");
-      expect(lines[0]).toMatch(new RegExp(`^turri \\S+.*\\(core \\S+.*; pi ${piVersion()!.replace(/\./g, "\\.")}\\)$`));
+      // pi's version compared as it is written, not read as a pattern.
+      expect(lines[0]).toMatch(/^turri \S+.*\(core \S+/);
+      expect(lines[0]!.endsWith(`; pi ${piVersion()})`)).toBe(true);
       expect(lines[1]).toContain(resolve("."));
       expect(lines.some((line) => line.startsWith("  turri on PATH"))).toBe(true);
     }
